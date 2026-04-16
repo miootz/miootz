@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -11,13 +12,51 @@ import json
 from app.api.deps import require_admin
 from app.core.database import get_db
 from app.models.session import GameSession, Attendance
+from app.models.session_recurrence import SessionRecurrenceRule
 from app.models.user import User
 from app.models.chat import ChatMessage
 from app.core.chat_manager import chat_manager
+from app.core.session_data_manager import session_data_manager
 from app.services.session_promotion import handle_leave_or_cancel
+from app.services.session_revision import (
+    bump_session_revision,
+    notify_session_data_changed,
+    notify_session_deleted,
+)
 from app.services.team_assignment import assign_teams_snake
+from app.services.recurrence_scheduler import (
+    register_recurrence_job,
+    unregister_recurrence_job,
+)
+from app.services.recurring_sessions import (
+    materialize_next_session_and_notify,
+    utc_start_matches_rule,
+)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+class RecurrenceConfig(BaseModel):
+    enabled: bool = False
+    # Kickoff (meetup) each week — must match session start_time
+    timezone: str = "UTC"
+    weekday: int = Field(0, ge=0, le=6)
+    hour: int = Field(0, ge=0, le=23)
+    minute: int = Field(0, ge=0, le=59)
+    # When each week to create the next session + send join-link emails
+    announce_timezone: str = "UTC"
+    announce_weekday: int = Field(0, ge=0, le=6)
+    announce_hour: int = Field(9, ge=0, le=23)
+    announce_minute: int = Field(0, ge=0, le=59)
+
+    @field_validator("timezone", "announce_timezone")
+    @classmethod
+    def tz_ok(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except ZoneInfoNotFoundError as e:
+            raise ValueError("Invalid IANA timezone") from e
+        return v
 
 
 class SessionCreate(BaseModel):
@@ -29,6 +68,7 @@ class SessionCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str = Field(default="auto_promote")
+    recurrence: RecurrenceConfig | None = None
 
     @field_validator("waitlist_mode")
     @classmethod
@@ -43,6 +83,24 @@ class SessionCreate(BaseModel):
             raise ValueError("max_players must be >= min_players")
         return self
 
+    @model_validator(mode="after")
+    def recurrence_aligns(self):
+        if self.recurrence and self.recurrence.enabled:
+            st = self.start_time
+            if st.tzinfo is None:
+                st = st.replace(tzinfo=timezone.utc)
+            if not utc_start_matches_rule(
+                st,
+                self.recurrence.timezone,
+                self.recurrence.weekday,
+                self.recurrence.hour,
+                self.recurrence.minute,
+            ):
+                raise ValueError(
+                    "start_time must match recurrence weekday and time in the chosen timezone"
+                )
+        return self
+
 
 class SessionUpdate(BaseModel):
     start_time: datetime | None = None
@@ -53,6 +111,7 @@ class SessionUpdate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str | None = None
+    recurrence: RecurrenceConfig | None = None
 
 
 class ChatMessageCreate(BaseModel):
@@ -64,18 +123,83 @@ def _user_skill(u: User) -> float:
     return float(v) if v is not None else 50.0
 
 
+def _recurrence_json(rule: SessionRecurrenceRule | None) -> dict | None:
+    if not rule:
+        return None
+    return {
+        "id": rule.id,
+        "timezone": rule.timezone,
+        "weekday": rule.weekday,
+        "hour": rule.hour,
+        "minute": rule.minute,
+        "announce_timezone": rule.announce_timezone,
+        "announce_weekday": rule.announce_weekday,
+        "announce_hour": rule.announce_hour,
+        "announce_minute": rule.announce_minute,
+        "is_active": rule.is_active,
+    }
+
+
 @router.post("/", status_code=201)
 async def create_session(
     session_data: SessionCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    payload = session_data.model_dump()
-    new_session = GameSession(**payload)
+    payload = session_data.model_dump(exclude={"recurrence"})
+    rule: SessionRecurrenceRule | None = None
+    if session_data.recurrence and session_data.recurrence.enabled:
+        cfg = session_data.recurrence
+        rule = SessionRecurrenceRule(
+            timezone=cfg.timezone,
+            weekday=cfg.weekday,
+            hour=cfg.hour,
+            minute=cfg.minute,
+            announce_timezone=cfg.announce_timezone,
+            announce_weekday=cfg.announce_weekday,
+            announce_hour=cfg.announce_hour,
+            announce_minute=cfg.announce_minute,
+            location=payload["location"],
+            fee=payload["fee"],
+            min_players=payload["min_players"],
+            max_players=payload["max_players"],
+            latitude=payload.get("latitude"),
+            longitude=payload.get("longitude"),
+            waitlist_mode=payload["waitlist_mode"],
+            is_active=True,
+        )
+        db.add(rule)
+        await db.flush()
+
+    new_session = GameSession(
+        **payload,
+        recurrence_rule_id=rule.id if rule else None,
+    )
     db.add(new_session)
+    await db.flush()
     await db.commit()
     await db.refresh(new_session)
-    return new_session
+    rule_out = (
+        await db.get(SessionRecurrenceRule, new_session.recurrence_rule_id)
+        if new_session.recurrence_rule_id
+        else None
+    )
+    if rule_out and rule_out.is_active:
+        register_recurrence_job(rule_out)
+    return {
+        "id": new_session.id,
+        "start_time": new_session.start_time,
+        "location": new_session.location,
+        "fee": new_session.fee,
+        "min_players": new_session.min_players,
+        "max_players": new_session.max_players,
+        "latitude": new_session.latitude,
+        "longitude": new_session.longitude,
+        "waitlist_mode": new_session.waitlist_mode,
+        "content_revision": new_session.content_revision or 0,
+        "recurrence_rule_id": new_session.recurrence_rule_id,
+        "recurrence": _recurrence_json(rule_out),
+    }
 
 
 @router.get("/", response_model=list[dict])
@@ -93,14 +217,22 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
             "latitude": s.latitude,
             "longitude": s.longitude,
             "waitlist_mode": s.waitlist_mode,
+            "content_revision": s.content_revision or 0,
+            "recurrence_rule_id": s.recurrence_rule_id,
         }
         for s in sessions
     ]
 
 
 @router.get("/{session_id}")
-async def get_session(session_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+async def get_session(
+    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(GameSession)
+        .options(selectinload(GameSession.recurrence_rule))
+        .where(GameSession.id == session_id)
+    )
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -126,6 +258,14 @@ async def get_session(session_id: int, db: AsyncSession = Depends(get_db)):
             }
         )
 
+    my_attendance = None
+    user = getattr(request.state, "user", None)
+    if user is not None:
+        for att, u in rows:
+            if u.id == user.id:
+                my_attendance = att.status
+                break
+
     return {
         "id": session.id,
         "start_time": session.start_time,
@@ -136,7 +276,11 @@ async def get_session(session_id: int, db: AsyncSession = Depends(get_db)):
         "latitude": session.latitude,
         "longitude": session.longitude,
         "waitlist_mode": session.waitlist_mode,
+        "content_revision": session.content_revision or 0,
+        "recurrence_rule_id": session.recurrence_rule_id,
+        "recurrence": _recurrence_json(session.recurrence_rule),
         "attendees": attendees,
+        "my_attendance": my_attendance,
     }
 
 
@@ -182,7 +326,11 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
                 ],
             }
         )
-    return {"session_id": session_id, "teams": out}
+    return {
+        "session_id": session_id,
+        "content_revision": session.content_revision or 0,
+        "teams": out,
+    }
 
 
 @router.patch("/{session_id}")
@@ -198,16 +346,96 @@ async def update_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     data = update_data.model_dump(exclude_unset=True)
+    rec_cfg = data.pop("recurrence", None)
     if "waitlist_mode" in data and data["waitlist_mode"]:
         m = data["waitlist_mode"].lower()
         if m not in ("broadcast", "auto_promote"):
             raise HTTPException(status_code=400, detail="Invalid waitlist_mode")
         data["waitlist_mode"] = m
 
+    if not data and rec_cfg is None:
+        return {"status": "updated"}
+
     for key, value in data.items():
         setattr(session, key, value)
 
+    if rec_cfg is not None:
+        cfg = RecurrenceConfig.model_validate(rec_cfg)
+        if not cfg.enabled:
+            if session.recurrence_rule_id:
+                rr = await db.get(SessionRecurrenceRule, session.recurrence_rule_id)
+                if rr:
+                    rr.is_active = False
+                unregister_recurrence_job(session.recurrence_rule_id)
+        else:
+            st = session.start_time
+            if st.tzinfo is None:
+                st = st.replace(tzinfo=timezone.utc)
+            if not utc_start_matches_rule(
+                st,
+                cfg.timezone,
+                cfg.weekday,
+                cfg.hour,
+                cfg.minute,
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="start_time must match recurrence weekday and time in the chosen timezone",
+                )
+            if session.recurrence_rule_id:
+                rr = await db.get(SessionRecurrenceRule, session.recurrence_rule_id)
+                if rr:
+                    rr.timezone = cfg.timezone
+                    rr.weekday = cfg.weekday
+                    rr.hour = cfg.hour
+                    rr.minute = cfg.minute
+                    rr.announce_timezone = cfg.announce_timezone
+                    rr.announce_weekday = cfg.announce_weekday
+                    rr.announce_hour = cfg.announce_hour
+                    rr.announce_minute = cfg.announce_minute
+                    rr.location = session.location
+                    rr.fee = session.fee
+                    rr.min_players = session.min_players
+                    rr.max_players = session.max_players
+                    rr.latitude = session.latitude
+                    rr.longitude = session.longitude
+                    rr.waitlist_mode = session.waitlist_mode
+                    rr.is_active = True
+                else:
+                    session.recurrence_rule_id = None
+            if not session.recurrence_rule_id:
+                rr = SessionRecurrenceRule(
+                    timezone=cfg.timezone,
+                    weekday=cfg.weekday,
+                    hour=cfg.hour,
+                    minute=cfg.minute,
+                    announce_timezone=cfg.announce_timezone,
+                    announce_weekday=cfg.announce_weekday,
+                    announce_hour=cfg.announce_hour,
+                    announce_minute=cfg.announce_minute,
+                    location=session.location,
+                    fee=session.fee,
+                    min_players=session.min_players,
+                    max_players=session.max_players,
+                    latitude=session.latitude,
+                    longitude=session.longitude,
+                    waitlist_mode=session.waitlist_mode,
+                    is_active=True,
+                )
+                db.add(rr)
+                await db.flush()
+                session.recurrence_rule_id = rr.id
+
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rec_cfg is not None:
+        cfg_after = RecurrenceConfig.model_validate(rec_cfg)
+        if cfg_after.enabled and session.recurrence_rule_id:
+            rr = await db.get(SessionRecurrenceRule, session.recurrence_rule_id)
+            if rr and rr.is_active:
+                register_recurrence_job(rr)
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     return {"status": "updated"}
 
 
@@ -248,7 +476,10 @@ async def join_session(
             attendance.status = (
                 "confirmed" if confirmed_count < session.max_players else "waitlisted"
             )
+            rev = await bump_session_revision(db, session_id)
             await db.commit()
+            if rev is not None:
+                await notify_session_data_changed(session_id, rev)
             await db.refresh(attendance)
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined session")
@@ -266,7 +497,10 @@ async def join_session(
         session_id=session_id, user_id=user_id, status=status_new
     )
     db.add(new_attendance)
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     await db.refresh(new_attendance)
 
     return {"status": status_new, "attendance_id": new_attendance.id}
@@ -303,7 +537,10 @@ async def leave_session(
     prev = attendance.status
     attendance.previous_status = prev
     attendance.status = "cancelled"
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
 
     if prev == "confirmed":
         await handle_leave_or_cancel(db, session, prev)
@@ -333,17 +570,28 @@ async def move_attendance(
 
     attendance.status = new_status
     attendance.previous_status = None
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     return {"status": "moved"}
 
 
-@router.post("/reminders/run-now")
-async def run_weekly_reminder_now(_: User = Depends(require_admin)):
-    """Manual trigger for the Tuesday reminder job (admin)."""
-    from app.services.jobs import weekly_session_reminder_job
-
-    await weekly_session_reminder_job()
-    return {"status": "ok"}
+@router.post("/recurring/run-now")
+async def run_recurring_sessions_now(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Admin: run the same logic as the weekly cron for every active rule (create + notify if needed)."""
+    result = await db.execute(
+        select(SessionRecurrenceRule).where(SessionRecurrenceRule.is_active.is_(True))
+    )
+    rules = result.scalars().all()
+    created = 0
+    for rule in rules:
+        if await materialize_next_session_and_notify(rule.id):
+            created += 1
+    return {"status": "ok", "rules_checked": len(rules), "sessions_created": created}
 
 
 @router.delete("/{session_id}")
@@ -356,9 +604,28 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    await notify_session_deleted(session_id)
     await db.delete(session)
     await db.commit()
     return {"status": "deleted"}
+
+
+@router.get("/{session_id}/data/events")
+async def session_data_events(session_id: int, request: Request):
+    """SSE: roster/session field changes (`session_updated` / `session_deleted`)."""
+
+    async def event_generator():
+        queue = await session_data_manager.subscribe(session_id)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                data = await queue.get()
+                yield f"data: {json.dumps(data)}\n\n"
+        finally:
+            await session_data_manager.unsubscribe(session_id, queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/{session_id}/chat/events")

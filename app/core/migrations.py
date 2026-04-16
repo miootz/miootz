@@ -10,6 +10,13 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         rows = r.fetchall()
         return any(row[1] == col for row in rows)
 
+    async def has_table(name: str) -> bool:
+        r = await conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:n LIMIT 1"),
+            {"n": name},
+        )
+        return r.scalar_one_or_none() is not None
+
     if not await has_column("game_sessions", "min_players"):
         await conn.execute(
             text("ALTER TABLE game_sessions ADD COLUMN min_players INTEGER DEFAULT 10")
@@ -33,3 +40,60 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(
             text("ALTER TABLE attendance ADD COLUMN previous_status VARCHAR")
         )
+
+    if not await has_column("game_sessions", "content_revision"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN content_revision INTEGER DEFAULT 0")
+        )
+
+    if not await has_column("game_sessions", "recurrence_rule_id"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN recurrence_rule_id INTEGER")
+        )
+        await conn.execute(
+            text(
+                'CREATE INDEX IF NOT EXISTS ix_game_sessions_recurrence_rule_id '
+                "ON game_sessions (recurrence_rule_id)"
+            )
+        )
+
+    if await has_table("session_recurrence_rules"):
+        _added_announce = False
+        if not await has_column("session_recurrence_rules", "announce_timezone"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_timezone VARCHAR DEFAULT 'UTC'"
+                )
+            )
+            _added_announce = True
+        if not await has_column("session_recurrence_rules", "announce_weekday"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_weekday INTEGER DEFAULT 0"
+                )
+            )
+            _added_announce = True
+        if not await has_column("session_recurrence_rules", "announce_hour"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_hour INTEGER DEFAULT 9"
+                )
+            )
+            _added_announce = True
+        if not await has_column("session_recurrence_rules", "announce_minute"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_minute INTEGER DEFAULT 0"
+                )
+            )
+            _added_announce = True
+        if _added_announce:
+            await conn.execute(
+                text(
+                    """UPDATE session_recurrence_rules SET
+                    announce_timezone = timezone,
+                    announce_weekday = weekday,
+                    announce_hour = hour,
+                    announce_minute = minute"""
+                )
+            )

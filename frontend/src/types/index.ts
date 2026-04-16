@@ -18,6 +18,8 @@ export interface Team {
   players: User[];
 }
 
+export type MyAttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
+
 export interface Session {
   id: string;
   date: string;
@@ -27,6 +29,8 @@ export interface Session {
   fee?: number;
   minPlayers?: number;
   maxPlayers?: number;
+  /** Set when the viewer is logged in (from GET /sessions/:id). */
+  myAttendance?: MyAttendanceStatus | null;
 }
 
 export interface MatchSummary {

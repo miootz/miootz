@@ -1,203 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
-import { MeetupDetails } from './pages/MeetupDetails';
-import { HistoryPage } from './pages/HistoryPage';
-import type { Session, User, Team, GameSession, MatchSummary } from './types';
-import { rebalanceTeams } from './services/teamService';
-import {
-  fetchSessions,
-  fetchSessionDetail,
-  fetchSessionTeams,
-  type SessionDetail,
-} from './api/sessionsApi';
+import { Routes, Route } from 'react-router-dom';
+import { RequireAuth } from './auth/RequireAuth';
+import { RootLanding } from './pages/RootLanding';
+import { PlayerApp } from './pages/PlayerApp';
+import { AdminLayout } from './pages/admin/AdminLayout';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
+import { AdminSessionsPage } from './pages/admin/AdminSessionsPage';
+import { AdminSessionNewPage } from './pages/admin/AdminSessionNewPage';
+import { AdminSessionDetailPage } from './pages/admin/AdminSessionDetailPage';
+import { AdminInvitesPage } from './pages/admin/AdminInvitesPage';
+import { AdminToolsPage } from './pages/admin/AdminToolsPage';
+import { SessionActionPage } from './pages/SessionActionPage';
 
-const MOCK_HISTORY: GameSession[] = [];
-
-function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
-  const start = detail.start_time;
-  const date =
-    start.length >= 10
-      ? start.slice(0, 10)
-      : new Date(start).toISOString().slice(0, 10);
-  const attendance: User[] = detail.attendees
-    .filter(
-      (a: SessionDetail['attendees'][number]) => a.status !== 'cancelled'
-    )
-    .map((a: SessionDetail['attendees'][number]) => ({
-      id: String(a.user_id),
-      name: a.full_name || a.username,
-      skillScore: Math.round(a.skill),
-      isLocked: false,
-    }));
-  return {
-    id: String(detail.id),
-    date,
-    attendance,
-    teams,
-    location: detail.location,
-    fee: detail.fee,
-    minPlayers: detail.min_players,
-    maxPlayers: detail.max_players,
-  };
-}
-
-function App() {
-  const [view, setView] = useState<'details' | 'history'>('details');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [history, setHistory] = useState<GameSession[]>(MOCK_HISTORY);
-
-  const loadSession = useCallback(async (sessionId: number) => {
-    const [detail, teamsRes] = await Promise.all([
-      fetchSessionDetail(sessionId),
-      fetchSessionTeams(sessionId),
-    ]);
-    const t = teamsRes.teams.map((x) => ({
-      id: x.id,
-      players: x.players.map((p) => ({
-        id: p.id,
-        name: p.name,
-        skillScore: p.skillScore,
-        isLocked: p.isLocked,
-      })),
-    }));
-    setSession(mapDetailToSession(detail, t));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const list = await fetchSessions();
-        if (cancelled) return;
-        if (list.length === 0) {
-          setSession(null);
-          setError('No sessions yet. Create one via the API (admin).');
-          return;
-        }
-        const next = [...list].sort(
-          (a, b) =>
-            new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-        )[0];
-        await loadSession(next.id);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadSession]);
-
-  const handleToggleLock = (userId: string) => {
-    if (!session) return;
-    const newAttendance = session.attendance.map((u) =>
-      u.id === userId ? { ...u, isLocked: !u.isLocked } : u
-    );
-    const newTeams = rebalanceTeams({
-      attendance: newAttendance,
-      teams: session.teams,
-    });
-    setSession({
-      ...session,
-      attendance: newAttendance,
-      teams: newTeams,
-    });
-  };
-
-  const handleMovePlayer = (
-    playerId: string,
-    sourceTeamId: string,
-    destTeamId: string
-  ) => {
-    if (!session) return;
-    setSession((prev) => {
-      if (!prev) return prev;
-      const nextTeams = prev.teams.map((team) => {
-        if (team.id === sourceTeamId) {
-          return {
-            ...team,
-            players: team.players.filter((p) => p.id !== playerId),
-          };
-        }
-        if (team.id === destTeamId) {
-          const player = prev.attendance.find((p) => p.id === playerId);
-          if (!player) return team;
-          return { ...team, players: [...team.players, player] };
-        }
-        return team;
-      });
-      return { ...prev, teams: nextTeams };
-    });
-  };
-
-  const handleUpdateMatch = (
-    sessionId: string,
-    matchId: string,
-    updates: Partial<MatchSummary>
-  ) => {
-    setHistory((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              matches: s.matches.map((m) =>
-                m.matchId === matchId ? { ...m, ...updates } : m
-              ),
-            }
-          : s
-      )
-    );
-  };
-
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
-      <nav className="flex justify-center space-x-4 p-4 border-b border-gray-200 dark:border-gray-800">
-        <button
-          type="button"
-          onClick={() => setView('details')}
-          className={`px-4 py-2 rounded-lg transition-colors ${view === 'details' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-        >
-          Meetup Details
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('history')}
-          className={`px-4 py-2 rounded-lg transition-colors ${view === 'history' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-        >
-          History
-        </button>
-      </nav>
-
-      {view === 'details' ? (
-        <>
-          {loading && (
-            <p className="text-center p-8 text-gray-600 dark:text-gray-400">
-              Loading session…
-            </p>
-          )}
-          {error && !loading && (
-            <p className="text-center p-8 text-amber-700 dark:text-amber-400 max-w-lg mx-auto">
-              {error}
-            </p>
-          )}
-          {!loading && session && (
-            <MeetupDetails
-              session={session}
-              onToggleLock={handleToggleLock}
-              onMovePlayer={handleMovePlayer}
-            />
-          )}
-        </>
-      ) : (
-        <HistoryPage sessions={history} onUpdateMatch={handleUpdateMatch} />
-      )}
-    </div>
+    <Routes>
+      <Route path="/session-action" element={<SessionActionPage />} />
+      <Route element={<RequireAuth />}>
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="sessions" element={<AdminSessionsPage />} />
+          <Route path="sessions/new" element={<AdminSessionNewPage />} />
+          <Route path="sessions/:sessionId" element={<AdminSessionDetailPage />} />
+          <Route path="invites" element={<AdminInvitesPage />} />
+          <Route path="tools" element={<AdminToolsPage />} />
+        </Route>
+        <Route path="/" element={<RootLanding />} />
+        <Route path="*" element={<PlayerApp />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;

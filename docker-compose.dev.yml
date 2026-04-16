@@ -55,7 +55,8 @@ services:
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
-      - "traefik.http.middlewares.footy-auth.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+      # Tell Authelia the public portal URL (must include :8443 in this compose file).
+      - "traefik.http.middlewares.footy-auth.forwardauth.address=http://authelia:9091/api/authz/forward-auth?authelia_url=https%3A%2F%2Fauth.footylegends.local%3A8443"
       - "traefik.http.middlewares.footy-auth.forwardauth.trustForwardHeader=true"
       - "traefik.http.middlewares.footy-auth.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
       - "traefik.http.routers.api.middlewares=footy-auth@docker"

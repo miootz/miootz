@@ -53,3 +53,28 @@ async def test_remote_user_resolves_with_forwarded_headers_when_strict(setup_use
         assert body["user"]["username"] == "u1"
     finally:
         config.settings.AUTH_REQUIRE_FORWARDED_HEADERS = old
+
+
+@pytest.mark.asyncio
+async def test_jit_provisions_user_when_headers_new_identity(setup_user):
+    """New Remote-User not in DB should get a row so /me succeeds (avoids Authelia redirect loops)."""
+    old = config.settings.AUTH_REQUIRE_FORWARDED_HEADERS
+    config.settings.AUTH_REQUIRE_FORWARDED_HEADERS = True
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            r = await ac.get(
+                "/me",
+                headers={
+                    "Remote-User": "new_sso_user",
+                    "Remote-Email": "new_sso_user@example.com",
+                    "X-Forwarded-For": "203.0.113.2",
+                },
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["user"]["username"] == "new_sso_user"
+        assert body["user"]["email"] == "new_sso_user@example.com"
+    finally:
+        config.settings.AUTH_REQUIRE_FORWARDED_HEADERS = old

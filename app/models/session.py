@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -6,6 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.user import User
 from app.models.chat import ChatMessage
+
+if TYPE_CHECKING:
+    from app.models.session_recurrence import SessionRecurrenceRule
 
 
 class GameSession(Base):
@@ -23,6 +29,18 @@ class GameSession(Base):
     # auto_promote: promote first in waitlist immediately when a confirmed spot opens
     waitlist_mode: Mapped[str] = mapped_column(
         String, default="auto_promote"
+    )
+    # Incremented when attendance, session fields, or other player-visible data changes.
+    content_revision: Mapped[int] = mapped_column(Integer, default=0)
+
+    recurrence_rule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("session_recurrence_rules.id"),
+        nullable=True,
+        index=True,
+    )
+    recurrence_rule: Mapped[SessionRecurrenceRule | None] = relationship(
+        "SessionRecurrenceRule",
+        back_populates="sessions",
     )
 
     attendees: Mapped[list["Attendance"]] = relationship(

@@ -35,19 +35,16 @@ class Settings(BaseSettings):
     # Comma-separated allowed origins for CORS (browser clients). Empty = no CORS middleware.
     CORS_ORIGINS: str = ""
 
-    # Public URL for magic links in emails (no trailing slash)
-    PUBLIC_APP_URL: str = "http://localhost:8000"
+    # Public URL for magic links in emails (no trailing slash). Local dev: Vite dev server.
+    PUBLIC_APP_URL: str = "http://localhost:5173"
 
     # Gotify push (optional — leave empty to skip)
     GOTIFY_URL: str = ""
     GOTIFY_APP_TOKEN: str = ""
 
-    # Tuesday 12:00 reminder job (APScheduler uses this timezone)
+    # APScheduler default timezone (per-rule recurrence jobs use their own announce_timezone)
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "UTC"
-    REMINDER_WEEKDAY: int = 1  # Monday=0 .. Sunday=6 → 1 = Tuesday
-    REMINDER_HOUR: int = 12
-    REMINDER_MINUTE: int = 0
 
     # Optional: append invited users as YAML snippets for manual Authelia merge
     AUTHELIA_USERS_YML_PATH: str = ""

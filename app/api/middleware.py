@@ -2,12 +2,13 @@ import logging
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
-from app.core.database import engine
+from app.core.database import async_session, engine
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,42 @@ async def _resolve_user(
     return None
 
 
+async def _jit_provision_user(
+    db: AsyncSession, username: str | None, email: str | None
+) -> User | None:
+    """
+    Create a DB row the first time we see trusted SSO headers for a new identity.
+    Prevents redirect loops when Authelia authenticates but no User existed yet.
+    """
+    u = (username or "").strip()
+    e = (email or "").strip()
+    if not u and e:
+        local = e.split("@", 1)[0] if "@" in e else ""
+        u = local or "user"
+    if not u:
+        return None
+    if not e:
+        e = f"{u}@authelia.sso.local"
+
+    taken = await db.execute(
+        select(User.id).where(or_(User.username == u, User.email == e)).limit(1)
+    )
+    if taken.scalar_one_or_none() is not None:
+        logger.warning(
+            "JIT user skipped: username/email already taken (username=%r email=%r)",
+            u,
+            e,
+        )
+        return None
+
+    user = User(username=u, email=e)
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+    logger.info("JIT provisioned user from SSO headers (username=%r)", u)
+    return user
+
+
 class AutheliaAuthMiddleware(BaseHTTPMiddleware):
     """
     Trusted Header SSO: identity comes from headers set by Authelia after Traefik forward-auth.
@@ -96,8 +133,17 @@ class AutheliaAuthMiddleware(BaseHTTPMiddleware):
 
         user: User | None = None
         if username or email:
-            async with AsyncSession(engine) as db:
+            async with async_session() as db:
                 user = await _resolve_user(db, username, email)
+                if user is None and trust_headers:
+                    try:
+                        user = await _jit_provision_user(db, username, email)
+                        if user is not None:
+                            await db.commit()
+                            await db.refresh(user)
+                    except IntegrityError:
+                        await db.rollback()
+                        user = await _resolve_user(db, username, email)
                 if user is None and (username or email):
                     logger.info(
                         "Authenticated proxy user not found in DB (username=%r email=%r)",

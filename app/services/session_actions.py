@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Attendance, GameSession
 from app.models.user import User
+from app.services.session_revision import (
+    bump_session_revision,
+    notify_session_data_changed,
+)
 
 
 async def count_confirmed(db: AsyncSession, session_id: int) -> int:
@@ -64,18 +68,30 @@ async def process_magic_confirm(db: AsyncSession, session_id: int, user_id: int)
         else:
             att.status = "waitlisted"
             att.joined_at = datetime.now(timezone.utc)
+        rev = await bump_session_revision(db, session_id)
         await db.commit()
+        if rev is not None:
+            await notify_session_data_changed(session_id, rev)
         return "Welcome back — your status has been updated"
 
     if att.status == "waitlisted":
         if confirmed_n < session.max_players:
             att.status = "confirmed"
+            rev = await bump_session_revision(db, session_id)
             await db.commit()
+            if rev is not None:
+                await notify_session_data_changed(session_id, rev)
             return "You are confirmed for this session"
+        rev = await bump_session_revision(db, session_id)
         await db.commit()
+        if rev is not None:
+            await notify_session_data_changed(session_id, rev)
         return "Still on the waitlist — no open spots yet"
 
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     return "Updated"
 
 
@@ -94,14 +110,20 @@ async def process_magic_cancel(db: AsyncSession, session_id: int, user_id: int) 
     if att.status in ("confirmed", "waitlisted"):
         att.previous_status = att.status
         att.status = "cancelled"
+        rev = await bump_session_revision(db, session_id)
         await db.commit()
+        if rev is not None:
+            await notify_session_data_changed(session_id, rev)
 
         from app.services.session_promotion import handle_spot_opened
 
         await handle_spot_opened(db, session)
         return "You are cancelled. Use Reactivate if this was a mistake."
 
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     return "Updated"
 
 
@@ -133,5 +155,8 @@ async def process_magic_reactivate(db: AsyncSession, session_id: int, user_id: i
         att.previous_status = None
         msg = "You are back on the waitlist"
 
+    rev = await bump_session_revision(db, session_id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
     return msg

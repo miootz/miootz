@@ -20,9 +20,10 @@ def _session_expiry_ts(session: GameSession) -> float:
 
 
 def build_action_urls(session: GameSession, user: User) -> dict[str, str]:
+    """SPA opens /session-action?t=…; token embeds confirm | cancel | reactivate."""
     base = settings.PUBLIC_APP_URL.rstrip("/")
     exp = _session_expiry_ts(session)
-    q = lambda act: f"{base}/session-links/{act}?t={sign_action_token(session.id, user.id, act, exp)}"
+    q = lambda act: f"{base}/session-action?t={sign_action_token(session.id, user.id, act, exp)}"
     return {
         "confirm": q("confirm"),
         "cancel": q("cancel"),
@@ -74,10 +75,10 @@ def format_session_summary(session: GameSession) -> str:
     return f"{when} @ {session.location} (fee: {session.fee})"
 
 
-async def notify_session_reminder(
+async def notify_new_recurring_session_invites(
     session: GameSession, recipients: Iterable[User]
 ) -> None:
-    """Tuesday reminder: upcoming session + personalized links."""
+    """New session from weekly rule — personalized confirm/cancel links."""
     summary = format_session_summary(session)
     emailed = 0
     for user in recipients:
@@ -85,19 +86,19 @@ async def notify_session_reminder(
             continue
         urls = build_action_urls(session, user)
         body = (
-            f"Upcoming session:\n{summary}\n\n"
+            f"A new meetup was added to the schedule:\n{summary}\n\n"
             f"Confirm: {urls['confirm']}\n"
             f"Cancel: {urls['cancel']}\n"
         )
         if await send_mailgun_email(
             user.email,
-            subject=f"Footy: session reminder — {session.location}",
+            subject=f"Footy: new session — {session.location}",
             text_body=body,
         ):
             emailed += 1
     if emailed:
         await send_gotify_notification(
-            "Session reminder",
+            "New recurring session",
             f"{summary}\n({emailed} emails sent)",
         )
 

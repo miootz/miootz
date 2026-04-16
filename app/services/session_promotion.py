@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.session import Attendance, GameSession
 from app.models.user import User
 from app.services.notifications import notify_auto_promoted, notify_broadcast_spot_open
+from app.services.session_revision import (
+    bump_session_revision,
+    notify_session_data_changed,
+)
 
 
 async def handle_spot_opened(db: AsyncSession, session: GameSession) -> None:
@@ -35,7 +39,10 @@ async def handle_spot_opened(db: AsyncSession, session: GameSession) -> None:
     # auto_promote: first waitlisted becomes confirmed
     first = waitlisted[0]
     first.status = "confirmed"
+    rev = await bump_session_revision(db, session.id)
     await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session.id, rev)
     promoted = await db.get(User, first.user_id)
     if promoted:
         await notify_auto_promoted(session, promoted)

@@ -1,38 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import type { ChatMessage } from '../types';
 import { formatRelativeTime, formatAbsoluteTime } from '../utils/time';
+import { apiFetch } from '../api/client';
+import {
+  appendCachedChatMessage,
+  getCachedChatMessages,
+  setCachedChatMessages,
+} from '../stores/sessionChatCache';
 
 interface SessionChatProps {
   sessionId: string;
 }
 
 export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    getCachedChatMessages(sessionId) ?? []
+  );
   const [newMessage, setNewMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-
-  const fetchInitialMessages = async () => {
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/chat`);
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch initial messages:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [isLoading, setIsLoading] = useState(
+    () => getCachedChatMessages(sessionId) === undefined
+  );
 
   useEffect(() => {
-    fetchInitialMessages();
+    const fromStore = getCachedChatMessages(sessionId);
+    setMessages(fromStore ?? []);
+    setIsLoading(fromStore === undefined);
+  }, [sessionId]);
 
-    const eventSource = new EventSource(`/api/sessions/${sessionId}/chat/events`);
+  useEffect(() => {
+    let cancelled = false;
+    const eventSource = new EventSource(
+      `/api/sessions/${sessionId}/chat/events`
+    );
 
     eventSource.onmessage = (event) => {
       const newMessageData: ChatMessage = JSON.parse(event.data);
-      setMessages((prev) => [...prev, newMessageData]);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newMessageData.id)) return prev;
+        appendCachedChatMessage(sessionId, newMessageData);
+        return [...prev, newMessageData];
+      });
     };
 
     eventSource.onerror = (error) => {
@@ -40,7 +47,30 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       eventSource.close();
     };
 
+    (async () => {
+      if (getCachedChatMessages(sessionId) !== undefined) {
+        if (!cancelled) setIsLoading(false);
+        return;
+      }
+      try {
+        const response = await apiFetch(`/sessions/${sessionId}/chat`);
+        if (cancelled) return;
+        if (response.ok) {
+          const data = (await response.json()) as ChatMessage[];
+          setMessages(data);
+          setCachedChatMessages(sessionId, data);
+        } else {
+          setCachedChatMessages(sessionId, []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch initial messages:', error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
     return () => {
+      cancelled = true;
       eventSource.close();
     };
   }, [sessionId]);
@@ -50,9 +80,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     if (!newMessage.trim()) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/chat`, {
+      const response = await apiFetch(`/sessions/${sessionId}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: newMessage }),
       });
 
