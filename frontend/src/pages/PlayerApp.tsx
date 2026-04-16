@@ -14,15 +14,13 @@ import {
 import { useAuth } from '../auth/useAuth';
 import { setPreferMemberView } from '../auth/memberViewStorage';
 import { clearSessionChatCache } from '../stores/sessionChatCache';
+import { parseSessionStart } from '../utils/datetime';
 
 const MOCK_HISTORY: GameSession[] = [];
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
   const start = detail.start_time;
-  const date =
-    start.length >= 10
-      ? start.slice(0, 10)
-      : new Date(start).toISOString().slice(0, 10);
+  const date = start.length >= 10 ? start.slice(0, 10) : parseSessionStart(start).toISOString().slice(0, 10);
   const attendance: User[] = detail.attendees
     .filter(
       (a: SessionDetail['attendees'][number]) => a.status !== 'cancelled'
@@ -96,7 +94,8 @@ export function PlayerApp() {
       }
       const next = [...list].sort(
         (a, b) =>
-          new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+          parseSessionStart(a.start_time).getTime() -
+          parseSessionStart(b.start_time).getTime()
       )[0];
       await loadSession(next.id);
     } catch (e) {

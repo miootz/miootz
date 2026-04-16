@@ -15,12 +15,10 @@ import {
 } from '../../api/adminApi';
 import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
 import { inferRecurrenceWallTime } from '../../utils/recurrence';
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import {
+  parseSessionStart,
+  sessionStartToDatetimeLocalValue,
+} from '../../utils/datetime';
 
 export function AdminSessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -56,7 +54,7 @@ export function AdminSessionDetailPage() {
     try {
       const d = await fetchSessionDetail(id);
       setDetail(d);
-      setStartLocal(toLocalInput(d.start_time));
+      setStartLocal(sessionStartToDatetimeLocalValue(d.start_time));
       setLocation(d.location);
       setFee(String(d.fee));
       setMinPlayers(String(d.min_players));
@@ -81,7 +79,10 @@ export function AdminSessionDetailPage() {
             ? Intl.DateTimeFormat().resolvedOptions().timeZone
             : 'UTC';
         setRecurrenceTz(localTz);
-        const t = inferRecurrenceWallTime(toLocalInput(d.start_time), localTz);
+        const t = inferRecurrenceWallTime(
+          sessionStartToDatetimeLocalValue(d.start_time),
+          localTz
+        );
         if (t) {
           setRecurrenceWeekday(t.weekday);
           setRecurrenceHour(t.hour);
@@ -196,7 +197,7 @@ export function AdminSessionDetailPage() {
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Session #{detail.id} ·{' '}
-          {format(new Date(detail.start_time), 'PPp')}
+          {format(parseSessionStart(detail.start_time), 'PPp')}
         </p>
       </div>
 

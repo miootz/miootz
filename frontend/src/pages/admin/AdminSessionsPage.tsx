@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Calendar, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { fetchSessions, type SessionListItem } from '../../api/sessionsApi';
+import { parseSessionStart } from '../../utils/datetime';
 import { adminDeleteSession } from '../../api/adminApi';
 
 export function AdminSessionsPage() {
@@ -18,7 +19,8 @@ export function AdminSessionsPage() {
       setSessions(
         [...list].sort(
           (a, b) =>
-            new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+            parseSessionStart(a.start_time).getTime() -
+            parseSessionStart(b.start_time).getTime()
         )
       );
     } catch (e) {
@@ -121,7 +123,7 @@ export function AdminSessionsPage() {
                     {s.location}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {format(new Date(s.start_time), 'PPp')} · {s.min_players}–
+                    {format(parseSessionStart(s.start_time), 'PPp')} · {s.min_players}–
                     {s.max_players} players · {s.waitlist_mode}
                     {s.recurrence_rule_id != null ? (
                       <span className="ml-2 text-violet-600 dark:text-violet-400">
