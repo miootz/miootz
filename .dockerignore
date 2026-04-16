@@ -1,0 +1,22 @@
+# Do not overwrite image .venv from `uv sync` (host symlinks break in-container Python).
+.venv/
+.uv/
+venv/
+ENV/
+
+.git/
+.gitignore
+
+# Frontend and local data are not needed for the API image
+frontend/
+data/
+
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   traefik:
     image: traefik:v2.10
@@ -31,24 +29,58 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.authelia.rule=Host(`auth.footylegends.local`)"
-      - "traefik.http.routers.authelia.entrypoints=web"
+      - "traefik.http.routers.authelia.entrypoints=websecure"
+      - "traefik.http.routers.authelia.tls=true"
       - "traefik.http.services.authelia.loadbalancer.server.port=9091"
 
   api:
     build: .
     container_name: footy_api
     env_file: .env
+    environment:
+      # Traefik sets X-Forwarded-*; require them before trusting Remote-User (spoof protection).
+      AUTH_REQUIRE_FORWARDED_HEADERS: "true"
+      UPLOAD_DIR: /data/uploads
     volumes:
-      - ./app:/app
+      - ./app:/app/app
       - ./data:/data
     networks:
       - web
+    depends_on:
+      - authelia
     labels:
       - "traefik.enable=true"
+      - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
       - "traefik.http.routers.api.rule=Host(`api.footylegends.local`)"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
-      # Authelia Forward Auth middleware would be added here
+      - "traefik.http.middlewares.footy-auth.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+      - "traefik.http.middlewares.footy-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.footy-auth.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
+      - "traefik.http.routers.api.middlewares=footy-auth@docker"
+      - "traefik.http.routers.api-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api-on-app.entrypoints=websecure"
+      - "traefik.http.routers.api-on-app.tls=true"
+      - "traefik.http.routers.api-on-app.middlewares=footy-auth@docker,api-strip@docker"
+      - "traefik.http.routers.api-on-app.service=api"
+      - "traefik.http.routers.api-on-app.priority=100"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: footy_frontend
+    networks:
+      - web
+    depends_on:
+      - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`app.footylegends.local`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls=true"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   gotify:
     image: gotify/server
