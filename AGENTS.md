@@ -7,7 +7,7 @@
   - Database: SQLite (async via `aiosqlite`) with SQLAlchemy.
   - Auth: Uses `AutheliaAuthMiddleware` for authentication.
 - **Frontend**: React + TypeScript + Vite located in `frontend/`.
-- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP), and Gotify (`docker/`). Invite verification provisions users in LDAP (`ldap3`); Authelia authenticates against LDAP in real time.
+- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP), and LDAP Account Manager at `lam.footylegends.local`. Invite verification provisions users in LDAP (`ldap3`); Authelia authenticates against LDAP in real time. Browser push uses Web Push (VAPID) from the API, not a separate notify service.
 
 ## Developer Commands
 
@@ -15,6 +15,7 @@
 
 - **Run API**: `uv run uvicorn app.api.main:app --reload`
 - **Test**: `uv run pytest` (async mode enabled via `pyproject.toml`)
+- **Create admin (DB + OpenLDAP)**: `uv run python -m app.cli --username <uid> --email <mail>` (requires `LDAP_URI`, `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` in `.env`). Use `--skip-ldap` if the LDAP user already exists (e.g. bootstrap `uid=admin`). Optional `--display-name`.
 
 ### Frontend (TS/React)
 

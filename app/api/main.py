@@ -11,6 +11,7 @@ from app.api.middleware import AutheliaAuthMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine, init_db
 from app.models import session_recurrence  # noqa: F401 — register metadata for create_all
+from app.models import web_push_subscription  # noqa: F401
 from app.core.migrations import run_sqlite_migrations
 from app.services.recurrence_scheduler import sync_recurrence_jobs_from_db
 from app.services.scheduler_setup import shutdown_scheduler, start_scheduler

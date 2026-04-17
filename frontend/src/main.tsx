@@ -4,13 +4,27 @@ import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './App.tsx';
 import { AuthProvider } from './auth/AuthProvider';
+import { ThemeProvider } from './theme/ThemeProvider';
+import { ToastProvider } from './context/ToastContext';
+import { applyThemeClass, readStoredTheme } from './theme/themeStorage';
+import { processOutbox } from './offline/outbox';
+
+applyThemeClass(readStoredTheme());
+
+window.addEventListener('online', () => {
+  void processOutbox();
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </StrictMode>
 );

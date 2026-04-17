@@ -4,8 +4,8 @@ import re
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
@@ -74,6 +74,35 @@ async def _send_welcome_email(
         plain,
         html,
     )
+
+
+@router.get("/admin/list")
+async def list_invites_admin(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List invite tokens for the admin UI (newest first)."""
+    result = await db.execute(
+        select(InviteToken)
+        .order_by(desc(InviteToken.created_at))
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+    base = settings.PUBLIC_APP_URL.rstrip("/")
+    return [
+        {
+            "token": r.token,
+            "email": r.email,
+            "created_at": r.created_at.isoformat(),
+            "expires_at": r.expires_at.isoformat(),
+            "used": r.used,
+            "invite_link": f"{base}/invites/verify/{r.token}",
+        }
+        for r in rows
+    ]
 
 
 @router.post("/create")

@@ -1,84 +1,73 @@
 import type { ChatMessage } from '../types';
+import { cacheGet, cachePut, getOfflineDb } from '../offline/db';
+import { CACHE_SESSION_ACTIVE, cacheKeyChat } from '../offline/cacheKeys';
 
-/** Session-scoped cache (tab session). Full reload always refetches meetup data from the API. */
-const STORAGE_KEY = 'footy:sessionChatCache';
-const VERSION = 3 as const;
+const LEGACY_SESSION_STORAGE_KEY = 'footy:sessionChatCache';
+const LEGACY_VERSION = 3;
 
-type Stored = {
-  v: typeof VERSION;
-  chatBySessionId: Record<string, ChatMessage[]>;
-};
+/** One-time migration from sessionStorage (Phase 1) to IndexedDB. */
+let migrationDone = false;
 
-const empty = (): Stored => ({ v: VERSION, chatBySessionId: {} });
-
-function read(): Stored {
+async function migrateFromSessionStorageOnce(): Promise<void> {
+  if (migrationDone) return;
+  migrationDone = true;
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return empty();
-    const parsed = JSON.parse(raw) as Partial<Stored>;
-    if (parsed.v !== VERSION) return empty();
-    return {
-      ...empty(),
-      ...parsed,
-      chatBySessionId:
-        parsed.chatBySessionId && typeof parsed.chatBySessionId === 'object'
-          ? parsed.chatBySessionId
-          : {},
+    const raw = sessionStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as {
+      v?: number;
+      chatBySessionId?: Record<string, ChatMessage[]>;
     };
+    if (parsed.v !== LEGACY_VERSION || !parsed.chatBySessionId) {
+      sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+      return;
+    }
+    for (const [sid, messages] of Object.entries(parsed.chatBySessionId)) {
+      await cachePut(cacheKeyChat(sid), messages);
+    }
+    sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
   } catch {
-    return empty();
+    /* ignore */
   }
 }
 
-function write(data: Stored): void {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    /* quota / private mode */
+/** Clears chat cache and active session snapshot (e.g. when meetup list is empty). */
+export async function clearSessionChatCache(): Promise<void> {
+  const db = await getOfflineDb();
+  const keys = await db.getAllKeys('cache');
+  for (const key of keys) {
+    if (typeof key !== 'string') continue;
+    if (key.startsWith('chat:') || key === CACHE_SESSION_ACTIVE) {
+      await db.delete('cache', key);
+    }
   }
-}
-
-/** Clears chat entries in sessionStorage (e.g. when the active meetup is deleted). */
-export function clearSessionChatCache(): void {
-  write(empty());
 }
 
 /** `undefined` = never cached; array (possibly empty) = known state from a prior load. */
-export function getCachedChatMessages(
+export async function getCachedChatMessages(
   sessionId: string
-): ChatMessage[] | undefined {
-  const s = read();
-  if (!Object.prototype.hasOwnProperty.call(s.chatBySessionId, sessionId)) {
-    return undefined;
-  }
-  return s.chatBySessionId[sessionId];
+): Promise<ChatMessage[] | undefined> {
+  await migrateFromSessionStorageOnce();
+  const env = await cacheGet<ChatMessage[]>(cacheKeyChat(sessionId));
+  if (!env) return undefined;
+  return env.data;
 }
 
-export function setCachedChatMessages(
+export async function setCachedChatMessages(
   sessionId: string,
   messages: ChatMessage[]
-): void {
-  const s = read();
-  write({
-    ...s,
-    chatBySessionId: { ...s.chatBySessionId, [sessionId]: messages },
-  });
+): Promise<void> {
+  await migrateFromSessionStorageOnce();
+  await cachePut(cacheKeyChat(sessionId), messages);
 }
 
-export function appendCachedChatMessage(
+export async function appendCachedChatMessage(
   sessionId: string,
   message: ChatMessage
-): void {
-  const s = read();
-  const prev = s.chatBySessionId[sessionId] ?? [];
-  if (prev.some((m) => m.id === message.id)) {
-    return;
-  }
-  write({
-    ...s,
-    chatBySessionId: {
-      ...s.chatBySessionId,
-      [sessionId]: [...prev, message],
-    },
-  });
+): Promise<void> {
+  await migrateFromSessionStorageOnce();
+  const env = await cacheGet<ChatMessage[]>(cacheKeyChat(sessionId));
+  const prev = env?.data ?? [];
+  if (prev.some((m) => m.id === message.id)) return;
+  await cachePut(cacheKeyChat(sessionId), [...prev, message]);
 }

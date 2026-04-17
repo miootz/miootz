@@ -4,7 +4,12 @@ import {
   fetchRatingContext,
   submitRating,
   type RateeContext,
+  type RatingContextResponse,
 } from '../api/ratingsApi';
+import { cacheGet, cachePut } from '../offline/db';
+import { cacheKeyRatingContext } from '../offline/cacheKeys';
+import { enqueueOutbox, requestBackgroundSync } from '../offline/outbox';
+import { useToast } from '../context/ToastContext';
 import { StarRating } from './StarRating';
 
 interface SessionRatingsPanelProps {
@@ -12,6 +17,7 @@ interface SessionRatingsPanelProps {
 }
 
 export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ratees, setRatees] = useState<RateeContext[]>([]);
@@ -31,9 +37,25 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
       setBeforeStart(ctx.before_session_start);
       setLocked(ctx.ratings_locked);
       setLockHint(ctx.ratings_lock_at);
+      await cachePut(cacheKeyRatingContext(sessionId), ctx);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load ratings');
-      setRatees([]);
+      const cached = await cacheGet<RatingContextResponse>(
+        cacheKeyRatingContext(sessionId)
+      );
+      const offline =
+        typeof navigator !== 'undefined' && !navigator.onLine;
+      if (cached?.data && offline) {
+        const ctx = cached.data;
+        setRatees(ctx.ratees);
+        setEditable(ctx.ratings_editable);
+        setBeforeStart(ctx.before_session_start);
+        setLocked(ctx.ratings_locked);
+        setLockHint(ctx.ratings_lock_at);
+        setError('Offline — showing saved ratings.');
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to load ratings');
+        setRatees([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -48,6 +70,22 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
     setSavingId(rateeId);
     setError(null);
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueOutbox({
+          type: 'rating',
+          sessionId,
+          rateeId,
+          score,
+        });
+        await requestBackgroundSync();
+        setRatees((prev) =>
+          prev.map((r) =>
+            r.user_id === rateeId ? { ...r, my_score: score } : r
+          )
+        );
+        showToast('Rating queued — will save when you’re back online.', 'success');
+        return;
+      }
       await submitRating(sessionId, rateeId, score);
       await load();
     } catch (e) {

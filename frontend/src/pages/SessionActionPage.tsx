@@ -38,15 +38,20 @@ export function SessionActionPage() {
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-6">
-      <div className="max-w-md w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 shadow-lg text-center space-y-4">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-          Session action
-        </h1>
+    <div className="min-h-screen bg-gradient-to-b from-violet-50 to-gray-50 dark:from-gray-950 dark:to-gray-950 flex items-center justify-center p-6">
+      <div className="max-w-md w-full rounded-2xl border border-violet-200/80 dark:border-violet-900/50 bg-white dark:bg-gray-900 p-8 shadow-xl text-center space-y-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+            Footy Legends
+          </p>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Session action
+          </h1>
+        </div>
 
         {phase === 'loading' && (
           <div className="flex flex-col items-center gap-3 text-gray-600 dark:text-gray-400">
-            <Loader2 className="w-10 h-10 animate-spin text-violet-600" aria-hidden />
+            <Loader2 className="w-10 h-10 animate-spin text-violet-600 motion-reduce:animate-none" aria-hidden />
             <p className="text-sm">Processing…</p>
           </div>
         )}

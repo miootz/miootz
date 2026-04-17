@@ -26,6 +26,11 @@ def _sanitize_uid(local_part: str) -> str:
     return s[:48] if s else "user"
 
 
+def sanitized_uid(value: str) -> str:
+    """Normalize a string to a safe LDAP ``uid`` (same rules as invite-derived usernames)."""
+    return _sanitize_uid(value.strip())
+
+
 def _ldap_uri() -> str:
     return (settings.LDAP_URI or "").strip()
 
@@ -51,9 +56,22 @@ def _invite_group_cns() -> list[str]:
     return [g.strip() for g in raw.split(",") if g.strip()]
 
 
-def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple[str, str]:
+def _ldap_admin_group_cns() -> list[str]:
+    """Groups for CLI-created admins (Authelia Remote-Groups must include admins)."""
+    return list(dict.fromkeys(["admins", "members"]))
+
+
+def _provision_ldap_inetorgperson(
+    *,
+    email: str,
+    display_name: str | None,
+    uid_base: str,
+    group_cns: list[str],
+) -> tuple[str, str]:
     """
-    Create an inetOrgPerson under ou=people and add them to configured groups.
+    Create inetOrgPerson under ou=people and add to the given group CNs.
+
+    ``uid_base`` must already be sanitized; it is uniquified if taken.
 
     Returns (uid, plaintext_password).
     """
@@ -64,13 +82,12 @@ def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple
     if not uri or not base or not bind_dn or not bind_pw:
         raise ValueError("LDAP_URI, LDAP_BASE_DN, LDAP_BIND_DN, and LDAP_BIND_PASSWORD must be set")
 
-    local = email.split("@", 1)[0] if "@" in email else email
-    base_uid = _sanitize_uid(local)
     password = secrets.token_urlsafe(20)
     enc_pw = hashed(HASHED_SALTED_SHA, password)
 
+    local = email.split("@", 1)[0] if "@" in email else email
     display = (display_name or "").strip() or local.replace(".", " ").replace("_", " ").title()
-    sn = display.split()[-1] if display.split() else base_uid
+    sn = display.split()[-1] if display.split() else uid_base
 
     mail_norm = email.strip().lower()
     users_base = _users_search_base()
@@ -89,7 +106,7 @@ def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple
         if conn.entries:
             raise ValueError(f"Email already registered in LDAP: {email}")
 
-        uid = base_uid
+        uid = uid_base
         n = 1
         while True:
             esc_uid = escape_filter_chars(uid)
@@ -101,7 +118,7 @@ def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple
             )
             if not conn.entries:
                 break
-            uid = f"{base_uid}_{n}"
+            uid = f"{uid_base}_{n}"
             n += 1
 
         user_dn = f"uid={uid},{users_base}"
@@ -118,11 +135,10 @@ def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple
         if not conn.add(user_dn, attributes=attrs):
             raise RuntimeError(f"LDAP add failed: {conn.result}")
 
-        for cn in _invite_group_cns():
+        for cn in group_cns:
             gdn = _group_dn_for_cn(cn)
             if conn.modify(gdn, {"member": [(MODIFY_ADD, [user_dn])]}):
                 continue
-            # 20 = entryAlreadyExists / attributeOrValueExists for duplicate member
             if (conn.result or {}).get("result") == 20:
                 continue
             logger.warning(
@@ -136,3 +152,38 @@ def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple
 
     logger.info("Provisioned LDAP user %r for email %r", uid, email)
     return uid, password
+
+
+def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple[str, str]:
+    """
+    Create an inetOrgPerson under ou=people and add them to configured groups.
+
+    Returns (uid, plaintext_password).
+    """
+    local = email.split("@", 1)[0] if "@" in email else email
+    base_uid = _sanitize_uid(local)
+    return _provision_ldap_inetorgperson(
+        email=email,
+        display_name=display_name,
+        uid_base=base_uid,
+        group_cns=_invite_group_cns(),
+    )
+
+
+def provision_ldap_admin_user(*, username: str, email: str, display_name: str | None) -> tuple[str, str]:
+    """
+    Create an LDAP user suitable for app admins (``admins`` + ``members`` groups).
+
+    ``username`` is sanitized to the LDAP ``uid`` (must match Authelia ``Remote-User``).
+
+    Returns (uid, plaintext_password).
+    """
+    uid_base = _sanitize_uid(username.strip())
+    if not uid_base:
+        raise ValueError("username must yield a non-empty uid after sanitization")
+    return _provision_ldap_inetorgperson(
+        email=email,
+        display_name=display_name,
+        uid_base=uid_base,
+        group_cns=_ldap_admin_group_cns(),
+    )

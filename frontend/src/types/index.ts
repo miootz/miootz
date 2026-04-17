@@ -5,6 +5,8 @@ export interface User {
   isLocked: boolean;
   /** Resolved `/uploads/...` URL when the server provided a profile picture. */
   avatarUrl?: string;
+  /** Roster attendance row status (non-cancelled attendees only). */
+  attendanceStatus?: 'confirmed' | 'waitlisted';
 }
 
 export interface ChatMessage {
@@ -13,6 +15,10 @@ export interface ChatMessage {
   username: string;
   message: string;
   created_at: string;
+  /** User's profile picture URL (from User.profile_pic). */
+  avatar_url?: string | null;
+  /** Hex color assigned to the user for chat bubbles. */
+  username_color?: string | null;
 }
 
 export interface Team {
@@ -27,9 +33,14 @@ export type TeamAssignmentMode = 'balanced' | 'random';
 export interface Session {
   id: string;
   date: string;
+  /** Raw session `start_time` from the API (for countdown, weather). */
+  startTime?: string;
   attendance: User[];
   teams: Team[];
   location?: string;
+  /** From session detail when coordinates are set (map + precise directions). */
+  latitude?: number | null;
+  longitude?: number | null;
   fee?: number;
   minPlayers?: number;
   maxPlayers?: number;

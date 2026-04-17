@@ -52,22 +52,6 @@ async def send_mailgun_email(to_email: str, subject: str, text_body: str) -> boo
     return True
 
 
-async def send_gotify_notification(title: str, message: str) -> bool:
-    if not settings.GOTIFY_URL or not settings.GOTIFY_APP_TOKEN:
-        logger.debug("Gotify not configured; skip push")
-        return False
-
-    url = f"{settings.GOTIFY_URL.rstrip('/')}/message"
-    params = {"token": settings.GOTIFY_APP_TOKEN}
-    data = {"title": title, "message": message, "priority": 5}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(url, params=params, data=data)
-        if r.status_code >= 400:
-            logger.error("Gotify error %s: %s", r.status_code, r.text)
-            return False
-    return True
-
-
 def format_session_summary(session: GameSession) -> str:
     when = session.start_time
     if isinstance(when, datetime):
@@ -96,11 +80,6 @@ async def notify_new_session_invites(
             text_body=body,
         ):
             emailed += 1
-    if emailed:
-        await send_gotify_notification(
-            "New session",
-            f"{summary}\n({emailed} emails sent)",
-        )
 
 
 async def notify_broadcast_spot_open(
@@ -123,11 +102,6 @@ async def notify_broadcast_spot_open(
             text_body=body,
         ):
             emailed += 1
-    if emailed:
-        await send_gotify_notification(
-            "Spot available",
-            f"{summary} — {emailed} players notified by email.",
-        )
 
 
 async def notify_auto_promoted(session: GameSession, user: User) -> None:

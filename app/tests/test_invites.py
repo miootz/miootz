@@ -62,3 +62,29 @@ async def test_create_and_verify_invite_provisions_user(monkeypatch):
     subjects = [s[1] for s in sent]
     assert any("invited" in x.lower() or "invite" in x.lower() for x in subjects)
     assert any("ready" in x.lower() for x in subjects)
+
+
+@pytest.mark.asyncio
+async def test_admin_list_invites(monkeypatch):
+    async def fake_send(*_a, **_k):
+        return True
+
+    monkeypatch.setattr("app.api.invites.send_smtp_email", fake_send)
+
+    transport = ASGITransport(app=app)
+    headers = {"Remote-User": "admin", "Remote-Groups": "admins"}
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        c = await ac.post(
+            "/invites/create?email=listtest@example.com",
+            headers=headers,
+        )
+        assert c.status_code == 200, c.text
+
+        r = await ac.get("/invites/admin/list", headers=headers)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        row = next(x for x in data if x["email"] == "listtest@example.com")
+        assert "invite_link" in row
+        assert row["used"] is False

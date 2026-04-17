@@ -2,13 +2,14 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
+from app.models.web_push_subscription import WebPushSubscription
 from app.schemas.user import SSOIdentity, UserMe, UserProfileUpdate
 from app.services.skill_service import update_user_calculated_skill
 from pydantic import BaseModel, Field
@@ -121,6 +122,71 @@ async def update_profile(
         await update_user_calculated_skill(db, user_id=user.id)
 
     return {"message": "Profile updated successfully"}
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str
+    keys: dict[str, str]
+
+
+@router.get("/me/push/config")
+async def push_config(_: User = Depends(get_current_user)):
+    """VAPID public key for `PushManager.subscribe` (null if Web Push is disabled)."""
+    return {
+        "publicKey": settings.VAPID_PUBLIC_KEY or None,
+    }
+
+
+@router.post("/me/push/subscription")
+async def save_push_subscription(
+    body: PushSubscriptionIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not settings.VAPID_PUBLIC_KEY or not settings.VAPID_PRIVATE_KEY:
+        raise HTTPException(
+            status_code=503, detail="Web Push is not configured on the server"
+        )
+    p256dh = body.keys.get("p256dh")
+    auth = body.keys.get("auth")
+    if not p256dh or not auth:
+        raise HTTPException(status_code=400, detail="Missing p256dh or auth key")
+
+    result = await db.execute(
+        select(WebPushSubscription).where(
+            WebPushSubscription.endpoint == body.endpoint
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        row.user_id = current_user.id
+        row.p256dh = p256dh
+        row.auth = auth
+    else:
+        db.add(
+            WebPushSubscription(
+                user_id=current_user.id,
+                endpoint=body.endpoint,
+                p256dh=p256dh,
+                auth=auth,
+            )
+        )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/me/push/subscription")
+async def delete_push_subscriptions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await db.execute(
+        delete(WebPushSubscription).where(
+            WebPushSubscription.user_id == current_user.id
+        )
+    )
+    await db.commit()
+    return {"status": "ok"}
 
 
 class AdminSelfAssessedBody(BaseModel):

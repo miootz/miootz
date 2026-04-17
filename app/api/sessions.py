@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
@@ -29,6 +29,10 @@ from app.services.recurrence_scheduler import (
     unregister_recurrence_job,
 )
 from app.services.notifications import notify_new_session_invites
+from app.services.web_push import (
+    notify_session_cancelled_recipients,
+    notify_session_chat_recipients,
+)
 from app.services.recurring_sessions import (
     materialize_next_session_and_notify,
     utc_start_matches_rule,
@@ -144,6 +148,10 @@ class ChatMessageCreate(BaseModel):
     message: str
 
 
+class ChatTypingBody(BaseModel):
+    typing: bool = True
+
+
 def _user_skill(u: User) -> float:
     """Single display skill for matchmaking: calculated first, then fallbacks."""
     if u.calculated_skill is not None:
@@ -249,9 +257,33 @@ async def create_session(
 
 
 @router.get("/", response_model=list[dict])
-async def list_sessions(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(GameSession).order_by(GameSession.start_time.asc()))
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    limit: int | None = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None, description="Filter by location (contains)"),
+):
+    stmt = select(GameSession).order_by(GameSession.start_time.asc())
+    if q and (q := q.strip()):
+        stmt = stmt.where(GameSession.location.ilike(f"%{q}%"))
+    if limit is not None:
+        stmt = stmt.offset(offset).limit(limit)
+    result = await db.execute(stmt)
     sessions = result.scalars().all()
+    if not sessions:
+        return []
+
+    session_ids = [s.id for s in sessions]
+    counts_result = await db.execute(
+        select(Attendance.session_id, func.count(Attendance.id))
+        .where(
+            Attendance.session_id.in_(session_ids),
+            Attendance.status == "confirmed",
+        )
+        .group_by(Attendance.session_id)
+    )
+    confirmed_by_session = {row[0]: row[1] for row in counts_result.all()}
+
     return [
         {
             "id": s.id,
@@ -267,6 +299,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
             or "balanced",
             "content_revision": s.content_revision or 0,
             "recurrence_rule_id": s.recurrence_rule_id,
+            "confirmed_count": confirmed_by_session.get(s.id, 0),
         }
         for s in sessions
     ]
@@ -699,6 +732,7 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    await notify_session_cancelled_recipients(db, session)
     await notify_session_deleted(session_id)
     await db.delete(session)
     await db.commit()
@@ -748,6 +782,13 @@ async def get_session_chat(session_id: int, db: AsyncSession = Depends(get_db)):
         .order_by(ChatMessage.created_at.asc())
     )
     messages = result.scalars().all()
+    def _username_color(username: str) -> str:
+        """Deterministic pastel color from username for chat bubbles."""
+        h = hash(username) & 0xFFFFFF
+        r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
+        # Shift hue toward readable range, keep saturation moderate
+        return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
+
     return [
         {
             "id": m.id,
@@ -755,9 +796,42 @@ async def get_session_chat(session_id: int, db: AsyncSession = Depends(get_db)):
             "username": m.user.username if m.user else "Unknown",
             "message": m.message,
             "created_at": m.created_at,
+            "avatar_url": m.user.profile_pic if m.user else None,
+            "username_color": _username_color(m.user.username if m.user else "Unknown"),
         }
         for m in messages
     ]
+
+
+@router.post("/{session_id}/chat/typing")
+async def chat_typing_indicator(
+    session_id: int,
+    body: ChatTypingBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Broadcast typing state to other chat SSE subscribers (ephemeral, not stored)."""
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    result_session = await db.execute(
+        select(GameSession).where(GameSession.id == session_id)
+    )
+    if not result_session.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    u = request.state.user
+    _username = u.username if hasattr(u, "username") else "Unknown"
+    await chat_manager.broadcast(
+        session_id,
+        {
+            "type": "typing",
+            "user_id": u.id,
+            "username": _username,
+            "typing": body.typing,
+        },
+    )
+    return {"status": "ok"}
 
 
 @router.post("/{session_id}/chat")
@@ -783,15 +857,35 @@ async def send_message(
     await db.commit()
     await db.refresh(new_msg)
 
+    _username = (
+        request.state.user.username
+        if hasattr(request.state.user, "username")
+        else "Unknown"
+    )
+
+    def _username_color(username: str) -> str:
+        h = hash(username) & 0xFFFFFF
+        r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
+        return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
+
     broadcast_data = {
+        "type": "message",
         "id": new_msg.id,
         "user_id": new_msg.user_id,
-        "username": request.state.user.username
-        if hasattr(request.state.user, "username")
-        else "Unknown",
+        "username": _username,
         "message": new_msg.message,
         "created_at": new_msg.created_at.isoformat(),
+        "avatar_url": getattr(request.state.user, "profile_pic", None),
+        "username_color": _username_color(_username),
     }
     await chat_manager.broadcast(session_id, broadcast_data)
+
+    await notify_session_chat_recipients(
+        db,
+        session_id,
+        request.state.user.id,
+        _username,
+        new_msg.message,
+    )
 
     return {"status": "sent", "message_id": new_msg.id}

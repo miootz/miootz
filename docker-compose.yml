@@ -96,19 +96,38 @@ services:
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
-  gotify:
-    image: gotify/server
-    container_name: gotify
+  ldap-account-manager:
+    image: ghcr.io/ldapaccountmanager/lam:stable
+    container_name: ldap_account_manager
+    environment:
+      LAM_LANG: en_US
+      LAM_SKIP_PRECONFIGURE: "false"
+      LAM_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+      LDAP_SERVER: ldap://openldap:389
+      LDAP_DOMAIN: footylegends.local
+      LDAP_BASE_DN: dc=footylegends,dc=local
+      LDAP_USERS_DN: ou=people,dc=footylegends,dc=local
+      LDAP_GROUPS_DN: ou=groups,dc=footylegends,dc=local
+      LDAP_USER: cn=admin,dc=footylegends,dc=local
+      LAM_DISABLE_TLS_CHECK: "true"
+    volumes:
+      - lam_config:/var/lib/ldap-account-manager/config
     networks:
       - web
+    depends_on:
+      openldap:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gotify.rule=Host(`notify.footylegends.local`)"
-      - "traefik.http.routers.gotify.entrypoints=web"
-      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+      - "traefik.http.routers.lam.rule=Host(`lam.footylegends.local`)"
+      - "traefik.http.routers.lam.entrypoints=websecure"
+      - "traefik.http.routers.lam.tls=true"
+      - "traefik.http.services.lam.loadbalancer.server.port=80"
 
   openldap:
-    image: osixia/openldap:1.5.0
+    build:
+      context: ./docker/openldap
+    image: footy-legends-openldap:dev
     container_name: openldap
     environment:
       LDAP_ORGANISATION: "Footy Legends"
@@ -117,7 +136,6 @@ services:
     volumes:
       - openldap_data:/var/lib/ldap
       - openldap_config:/etc/ldap/slapd.d
-      - ./docker/openldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
     networks:
       - web
     healthcheck:
@@ -134,6 +152,7 @@ services:
 volumes:
   openldap_data:
   openldap_config:
+  lam_config:
 
 networks:
   web:

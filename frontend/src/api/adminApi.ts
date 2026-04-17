@@ -127,3 +127,24 @@ export async function adminCreateInvite(email: string): Promise<{
   const r = await apiFetch(`/invites/create?${q}`, { method: 'POST' });
   return jsonOrThrow(r);
 }
+
+export type AdminInviteRow = {
+  token: string;
+  email: string;
+  created_at: string;
+  expires_at: string;
+  used: boolean;
+  invite_link: string;
+};
+
+export async function adminListInvites(options?: {
+  limit?: number;
+  offset?: number;
+}): Promise<AdminInviteRow[]> {
+  const p = new URLSearchParams();
+  if (options?.limit != null) p.set('limit', String(options.limit));
+  if (options?.offset != null) p.set('offset', String(options.offset));
+  const qs = p.toString();
+  const r = await apiFetch(`/invites/admin/list${qs ? `?${qs}` : ''}`);
+  return jsonOrThrow(r);
+}

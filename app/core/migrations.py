@@ -105,6 +105,13 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    if not await has_column("game_sessions", "kickoff_reminder_sent_at"):
+        await conn.execute(
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN kickoff_reminder_sent_at TIMESTAMP"
+            )
+        )
+
     if await has_table("session_recurrence_rules") and not await has_column(
         "session_recurrence_rules", "team_assignment_mode"
     ):

@@ -2,6 +2,21 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Mail, Plus, Wrench } from 'lucide-react';
 import { fetchSessions } from '../../api/sessionsApi';
+import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
+import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
+
+function DashboardSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-pulse">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50 p-5 h-36"
+        />
+      ))}
+    </div>
+  );
+}
 
 export function AdminDashboard() {
   const [count, setCount] = useState<number | null>(null);
@@ -48,21 +63,25 @@ export function AdminDashboard() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
-          Overview
-        </h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Manage Footy Legends sessions, invites, and background tasks.
-        </p>
-      </header>
+      <AdminPageHeader
+        breadcrumb={
+          <AdminBreadcrumb
+            items={[{ label: 'Admin', to: '/admin' }, { label: 'Overview' }]}
+          />
+        }
+        title="Overview"
+        subtitle="Manage Footy Legends sessions, invites, and background tasks."
+      />
 
+      {count === null && !err ? (
+        <DashboardSkeleton />
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map(({ to, title, desc, icon: Icon, stat }) => (
           <Link
             key={to}
             to={to}
-            className="group rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md transition-all"
+            className="group rounded-2xl border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-violet-50/50 to-white dark:from-violet-950/20 dark:to-gray-900 p-5 shadow-sm hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md transition-all active:scale-[0.99]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="rounded-lg bg-violet-100 dark:bg-violet-950 p-2 text-violet-700 dark:text-violet-300">
@@ -79,8 +98,9 @@ export function AdminDashboard() {
           </Link>
         ))}
       </div>
+      )}
 
-      <div className="mt-8 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
+      <div className="mt-8 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center transition-colors">
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           Need a new meetup?
         </p>

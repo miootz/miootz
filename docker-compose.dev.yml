@@ -1,6 +1,8 @@
 services:
   openldap:
-    image: osixia/openldap:1.5.0
+    build:
+      context: ./docker/openldap
+    image: footy-legends-openldap:dev
     container_name: openldap
     environment:
       LDAP_ORGANISATION: "Footy Legends"
@@ -9,7 +11,6 @@ services:
     volumes:
       - openldap_data:/var/lib/ldap
       - openldap_config:/etc/ldap/slapd.d
-      - ./docker/openldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
     networks:
       - web
     healthcheck:
@@ -32,8 +33,11 @@ services:
       - "--providers.docker.exposedbydefault=false"
       # No ACME here: *.footylegends.local is not public-DNS friendly; TLS uses Traefik's default cert.
       - "--entrypoints.websecure.address=:8443"
+      # Plain HTTP for local dev (avoids "404" when hitting :8443 with http:// — websecure is HTTPS-only).
+      - "--entrypoints.web.address=:8880"
     ports:
       - "8443:8443"
+      - "8880:8880"
       - "8081:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
@@ -142,18 +146,6 @@ services:
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
 
-  gotify:
-    image: gotify/server
-    container_name: gotify
-    networks:
-      - web
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.gotify.rule=Host(`notify.footylegends.local`)"
-      - "traefik.http.routers.gotify.entrypoints=websecure"
-      - "traefik.http.routers.gotify.tls=true"
-      - "traefik.http.services.gotify.loadbalancer.server.port=80"
-
   mailhog:
     image: mailhog/mailhog
     container_name: mailhog
@@ -169,10 +161,46 @@ services:
       - "traefik.http.routers.mailhog.tls=true"
       - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
 
+  # Web UI for OpenLDAP (users / groups). Log in with LDAP bind, e.g. cn=admin + LDAP_ADMIN_PASSWORD.
+  ldap-account-manager:
+    image: ghcr.io/ldapaccountmanager/lam:stable
+    container_name: ldap_account_manager
+    environment:
+      LAM_LANG: en_US
+      LAM_SKIP_PRECONFIGURE: "false"
+      # Used for LAM config + LDAP profile password (same as OpenLDAP cn=admin in start.sh).
+      LAM_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+      LDAP_SERVER: ldap://openldap:389
+      LDAP_DOMAIN: footylegends.local
+      LDAP_BASE_DN: dc=footylegends,dc=local
+      LDAP_USERS_DN: ou=people,dc=footylegends,dc=local
+      LDAP_GROUPS_DN: ou=groups,dc=footylegends,dc=local
+      LDAP_USER: cn=admin,dc=footylegends,dc=local
+      LAM_DISABLE_TLS_CHECK: "true"
+    volumes:
+      - lam_config:/var/lib/ldap-account-manager/config
+    networks:
+      - web
+    depends_on:
+      openldap:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      # HTTPS (note: http:// on :8443 does not work — use https:// or the HTTP route below on :8880).
+      - "traefik.http.routers.lam.rule=Host(`lam.footylegends.local`)"
+      - "traefik.http.routers.lam.entrypoints=websecure"
+      - "traefik.http.routers.lam.tls=true"
+      - "traefik.http.routers.lam.service=lam"
+      - "traefik.http.routers.lam-http.rule=Host(`lam.footylegends.local`)"
+      - "traefik.http.routers.lam-http.entrypoints=web"
+      - "traefik.http.routers.lam-http.service=lam"
+      - "traefik.http.services.lam.loadbalancer.server.port=80"
+
 volumes:
   frontend_node_modules:
   openldap_data:
   openldap_config:
+  lam_config:
 
 networks:
   web:

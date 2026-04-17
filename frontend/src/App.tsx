@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { RequireAuth } from './auth/RequireAuth';
-import { RootLanding } from './pages/RootLanding';
+import { MemberLayout } from './layout/MemberLayout';
+import { PlayerHome } from './pages/PlayerHome';
 import { PlayerApp } from './pages/PlayerApp';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
@@ -27,9 +28,11 @@ export default function App() {
           <Route path="invites" element={<AdminInvitesPage />} />
           <Route path="tools" element={<AdminToolsPage />} />
         </Route>
-        <Route path="/" element={<RootLanding />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="*" element={<PlayerApp />} />
+        <Route path="/" element={<MemberLayout />}>
+          <Route index element={<PlayerHome />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<PlayerApp />} />
+        </Route>
       </Route>
     </Routes>
   );

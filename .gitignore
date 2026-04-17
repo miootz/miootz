@@ -94,3 +94,6 @@ Thumbs.db
 # Project
 data/
 docker/traefik/acme.json
+
+
+.pi/

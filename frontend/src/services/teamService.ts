@@ -1,5 +1,28 @@
 import type { User, Team } from '../types';
 
+/** Sum of `skillScore` per team (for balance display). */
+export function teamSkillTotals(teams: Team[]): number[] {
+  return teams.map((t) =>
+    t.players.reduce((sum, p) => sum + p.skillScore, 0)
+  );
+}
+
+export function teamSkillBalanceSummary(teams: Team[]): {
+  totals: number[];
+  maxDiff: number;
+  balanced: boolean;
+} {
+  const totals = teamSkillTotals(teams);
+  if (totals.length === 0) {
+    return { totals: [], maxDiff: 0, balanced: true };
+  }
+  const max = Math.max(...totals);
+  const min = Math.min(...totals);
+  const maxDiff = max - min;
+  const balanced = maxDiff <= 2;
+  return { totals, maxDiff, balanced };
+}
+
 /** Matches backend `team_assignment.team_counts` */
 export function teamCounts(total: number): number[] {
   if (total <= 0) return [];

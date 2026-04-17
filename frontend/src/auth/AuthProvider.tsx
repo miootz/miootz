@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { fetchMe } from '../api/meApi';
+import { fetchMe, type MeResponse } from '../api/meApi';
+import { cacheGet, cachePut } from '../offline/db';
+import { CACHE_PROFILE_ME } from '../offline/cacheKeys';
 import { AuthContext, type AuthState } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -12,9 +14,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await fetchMe();
       setMe(data);
+      if (data) {
+        await cachePut(CACHE_PROFILE_ME, data);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load profile');
-      setMe(null);
+      const cached = await cacheGet<MeResponse>(CACHE_PROFILE_ME);
+      const msg = e instanceof Error ? e.message : 'Failed to load profile';
+      const offline =
+        typeof navigator !== 'undefined' && !navigator.onLine;
+      if (cached?.data) {
+        setMe(cached.data);
+        setError(offline ? 'Offline — showing saved profile.' : msg);
+      } else {
+        setError(msg);
+        setMe(null);
+      }
     } finally {
       setLoading(false);
     }

@@ -6,13 +6,10 @@ import { PlayerApp } from './PlayerApp';
 /**
  * `/` — admins default to `/admin` unless they chose the member (player) home.
  */
-export function RootLanding() {
+export function PlayerHome() {
   const { me } = useAuth();
 
-  if (
-    me?.is_admin &&
-    !getPreferMemberView()
-  ) {
+  if (me?.is_admin && !getPreferMemberView()) {
     return <Navigate to="/admin" replace />;
   }
 

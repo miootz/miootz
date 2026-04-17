@@ -138,3 +138,32 @@ async def test_admin_override():
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "moved"
+
+
+@pytest.mark.asyncio
+async def test_chat_typing_endpoint():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await create_test_user(db, "admin", "admin@test.com", is_admin=True)
+            await create_test_user(db, "typer", "typer@test.com")
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Pitch A",
+                "min_players": 1,
+                "max_players": 5,
+                "send_invite_emails": False,
+            },
+            headers={settings.AUTHELIA_USER_HEADER: "admin"},
+        )
+        assert resp.status_code == 201
+        sid = resp.json()["id"]
+        r2 = await ac.post(
+            f"/sessions/{sid}/chat/typing",
+            json={"typing": True},
+            headers={settings.AUTHELIA_USER_HEADER: "typer"},
+        )
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "ok"

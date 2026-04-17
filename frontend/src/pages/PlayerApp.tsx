@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { Shield, UserCircle } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import { MeetupDetails } from './MeetupDetails';
 import { HistoryPage } from './HistoryPage';
 import type { Session, User, Team } from '../types';
@@ -13,15 +12,20 @@ import {
   type SessionDetail,
   type SessionListItem,
 } from '../api/sessionsApi';
-import { useAuth } from '../auth/useAuth';
 import { mediaUrl } from '../api/meApi';
-import { setPreferMemberView } from '../auth/memberViewStorage';
 import { clearSessionChatCache } from '../stores/sessionChatCache';
+import { recordSessionView } from '../offline/engagement';
+import { loadSessionSnapshot, saveSessionSnapshot } from '../offline/sessionSnapshot';
 import { parseSessionStart } from '../utils/datetime';
+import { useMemberShell } from '../context/MemberShellContext';
+import { MeetupDetailsSkeleton } from '../components/MeetupDetailsSkeleton';
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
   const start = detail.start_time;
-  const date = start.length >= 10 ? start.slice(0, 10) : parseSessionStart(start).toISOString().slice(0, 10);
+  const date =
+    start.length >= 10
+      ? start.slice(0, 10)
+      : parseSessionStart(start).toISOString().slice(0, 10);
   const attendance: User[] = detail.attendees
     .filter(
       (a: SessionDetail['attendees'][number]) => a.status !== 'cancelled'
@@ -32,14 +36,19 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
       skillScore: Math.round(a.skill),
       isLocked: false,
       avatarUrl: mediaUrl(a.profile_pic ?? undefined),
+      attendanceStatus:
+        a.status === 'waitlisted' ? 'waitlisted' : 'confirmed',
     }));
   const ma = detail.my_attendance;
   return {
     id: String(detail.id),
     date,
+    startTime: start,
     attendance,
     teams,
     location: detail.location,
+    latitude: detail.latitude,
+    longitude: detail.longitude,
     fee: detail.fee,
     minPlayers: detail.min_players,
     maxPlayers: detail.max_players,
@@ -53,10 +62,8 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
 }
 
 export function PlayerApp() {
-  const { me, loading: authLoading } = useAuth();
-  const isAdmin = Boolean(me?.is_admin);
+  const { memberView, setHeader } = useMemberShell();
 
-  const [view, setView] = useState<'details' | 'history'>('details');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -66,6 +73,9 @@ export function PlayerApp() {
   >(null);
   const [rosterChannelLive, setRosterChannelLive] = useState(false);
   const [lastRosterSync, setLastRosterSync] = useState<Date | null>(null);
+  const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
+    null
+  );
 
   const loadSession = useCallback(async (sessionId: number) => {
     const [detail, teamsRes] = await Promise.all([
@@ -86,6 +96,8 @@ export function PlayerApp() {
     setSession(mapped);
     setActiveSessionNumericId(sessionId);
     setLastRosterSync(new Date());
+    setOfflineDataUpdatedAt(null);
+    void saveSessionSnapshot(mapped);
   }, []);
 
   const loadInitialData = useCallback(async () => {
@@ -94,7 +106,7 @@ export function PlayerApp() {
     try {
       const list = await fetchSessions();
       if (list.length === 0) {
-        clearSessionChatCache();
+        await clearSessionChatCache();
         setSession(null);
         setActiveSessionNumericId(null);
         setPastSessions([]);
@@ -120,15 +132,32 @@ export function PlayerApp() {
       setPastSessions(past);
 
       if (upcoming.length === 0) {
-        clearSessionChatCache();
+        await clearSessionChatCache();
         setSession(null);
         setActiveSessionNumericId(null);
+        setOfflineDataUpdatedAt(null);
         setError(null);
         return;
       }
       await loadSession(upcoming[0].id);
+      recordSessionView();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      const offline =
+        typeof navigator !== 'undefined' && !navigator.onLine;
+      if (offline) {
+        const snap = await loadSessionSnapshot();
+        if (snap) {
+          setSession(snap.session);
+          setActiveSessionNumericId(Number.parseInt(snap.session.id, 10));
+          setOfflineDataUpdatedAt(new Date(snap.updatedAt));
+          setPastSessions([]);
+          setError(null);
+        } else {
+          setError(e instanceof Error ? e.message : 'Failed to load');
+        }
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to load');
+      }
     } finally {
       setLoading(false);
     }
@@ -161,8 +190,7 @@ export function PlayerApp() {
         data.type === 'session_deleted' &&
         data.session_id === activeSessionNumericId
       ) {
-        clearSessionChatCache();
-        void loadInitialData();
+        void clearSessionChatCache().then(() => loadInitialData());
       }
     };
     es.onerror = () => {
@@ -173,6 +201,34 @@ export function PlayerApp() {
       setRosterChannelLive(false);
     };
   }, [activeSessionNumericId, loadSession, loadInitialData]);
+
+  useEffect(() => {
+    if (loading || !session) {
+      setHeader(null);
+      return;
+    }
+    let line1: string;
+    if (session.startTime) {
+      const k = parseSessionStart(session.startTime);
+      line1 = Number.isNaN(k.getTime())
+        ? session.date
+        : format(k, 'EEE d MMM · HH:mm');
+    } else {
+      try {
+        const d = parseISO(session.date);
+        line1 = Number.isNaN(d.getTime())
+          ? session.date
+          : format(d, 'EEE d MMM');
+      } catch {
+        line1 = session.date;
+      }
+    }
+    setHeader({
+      line1,
+      line2: session.location || undefined,
+    });
+    return () => setHeader(null);
+  }, [session, loading, setHeader]);
 
   const handleToggleLock = (userId: string) => {
     if (!session) return;
@@ -217,80 +273,43 @@ export function PlayerApp() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
-      <nav className="flex flex-wrap justify-center items-center gap-2 sm:gap-4 p-4 border-b border-gray-200 dark:border-gray-800">
-        <button
-          type="button"
-          onClick={() => setView('details')}
-          className={`px-4 py-2 rounded-lg transition-colors ${view === 'details' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-        >
-          Meetup Details
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('history')}
-          className={`px-4 py-2 rounded-lg transition-colors ${view === 'history' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
-        >
-          History
-        </button>
-        <Link
-          to="/profile"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-        >
-          <UserCircle className="w-4 h-4 shrink-0" aria-hidden />
-          Profile
-        </Link>
-        {!authLoading && isAdmin && (
-          <Link
-            to="/admin"
-            onClick={() => setPreferMemberView(false)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-500/50 text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
-          >
-            <Shield className="w-4 h-4 shrink-0" aria-hidden />
-            Admin
-          </Link>
-        )}
-      </nav>
-
+    <>
       <div
-        className={view === 'details' ? 'block' : 'hidden'}
-        aria-hidden={view !== 'details'}
+        className={memberView === 'details' ? 'block' : 'hidden'}
+        aria-hidden={memberView !== 'details'}
       >
-        {loading && (
-          <p className="text-center p-8 text-gray-600 dark:text-gray-400">
-            Loading session…
-          </p>
-        )}
+        {loading && <MeetupDetailsSkeleton />}
         {error && !loading && (
-          <p className="text-center p-8 text-amber-700 dark:text-amber-400 max-w-lg mx-auto">
+          <p className="mx-auto max-w-lg p-8 text-center text-amber-700 dark:text-amber-400">
             {error}
           </p>
         )}
         {!loading && !session && !error && (
-          <p className="text-center p-8 text-gray-600 dark:text-gray-400 max-w-lg mx-auto">
+          <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
             No upcoming meetup. Past sessions are in History.
           </p>
         )}
         {!loading && session && (
-            <MeetupDetails
-              session={session}
-              onToggleLock={handleToggleLock}
-              onMovePlayer={handleMovePlayer}
-              rosterChannelLive={rosterChannelLive}
-              lastRosterSync={lastRosterSync}
-              onRosterUpdated={() =>
-                activeSessionNumericId != null &&
-                void loadSession(activeSessionNumericId)
-              }
-            />
+          <MeetupDetails
+            session={session}
+            onToggleLock={handleToggleLock}
+            onMovePlayer={handleMovePlayer}
+            rosterChannelLive={rosterChannelLive}
+            lastRosterSync={lastRosterSync}
+            offlineDataUpdatedAt={offlineDataUpdatedAt}
+            onRosterUpdated={() =>
+              activeSessionNumericId != null &&
+              void loadSession(activeSessionNumericId)
+            }
+          />
         )}
       </div>
       <div
-        className={view === 'history' ? 'block' : 'hidden'}
-        aria-hidden={view !== 'history'}
+        className={memberView === 'history' ? 'block' : 'hidden'}
+        aria-hidden={memberView !== 'history'}
       >
         <HistoryPage pastSessions={pastSessions} />
       </div>
-    </div>
+    </>
   );
 }

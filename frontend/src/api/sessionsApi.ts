@@ -37,6 +37,8 @@ export interface SessionListItem {
   /** Server bump when roster or session fields change; use to invalidate cached UI. */
   content_revision: number;
   recurrence_rule_id?: number | null;
+  /** Confirmed roster count (list endpoint only; defaults to 0 if omitted). */
+  confirmed_count?: number;
 }
 
 export type AttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
@@ -74,8 +76,18 @@ export interface TeamsResponse {
   }[];
 }
 
-export async function fetchSessions(): Promise<SessionListItem[]> {
-  const r = await apiFetch('/sessions/');
+export async function fetchSessions(options?: {
+  limit?: number;
+  offset?: number;
+  /** Server-side location contains filter */
+  q?: string;
+}): Promise<SessionListItem[]> {
+  const p = new URLSearchParams();
+  if (options?.limit != null) p.set('limit', String(options.limit));
+  if (options?.offset != null) p.set('offset', String(options.offset));
+  if (options?.q?.trim()) p.set('q', options.q.trim());
+  const qs = p.toString();
+  const r = await apiFetch(`/sessions/${qs ? `?${qs}` : ''}`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -105,6 +117,17 @@ export async function leaveSession(id: number): Promise<{ status: string }> {
   const r = await apiFetch(`/sessions/${id}/leave`, { method: 'DELETE' });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string }>;
+}
+
+export async function postSessionChatTyping(
+  sessionId: string | number,
+  typing: boolean
+): Promise<void> {
+  const r = await apiFetch(`/sessions/${sessionId}/chat/typing`, {
+    method: 'POST',
+    body: JSON.stringify({ typing }),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
 }
 
 /** @deprecated use apiBase from client — kept for any legacy imports */

@@ -1,6 +1,19 @@
 {
   "short_name": "FootyLegends",
   "name": "Footy Legends Team Generator",
+  "description": "Organize football meetups, teams, and player invites.",
+  "categories": ["sports", "productivity"],
+  "orientation": "any",
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "form_factor": "narrow",
+      "label": "Meetup and teams"
+    }
+  ],
   "icons": [
     {
       "src": "favicon.svg",
@@ -21,5 +34,21 @@
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#9333ea",
-  "background_color": "#ffffff"
+  "background_color": "#ffffff",
+  "shortcuts": [
+    {
+      "name": "Sessions",
+      "short_name": "Sessions",
+      "description": "View and manage meetups",
+      "url": "/admin/sessions",
+      "icons": [{ "src": "/favicon.svg", "sizes": "64x64" }]
+    },
+    {
+      "name": "New session",
+      "short_name": "New",
+      "description": "Create a meetup",
+      "url": "/admin/sessions/new",
+      "icons": [{ "src": "/favicon.svg", "sizes": "64x64" }]
+    }
+  ]
 }

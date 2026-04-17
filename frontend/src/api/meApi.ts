@@ -26,6 +26,13 @@ export interface MeResponse {
   auth_groups: string[];
 }
 
+export interface UserStats {
+  games_played: number;
+  average_rating: number;
+  total_ratings: number;
+  skill_level: number;
+}
+
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 export async function fetchMe(): Promise<MeResponse | null> {
@@ -33,6 +40,12 @@ export async function fetchMe(): Promise<MeResponse | null> {
   if (r.status === 401) return null;
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<MeResponse>;
+}
+
+export async function fetchMyStats(): Promise<UserStats> {
+  const r = await apiFetch('/users/me/stats');
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<UserStats>;
 }
 
 export async function patchMyProfile(

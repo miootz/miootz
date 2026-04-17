@@ -34,6 +34,10 @@ class GameSession(Base):
     team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
     # Incremented when attendance, session fields, or other player-visible data changes.
     content_revision: Mapped[int] = mapped_column(Integer, default=0)
+    #: Set when the 1-hour kickoff Web Push reminder has been sent (one per session).
+    kickoff_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
     recurrence_rule_id: Mapped[int | None] = mapped_column(
         ForeignKey("session_recurrence_rules.id"),
