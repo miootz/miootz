@@ -97,3 +97,42 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     announce_minute = minute"""
                 )
             )
+
+    if not await has_column("game_sessions", "team_assignment_mode"):
+        await conn.execute(
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN team_assignment_mode VARCHAR DEFAULT 'balanced'"
+            )
+        )
+
+    if await has_table("session_recurrence_rules") and not await has_column(
+        "session_recurrence_rules", "team_assignment_mode"
+    ):
+        await conn.execute(
+            text(
+                "ALTER TABLE session_recurrence_rules ADD COLUMN team_assignment_mode VARCHAR DEFAULT 'balanced'"
+            )
+        )
+
+    if await has_table("ratings"):
+        if not await has_column("ratings", "updated_at"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE ratings ADD COLUMN updated_at TIMESTAMP"
+                )
+            )
+            await conn.execute(
+                text("UPDATE ratings SET updated_at = created_at WHERE updated_at IS NULL")
+            )
+        ridx = await conn.execute(
+            text(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_rating_session_rater_ratee' LIMIT 1"
+            )
+        )
+        if ridx.scalar_one_or_none() is None:
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_rating_session_rater_ratee "
+                    "ON ratings (session_id, rater_id, ratee_id)"
+                )
+            )

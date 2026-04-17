@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
@@ -26,7 +26,9 @@ async def test_rating_constraint_unattended_session():
         await db.refresh(auth_user)
 
         session = GameSession(
-            start_time=datetime.utcnow(), location="Test Park", max_players=10
+            start_time=datetime.utcnow() - timedelta(hours=1),
+            location="Test Park",
+            max_players=10,
         )
         db.add(session)
         await db.commit()
@@ -64,7 +66,9 @@ async def test_anonymity_check():
         await db.refresh(player)
 
         session = GameSession(
-            start_time=datetime.utcnow(), location="Test Park", max_players=10
+            start_time=datetime.utcnow() - timedelta(hours=1),
+            location="Test Park",
+            max_players=10,
         )
         db.add(session)
         await db.commit()
@@ -101,6 +105,7 @@ async def test_anonymity_check():
 
 @pytest.mark.asyncio
 async def test_score_update_verification():
+    """Two ratings in different sessions; no earlier session locks the first."""
     async with async_session() as db:
         auth_user = User(username="tester", email="test@test.com")
         player1 = User(username="p1", email="p1@test.com")
@@ -110,7 +115,9 @@ async def test_score_update_verification():
         await db.refresh(player1)
 
         session = GameSession(
-            start_time=datetime.utcnow(), location="Test Park", max_players=10
+            start_time=datetime.utcnow() - timedelta(days=2),
+            location="Test Park",
+            max_players=10,
         )
         db.add(session)
         await db.commit()
@@ -120,22 +127,12 @@ async def test_score_update_verification():
             db.add(Attendance(session_id=session.id, user_id=uid))
         await db.commit()
 
-        session2 = GameSession(
-            start_time=datetime.utcnow(), location="Test Park 2", max_players=10
-        )
-        db.add(session2)
-        await db.commit()
-        await db.refresh(session2)
-        db.add(Attendance(session_id=session2.id, user_id=auth_user.id))
-        await db.commit()
-
         sid1 = session.id
-        sid2 = session2.id
         p1id = player1.id
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        await ac.post(
+        r1 = await ac.post(
             "/ratings/",
             headers={settings.AUTHELIA_USER_HEADER: "tester"},
             json={
@@ -144,7 +141,23 @@ async def test_score_update_verification():
                 "score": 5,
             },
         )
-        await ac.post(
+        assert r1.status_code == 200
+
+        async with async_session() as db:
+            session2 = GameSession(
+                start_time=datetime.utcnow() - timedelta(days=1),
+                location="Test Park 2",
+                max_players=10,
+            )
+            db.add(session2)
+            await db.commit()
+            await db.refresh(session2)
+            db.add(Attendance(session_id=session2.id, user_id=auth_user.id))
+            db.add(Attendance(session_id=session2.id, user_id=player1.id))
+            await db.commit()
+            sid2 = session2.id
+
+        r2 = await ac.post(
             "/ratings/",
             headers={settings.AUTHELIA_USER_HEADER: "tester"},
             json={
@@ -153,6 +166,7 @@ async def test_score_update_verification():
                 "score": 3,
             },
         )
+        assert r2.status_code == 200
 
         resp = await ac.get(
             f"/ratings/players/{p1id}",

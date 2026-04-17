@@ -108,6 +108,9 @@ class AutheliaAuthMiddleware(BaseHTTPMiddleware):
         request.state.user = None
         request.state.is_admin = False
         request.state.auth_groups = []
+        request.state.sso_username = None
+        request.state.sso_email = None
+        request.state.sso_display_name = None
 
         trust_headers = True
         if settings.AUTH_REQUIRE_FORWARDED_HEADERS:
@@ -123,9 +126,18 @@ class AutheliaAuthMiddleware(BaseHTTPMiddleware):
         email = None
 
         if trust_headers:
-            username = request.headers.get(settings.AUTHELIA_USER_HEADER)
+            raw_u = request.headers.get(settings.AUTHELIA_USER_HEADER)
             groups_raw = request.headers.get(settings.AUTHELIA_GROUPS_HEADER)
-            email = request.headers.get(settings.AUTHELIA_EMAIL_HEADER)
+            raw_e = request.headers.get(settings.AUTHELIA_EMAIL_HEADER)
+            raw_name = request.headers.get(settings.AUTHELIA_NAME_HEADER)
+            request.state.sso_username = (raw_u or "").strip() or None
+            request.state.sso_email = (raw_e or "").strip() or None
+            request.state.sso_display_name = (raw_name or "").strip() or None
+            username = request.state.sso_username
+            email = request.state.sso_email
+        else:
+            username = None
+            email = None
 
         groups = _parse_groups(groups_raw)
         request.state.auth_groups = groups

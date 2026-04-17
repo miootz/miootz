@@ -95,7 +95,7 @@ async def test_materialize_next_idempotent():
         await db.commit()
 
     with patch(
-        "app.services.recurring_sessions.notify_new_recurring_session_invites",
+        "app.services.recurring_sessions.notify_new_session_invites",
         new_callable=AsyncMock,
     ):
         a1 = await materialize_next_session_and_notify(rule_id)
@@ -134,6 +134,7 @@ async def test_create_session_with_recurrence_admin():
                 "announce_hour": 10,
                 "announce_minute": 0,
             },
+            "send_invite_emails": False,
         }
         r = await ac.post(
             "/sessions/",
@@ -171,6 +172,7 @@ async def test_create_session_recurrence_mismatch_rejected():
                 "announce_hour": 9,
                 "announce_minute": 0,
             },
+            "send_invite_emails": False,
         }
         r = await ac.post(
             "/sessions/",

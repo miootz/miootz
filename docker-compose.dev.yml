@@ -1,4 +1,28 @@
 services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: "Footy Legends"
+      LDAP_DOMAIN: "footylegends.local"
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - openldap_data:/var/lib/ldap
+      - openldap_config:/etc/ldap/slapd.d
+      - ./docker/openldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
+    networks:
+      - web
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'ldapsearch -x -H ldap://127.0.0.1 -D cn=admin,dc=footylegends,dc=local -w "$$LDAP_ADMIN_PASSWORD" -b dc=footylegends,dc=local -s base',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
+
   traefik:
     image: traefik:v2.10
     container_name: traefik
@@ -22,11 +46,15 @@ services:
     environment:
       # Portal is on :8443 in this compose file; session cookie URL must match the browser origin.
       AUTHELIA_SESSION_COOKIES_0_AUTHELIA_URL: "https://auth.footylegends.local:8443"
+      # Match OpenLDAP admin password (docker/openldap bootstrap uses LDAP_ADMIN_PASSWORD).
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./docker/authelia/config.yml:/config/configuration.yml
-      - ./docker/authelia/users.yml:/config/users.yml
     networks:
       - web
+    depends_on:
+      openldap:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.authelia.rule=Host(`auth.footylegends.local`)"
@@ -41,13 +69,30 @@ services:
     environment:
       AUTH_REQUIRE_FORWARDED_HEADERS: "true"
       UPLOAD_DIR: /data/uploads
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_STARTTLS: "false"
+      SMTP_USE_TLS: "false"
+      AUTH_PORTAL_URL: "https://auth.footylegends.local:8443"
+      LDAP_URI: ldap://openldap:389
+      LDAP_BASE_DN: dc=footylegends,dc=local
+      LDAP_BIND_DN: cn=admin,dc=footylegends,dc=local
+      LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+      LDAP_USERS_OU: ou=people
+      LDAP_GROUPS_OU: ou=groups
+      AUTHELIA_INVITE_DEFAULT_GROUPS: members
     volumes:
       - ./app:/app/app
       - ./data:/data
     networks:
       - web
     depends_on:
-      - authelia
+      openldap:
+        condition: service_healthy
+      authelia:
+        condition: service_started
+      mailhog:
+        condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
@@ -126,6 +171,8 @@ services:
 
 volumes:
   frontend_node_modules:
+  openldap_data:
+  openldap_config:
 
 networks:
   web:

@@ -1,5 +1,14 @@
 import { apiBase, apiFetch, parseApiError } from './client';
 
+/** Same-origin URL for session roster/detail SSE (join, leave, admin moves, team reshuffle). */
+export function sessionDataEventsUrl(sessionId: number): string {
+  return `${apiBase()}/sessions/${sessionId}/data/events`;
+}
+
+export function sessionChatEventsUrl(sessionId: string | number): string {
+  return `${apiBase()}/sessions/${sessionId}/chat/events`;
+}
+
 export interface SessionRecurrenceInfo {
   id: number;
   timezone: string;
@@ -11,6 +20,7 @@ export interface SessionRecurrenceInfo {
   announce_hour: number;
   announce_minute: number;
   is_active: boolean;
+  team_assignment_mode?: string;
 }
 
 export interface SessionListItem {
@@ -23,6 +33,7 @@ export interface SessionListItem {
   latitude: number | null;
   longitude: number | null;
   waitlist_mode: string;
+  team_assignment_mode?: string;
   /** Server bump when roster or session fields change; use to invalidate cached UI. */
   content_revision: number;
   recurrence_rule_id?: number | null;
@@ -31,14 +42,18 @@ export interface SessionListItem {
 export type AttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 
 export interface SessionDetail extends SessionListItem {
+  team_assignment_mode?: string;
   recurrence?: SessionRecurrenceInfo | null;
   attendees: {
     user_id: number;
     username: string;
     full_name: string | null;
+    profile_pic: string | null;
     status: string;
     joined_at: string | null;
     skill: number;
+    self_assessed_skill?: number | null;
+    calculated_skill?: number | null;
   }[];
   /** Present when the request is authenticated; caller's registration for this session. */
   my_attendance: AttendanceStatus | null;
@@ -54,6 +69,7 @@ export interface TeamsResponse {
       name: string;
       skillScore: number;
       isLocked: boolean;
+      profilePic?: string | null;
     }[];
   }[];
 }

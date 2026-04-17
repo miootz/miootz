@@ -9,7 +9,18 @@ class Settings(BaseSettings):
     MAILGUN_API_KEY: str = ""
     MAILGUN_DOMAIN: str = ""
     MAIL_FROM: str = "Footy Legends <noreply@localhost>"
+
+    # SMTP (invite emails, etc.). Mailhog dev: SMTP_HOST=localhost SMTP_PORT=1025
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 1025
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = False
+    SMTP_STARTTLS: bool = False
+    #: From address for SMTP sends (can match MAIL_FROM).
+    SMTP_FROM: str = ""
     UPLOAD_DIR: str = "./data/uploads"
+    MAX_AVATAR_BYTES: int = 2 * 1024 * 1024
     SMS_GATEWAY_MOCK: bool = True
 
     # --- Authelia / reverse-proxy (Traefik forward-auth) ---
@@ -46,14 +57,32 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "UTC"
 
-    # Optional: append invited users as YAML snippets for manual Authelia merge
-    AUTHELIA_USERS_YML_PATH: str = ""
+    #: Optional comma-separated LDAP group CNs (under ou=groups) for invited users (default: members).
+    AUTHELIA_INVITE_DEFAULT_GROUPS: str = ""
+    #: Alias for AUTHELIA_INVITE_DEFAULT_GROUPS (comma-separated group CNs).
+    LDAP_INVITE_GROUP_CNS: str = ""
+
+    # OpenLDAP — invite verification provisions inetOrgPerson entries (real-time auth; no file refresh delay).
+    LDAP_URI: str = ""
+    LDAP_BASE_DN: str = ""
+    LDAP_BIND_DN: str = ""
+    LDAP_BIND_PASSWORD: str = ""
+    #: RDN under base_dn for users, e.g. ou=people
+    LDAP_USERS_OU: str = "ou=people"
+    #: RDN under base_dn for groups, e.g. ou=groups
+    LDAP_GROUPS_OU: str = "ou=groups"
+    #: Link shown in welcome email (Authelia login portal). Empty = omitted from template.
+    AUTH_PORTAL_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env")
 
     @property
     def admin_group_names(self) -> set[str]:
         return {g.strip().lower() for g in self.AUTH_ADMIN_GROUPS.split(",") if g.strip()}
+
+    @property
+    def smtp_from_address(self) -> str:
+        return (self.SMTP_FROM or self.MAIL_FROM).strip() or "Footy Legends <noreply@localhost>"
 
 
 settings = Settings()

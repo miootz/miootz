@@ -31,10 +31,26 @@ export const SortablePlayer: React.FC<SortablePlayerProps> = ({ player, id }) =>
       style={style} 
       {...attributes} 
       {...listeners}
-      className="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700 cursor-grab active:cursor-grabbing hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
+      className="flex justify-between items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700 cursor-grab active:cursor-grabbing hover:border-purple-400 dark:hover:border-purple-500 transition-colors"
     >
-      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{player.name}</span>
-      <span className="text-xs text-gray-400">{player.skillScore}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        {player.avatarUrl ? (
+          <img
+            src={player.avatarUrl}
+            alt=""
+            className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-200 dark:bg-gray-700"
+          />
+        ) : (
+          <div
+            className="w-8 h-8 rounded-full shrink-0 bg-gray-200 dark:bg-gray-700"
+            aria-hidden
+          />
+        )}
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+          {player.name}
+        </span>
+      </div>
+      <span className="text-xs text-gray-400 shrink-0">{player.skillScore}</span>
     </div>
   );
 };

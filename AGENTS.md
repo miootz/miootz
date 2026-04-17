@@ -7,7 +7,7 @@
   - Database: SQLite (async via `aiosqlite`) with SQLAlchemy.
   - Auth: Uses `AutheliaAuthMiddleware` for authentication.
 - **Frontend**: React + TypeScript + Vite located in `frontend/`.
-- **Infrastructure**: Dockerized setup with Traefik, Authelia, and Gotify (`docker/`).
+- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP), and Gotify (`docker/`). Invite verification provisions users in LDAP (`ldap3`); Authelia authenticates against LDAP in real time.
 
 ## Developer Commands
 

@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import {
   adminCreateSession,
   type SessionCreateBody,
+  type TeamAssignmentMode,
   type WaitlistMode,
 } from '../../api/adminApi';
 import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
@@ -26,6 +27,7 @@ export function AdminSessionNewPage() {
   const [minPlayers, setMinPlayers] = useState('10');
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
 
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
   const [recurrenceTz, setRecurrenceTz] = useState(() =>
@@ -44,6 +46,7 @@ export function AdminSessionNewPage() {
   const [announceWeekday, setAnnounceWeekday] = useState(0);
   const [announceHour, setAnnounceHour] = useState(9);
   const [announceMinute, setAnnounceMinute] = useState(0);
+  const [sendInviteEmails, setSendInviteEmails] = useState(true);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,6 +66,8 @@ export function AdminSessionNewPage() {
         min_players: min,
         max_players: max,
         waitlist_mode: waitlistMode,
+        team_assignment_mode: teamMode,
+        send_invite_emails: sendInviteEmails,
       };
       if (recurrenceEnabled) {
         body.recurrence = {
@@ -232,6 +237,30 @@ export function AdminSessionNewPage() {
           </select>
         </div>
 
+        <div>
+          <label
+            htmlFor="team-mode"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
+            Team assignment
+          </label>
+          <select
+            id="team-mode"
+            value={teamMode}
+            onChange={(e) =>
+              setTeamMode(e.target.value as TeamAssignmentMode)
+            }
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100"
+          >
+            <option value="balanced">Balanced (skill snake)</option>
+            <option value="random">Random order (snake)</option>
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Stored on this session and on the recurrence rule when weekly repeat is
+            enabled (future instances copy it).
+          </p>
+        </div>
+
         <AdminSessionRecurrenceForm
           startLocal={startLocal}
           enabled={recurrenceEnabled}
@@ -267,6 +296,24 @@ export function AdminSessionNewPage() {
           announceMinute={announceMinute}
           onAnnounceMinuteChange={setAnnounceMinute}
         />
+
+        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-950/40 px-3 py-3">
+          <input
+            type="checkbox"
+            checked={sendInviteEmails}
+            onChange={(e) => setSendInviteEmails(e.target.checked)}
+            className="mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+          />
+          <span className="text-sm text-gray-700 dark:text-gray-300">
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              Email all players
+            </span>
+            <span className="block text-gray-600 dark:text-gray-400 mt-0.5">
+              Send join links (confirm / cancel) to everyone with an email — same
+              as automated recurring announcements.
+            </span>
+          </span>
+        </label>
 
         <div className="flex flex-wrap gap-3 pt-2">
           <button

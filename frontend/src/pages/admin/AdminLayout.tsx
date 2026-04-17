@@ -5,6 +5,7 @@ import {
   Home,
   LayoutDashboard,
   Mail,
+  UserCircle,
   Wrench,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -86,6 +87,10 @@ export function AdminLayout() {
           <NavLink to="/admin/tools" className={navCls}>
             <Wrench className="w-4 h-4 shrink-0" />
             Tools
+          </NavLink>
+          <NavLink to="/profile" className={navCls}>
+            <UserCircle className="w-4 h-4 shrink-0" />
+            Profile
           </NavLink>
         </nav>
         <div className="hidden md:block p-4 mt-auto border-t border-gray-200 dark:border-gray-800">

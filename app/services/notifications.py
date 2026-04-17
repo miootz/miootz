@@ -75,10 +75,10 @@ def format_session_summary(session: GameSession) -> str:
     return f"{when} @ {session.location} (fee: {session.fee})"
 
 
-async def notify_new_recurring_session_invites(
+async def notify_new_session_invites(
     session: GameSession, recipients: Iterable[User]
 ) -> None:
-    """New session from weekly rule — personalized confirm/cancel links."""
+    """Email all given users personalized confirm/cancel links (admin create or recurrence job)."""
     summary = format_session_summary(session)
     emailed = 0
     for user in recipients:
@@ -98,7 +98,7 @@ async def notify_new_recurring_session_invites(
             emailed += 1
     if emailed:
         await send_gotify_notification(
-            "New recurring session",
+            "New session",
             f"{summary}\n({emailed} emails sent)",
         )
 

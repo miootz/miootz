@@ -2,6 +2,8 @@ import { apiFetch, parseApiError } from './client';
 
 export type WaitlistMode = 'broadcast' | 'auto_promote';
 
+export type TeamAssignmentMode = 'balanced' | 'random';
+
 export interface RecurrenceConfigBody {
   enabled: boolean;
   timezone: string;
@@ -23,7 +25,10 @@ export interface SessionCreateBody {
   latitude?: number | null;
   longitude?: number | null;
   waitlist_mode?: WaitlistMode;
+  team_assignment_mode?: TeamAssignmentMode;
   recurrence?: RecurrenceConfigBody;
+  /** When true (default), email all users with join links — same as recurrence announcements. */
+  send_invite_emails?: boolean;
 }
 
 export interface SessionUpdateBody {
@@ -35,6 +40,7 @@ export interface SessionUpdateBody {
   latitude?: number | null;
   longitude?: number | null;
   waitlist_mode?: WaitlistMode;
+  team_assignment_mode?: TeamAssignmentMode;
   recurrence?: RecurrenceConfigBody;
 }
 
@@ -66,6 +72,26 @@ export async function adminUpdateSession(
 
 export async function adminDeleteSession(id: number): Promise<{ status: string }> {
   const r = await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+  return jsonOrThrow(r);
+}
+
+export async function adminReshuffleTeams(
+  sessionId: number
+): Promise<{ status: string; content_revision?: number }> {
+  const r = await apiFetch(`/sessions/${sessionId}/teams/reshuffle`, {
+    method: 'POST',
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminSetUserSelfAssessedSkill(
+  userId: number,
+  selfAssessedSkill: number
+): Promise<{ message: string }> {
+  const r = await apiFetch(`/users/${userId}/self-assessed-skill`, {
+    method: 'PATCH',
+    body: JSON.stringify({ self_assessed_skill: selfAssessedSkill }),
+  });
   return jsonOrThrow(r);
 }
 

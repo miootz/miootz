@@ -10,11 +10,14 @@ import { AdminSessionDetailPage } from './pages/admin/AdminSessionDetailPage';
 import { AdminInvitesPage } from './pages/admin/AdminInvitesPage';
 import { AdminToolsPage } from './pages/admin/AdminToolsPage';
 import { SessionActionPage } from './pages/SessionActionPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { InviteVerifyPage } from './pages/InviteVerifyPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/session-action" element={<SessionActionPage />} />
+      <Route path="/invites/verify/:token" element={<InviteVerifyPage />} />
       <Route element={<RequireAuth />}>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
@@ -25,6 +28,7 @@ export default function App() {
           <Route path="tools" element={<AdminToolsPage />} />
         </Route>
         <Route path="/" element={<RootLanding />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<PlayerApp />} />
       </Route>
     </Routes>

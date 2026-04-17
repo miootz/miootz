@@ -16,10 +16,7 @@ export function SessionActionPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      setPhase('missing');
-      return;
-    }
+    if (!token) return;
     let cancelled = false;
     (async () => {
       try {

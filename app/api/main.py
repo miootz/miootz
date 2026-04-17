@@ -73,8 +73,9 @@ async def health_check():
 async def get_me(request: Request):
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    body = users.me_envelope(request, request.state.user)
     return {
-        "user": request.state.user,
+        **body,
         "is_admin": getattr(request.state, "is_admin", False),
         "auth_groups": getattr(request.state, "auth_groups", []),
     }

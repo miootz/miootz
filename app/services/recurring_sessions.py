@@ -13,7 +13,7 @@ from app.core.database import async_session
 from app.models.session import GameSession
 from app.models.session_recurrence import SessionRecurrenceRule
 from app.models.user import User
-from app.services.notifications import notify_new_recurring_session_invites
+from app.services.notifications import notify_new_session_invites
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,8 @@ async def materialize_next_session_and_notify(rule_id: int) -> bool:
             latitude=rule.latitude,
             longitude=rule.longitude,
             waitlist_mode=rule.waitlist_mode,
+            team_assignment_mode=getattr(rule, "team_assignment_mode", None)
+            or "balanced",
             recurrence_rule_id=rule.id,
         )
         db.add(session)
@@ -109,7 +111,7 @@ async def materialize_next_session_and_notify(rule_id: int) -> bool:
         result = await db.execute(select(User))
         recipients = [u for u in result.scalars().all() if u.email]
         if recipients:
-            await notify_new_recurring_session_invites(session, recipients)
+            await notify_new_session_invites(session, recipients)
 
         logger.info(
             "Recurrence rule %s: created session %s at %s",

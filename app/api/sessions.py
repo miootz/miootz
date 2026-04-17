@@ -23,17 +23,27 @@ from app.services.session_revision import (
     notify_session_data_changed,
     notify_session_deleted,
 )
-from app.services.team_assignment import assign_teams_snake
+from app.services.team_assignment import assign_teams_random, assign_teams_snake
 from app.services.recurrence_scheduler import (
     register_recurrence_job,
     unregister_recurrence_job,
 )
+from app.services.notifications import notify_new_session_invites
 from app.services.recurring_sessions import (
     materialize_next_session_and_notify,
     utc_start_matches_rule,
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+TEAM_ASSIGNMENT_MODES = frozenset({"balanced", "random"})
+
+
+def _normalize_team_mode(v: str) -> str:
+    x = (v or "balanced").lower().strip()
+    if x not in TEAM_ASSIGNMENT_MODES:
+        raise ValueError("team_assignment_mode must be 'balanced' or 'random'")
+    return x
 
 
 class RecurrenceConfig(BaseModel):
@@ -68,7 +78,10 @@ class SessionCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str = Field(default="auto_promote")
+    team_assignment_mode: str = Field(default="balanced")
     recurrence: RecurrenceConfig | None = None
+    #: When True (default), email all users with join links — same content as recurrence announcements.
+    send_invite_emails: bool = True
 
     @field_validator("waitlist_mode")
     @classmethod
@@ -76,6 +89,11 @@ class SessionCreate(BaseModel):
         if v.lower() not in ("broadcast", "auto_promote"):
             raise ValueError("waitlist_mode must be 'broadcast' or 'auto_promote'")
         return v.lower()
+
+    @field_validator("team_assignment_mode")
+    @classmethod
+    def team_mode_create(cls, v: str) -> str:
+        return _normalize_team_mode(v)
 
     @model_validator(mode="after")
     def caps(self):
@@ -111,7 +129,15 @@ class SessionUpdate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str | None = None
+    team_assignment_mode: str | None = None
     recurrence: RecurrenceConfig | None = None
+
+    @field_validator("team_assignment_mode")
+    @classmethod
+    def team_mode_update(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _normalize_team_mode(v)
 
 
 class ChatMessageCreate(BaseModel):
@@ -119,7 +145,15 @@ class ChatMessageCreate(BaseModel):
 
 
 def _user_skill(u: User) -> float:
-    v = u.calculated_skill or u.skill_level or u.self_assessed_skill
+    """Single display skill for matchmaking: calculated first, then fallbacks."""
+    if u.calculated_skill is not None:
+        v = u.calculated_skill
+    elif u.self_assessed_skill is not None:
+        v = u.self_assessed_skill
+    elif u.skill_level is not None:
+        v = u.skill_level
+    else:
+        v = None
     return float(v) if v is not None else 50.0
 
 
@@ -137,6 +171,8 @@ def _recurrence_json(rule: SessionRecurrenceRule | None) -> dict | None:
         "announce_hour": rule.announce_hour,
         "announce_minute": rule.announce_minute,
         "is_active": rule.is_active,
+        "team_assignment_mode": getattr(rule, "team_assignment_mode", None)
+        or "balanced",
     }
 
 
@@ -146,7 +182,7 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    payload = session_data.model_dump(exclude={"recurrence"})
+    payload = session_data.model_dump(exclude={"recurrence", "send_invite_emails"})
     rule: SessionRecurrenceRule | None = None
     if session_data.recurrence and session_data.recurrence.enabled:
         cfg = session_data.recurrence
@@ -166,6 +202,7 @@ async def create_session(
             latitude=payload.get("latitude"),
             longitude=payload.get("longitude"),
             waitlist_mode=payload["waitlist_mode"],
+            team_assignment_mode=payload.get("team_assignment_mode", "balanced"),
             is_active=True,
         )
         db.add(rule)
@@ -186,6 +223,13 @@ async def create_session(
     )
     if rule_out and rule_out.is_active:
         register_recurrence_job(rule_out)
+
+    if session_data.send_invite_emails:
+        result = await db.execute(select(User))
+        recipients = [u for u in result.scalars().all() if u.email]
+        if recipients:
+            await notify_new_session_invites(new_session, recipients)
+
     return {
         "id": new_session.id,
         "start_time": new_session.start_time,
@@ -196,6 +240,8 @@ async def create_session(
         "latitude": new_session.latitude,
         "longitude": new_session.longitude,
         "waitlist_mode": new_session.waitlist_mode,
+        "team_assignment_mode": getattr(new_session, "team_assignment_mode", None)
+        or "balanced",
         "content_revision": new_session.content_revision or 0,
         "recurrence_rule_id": new_session.recurrence_rule_id,
         "recurrence": _recurrence_json(rule_out),
@@ -217,6 +263,8 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
             "latitude": s.latitude,
             "longitude": s.longitude,
             "waitlist_mode": s.waitlist_mode,
+            "team_assignment_mode": getattr(s, "team_assignment_mode", None)
+            or "balanced",
             "content_revision": s.content_revision or 0,
             "recurrence_rule_id": s.recurrence_rule_id,
         }
@@ -252,9 +300,12 @@ async def get_session(
                 "user_id": user.id,
                 "username": user.username,
                 "full_name": user.full_name,
+                "profile_pic": user.profile_pic,
                 "status": att.status,
                 "joined_at": att.joined_at.isoformat() if att.joined_at else None,
                 "skill": _user_skill(user),
+                "self_assessed_skill": user.self_assessed_skill,
+                "calculated_skill": user.calculated_skill,
             }
         )
 
@@ -276,6 +327,8 @@ async def get_session(
         "latitude": session.latitude,
         "longitude": session.longitude,
         "waitlist_mode": session.waitlist_mode,
+        "team_assignment_mode": getattr(session, "team_assignment_mode", None)
+        or "balanced",
         "content_revision": session.content_revision or 0,
         "recurrence_rule_id": session.recurrence_rule_id,
         "recurrence": _recurrence_json(session.recurrence_rule),
@@ -306,10 +359,15 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
             "name": user.full_name or user.username,
             "skill": _user_skill(user),
             "user_id": user.id,
+            "profile_pic": user.profile_pic,
         }
         for _, user in rows
     ]
-    teams = assign_teams_snake(players)
+    mode = getattr(session, "team_assignment_mode", None) or "balanced"
+    if mode == "random":
+        teams = assign_teams_random(players)
+    else:
+        teams = assign_teams_snake(players)
     out = []
     for i, team in enumerate(teams, start=1):
         out.append(
@@ -321,6 +379,7 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
                         "name": p["name"],
                         "skillScore": p["skill"],
                         "isLocked": False,
+                        "profilePic": p.get("profile_pic"),
                     }
                     for p in team
                 ],
@@ -331,6 +390,30 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
         "content_revision": session.content_revision or 0,
         "teams": out,
     }
+
+
+@router.post("/{session_id}/teams/reshuffle")
+async def reshuffle_session_teams(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Re-randomize teams (only when `team_assignment_mode` is `random`)."""
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    mode = getattr(session, "team_assignment_mode", None) or "balanced"
+    if mode != "random":
+        raise HTTPException(
+            status_code=400,
+            detail="Reshuffle only applies when team_assignment_mode is random",
+        )
+    rev = await bump_session_revision(db, session_id)
+    await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
+    return {"status": "reshuffled", "content_revision": rev}
 
 
 @router.patch("/{session_id}")
@@ -358,6 +441,13 @@ async def update_session(
 
     for key, value in data.items():
         setattr(session, key, value)
+
+    if "team_assignment_mode" in data and session.recurrence_rule_id:
+        rr_sync = await db.get(SessionRecurrenceRule, session.recurrence_rule_id)
+        if rr_sync:
+            rr_sync.team_assignment_mode = getattr(
+                session, "team_assignment_mode", None
+            ) or "balanced"
 
     if rec_cfg is not None:
         cfg = RecurrenceConfig.model_validate(rec_cfg)
@@ -400,6 +490,9 @@ async def update_session(
                     rr.latitude = session.latitude
                     rr.longitude = session.longitude
                     rr.waitlist_mode = session.waitlist_mode
+                    rr.team_assignment_mode = getattr(
+                        session, "team_assignment_mode", None
+                    ) or "balanced"
                     rr.is_active = True
                 else:
                     session.recurrence_rule_id = None
@@ -420,6 +513,8 @@ async def update_session(
                     latitude=session.latitude,
                     longitude=session.longitude,
                     waitlist_mode=session.waitlist_mode,
+                    team_assignment_mode=getattr(session, "team_assignment_mode", None)
+                    or "balanced",
                     is_active=True,
                 )
                 db.add(rr)

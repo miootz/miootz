@@ -17,3 +17,21 @@ class RatingResponse(BaseModel):
     ratee_id: int
     score: int
     created_at: datetime
+    updated_at: datetime
+
+
+class RateeContext(BaseModel):
+    user_id: int
+    display_name: str
+    profile_pic: str | None = None
+    my_score: int | None = None
+
+
+class RatingContextResponse(BaseModel):
+    session_id: int
+    session_start_time: datetime
+    before_session_start: bool
+    ratings_locked: bool
+    ratings_editable: bool
+    ratings_lock_at: str | None = None
+    ratees: list[RateeContext]

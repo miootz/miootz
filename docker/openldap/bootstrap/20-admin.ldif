@@ -1,0 +1,12 @@
+# Password: changeme (SSHA — must match LDAP_ADMIN_PASSWORD in docker-compose / .env)
+dn: uid=admin,ou=people,dc=footylegends,dc=local
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: admin
+cn: Admin User
+sn: User
+displayName: Admin User
+mail: admin@footylegends.local
+userPassword: {ssha}sJLTxPH9QPuiPzJFPjDNRxlxdA7hMMs/+v03VA==

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { ChatMessage } from '../types';
 import { formatRelativeTime, formatAbsoluteTime } from '../utils/time';
 import { apiFetch } from '../api/client';
+import { sessionChatEventsUrl } from '../api/sessionsApi';
 import {
   appendCachedChatMessage,
   getCachedChatMessages,
@@ -29,9 +30,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
 
   useEffect(() => {
     let cancelled = false;
-    const eventSource = new EventSource(
-      `/api/sessions/${sessionId}/chat/events`
-    );
+    const eventSource = new EventSource(sessionChatEventsUrl(sessionId));
 
     eventSource.onmessage = (event) => {
       const newMessageData: ChatMessage = JSON.parse(event.data);

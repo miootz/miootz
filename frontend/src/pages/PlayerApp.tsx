@@ -1,22 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield } from 'lucide-react';
+import { Shield, UserCircle } from 'lucide-react';
 import { MeetupDetails } from './MeetupDetails';
 import { HistoryPage } from './HistoryPage';
-import type { Session, User, Team, GameSession, MatchSummary } from '../types';
+import type { Session, User, Team } from '../types';
 import { rebalanceTeams } from '../services/teamService';
 import {
   fetchSessions,
   fetchSessionDetail,
   fetchSessionTeams,
+  sessionDataEventsUrl,
   type SessionDetail,
+  type SessionListItem,
 } from '../api/sessionsApi';
 import { useAuth } from '../auth/useAuth';
+import { mediaUrl } from '../api/meApi';
 import { setPreferMemberView } from '../auth/memberViewStorage';
 import { clearSessionChatCache } from '../stores/sessionChatCache';
 import { parseSessionStart } from '../utils/datetime';
-
-const MOCK_HISTORY: GameSession[] = [];
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
   const start = detail.start_time;
@@ -30,6 +31,7 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
       name: a.full_name || a.username,
       skillScore: Math.round(a.skill),
       isLocked: false,
+      avatarUrl: mediaUrl(a.profile_pic ?? undefined),
     }));
   const ma = detail.my_attendance;
   return {
@@ -45,6 +47,8 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
       ma === 'confirmed' || ma === 'waitlisted' || ma === 'cancelled'
         ? ma
         : null,
+    teamAssignmentMode:
+      detail.team_assignment_mode === 'random' ? 'random' : 'balanced',
   };
 }
 
@@ -56,10 +60,12 @@ export function PlayerApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [history, setHistory] = useState<GameSession[]>(MOCK_HISTORY);
+  const [pastSessions, setPastSessions] = useState<SessionListItem[]>([]);
   const [activeSessionNumericId, setActiveSessionNumericId] = useState<
     number | null
   >(null);
+  const [rosterChannelLive, setRosterChannelLive] = useState(false);
+  const [lastRosterSync, setLastRosterSync] = useState<Date | null>(null);
 
   const loadSession = useCallback(async (sessionId: number) => {
     const [detail, teamsRes] = await Promise.all([
@@ -73,11 +79,13 @@ export function PlayerApp() {
         name: p.name,
         skillScore: p.skillScore,
         isLocked: p.isLocked,
+        avatarUrl: mediaUrl(p.profilePic ?? undefined),
       })),
     }));
     const mapped = mapDetailToSession(detail, t);
     setSession(mapped);
     setActiveSessionNumericId(sessionId);
+    setLastRosterSync(new Date());
   }, []);
 
   const loadInitialData = useCallback(async () => {
@@ -89,15 +97,36 @@ export function PlayerApp() {
         clearSessionChatCache();
         setSession(null);
         setActiveSessionNumericId(null);
+        setPastSessions([]);
         setError('No sessions yet. Create one in Admin.');
         return;
       }
-      const next = [...list].sort(
+      const sorted = [...list].sort(
         (a, b) =>
           parseSessionStart(a.start_time).getTime() -
           parseSessionStart(b.start_time).getTime()
-      )[0];
-      await loadSession(next.id);
+      );
+      const now = Date.now();
+      const upcoming = sorted.filter(
+        (s) => parseSessionStart(s.start_time).getTime() >= now
+      );
+      const past = sorted
+        .filter((s) => parseSessionStart(s.start_time).getTime() < now)
+        .sort(
+          (a, b) =>
+            parseSessionStart(b.start_time).getTime() -
+            parseSessionStart(a.start_time).getTime()
+        );
+      setPastSessions(past);
+
+      if (upcoming.length === 0) {
+        clearSessionChatCache();
+        setSession(null);
+        setActiveSessionNumericId(null);
+        setError(null);
+        return;
+      }
+      await loadSession(upcoming[0].id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -110,10 +139,13 @@ export function PlayerApp() {
   }, [loadInitialData]);
 
   useEffect(() => {
-    if (activeSessionNumericId == null) return;
-    const es = new EventSource(
-      `/api/sessions/${activeSessionNumericId}/data/events`
-    );
+    if (activeSessionNumericId == null) {
+      setRosterChannelLive(false);
+      return;
+    }
+    const url = sessionDataEventsUrl(activeSessionNumericId);
+    const es = new EventSource(url);
+    es.onopen = () => setRosterChannelLive(true);
     es.onmessage = (ev) => {
       const data = JSON.parse(ev.data) as {
         type: string;
@@ -133,7 +165,13 @@ export function PlayerApp() {
         void loadInitialData();
       }
     };
-    return () => es.close();
+    es.onerror = () => {
+      setRosterChannelLive(false);
+    };
+    return () => {
+      es.close();
+      setRosterChannelLive(false);
+    };
   }, [activeSessionNumericId, loadSession, loadInitialData]);
 
   const handleToggleLock = (userId: string) => {
@@ -178,25 +216,6 @@ export function PlayerApp() {
     });
   };
 
-  const handleUpdateMatch = (
-    sessionId: string,
-    matchId: string,
-    updates: Partial<MatchSummary>
-  ) => {
-    setHistory((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              matches: s.matches.map((m) =>
-                m.matchId === matchId ? { ...m, ...updates } : m
-              ),
-            }
-          : s
-      )
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
       <nav className="flex flex-wrap justify-center items-center gap-2 sm:gap-4 p-4 border-b border-gray-200 dark:border-gray-800">
@@ -214,6 +233,13 @@ export function PlayerApp() {
         >
           History
         </button>
+        <Link
+          to="/profile"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+        >
+          <UserCircle className="w-4 h-4 shrink-0" aria-hidden />
+          Profile
+        </Link>
         {!authLoading && isAdmin && (
           <Link
             to="/admin"
@@ -240,11 +266,18 @@ export function PlayerApp() {
             {error}
           </p>
         )}
+        {!loading && !session && !error && (
+          <p className="text-center p-8 text-gray-600 dark:text-gray-400 max-w-lg mx-auto">
+            No upcoming meetup. Past sessions are in History.
+          </p>
+        )}
         {!loading && session && (
             <MeetupDetails
               session={session}
               onToggleLock={handleToggleLock}
               onMovePlayer={handleMovePlayer}
+              rosterChannelLive={rosterChannelLive}
+              lastRosterSync={lastRosterSync}
               onRosterUpdated={() =>
                 activeSessionNumericId != null &&
                 void loadSession(activeSessionNumericId)
@@ -256,7 +289,7 @@ export function PlayerApp() {
         className={view === 'history' ? 'block' : 'hidden'}
         aria-hidden={view !== 'history'}
       >
-        <HistoryPage sessions={history} onUpdateMatch={handleUpdateMatch} />
+        <HistoryPage pastSessions={pastSessions} />
       </div>
     </div>
   );

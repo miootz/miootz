@@ -46,6 +46,7 @@ async def test_session_lifecycle():
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 2,
+                "send_invite_emails": False,
             },
             headers={settings.AUTHELIA_USER_HEADER: "admin"},
         )
@@ -111,6 +112,7 @@ async def test_admin_override():
                 "location": "Override Pitch",
                 "min_players": 1,
                 "max_players": 1,
+                "send_invite_emails": False,
             },
             headers={settings.AUTHELIA_USER_HEADER: "admin2"},
         )

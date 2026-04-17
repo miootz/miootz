@@ -37,6 +37,8 @@ class SessionRecurrenceRule(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     waitlist_mode: Mapped[str] = mapped_column(String, default="auto_promote")
+    #: Copied onto each materialized `GameSession` from this rule.
+    team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

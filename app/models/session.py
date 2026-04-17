@@ -30,6 +30,8 @@ class GameSession(Base):
     waitlist_mode: Mapped[str] = mapped_column(
         String, default="auto_promote"
     )
+    #: balanced = skill snake draft; random = shuffled snake (same team sizes)
+    team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
     # Incremented when attendance, session fields, or other player-visible data changes.
     content_revision: Mapped[int] = mapped_column(Integer, default=0)
 

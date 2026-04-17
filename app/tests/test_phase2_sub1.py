@@ -52,6 +52,62 @@ async def test_avatar_upload(setup_db):
 
 
 @pytest.mark.asyncio
+async def test_avatar_rejects_wrong_content_type(setup_db):
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        files = {"file": ("x.gif", b"x", "image/gif")}
+        response = await ac.post(
+            "/users/me/avatar", files=files, headers=_auth_headers()
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_me_includes_sso_snapshot(setup_db):
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        r = await ac.get(
+            "/me",
+            headers={
+                settings.AUTHELIA_USER_HEADER: "testuser",
+                settings.AUTHELIA_NAME_HEADER: "SSO Display",
+                settings.AUTHELIA_EMAIL_HEADER: "test@example.com",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["sso"] is not None
+        assert body["sso"]["display_name"] == "SSO Display"
+        assert body["sso"]["email"] == "test@example.com"
+
+
+@pytest.mark.asyncio
+async def test_sync_display_name_from_sso(setup_db):
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        patch = await ac.patch(
+            "/users/me",
+            json={"sync_display_name_from_sso": True},
+            headers={
+                settings.AUTHELIA_USER_HEADER: "testuser",
+                settings.AUTHELIA_NAME_HEADER: "Authelia Name",
+            },
+        )
+        assert patch.status_code == 200
+        me = await ac.get(
+            "/me",
+            headers={
+                settings.AUTHELIA_USER_HEADER: "testuser",
+                settings.AUTHELIA_NAME_HEADER: "Authelia Name",
+            },
+        )
+        assert me.json()["user"]["full_name"] == "Authelia Name"
+
+
+@pytest.mark.asyncio
 async def test_sms_auth_flow(setup_db):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
