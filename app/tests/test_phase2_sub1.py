@@ -1,5 +1,8 @@
+from io import BytesIO
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 
 from app.api.main import app
 from app.core.config import settings
@@ -39,16 +42,51 @@ async def test_profile_update(setup_db):
 
 @pytest.mark.asyncio
 async def test_avatar_upload(setup_db):
+    buf = BytesIO()
+    Image.new("RGB", (120, 100), color=(200, 100, 50)).save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        files = {"file": ("test.jpg", b"fake image content", "image/jpeg")}
+        files = {"file": ("test.jpg", jpeg_bytes, "image/jpeg")}
         response = await ac.post(
             "/users/me/avatar", files=files, headers=_auth_headers()
         )
         assert response.status_code == 200
-        assert "profile_pic" in response.json()
-        assert "/uploads/" in response.json()["profile_pic"]
+        data = response.json()
+        assert "/uploads/" in data["profile_pic"]
+        assert data["profile_pic"].endswith(".jpg")
+        assert "/uploads/" in data["profile_pic_original"]
+        assert "_src." in data["profile_pic_original"]
+        acp = data["avatar_crop_pixels"]
+        assert acp["width"] == acp["height"]
+        assert acp["x"] >= 0 and acp["y"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_avatar_crop(setup_db):
+    buf = BytesIO()
+    Image.new("RGB", (200, 160), color=(10, 90, 200)).save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        up = await ac.post(
+            "/users/me/avatar",
+            files={"file": ("a.jpg", jpeg_bytes, "image/jpeg")},
+            headers=_auth_headers(),
+        )
+        assert up.status_code == 200
+        r = await ac.post(
+            "/users/me/avatar/crop",
+            json={"crop_pixels": {"x": 20, "y": 10, "width": 80, "height": 80}},
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 200
+        out = r.json()
+        assert "/uploads/avatar_" in out["profile_pic"]
+        assert "avatar_crop_pixels" in out
+        assert out["avatar_crop_pixels"]["width"] > 0
 
 
 @pytest.mark.asyncio

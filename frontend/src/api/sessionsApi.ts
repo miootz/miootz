@@ -104,6 +104,19 @@ export async function fetchSessionTeams(id: number): Promise<TeamsResponse> {
   return r.json();
 }
 
+/** Persist admin team lineups (confirmed roster only). */
+export async function patchSessionTeams(
+  id: number,
+  teams: string[][]
+): Promise<TeamsResponse> {
+  const r = await apiFetch(`/sessions/${id}/teams`, {
+    method: 'PATCH',
+    body: JSON.stringify({ teams }),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
 export async function joinSession(id: number): Promise<{
   status: string;
   attendance_id?: number;

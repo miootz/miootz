@@ -63,12 +63,19 @@ export const rebalanceTeams = (currentSession: {
   attendance: User[];
   teams: Team[];
 }): Team[] => {
+  const attById = new Map(currentSession.attendance.map((u) => [u.id, u]));
+
+  /** Lock state lives on attendance; team copies may be stale after toggling. */
   const lockedPlayersMap = new Map<string, { teamId: string; player: User }>();
 
   currentSession.teams.forEach((team) => {
     team.players.forEach((player) => {
-      if (player.isLocked) {
-        lockedPlayersMap.set(player.id, { teamId: team.id, player });
+      const att = attById.get(player.id);
+      if (att?.isLocked) {
+        lockedPlayersMap.set(player.id, {
+          teamId: team.id,
+          player: { ...player, ...att, isLocked: true },
+        });
       }
     });
   });

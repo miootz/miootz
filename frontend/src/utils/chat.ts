@@ -9,6 +9,10 @@ export function usernameColor(username: string): string {
 
 /** Group consecutive messages from the same user into clusters. */
 export interface ChatMessageGroup {
+  /** Sender user id (from API). */
+  userId: number;
+  /** True when the current viewer sent these messages. */
+  isMine: boolean;
   /** Shared username for the group. */
   username: string;
   /** Shared color for the group. */
@@ -28,7 +32,16 @@ export interface ChatMessageGroup {
 }
 
 export function groupMessages(
-  messages: Array<{ id: number; username: string; usernameColor?: string | null; avatarUrl?: string | null; text: string; time: Date }>
+  messages: Array<{
+    id: number;
+    userId: number;
+    username: string;
+    usernameColor?: string | null;
+    avatarUrl?: string | null;
+    text: string;
+    time: Date;
+  }>,
+  myUserId: number | null
 ): ChatMessageGroup[] {
   if (messages.length === 0) return [];
 
@@ -36,17 +49,25 @@ export function groupMessages(
   let currentGroup: ChatMessageGroup | null = null;
 
   for (const msg of messages) {
+    const lastTime = currentGroup?.messages[currentGroup.messages.length - 1]?.time;
+    const gapMs = lastTime
+      ? msg.time.getTime() - lastTime.getTime()
+      : Infinity;
     const showHeader =
       !currentGroup ||
-      currentGroup.username !== msg.username ||
-      msg.time.getTime() - currentGroup.messages[currentGroup.messages.length - 1].time.getTime() > 5 * 60 * 1000;
+      currentGroup.userId !== msg.userId ||
+      gapMs > 5 * 60 * 1000;
 
     if (showHeader && currentGroup) {
       groups.push(currentGroup);
     }
 
+    const isMine = myUserId != null && msg.userId === myUserId;
+
     if (showHeader) {
       currentGroup = {
+        userId: msg.userId,
+        isMine,
         username: msg.username,
         usernameColor: msg.usernameColor ?? '',
         avatarUrl: msg.avatarUrl ?? null,

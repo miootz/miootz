@@ -7,7 +7,7 @@
   - Database: SQLite (async via `aiosqlite`) with SQLAlchemy.
   - Auth: Uses `AutheliaAuthMiddleware` for authentication.
 - **Frontend**: React + TypeScript + Vite located in `frontend/`.
-- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP), and LDAP Account Manager at `lam.footylegends.local`. Invite verification provisions users in LDAP (`ldap3`); Authelia authenticates against LDAP in real time. Browser push uses Web Push (VAPID) from the API, not a separate notify service.
+- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP). Invites use `POST /invites/verify/begin` then `POST /invites/verify/complete` (password on the confirmation page); the API sets LDAP `userPassword`, calls Authelia `POST /api/firstfactor` via `AUTHELIA_INTERNAL_URL`, and forwards `Set-Cookie` to the browser. `docker/authelia/config.yml` must **bypass** `/api/invites/verify/` (and `/invites/verify/` on the API host) so unauthenticated clients can register. **Authelia branding** (logo, favicon, English copy) lives in `docker/authelia/branding/` via `server.asset_path`; replace `logo.png` with a transparent PNG from design when ready. Browser push uses Web Push (VAPID) from the API, not a separate notify service.
 
 ## Developer Commands
 

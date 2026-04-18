@@ -143,3 +143,23 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     "ON ratings (session_id, rater_id, ratee_id)"
                 )
             )
+
+    if not await has_column("game_sessions", "manual_teams_json"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN manual_teams_json TEXT")
+        )
+
+    if not await has_column("users", "profile_pic_original"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN profile_pic_original VARCHAR")
+        )
+    if await has_column("users", "profile_pic_original"):
+        await conn.execute(
+            text(
+                "UPDATE users SET profile_pic_original = profile_pic "
+                "WHERE profile_pic_original IS NULL AND profile_pic IS NOT NULL"
+            )
+        )
+
+    if not await has_column("users", "avatar_crop_pixels"):
+        await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_crop_pixels TEXT"))

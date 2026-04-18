@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -32,6 +32,8 @@ class GameSession(Base):
     )
     #: balanced = skill snake draft; random = shuffled snake (same team sizes)
     team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
+    #: JSON list of lists of user ids per team (admin lineups); None = use algorithm on read.
+    manual_teams_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Incremented when attendance, session fields, or other player-visible data changes.
     content_revision: Mapped[int] = mapped_column(Integer, default=0)
     #: Set when the 1-hour kickoff Web Push reminder has been sent (one per session).

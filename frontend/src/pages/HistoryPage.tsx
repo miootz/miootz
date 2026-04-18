@@ -149,7 +149,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
       <header className="text-center space-y-2">
         <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Match History</h1>
         <p className="text-gray-500 dark:text-gray-400">
-          Past meetups — rate teammates after each session (anonymous).
+          Past meetups for everyone. Only attendees can rate teammates (anonymous).
         </p>
       </header>
 

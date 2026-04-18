@@ -8,6 +8,7 @@ import {
   uploadMyAvatar,
   type UserStats,
 } from '../api/meApi';
+import { AvatarCropDialog } from '../components/AvatarCropDialog';
 import { useAuth } from '../auth/useAuth';
 import { StarRating } from '../components/StarRating';
 import {
@@ -47,6 +48,7 @@ export function ProfilePage() {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editingPhone, setEditingPhone] = useState(false);
   const skillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,6 +119,8 @@ export function ProfilePage() {
   const sso = me.sso;
   const pic = mediaUrl(u.profile_pic);
   const displayPic = avatarPreview ?? pic;
+  const cropEditorSrc = mediaUrl(u.profile_pic_original);
+  const cropInitialPixels = u.avatar_crop_pixels ?? null;
 
   const syncName = async () => {
     setSaving(true);
@@ -448,21 +452,33 @@ export function ProfilePage() {
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
             Avatar
           </h2>
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0">
-              {displayPic ? (
-                <img
-                  src={displayPic}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">
-                  No photo
-                </div>
-              )}
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0">
+                {displayPic ? (
+                  <img
+                    src={displayPic}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">
+                    No photo
+                  </div>
+                )}
+              </div>
+              {cropEditorSrc ? (
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={() => setCropOpen(true)}
+                  className="text-sm font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 disabled:opacity-50"
+                >
+                  Edit crop
+                </button>
+              ) : null}
             </div>
-            <label className="text-sm">
+            <label className="text-sm min-w-0 flex-1">
               <span className="sr-only">Upload avatar</span>
               <input
                 type="file"
@@ -475,10 +491,21 @@ export function ProfilePage() {
             </label>
           </div>
           <p className="text-xs text-gray-500">
-            JPEG, PNG, or WebP — max {MAX_AVATAR_BYTES / (1024 * 1024)} MB. Square
-            images look best in the roster.
+            JPEG, PNG, or WebP — max {MAX_AVATAR_BYTES / (1024 * 1024)} MB. The app
+            stores your full upload and a square JPEG for fast display; use Edit crop
+            to frame your face (opens the original photo, with your last crop remembered).
           </p>
         </section>
+
+        {cropEditorSrc && (
+          <AvatarCropDialog
+            open={cropOpen}
+            imageSrc={cropEditorSrc}
+            initialCroppedAreaPixels={cropInitialPixels}
+            onClose={() => setCropOpen(false)}
+            onSaved={refresh}
+          />
+        )}
 
         <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-4 text-left">

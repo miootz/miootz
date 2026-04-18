@@ -25,6 +25,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
   const [beforeStart, setBeforeStart] = useState(false);
   const [locked, setLocked] = useState(false);
   const [lockHint, setLockHint] = useState<string | null>(null);
+  const [viewerAttended, setViewerAttended] = useState(true);
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -37,6 +38,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
       setBeforeStart(ctx.before_session_start);
       setLocked(ctx.ratings_locked);
       setLockHint(ctx.ratings_lock_at);
+      setViewerAttended(ctx.viewer_attended ?? true);
       await cachePut(cacheKeyRatingContext(sessionId), ctx);
     } catch (e) {
       const cached = await cacheGet<RatingContextResponse>(
@@ -51,6 +53,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         setBeforeStart(ctx.before_session_start);
         setLocked(ctx.ratings_locked);
         setLockHint(ctx.ratings_lock_at);
+        setViewerAttended(ctx.viewer_attended ?? true);
         setError('Offline — showing saved ratings.');
       } else {
         setError(e instanceof Error ? e.message : 'Failed to load ratings');
@@ -120,15 +123,21 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
   return (
     <div className="space-y-3 pt-2">
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Rate teammates anonymously (1–5). You can change scores until the next
-        meetup starts.
-        {lockHint && (
-          <span className="block mt-1">
-            Next lock: {new Date(lockHint).toLocaleString()}
-          </span>
+        {viewerAttended ? (
+          <>
+            Rate teammates anonymously (1–5). You can change scores until the
+            next meetup starts.
+            {lockHint && (
+              <span className="block mt-1">
+                Next lock: {new Date(lockHint).toLocaleString()}
+              </span>
+            )}
+          </>
+        ) : (
+          <>View-only — you didn&apos;t attend this session.</>
         )}
       </p>
-      {locked && (
+      {viewerAttended && locked && (
         <p className="text-sm text-gray-600 dark:text-gray-300">
           Ratings for this session are final.
         </p>
@@ -159,17 +168,23 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
                 {r.display_name}
               </span>
             </div>
-            <StarRating
-              value={r.my_score ?? 0}
-              onChange={(score) => void onPick(r.user_id, score)}
-              size={20}
-              readonly={!editable || savingId === r.user_id}
-            />
+            {viewerAttended ? (
+              <StarRating
+                value={r.my_score ?? 0}
+                onChange={(score) => void onPick(r.user_id, score)}
+                size={20}
+                readonly={!editable || savingId === r.user_id}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
       {ratees.length === 0 && (
-        <p className="text-sm text-gray-500">No other players to rate.</p>
+        <p className="text-sm text-gray-500">
+          {viewerAttended
+            ? 'No other players to rate.'
+            : 'No confirmed players listed.'}
+        </p>
       )}
     </div>
   );

@@ -54,6 +54,7 @@ services:
       AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./docker/authelia/config.yml:/config/configuration.yml
+      - ./docker/authelia/branding:/config/branding:ro
     networks:
       - web
     depends_on:
@@ -78,6 +79,8 @@ services:
       SMTP_STARTTLS: "false"
       SMTP_USE_TLS: "false"
       AUTH_PORTAL_URL: "https://auth.footylegends.local:8443"
+      AUTHELIA_INTERNAL_URL: "http://authelia:9091"
+      PUBLIC_APP_URL: "https://app.footylegends.local"
       LDAP_URI: ldap://openldap:389
       LDAP_BASE_DN: dc=footylegends,dc=local
       LDAP_BIND_DN: cn=admin,dc=footylegends,dc=local
@@ -116,6 +119,12 @@ services:
       - "traefik.http.routers.api-on-app.middlewares=footy-auth@docker,api-strip@docker"
       - "traefik.http.routers.api-on-app.service=api"
       - "traefik.http.routers.api-on-app.priority=100"
+      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/uploads`)"
+      - "traefik.http.routers.api-uploads-on-app.entrypoints=websecure"
+      - "traefik.http.routers.api-uploads-on-app.tls=true"
+      - "traefik.http.routers.api-uploads-on-app.middlewares=footy-auth@docker"
+      - "traefik.http.routers.api-uploads-on-app.service=api"
+      - "traefik.http.routers.api-uploads-on-app.priority=50"
 
   frontend:
     build:
@@ -161,46 +170,10 @@ services:
       - "traefik.http.routers.mailhog.tls=true"
       - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
 
-  # Web UI for OpenLDAP (users / groups). Log in with LDAP bind, e.g. cn=admin + LDAP_ADMIN_PASSWORD.
-  ldap-account-manager:
-    image: ghcr.io/ldapaccountmanager/lam:stable
-    container_name: ldap_account_manager
-    environment:
-      LAM_LANG: en_US
-      LAM_SKIP_PRECONFIGURE: "false"
-      # Used for LAM config + LDAP profile password (same as OpenLDAP cn=admin in start.sh).
-      LAM_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
-      LDAP_SERVER: ldap://openldap:389
-      LDAP_DOMAIN: footylegends.local
-      LDAP_BASE_DN: dc=footylegends,dc=local
-      LDAP_USERS_DN: ou=people,dc=footylegends,dc=local
-      LDAP_GROUPS_DN: ou=groups,dc=footylegends,dc=local
-      LDAP_USER: cn=admin,dc=footylegends,dc=local
-      LAM_DISABLE_TLS_CHECK: "true"
-    volumes:
-      - lam_config:/var/lib/ldap-account-manager/config
-    networks:
-      - web
-    depends_on:
-      openldap:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      # HTTPS (note: http:// on :8443 does not work — use https:// or the HTTP route below on :8880).
-      - "traefik.http.routers.lam.rule=Host(`lam.footylegends.local`)"
-      - "traefik.http.routers.lam.entrypoints=websecure"
-      - "traefik.http.routers.lam.tls=true"
-      - "traefik.http.routers.lam.service=lam"
-      - "traefik.http.routers.lam-http.rule=Host(`lam.footylegends.local`)"
-      - "traefik.http.routers.lam-http.entrypoints=web"
-      - "traefik.http.routers.lam-http.service=lam"
-      - "traefik.http.services.lam.loadbalancer.server.port=80"
-
 volumes:
   frontend_node_modules:
   openldap_data:
   openldap_config:
-  lam_config:
 
 networks:
   web:

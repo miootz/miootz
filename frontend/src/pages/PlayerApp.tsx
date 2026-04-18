@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useToast } from '../context/ToastContext';
 import { format, parseISO } from 'date-fns';
 import { MeetupDetails } from './MeetupDetails';
 import { HistoryPage } from './HistoryPage';
@@ -8,6 +9,7 @@ import {
   fetchSessions,
   fetchSessionDetail,
   fetchSessionTeams,
+  patchSessionTeams,
   sessionDataEventsUrl,
   type SessionDetail,
   type SessionListItem,
@@ -19,6 +21,7 @@ import { loadSessionSnapshot, saveSessionSnapshot } from '../offline/sessionSnap
 import { parseSessionStart } from '../utils/datetime';
 import { useMemberShell } from '../context/MemberShellContext';
 import { MeetupDetailsSkeleton } from '../components/MeetupDetailsSkeleton';
+import { useAuth } from '../auth/useAuth';
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
   const start = detail.start_time;
@@ -63,6 +66,8 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
 
 export function PlayerApp() {
   const { memberView, setHeader } = useMemberShell();
+  const { me } = useAuth();
+  const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -246,15 +251,11 @@ export function PlayerApp() {
     });
   };
 
-  const handleMovePlayer = (
-    playerId: string,
-    sourceTeamId: string,
-    destTeamId: string
-  ) => {
-    if (!session) return;
-    setSession((prev) => {
-      if (!prev) return prev;
-      const nextTeams = prev.teams.map((team) => {
+  const handleMovePlayer = useCallback(
+    async (playerId: string, sourceTeamId: string, destTeamId: string) => {
+      if (!session || activeSessionNumericId == null) return;
+
+      const nextTeams = session.teams.map((team) => {
         if (team.id === sourceTeamId) {
           return {
             ...team,
@@ -262,15 +263,33 @@ export function PlayerApp() {
           };
         }
         if (team.id === destTeamId) {
-          const player = prev.attendance.find((p) => p.id === playerId);
+          const player = session.attendance.find((p) => p.id === playerId);
           if (!player) return team;
           return { ...team, players: [...team.players, player] };
         }
         return team;
       });
-      return { ...prev, teams: nextTeams };
-    });
-  };
+      const nextSession = { ...session, teams: nextTeams };
+      setSession(nextSession);
+
+      const payload = nextSession.teams.map((t) => t.players.map((p) => p.id));
+      try {
+        await patchSessionTeams(activeSessionNumericId, payload);
+      } catch (e) {
+        showToast(
+          e instanceof Error ? e.message : 'Could not save team lineup',
+          'error'
+        );
+        void loadSession(activeSessionNumericId);
+      }
+    },
+    [
+      session,
+      activeSessionNumericId,
+      loadSession,
+      showToast,
+    ]
+  );
 
   return (
     <>
@@ -294,6 +313,7 @@ export function PlayerApp() {
             session={session}
             onToggleLock={handleToggleLock}
             onMovePlayer={handleMovePlayer}
+            canDragTeams={Boolean(me?.is_admin)}
             rosterChannelLive={rosterChannelLive}
             lastRosterSync={lastRosterSync}
             offlineDataUpdatedAt={offlineDataUpdatedAt}

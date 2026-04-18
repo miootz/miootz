@@ -47,4 +47,22 @@ describe('Team Assignment Logic', () => {
     const team1 = rebalanced.find(t => t.id === 't1');
     expect(team1?.players.some(p => p.id === '1')).toBe(true);
   });
+
+  it('should use attendance for lock state when team roster copy is stale', () => {
+    const attendance = [
+      { id: '1', name: 'P1', skillScore: 100, isLocked: true },
+      { id: '2', name: 'P2', skillScore: 90, isLocked: false },
+    ];
+    const teams = [
+      {
+        id: 't1',
+        players: [{ id: '1', name: 'P1', skillScore: 100, isLocked: false }],
+      },
+      { id: 't2', players: [attendance[1]] },
+    ];
+
+    const rebalanced = rebalanceTeams({ attendance, teams });
+    const team1 = rebalanced.find((t) => t.id === 't1');
+    expect(team1?.players.some((p) => p.id === '1')).toBe(true);
+  });
 });

@@ -11,6 +11,14 @@ from app.core.database import get_db
 from app.models.user import User
 from app.models.web_push_subscription import WebPushSubscription
 from app.schemas.user import SSOIdentity, UserMe, UserProfileUpdate
+from app.services.avatar_images import (
+    CropPixels,
+    center_square_crop_pixels_dict,
+    clamp_crop_to_image,
+    crop_resize_save_jpeg,
+    default_square_avatar,
+    load_uploaded_image,
+)
 from app.services.skill_service import update_user_calculated_skill
 from pydantic import BaseModel, Field
 
@@ -18,6 +26,29 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 ALLOWED_AVATAR_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 _AVATAR_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+
+
+def _fs_path(relative: str | None) -> str | None:
+    if not relative or not relative.startswith("/uploads/"):
+        return None
+    return os.path.join(settings.UPLOAD_DIR, relative.removeprefix("/uploads/"))
+
+
+def _remove_upload_file(relative: str | None) -> None:
+    p = _fs_path(relative)
+    if p and os.path.isfile(p):
+        os.remove(p)
+
+
+class CropPixelsIn(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
+class AvatarCropIn(BaseModel):
+    crop_pixels: CropPixelsIn
 
 
 def get_current_user(request: Request) -> User:
@@ -235,15 +266,102 @@ async def upload_avatar(
             detail=f"Avatar must be at most {max_b // (1024 * 1024)} MB",
         )
 
-    ext = _AVATAR_EXT.get(ct, ".bin")
-    filename = f"{uuid.uuid4()}{ext}"
-    filepath = os.path.join(settings.UPLOAD_DIR, filename)
+    try:
+        img = load_uploaded_image(raw)
+    except OSError:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read image data",
+        ) from None
 
+    ext = _AVATAR_EXT.get(ct, ".jpg")
+    orig_name = f"{uuid.uuid4()}_src{ext}"
+    orig_fs = os.path.join(settings.UPLOAD_DIR, orig_name)
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    with open(filepath, "wb") as buffer:
+    with open(orig_fs, "wb") as buffer:
         buffer.write(raw)
 
-    user.profile_pic = f"/uploads/{filename}"
-    await db.commit()
+    old_orig = user.profile_pic_original
+    old_disp = user.profile_pic
+    disp_rel = f"/uploads/avatar_{user.id}.jpg"
+    disp_fs = os.path.join(settings.UPLOAD_DIR, f"avatar_{user.id}.jpg")
 
-    return {"profile_pic": user.profile_pic}
+    default_square_avatar(img, disp_fs)
+
+    if old_orig:
+        _remove_upload_file(old_orig)
+    if old_disp and old_disp != disp_rel:
+        _remove_upload_file(old_disp)
+
+    user.profile_pic_original = f"/uploads/{orig_name}"
+    user.profile_pic = disp_rel
+    w, h = img.size
+    user.avatar_crop_pixels = center_square_crop_pixels_dict(w, h)
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "profile_pic": user.profile_pic,
+        "profile_pic_original": user.profile_pic_original,
+        "avatar_crop_pixels": user.avatar_crop_pixels,
+    }
+
+
+@router.post("/me/avatar/crop")
+async def save_avatar_crop(
+    body: AvatarCropIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user = await db.get(User, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    source_rel = user.profile_pic_original or user.profile_pic
+    if not source_rel:
+        raise HTTPException(status_code=400, detail="No avatar to crop")
+
+    src_fs = _fs_path(source_rel)
+    if not src_fs or not os.path.isfile(src_fs):
+        raise HTTPException(status_code=404, detail="Avatar source file missing")
+
+    with open(src_fs, "rb") as f:
+        raw = f.read()
+    try:
+        img = load_uploaded_image(raw)
+    except OSError:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read image data",
+        ) from None
+
+    iw, ih = img.size
+    cp = CropPixels(
+        x=body.crop_pixels.x,
+        y=body.crop_pixels.y,
+        width=body.crop_pixels.width,
+        height=body.crop_pixels.height,
+    )
+    box = clamp_crop_to_image(cp, iw, ih)
+    disp_rel = f"/uploads/avatar_{user.id}.jpg"
+    disp_fs = os.path.join(settings.UPLOAD_DIR, f"avatar_{user.id}.jpg")
+    old_disp = user.profile_pic
+    crop_resize_save_jpeg(img, box, disp_fs)
+
+    x1, y1, x2, y2 = box
+    user.avatar_crop_pixels = {
+        "x": x1,
+        "y": y1,
+        "width": x2 - x1,
+        "height": y2 - y1,
+    }
+    user.profile_pic = disp_rel
+    if old_disp and old_disp != disp_rel:
+        _remove_upload_file(old_disp)
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "profile_pic": user.profile_pic,
+        "avatar_crop_pixels": user.avatar_crop_pixels,
+    }

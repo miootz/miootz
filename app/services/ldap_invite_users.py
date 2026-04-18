@@ -12,7 +12,7 @@ import re
 import secrets
 from typing import Any
 
-from ldap3 import MODIFY_ADD, SUBTREE, Connection, Server
+from ldap3 import MODIFY_ADD, MODIFY_REPLACE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
 from ldap3.utils.hashed import HASHED_SALTED_SHA, hashed
 
@@ -152,6 +152,35 @@ def _provision_ldap_inetorgperson(
 
     logger.info("Provisioned LDAP user %r for email %r", uid, email)
     return uid, password
+
+
+def ldap_replace_user_password(*, uid: str, plaintext: str) -> None:
+    """
+    Set ``userPassword`` for ``uid=...`` under the configured users OU (admin bind).
+
+    Used after invite verification so the user chooses their password instead of
+    receiving a random one by email.
+    """
+    uri = _ldap_uri()
+    base = _base_dn()
+    bind_dn = (settings.LDAP_BIND_DN or "").strip()
+    bind_pw = settings.LDAP_BIND_PASSWORD or ""
+    if not uri or not base or not bind_dn or not bind_pw:
+        raise ValueError("LDAP_URI, LDAP_BASE_DN, LDAP_BIND_DN, and LDAP_BIND_PASSWORD must be set")
+
+    users_base = _users_search_base()
+    user_dn = f"uid={uid},{users_base}"
+    enc_pw = hashed(HASHED_SALTED_SHA, plaintext)
+
+    server = Server(uri, connect_timeout=10)
+    conn = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True)
+    try:
+        if not conn.modify(user_dn, {"userPassword": [(MODIFY_REPLACE, [enc_pw])]}):
+            raise RuntimeError(f"LDAP password modify failed: {conn.result}")
+    finally:
+        conn.unbind()
+
+    logger.info("Updated LDAP password for uid %r", uid)
 
 
 def provision_ldap_invite_user(*, email: str, display_name: str | None) -> tuple[str, str]:

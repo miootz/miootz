@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     LDAP_GROUPS_OU: str = "ou=groups"
     #: Link shown in welcome email (Authelia login portal). Empty = omitted from template.
     AUTH_PORTAL_URL: str = ""
+    #: Base URL for server-side Authelia API calls (invite completion → first factor). Docker: http://authelia:9091
+    AUTHELIA_INTERNAL_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env")
 

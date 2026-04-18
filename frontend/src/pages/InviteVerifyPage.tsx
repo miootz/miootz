@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
-import { verifyInviteToken } from '../api/invitesApi';
-import { getAuthLoginUrl } from '../auth/authPortal';
+import { beginInviteVerify, completeInviteVerify } from '../api/invitesApi';
 
-type Phase = 'loading' | 'done' | 'error';
+type Phase = 'loading' | 'password' | 'submitting' | 'error';
+
+const MIN_LEN = 10;
 
 /**
  * Invite link from email: `/invites/verify/:token` — public route (no Authelia yet).
@@ -13,18 +13,13 @@ type Phase = 'loading' | 'done' | 'error';
 export function InviteVerifyPage() {
   const { token } = useParams<{ token: string }>();
   const [phase, setPhase] = useState<Phase>(() => (token ? 'loading' : 'error'));
-  const [message, setMessage] = useState('');
   const [username, setUsername] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [setupToken, setSetupToken] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [error, setError] = useState<string | null>(() =>
     token ? null : 'Invalid link.',
-  );
-
-  const inviteUrl = useMemo(
-    () =>
-      token
-        ? `${window.location.origin}/invites/verify/${encodeURIComponent(token)}`
-        : '',
-    [token],
   );
 
   useEffect(() => {
@@ -32,15 +27,16 @@ export function InviteVerifyPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await verifyInviteToken(token);
+        const res = await beginInviteVerify(token);
         if (!cancelled) {
-          setMessage(res.message);
           setUsername(res.username);
-          setPhase('done');
+          setEmail(res.email);
+          setSetupToken(res.setup_token);
+          setPhase('password');
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : 'Verification failed');
+          setError(e instanceof Error ? e.message : 'Could not start registration');
           setPhase('error');
         }
       }
@@ -50,6 +46,28 @@ export function InviteVerifyPage() {
     };
   }, [token]);
 
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!setupToken) return;
+    if (password.length < MIN_LEN || passwordConfirm.length < MIN_LEN) {
+      setError(`Password must be at least ${MIN_LEN} characters.`);
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setError(null);
+    setPhase('submitting');
+    try {
+      const res = await completeInviteVerify(setupToken, password, passwordConfirm);
+      window.location.assign(res.redirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not finish registration');
+      setPhase('password');
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-violet-50 to-gray-50 dark:from-gray-950 dark:to-gray-950 flex items-center justify-center p-6">
       <div className="max-w-md w-full rounded-2xl border border-violet-200/80 dark:border-violet-900/50 bg-white dark:bg-gray-900 p-8 shadow-xl text-center space-y-6">
@@ -58,65 +76,86 @@ export function InviteVerifyPage() {
             Footy Legends
           </p>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Invite
+            Join
           </h1>
         </div>
 
         {phase === 'loading' && (
           <div className="flex flex-col items-center gap-3 text-gray-600 dark:text-gray-400">
             <Loader2 className="w-10 h-10 animate-spin text-violet-600 motion-reduce:animate-none" aria-hidden />
-            <p className="text-sm">Confirming your invite…</p>
+            <p className="text-sm">Checking your invite…</p>
           </div>
         )}
 
-        {phase === 'done' && (
-          <div className="space-y-4 text-left">
+        {phase === 'password' && (
+          <form onSubmit={onSubmit} className="space-y-4 text-left">
             <div className="flex justify-center">
-              <CheckCircle2 className="w-12 h-12 text-emerald-600" aria-hidden />
+              <CheckCircle2 className="w-10 h-10 text-emerald-600" aria-hidden />
             </div>
-            <p className="text-sm text-gray-700 dark:text-gray-300">{message}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              Choose a password for your account. You will be signed in and taken to the app.
+            </p>
             {username && (
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Authelia username:{' '}
+                Username:{' '}
                 <strong className="text-gray-800 dark:text-gray-200">{username}</strong>
               </p>
             )}
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              We sent your temporary password to your email. Sign in, then change your
-              password in Authelia.
-            </p>
-
-            <ol className="list-decimal list-inside space-y-1 text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-950/50">
-              <li>Sign in with the button below</li>
-              <li>Change your password in Authelia</li>
-              <li>Open Footy Legends and join your first meetup</li>
-            </ol>
-
-            {inviteUrl && (
-              <div className="flex flex-col items-center gap-2 pt-2">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Scan on your phone
-                </p>
-                <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-950">
-                  <QRCodeSVG value={inviteUrl} size={160} level="M" />
-                </div>
-              </div>
+            {email && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Email: <span className="text-gray-800 dark:text-gray-200">{email}</span>
+              </p>
             )}
-
-            <div className="pt-2 flex flex-col gap-2">
-              <a
-                href={getAuthLoginUrl(window.location.origin + '/')}
-                className="inline-flex justify-center items-center px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 active:scale-[0.98]"
-              >
-                Sign in
-              </a>
-              <Link
-                to="/"
-                className="inline-flex justify-center items-center px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Home
-              </Link>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                Password
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(ev) => setPassword(ev.target.value)}
+                  className="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                  minLength={MIN_LEN}
+                  required
+                />
+              </label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                Confirm password
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordConfirm}
+                  onChange={(ev) => setPasswordConfirm(ev.target.value)}
+                  className="mt-1 w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                  minLength={MIN_LEN}
+                  required
+                />
+              </label>
             </div>
+            {error && (
+              <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              className="w-full inline-flex justify-center items-center px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 active:scale-[0.98]"
+            >
+              Save password & continue
+            </button>
+            <Link
+              to="/"
+              className="block text-center text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            >
+              Cancel
+            </Link>
+          </form>
+        )}
+
+        {phase === 'submitting' && (
+          <div className="flex flex-col items-center gap-3 text-gray-600 dark:text-gray-400">
+            <Loader2 className="w-10 h-10 animate-spin text-violet-600 motion-reduce:animate-none" aria-hidden />
+            <p className="text-sm">Signing you in…</p>
           </div>
         )}
 

@@ -139,11 +139,9 @@ async def get_rating_context(
             Attendance.status == "confirmed",
         )
     )
-    if not result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=403,
-            detail="You can only view ratings for sessions you attended",
-        )
+    viewer_attended = result.scalar_one_or_none() is not None
+    if not viewer_attended:
+        ok = False
 
     result = await db.execute(
         select(Attendance, User)
@@ -159,7 +157,7 @@ async def get_rating_context(
 
     ratee_ids = [u.id for _, u in rows]
     my_scores: dict[int, int] = {}
-    if ratee_ids:
+    if viewer_attended and ratee_ids:
         r2 = await db.execute(
             select(Rating).where(
                 Rating.session_id == session_id,
@@ -188,6 +186,7 @@ async def get_rating_context(
         ratings_locked=locked,
         ratings_editable=ok,
         ratings_lock_at=locks_at.isoformat() if locks_at else None,
+        viewer_attended=viewer_attended,
         ratees=ratees,
     )
 

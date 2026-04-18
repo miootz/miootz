@@ -34,4 +34,5 @@ class RatingContextResponse(BaseModel):
     ratings_locked: bool
     ratings_editable: bool
     ratings_lock_at: str | None = None
+    viewer_attended: bool
     ratees: list[RateeContext]

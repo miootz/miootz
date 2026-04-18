@@ -9,6 +9,13 @@ class SSOIdentity(BaseModel):
     display_name: str | None = None
 
 
+class AvatarCropPixelsOut(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 class UserMe(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -18,6 +25,8 @@ class UserMe(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     profile_pic: str | None = None
+    profile_pic_original: str | None = None
+    avatar_crop_pixels: AvatarCropPixelsOut | None = None
     skill_level: int | None = None
     self_assessed_skill: int | None = None
     calculated_skill: int | None = None

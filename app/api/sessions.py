@@ -23,7 +23,12 @@ from app.services.session_revision import (
     notify_session_data_changed,
     notify_session_deleted,
 )
-from app.services.team_assignment import assign_teams_random, assign_teams_snake
+from app.services.manual_teams import (
+    format_teams_api_payload,
+    resolve_session_teams_nested,
+    validate_team_partition,
+    build_teams_from_manual,
+)
 from app.services.recurrence_scheduler import (
     register_recurrence_job,
     unregister_recurrence_job,
@@ -142,6 +147,12 @@ class SessionUpdate(BaseModel):
         if v is None:
             return None
         return _normalize_team_mode(v)
+
+
+class TeamsUpdateBody(BaseModel):
+    """Confirmed user ids grouped by team (same sizes as automatic snake draft)."""
+
+    teams: list[list[str]]
 
 
 class ChatMessageCreate(BaseModel):
@@ -397,30 +408,74 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
         for _, user in rows
     ]
     mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    if mode == "random":
-        teams = assign_teams_random(players)
-    else:
-        teams = assign_teams_snake(players)
-    out = []
-    for i, team in enumerate(teams, start=1):
-        out.append(
-            {
-                "id": f"t{i}",
-                "players": [
-                    {
-                        "id": p["id"],
-                        "name": p["name"],
-                        "skillScore": p["skill"],
-                        "isLocked": False,
-                        "profilePic": p.get("profile_pic"),
-                    }
-                    for p in team
-                ],
-            }
-        )
+    teams_nested = resolve_session_teams_nested(
+        getattr(session, "manual_teams_json", None),
+        mode,
+        players,
+    )
+    out = format_teams_api_payload(teams_nested)
     return {
         "session_id": session_id,
         "content_revision": session.content_revision or 0,
+        "teams": out,
+    }
+
+
+@router.patch("/{session_id}/teams")
+async def patch_session_teams(
+    session_id: int,
+    body: TeamsUpdateBody,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Persist admin team lineups (confirmed roster only)."""
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    result = await db.execute(
+        select(Attendance, User)
+        .join(User, Attendance.user_id == User.id)
+        .where(
+            Attendance.session_id == session_id,
+            Attendance.status == "confirmed",
+        )
+    )
+    rows = result.all()
+    players = [
+        {
+            "id": str(user.id),
+            "name": user.full_name or user.username,
+            "skill": _user_skill(user),
+            "user_id": user.id,
+            "profile_pic": user.profile_pic,
+        }
+        for _, user in rows
+    ]
+    confirmed_ids = {int(p["id"]) for p in players}
+    try:
+        int_teams = [[int(x) for x in team] for team in body.teams]
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid user id in teams")
+
+    if not validate_team_partition(int_teams, confirmed_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Teams must partition all confirmed players with valid team sizes",
+        )
+
+    session.manual_teams_json = json.dumps(int_teams)
+    rev = await bump_session_revision(db, session_id)
+    await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
+
+    teams_nested = build_teams_from_manual(players, int_teams)
+    out = format_teams_api_payload(teams_nested)
+    return {
+        "session_id": session_id,
+        "content_revision": rev or 0,
         "teams": out,
     }
 
@@ -442,6 +497,7 @@ async def reshuffle_session_teams(
             status_code=400,
             detail="Reshuffle only applies when team_assignment_mode is random",
         )
+    session.manual_teams_json = None
     rev = await bump_session_revision(db, session_id)
     await db.commit()
     if rev is not None:
@@ -474,6 +530,9 @@ async def update_session(
 
     for key, value in data.items():
         setattr(session, key, value)
+
+    if "team_assignment_mode" in data:
+        session.manual_teams_json = None
 
     if "team_assignment_mode" in data and session.recurrence_rule_id:
         rr_sync = await db.get(SessionRecurrenceRule, session.recurrence_rule_id)

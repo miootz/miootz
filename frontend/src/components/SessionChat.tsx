@@ -8,6 +8,7 @@ import {
   type ChatMessageGroup,
 } from '../utils/chat';
 import { apiFetch } from '../api/client';
+import { mediaUrl } from '../api/meApi';
 import { postSessionChatTyping, sessionChatEventsUrl } from '../api/sessionsApi';
 import { useAuth } from '../auth/useAuth';
 import {
@@ -72,10 +73,11 @@ function Avatar({
     ? 'w-9 h-9 text-sm'
     : 'w-7 h-7 text-xs';
 
-  if (url) {
+  const resolved = mediaUrl(url ?? undefined);
+  if (resolved) {
     return (
       <img
-        src={url}
+        src={resolved}
         alt=""
         className={`${sizeClasses} rounded-full object-cover flex-shrink-0 ring-1 ring-gray-200 dark:ring-gray-700`}
         loading="lazy"
@@ -106,17 +108,24 @@ function ChatSkeleton() {
 
   return (
     <div className="space-y-6 px-4 pt-4" aria-hidden="true">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex gap-2">
-          <div className={`h-7 w-7 flex-shrink-0 rounded-full ${pulse}`} />
-          <div className="flex-1 space-y-2">
-            <div className={`h-3 w-20 rounded ${pulse}`} />
+      {Array.from({ length: 5 }).map((_, i) => {
+        const mine = i % 3 === 1;
+        return (
+          <div key={i} className={`flex gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+            <div className={`h-7 w-7 flex-shrink-0 rounded-full ${pulse}`} />
             <div
-              className={`w-full max-w-[14rem] rounded-2xl ${bubbleHeights[i]} ${pulse}`}
-            />
+              className={`flex-1 space-y-2 ${mine ? 'flex flex-col items-end' : ''}`}
+            >
+              <div className={`h-3 w-20 rounded ${mine ? 'ml-auto' : ''} ${pulse}`} />
+              <div
+                className={`w-full max-w-[14rem] rounded-2xl ${bubbleHeights[i]} ${pulse} ${
+                  mine ? 'ml-auto' : ''
+                }`}
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -124,26 +133,44 @@ function ChatSkeleton() {
 /** ─── Message group ─────────────────────────────────────────────── */
 function MessageGroup({ group }: { group: ChatMessageGroup }) {
   const isFirst = group.showHeader;
+  const mine = group.isMine;
+
+  const bubbleMine =
+    'bg-violet-600 text-white dark:bg-violet-600 shadow-sm';
+  const bubbleOther =
+    'bg-gray-100 text-gray-800 dark:bg-gray-700/70 dark:text-gray-100';
 
   return (
-    <div className="flex gap-2 group/chat">
+    <div
+      className={`flex gap-2 group/chat ${mine ? 'flex-row-reverse' : ''}`}
+    >
       {/* Avatar column */}
       <div className="w-7 flex-shrink-0 pt-1">
         {isFirst && <Avatar url={group.avatarUrl} username={group.username} />}
       </div>
 
       {/* Messages column */}
-      <div className="flex-1 min-w-0">
+      <div
+        className={`flex-1 min-w-0 flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+      >
         {/* Username + timestamp */}
         {isFirst && (
-          <div className="flex items-baseline gap-2 mb-1 px-1">
+          <div
+            className={`flex items-baseline gap-2 mb-1 px-1 max-w-[85%] ${
+              mine ? 'flex-row-reverse justify-end' : ''
+            }`}
+          >
             <span
-              className="text-xs font-semibold truncate"
-              style={{ color: group.usernameColor }}
+              className={
+                mine
+                  ? 'text-xs font-semibold truncate text-violet-700 dark:text-violet-300'
+                  : 'text-xs font-semibold truncate'
+              }
+              style={mine ? undefined : { color: group.usernameColor }}
             >
-              {group.username}
+              {mine ? 'You' : group.username}
             </span>
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
               {formatCompactTime(group.messages[0].time)}
             </span>
           </div>
@@ -152,7 +179,11 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
         {/* Bubble(s) */}
         {group.messages.length === 1 ? (
           <div className="inline-block max-w-[85%]">
-            <div className="rounded-2xl px-3 py-2 text-sm leading-relaxed break-words text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-gray-700/70">
+            <div
+              className={`rounded-2xl px-3 py-2 text-sm leading-relaxed break-words text-left ${
+                mine ? bubbleMine : bubbleOther
+              }`}
+            >
               {group.messages[0].text}
             </div>
           </div>
@@ -161,12 +192,14 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
             {group.messages.map((m, idx) => (
               <div
                 key={m.id}
-                className={`px-3 py-1.5 text-sm leading-relaxed break-words text-gray-800 dark:text-gray-100 ${
+                className={`px-3 py-1.5 text-sm leading-relaxed break-words text-left ${
+                  mine ? bubbleMine : bubbleOther
+                } ${
                   idx === 0
-                    ? 'rounded-t-2xl bg-gray-100 dark:bg-gray-700/70'
+                    ? 'rounded-t-2xl'
                     : idx === group.messages.length - 1
-                      ? 'rounded-b-2xl bg-gray-100 dark:bg-gray-700/70'
-                      : 'bg-gray-100 dark:bg-gray-700/70'
+                      ? 'rounded-b-2xl'
+                      : ''
                 }`}
               >
                 {m.text}
@@ -507,31 +540,41 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      (e.target as HTMLFormElement).requestSubmit();
+      e.currentTarget.form?.requestSubmit();
     }
   };
 
   // Build grouped messages with date separators
   const flatMessages: Array<{
     id: number;
+    userId: number;
     username: string;
     usernameColor: string;
     avatarUrl: string | null;
     text: string;
     time: Date;
-  }> = messages.map((m) => ({
-    id: m.id,
-    username: m.username,
-    usernameColor: m.username_color ?? usernameColor(m.username),
-    avatarUrl: m.avatar_url ?? null,
-    text: m.message,
-    time: new Date(m.created_at),
-  }));
+  }> = messages.map((m) => {
+    const mine =
+      myUserId != null && m.user_id === myUserId;
+    const cropped =
+      mine && me?.user.profile_pic != null
+        ? me.user.profile_pic
+        : m.avatar_url;
+    return {
+      id: m.id,
+      userId: m.user_id,
+      username: m.username,
+      usernameColor: m.username_color ?? usernameColor(m.username),
+      avatarUrl: cropped ?? null,
+      text: m.message,
+      time: new Date(m.created_at),
+    };
+  });
 
-  const groups = groupMessages(flatMessages);
+  const groups = groupMessages(flatMessages, myUserId);
 
   // Interleave date separators
   const rendered: React.ReactNode[] = [];

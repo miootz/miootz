@@ -174,3 +174,48 @@ async def test_score_update_verification():
         )
     assert resp.status_code == 200
     assert resp.json()["average_score"] == 4.0
+
+
+@pytest.mark.asyncio
+async def test_rating_context_allows_non_attendee_read_only():
+    async with async_session() as db:
+        viewer = User(username="viewer", email="viewer@test.com")
+        player = User(username="player1", email="p1@test.com")
+        db.add_all([viewer, player])
+        await db.commit()
+        await db.refresh(viewer)
+        await db.refresh(player)
+
+        session = GameSession(
+            start_time=datetime.utcnow() - timedelta(hours=2),
+            location="Pitch A",
+            max_players=10,
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+
+        db.add(
+            Attendance(
+                session_id=session.id,
+                user_id=player.id,
+                status="confirmed",
+            )
+        )
+        await db.commit()
+        sid = session.id
+        pid = player.id
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get(
+            f"/ratings/sessions/{sid}/context",
+            headers={settings.AUTHELIA_USER_HEADER: "viewer"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["viewer_attended"] is False
+    assert data["ratings_editable"] is False
+    assert len(data["ratees"]) == 1
+    assert data["ratees"][0]["user_id"] == pid
+    assert data["ratees"][0]["my_score"] is None

@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Session } from '../types';
-import { PlayerCard } from '../components/PlayerCard';
 import { DraggableTeams } from '../components/DraggableTeams';
 import { SessionChat } from '../components/SessionChat';
 import { MeetupLocationSection } from '../components/MeetupLocationSection';
@@ -10,12 +9,18 @@ import { SuccessCheckLottie } from '../components/SuccessCheckLottie';
 import { joinSession, leaveSession } from '../api/sessionsApi';
 import { useToast } from '../context/ToastContext';
 import { hapticError, hapticSuccess } from '../utils/haptics';
-import { Radio, Search } from 'lucide-react';
+import { Radio } from 'lucide-react';
 
 interface MeetupDetailsProps {
   session: Session;
   onToggleLock: (userId: string) => void;
-  onMovePlayer: (playerId: string, sourceTeamId: string, destTeamId: string) => void;
+  onMovePlayer: (
+    playerId: string,
+    sourceTeamId: string,
+    destTeamId: string
+  ) => void | Promise<void>;
+  /** Drag-and-drop between team columns (admins only). */
+  canDragTeams?: boolean;
   onRosterUpdated?: () => void;
   /** Server-sent events channel open — roster updates apply in real time. */
   rosterChannelLive?: boolean;
@@ -150,19 +155,12 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
   session,
   onToggleLock,
   onMovePlayer,
+  canDragTeams = false,
   onRosterUpdated,
   rosterChannelLive = false,
   lastRosterSync = null,
   offlineDataUpdatedAt = null,
 }) => {
-  const [attSearch, setAttSearch] = useState('');
-
-  const filteredAttendance = useMemo(() => {
-    const q = attSearch.trim().toLowerCase();
-    if (!q) return session.attendance;
-    return session.attendance.filter((p) => p.name.toLowerCase().includes(q));
-  }, [session.attendance, attSearch]);
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
       <header className="text-center space-y-2">
@@ -211,55 +209,22 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Attendance List */}
-        <section className="lg:col-span-1 space-y-4">
-          <div className="px-2 space-y-2">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-              Attendance
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Refreshes when anyone joins, leaves, or an admin changes the roster.
-            </p>
-            <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
-              <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-              <input
-                type="search"
-                value={attSearch}
-                onChange={(e) => setAttSearch(e.target.value)}
-                placeholder="Search players…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white"
-                aria-label="Filter attendance list"
-              />
-            </label>
-          </div>
-          <div className="grid gap-3">
-            {filteredAttendance.length === 0 ? (
-              <p className="text-sm text-gray-500 px-2">No players match.</p>
-            ) : (
-              filteredAttendance.map((player) => (
-                <PlayerCard key={player.id} player={player} onToggleLock={onToggleLock} />
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Teams Grid */}
-        <section className="lg:col-span-2 space-y-6">
-          <div className="px-2 space-y-1">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Teams</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Same live sync as attendance — your local lock/drag state resets when the
-              server pushes a new lineup.
-            </p>
-          </div>
-          <DraggableTeams
-            session={session}
-            onToggleLock={onToggleLock}
-            onMovePlayer={onMovePlayer}
-          />
-        </section>
-      </div>
+      <section className="space-y-6">
+        <div className="px-2 space-y-1">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Teams</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {canDragTeams
+              ? 'Drag a player row to move them between teams (on touch: press and hold briefly, then drag). Lineups are saved and synced. Lock pins someone to their current team when rebalancing. Changing team mode or reshuffling (random) clears a custom lineup.'
+              : 'Lock pins a player to their team when lineups rebalance; lock state is local until the server refreshes the roster.'}
+          </p>
+        </div>
+        <DraggableTeams
+          session={session}
+          onMovePlayer={onMovePlayer}
+          onToggleLock={onToggleLock}
+          canDragTeams={canDragTeams}
+        />
+      </section>
 
       <SessionChat sessionId={session.id} />
     </div>

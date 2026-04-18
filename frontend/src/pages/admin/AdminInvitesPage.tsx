@@ -111,7 +111,7 @@ export function AdminInvitesPage() {
           />
         }
         title="Invites"
-        subtitle="Create one-time links so new players can register. They still need an Authelia account with the same email."
+        subtitle="Create one-time links. New players open the link, choose a password, and are signed in (Authelia + LDAP are provisioned by the app)."
       />
 
       <form

@@ -14,6 +14,7 @@ export interface RatingContextResponse {
   ratings_locked: boolean;
   ratings_editable: boolean;
   ratings_lock_at: string | null;
+  viewer_attended: boolean;
   ratees: RateeContext[];
 }
 

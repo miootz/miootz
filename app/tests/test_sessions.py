@@ -167,3 +167,66 @@ async def test_chat_typing_endpoint():
         )
         assert r2.status_code == 200
         assert r2.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_patch_session_teams_admin():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await create_test_user(db, "admint", "admint@test.com", is_admin=True)
+            await create_test_user(db, "tp1", "tp1@test.com")
+            await create_test_user(db, "tp2", "tp2@test.com")
+            await create_test_user(db, "tp3", "tp3@test.com")
+            await create_test_user(db, "tp4", "tp4@test.com")
+
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Pitch Teams",
+                "min_players": 1,
+                "max_players": 10,
+                "send_invite_emails": False,
+            },
+            headers={settings.AUTHELIA_USER_HEADER: "admint"},
+        )
+        assert resp.status_code == 201
+        session_id = resp.json()["id"]
+
+        for u in ("tp1", "tp2", "tp3", "tp4"):
+            rj = await ac.post(
+                f"/sessions/{session_id}/join",
+                headers={settings.AUTHELIA_USER_HEADER: u},
+            )
+            assert rj.status_code == 200
+
+        async with AsyncSession(engine) as db:
+            from sqlalchemy import select
+
+            ids = {}
+            for name in ("tp1", "tp2", "tp3", "tp4"):
+                res = await db.execute(select(User).where(User.username == name))
+                ids[name] = str(res.scalar().id)
+
+        swap = await ac.patch(
+            f"/sessions/{session_id}/teams",
+            json={"teams": [[ids["tp1"], ids["tp3"]], [ids["tp2"], ids["tp4"]]]},
+            headers={settings.AUTHELIA_USER_HEADER: "admint"},
+        )
+        assert swap.status_code == 200
+        body = swap.json()
+        assert body["content_revision"] >= 1
+        assert len(body["teams"]) == 2
+        got = {frozenset(p["id"] for p in t["players"]) for t in body["teams"]}
+        assert got == {
+            frozenset({ids["tp1"], ids["tp3"]}),
+            frozenset({ids["tp2"], ids["tp4"]}),
+        }
+
+        r403 = await ac.patch(
+            f"/sessions/{session_id}/teams",
+            json={"teams": [[ids["tp1"], ids["tp2"]], [ids["tp3"], ids["tp4"]]]},
+            headers={settings.AUTHELIA_USER_HEADER: "tp1"},
+        )
+        assert r403.status_code == 403
