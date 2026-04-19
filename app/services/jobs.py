@@ -15,11 +15,11 @@ async def run_kickoff_reminder_job() -> None:
             logger.info("Kickoff 1h reminders: %s session(s)", n)
 
 
-async def run_recurrence_rule_job(rule_id: int) -> None:
+async def run_game_template_job(template_id: int) -> None:
     """Weekly cron: create next kickoff if missing, then send join-link emails."""
-    created = await materialize_next_session_and_notify(rule_id)
+    created = await materialize_next_session_and_notify(template_id)
     logger.info(
-        "Recurrence job rule_id=%s created_session=%s",
-        rule_id,
+        "Game template job template_id=%s created_session=%s",
+        template_id,
         created,
     )

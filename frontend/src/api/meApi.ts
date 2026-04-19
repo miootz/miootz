@@ -118,6 +118,34 @@ export async function saveAvatarCrop(crop: {
   }>;
 }
 
+export interface GameTemplateSubscriptionRow {
+  game_template_id: number;
+  name: string;
+  notifications_enabled: boolean;
+}
+
+export async function fetchGameTemplateSubscriptions(): Promise<{
+  items: GameTemplateSubscriptionRow[];
+}> {
+  const r = await apiFetch('/users/me/game-template-subscriptions');
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<{ items: GameTemplateSubscriptionRow[] }>;
+}
+
+export async function patchGameTemplateSubscription(
+  templateId: number,
+  notifications_enabled: boolean
+): Promise<void> {
+  const r = await apiFetch(
+    `/users/me/game-template-subscriptions/${templateId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ notifications_enabled }),
+    }
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+}
+
 /** Same-origin path e.g. `/uploads/uuid.jpg` — works behind Vite `/uploads` proxy in dev. */
 export function mediaUrl(path: string | null | undefined): string | undefined {
   if (!path) return undefined;

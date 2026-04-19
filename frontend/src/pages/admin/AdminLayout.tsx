@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Mail,
   Menu,
+  Repeat,
   UserCircle,
   Wrench,
   X,
@@ -38,6 +39,10 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/admin/sessions" className={navCls} onClick={onNavigate}>
         <Calendar className="w-4 h-4 shrink-0" />
         Sessions
+      </NavLink>
+      <NavLink to="/admin/game-templates" className={navCls} onClick={onNavigate}>
+        <Repeat className="w-4 h-4 shrink-0" />
+        Templates
       </NavLink>
       <NavLink to="/admin/invites" className={navCls} onClick={onNavigate}>
         <Mail className="w-4 h-4 shrink-0" />

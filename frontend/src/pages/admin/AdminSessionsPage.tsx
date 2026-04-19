@@ -70,11 +70,12 @@ export function AdminSessionsPage() {
   const reloadFirstPage = useCallback(async () => {
     setError(null);
     try {
-      const list = await fetchSessions({
+      const res = await fetchSessions({
         limit: PAGE_SIZE,
         offset: 0,
         q: debouncedQuery.trim() || undefined,
       });
+      const list = res.items;
       setSessions(
         [...list].sort(
           (a, b) =>
@@ -82,7 +83,7 @@ export function AdminSessionsPage() {
             parseSessionStart(b.start_time).getTime()
         )
       );
-      setHasMore(list.length === PAGE_SIZE);
+      setHasMore(res.offset + res.items.length < res.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load sessions');
     } finally {
@@ -106,7 +107,7 @@ export function AdminSessionsPage() {
         q: debouncedQuery.trim() || undefined,
       });
       setSessions((prev) => {
-        const merged = [...prev, ...next];
+        const merged = [...prev, ...next.items];
         merged.sort(
           (a, b) =>
             parseSessionStart(a.start_time).getTime() -
@@ -114,7 +115,7 @@ export function AdminSessionsPage() {
         );
         return merged;
       });
-      setHasMore(next.length === PAGE_SIZE);
+      setHasMore(next.offset + next.items.length < next.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load more');
     } finally {
@@ -128,7 +129,7 @@ export function AdminSessionsPage() {
     return sessions.filter((s) => {
       const start = parseSessionStart(s.start_time).getTime();
       const upcoming = start >= now;
-      const weekly = s.recurrence_rule_id != null;
+      const weekly = s.game_template_id != null;
       const inNext7 = start >= now && start <= now + weekMs;
       if (filter === 'upcoming' && !upcoming) return false;
       if (filter === 'past' && upcoming) return false;
@@ -324,7 +325,7 @@ export function AdminSessionsPage() {
                         <span className="capitalize">
                           {s.waitlist_mode.replace('_', ' ')}
                         </span>
-                        {s.recurrence_rule_id != null ? (
+                        {s.game_template_id != null ? (
                           <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400">
                             <Repeat className="w-3.5 h-3.5" />
                             Weekly

@@ -1,4 +1,4 @@
-"""Weekly recurrence: one rule spawns future `GameSession` rows on a schedule."""
+"""GameTemplate: recurring meetup definition; materialized rows are `GameSession` instances."""
 
 from __future__ import annotations
 
@@ -10,13 +10,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.game_template_subscription import GameTemplateSubscription
     from app.models.session import GameSession
 
 
-class SessionRecurrenceRule(Base):
-    __tablename__ = "session_recurrence_rules"
+class GameTemplate(Base):
+    __tablename__ = "game_templates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: Short label for admin/member UI (e.g. "Saturday kickabout").
+    name: Mapped[str] = mapped_column(String, default="Meetup")
+
     # IANA name, e.g. Europe/London — used with weekday + wall time below
     timezone: Mapped[str] = mapped_column(String, default="UTC")
     # Kickoff (meetup) wall time each week — Python weekday Monday=0 .. Sunday=6
@@ -24,7 +28,7 @@ class SessionRecurrenceRule(Base):
     hour: Mapped[int] = mapped_column(Integer)
     minute: Mapped[int] = mapped_column(Integer)
 
-    # When each week to create the next session + email join links (APScheduler cron in this TZ)
+    # When each week to create the next session + notify subscribers (APScheduler cron in this TZ)
     announce_timezone: Mapped[str] = mapped_column(String, default="UTC")
     announce_weekday: Mapped[int] = mapped_column(Integer, default=0)
     announce_hour: Mapped[int] = mapped_column(Integer, default=9)
@@ -37,11 +41,17 @@ class SessionRecurrenceRule(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     waitlist_mode: Mapped[str] = mapped_column(String, default="auto_promote")
-    #: Copied onto each materialized `GameSession` from this rule.
+    #: Copied onto each materialized `GameSession` from this template.
     team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
 
+    #: When False, scheduled jobs do not create new sessions for this template.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    sessions: Mapped[list[GameSession]] = relationship(
-        "GameSession", back_populates="recurrence_rule"
+    sessions: Mapped[list["GameSession"]] = relationship(
+        "GameSession", back_populates="game_template"
+    )
+    subscriptions: Mapped[list["GameTemplateSubscription"]] = relationship(
+        "GameTemplateSubscription",
+        back_populates="game_template",
+        cascade="all, delete-orphan",
     )

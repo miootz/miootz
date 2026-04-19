@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Mail, Plus, Wrench } from 'lucide-react';
+import { Calendar, Mail, Plus, Repeat, Wrench } from 'lucide-react';
+import { adminListGameTemplates } from '../../api/adminApi';
 import { fetchSessions } from '../../api/sessionsApi';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
@@ -8,7 +9,7 @@ import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 function DashboardSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-pulse">
-      {[1, 2, 3].map((i) => (
+      {[1, 2, 3, 4].map((i) => (
         <div
           key={i}
           className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50 p-5 h-36"
@@ -19,15 +20,22 @@ function DashboardSkeleton() {
 }
 
 export function AdminDashboard() {
-  const [count, setCount] = useState<number | null>(null);
+  const [sessionCount, setSessionCount] = useState<number | null>(null);
+  const [templateCount, setTemplateCount] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let c = true;
     (async () => {
       try {
-        const list = await fetchSessions();
-        if (c) setCount(list.length);
+        const [data, gt] = await Promise.all([
+          fetchSessions(),
+          adminListGameTemplates(),
+        ]);
+        if (c) {
+          setSessionCount(data.total);
+          setTemplateCount(gt.items.length);
+        }
       } catch (e) {
         if (c) setErr(e instanceof Error ? e.message : 'Failed to load');
       }
@@ -37,13 +45,32 @@ export function AdminDashboard() {
     };
   }, []);
 
+  const loading = sessionCount === null && templateCount === null && !err;
+
   const cards = [
     {
       to: '/admin/sessions',
       title: 'Sessions',
       desc: 'Create, edit, delete meetups; manage attendance.',
       icon: Calendar,
-      stat: count !== null ? `${count} scheduled` : err ? '—' : '…',
+      stat:
+        sessionCount !== null
+          ? `${sessionCount} scheduled`
+          : err
+            ? '—'
+            : '…',
+    },
+    {
+      to: '/admin/game-templates',
+      title: 'Templates',
+      desc: 'Weekly schedules and defaults for auto-created meetups.',
+      icon: Repeat,
+      stat:
+        templateCount !== null
+          ? `${templateCount} template${templateCount === 1 ? '' : 's'}`
+          : err
+            ? '—'
+            : '…',
     },
     {
       to: '/admin/invites',
@@ -70,10 +97,10 @@ export function AdminDashboard() {
           />
         }
         title="Overview"
-        subtitle="Manage Footy Legends sessions, invites, and background tasks."
+        subtitle="Sessions are individual meetups; templates define weekly auto-sessions."
       />
 
-      {count === null && !err ? (
+      {loading ? (
         <DashboardSkeleton />
       ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

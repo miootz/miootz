@@ -163,3 +163,66 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     if not await has_column("users", "avatar_crop_pixels"):
         await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_crop_pixels TEXT"))
+
+    # Game templates: FK on sessions + copy legacy session_recurrence_rules → game_templates
+    if not await has_column("game_sessions", "game_template_id"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN game_template_id INTEGER")
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_game_sessions_game_template_id "
+                "ON game_sessions (game_template_id)"
+            )
+        )
+
+    if await has_table("session_recurrence_rules") and await has_table("game_templates"):
+        r_gt = await conn.execute(text("SELECT COUNT(*) FROM game_templates"))
+        n_gt = r_gt.scalar_one()
+        r_sr = await conn.execute(text("SELECT COUNT(*) FROM session_recurrence_rules"))
+        n_sr = r_sr.scalar_one()
+        if n_sr > 0 and n_gt == 0:
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO game_templates (
+                        id, name, timezone, weekday, hour, minute,
+                        announce_timezone, announce_weekday, announce_hour, announce_minute,
+                        location, fee, min_players, max_players, latitude, longitude,
+                        waitlist_mode, team_assignment_mode, is_active
+                    )
+                    SELECT
+                        id,
+                        'Meetup',
+                        timezone,
+                        weekday,
+                        hour,
+                        minute,
+                        announce_timezone,
+                        announce_weekday,
+                        announce_hour,
+                        announce_minute,
+                        location,
+                        fee,
+                        min_players,
+                        max_players,
+                        latitude,
+                        longitude,
+                        waitlist_mode,
+                        COALESCE(team_assignment_mode, 'balanced'),
+                        is_active
+                    FROM session_recurrence_rules
+                    """
+                )
+            )
+        if await has_column("game_sessions", "recurrence_rule_id"):
+            await conn.execute(
+                text(
+                    """
+                    UPDATE game_sessions
+                    SET game_template_id = recurrence_rule_id
+                    WHERE recurrence_rule_id IS NOT NULL
+                      AND (game_template_id IS NULL OR game_template_id = 0)
+                    """
+                )
+            )

@@ -7,10 +7,8 @@ import {
   type TeamAssignmentMode,
   type WaitlistMode,
 } from '../../api/adminApi';
-import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { inferRecurrenceWallTime } from '../../utils/recurrence';
 import {
   ADMIN_LAST_LOCATION_KEY,
   ADMIN_LAST_MAX_PLAYERS_KEY,
@@ -27,7 +25,7 @@ function defaultStartLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 export function AdminSessionNewPage() {
   const navigate = useNavigate();
@@ -41,24 +39,6 @@ export function AdminSessionNewPage() {
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
   const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
-
-  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
-  const [recurrenceTz, setRecurrenceTz] = useState(() =>
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone
-      : 'UTC'
-  );
-  const [recurrenceWeekday, setRecurrenceWeekday] = useState(0);
-  const [recurrenceHour, setRecurrenceHour] = useState(19);
-  const [recurrenceMinute, setRecurrenceMinute] = useState(0);
-  const [announceTz, setAnnounceTz] = useState(() =>
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone
-      : 'UTC'
-  );
-  const [announceWeekday, setAnnounceWeekday] = useState(0);
-  const [announceHour, setAnnounceHour] = useState(9);
-  const [announceMinute, setAnnounceMinute] = useState(0);
   const [sendInviteEmails, setSendInviteEmails] = useState(true);
 
   useEffect(() => {
@@ -83,9 +63,7 @@ export function AdminSessionNewPage() {
         setWaitlistMode(draft.waitlistMode);
       if (draft.teamMode === 'random' || draft.teamMode === 'balanced')
         setTeamMode(draft.teamMode);
-      if (typeof draft.recurrenceEnabled === 'boolean')
-        setRecurrenceEnabled(draft.recurrenceEnabled);
-      if (typeof draft.step === 'number' && draft.step >= 1 && draft.step <= 3)
+      if (typeof draft.step === 'number' && draft.step >= 1 && draft.step <= 2)
         setStep(draft.step as Step);
     }
   }, []);
@@ -100,7 +78,6 @@ export function AdminSessionNewPage() {
         maxPlayers,
         waitlistMode,
         teamMode,
-        recurrenceEnabled,
         step,
       });
     }, 400);
@@ -113,7 +90,6 @@ export function AdminSessionNewPage() {
     maxPlayers,
     waitlistMode,
     teamMode,
-    recurrenceEnabled,
     step,
   ]);
 
@@ -155,19 +131,6 @@ export function AdminSessionNewPage() {
         team_assignment_mode: teamMode,
         send_invite_emails: sendInviteEmails,
       };
-      if (recurrenceEnabled) {
-        body.recurrence = {
-          enabled: true,
-          timezone: recurrenceTz.trim() || 'UTC',
-          weekday: recurrenceWeekday,
-          hour: recurrenceHour,
-          minute: recurrenceMinute,
-          announce_timezone: announceTz.trim() || 'UTC',
-          announce_weekday: announceWeekday,
-          announce_hour: announceHour,
-          announce_minute: announceMinute,
-        };
-      }
       if (!body.location) {
         setError('Location is required.');
         setSaving(false);
@@ -193,7 +156,7 @@ export function AdminSessionNewPage() {
 
   const stepper = (
     <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
-      {[1, 2, 3].map((n) => (
+      {[1, 2].map((n) => (
         <div key={n} className="flex items-center gap-2">
           <button
             type="button"
@@ -206,11 +169,11 @@ export function AdminSessionNewPage() {
           >
             {n}
           </button>
-          {n < 3 ? <ChevronRight className="h-4 w-4 opacity-50" /> : null}
+          {n < 2 ? <ChevronRight className="h-4 w-4 opacity-50" /> : null}
         </div>
       ))}
       <span className="ml-2 hidden sm:inline">
-        {step === 1 ? 'Basics' : step === 2 ? 'Settings' : 'Review'}
+        {step === 1 ? 'Basics' : 'Review'}
       </span>
     </div>
   );
@@ -228,7 +191,7 @@ export function AdminSessionNewPage() {
           />
         }
         title="New session"
-        subtitle="Players will see this meetup once it exists; you can edit details later. Draft saves in this browser."
+        subtitle="One meetup instance. For weekly auto-sessions, use Templates in the admin menu."
       />
 
       <Link
@@ -358,18 +321,6 @@ export function AdminSessionNewPage() {
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
               />
             </div>
-            <button
-              type="button"
-              className="w-full min-h-[44px] rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 active:scale-[0.98] transition-colors"
-              onClick={() => setStep(2)}
-            >
-              Next: settings
-            </button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-5">
             <div>
               <label
                 htmlFor="wl"
@@ -408,61 +359,17 @@ export function AdminSessionNewPage() {
                 <option value="random">Random order (snake)</option>
               </select>
             </div>
-            <AdminSessionRecurrenceForm
-              startLocal={startLocal}
-              enabled={recurrenceEnabled}
-              onEnabledChange={(v) => {
-                setRecurrenceEnabled(v);
-                if (v) {
-                  const t = inferRecurrenceWallTime(startLocal, recurrenceTz);
-                  if (t) {
-                    setRecurrenceWeekday(t.weekday);
-                    setRecurrenceHour(t.hour);
-                    setRecurrenceMinute(t.minute);
-                    setAnnounceWeekday(t.weekday);
-                    setAnnounceHour(t.hour);
-                    setAnnounceMinute(t.minute);
-                  }
-                  setAnnounceTz(recurrenceTz);
-                }
-              }}
-              timezone={recurrenceTz}
-              onTimezoneChange={setRecurrenceTz}
-              weekday={recurrenceWeekday}
-              onWeekdayChange={setRecurrenceWeekday}
-              hour={recurrenceHour}
-              onHourChange={setRecurrenceHour}
-              minute={recurrenceMinute}
-              onMinuteChange={setRecurrenceMinute}
-              announceTimezone={announceTz}
-              onAnnounceTimezoneChange={setAnnounceTz}
-              announceWeekday={announceWeekday}
-              onAnnounceWeekdayChange={setAnnounceWeekday}
-              announceHour={announceHour}
-              onAnnounceHourChange={setAnnounceHour}
-              announceMinute={announceMinute}
-              onAnnounceMinuteChange={setAnnounceMinute}
-            />
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                className="flex-1 min-h-[44px] rounded-xl border border-gray-300 dark:border-gray-600 py-2.5 font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                onClick={() => setStep(1)}
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                className="flex-1 min-h-[44px] rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 active:scale-[0.98] transition-colors"
-                onClick={() => setStep(3)}
-              >
-                Next: review
-              </button>
-            </div>
+            <button
+              type="button"
+              className="w-full min-h-[44px] rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 active:scale-[0.98] transition-colors"
+              onClick={() => setStep(2)}
+            >
+              Next: review
+            </button>
           </div>
         )}
 
-        {step === 3 && (
+        {step === 2 && (
           <div className="space-y-5">
             <div className="rounded-xl bg-gray-50 dark:bg-gray-950/50 p-4 text-sm text-gray-700 dark:text-gray-300 space-y-2 border border-gray-200 dark:border-gray-800">
               <p>
@@ -476,10 +383,6 @@ export function AdminSessionNewPage() {
               <p>
                 <span className="font-medium text-gray-900 dark:text-gray-100">Players:</span>{' '}
                 {minPlayers}–{maxPlayers} · Fee {fee}
-              </p>
-              <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">Weekly:</span>{' '}
-                {recurrenceEnabled ? 'Yes' : 'No'}
               </p>
             </div>
             <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-950/40 px-3 py-3 transition-colors">
@@ -502,7 +405,7 @@ export function AdminSessionNewPage() {
               <button
                 type="button"
                 className="flex-1 min-h-[44px] rounded-xl border border-gray-300 dark:border-gray-600 py-2.5 font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
               >
                 Back
               </button>

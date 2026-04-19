@@ -25,11 +25,9 @@ import {
   type TeamAssignmentMode,
   type WaitlistMode,
 } from '../../api/adminApi';
-import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { PlayerAvatarFace, SkillBadge } from '../../components/PlayerAvatar';
 import { useToast } from '../../context/ToastContext';
-import { inferRecurrenceWallTime } from '../../utils/recurrence';
 import {
   parseSessionStart,
   sessionStartToDatetimeLocalValue,
@@ -54,16 +52,6 @@ export function AdminSessionDetailPage() {
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
   const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
-
-  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
-  const [recurrenceTz, setRecurrenceTz] = useState('UTC');
-  const [recurrenceWeekday, setRecurrenceWeekday] = useState(0);
-  const [recurrenceHour, setRecurrenceHour] = useState(19);
-  const [recurrenceMinute, setRecurrenceMinute] = useState(0);
-  const [announceTz, setAnnounceTz] = useState('UTC');
-  const [announceWeekday, setAnnounceWeekday] = useState(0);
-  const [announceHour, setAnnounceHour] = useState(9);
-  const [announceMinute, setAnnounceMinute] = useState(0);
 
   const [savingMeta, setSavingMeta] = useState(false);
   const [movingKey, setMovingKey] = useState<string | null>(null);
@@ -95,37 +83,6 @@ export function AdminSessionDetailPage() {
         d.waitlist_mode === 'broadcast' ? 'broadcast' : 'auto_promote'
       );
       setTeamMode(d.team_assignment_mode === 'random' ? 'random' : 'balanced');
-      if (d.recurrence) {
-        setRecurrenceEnabled(d.recurrence.is_active);
-        setRecurrenceTz(d.recurrence.timezone);
-        setRecurrenceWeekday(d.recurrence.weekday);
-        setRecurrenceHour(d.recurrence.hour);
-        setRecurrenceMinute(d.recurrence.minute);
-        setAnnounceTz(d.recurrence.announce_timezone);
-        setAnnounceWeekday(d.recurrence.announce_weekday);
-        setAnnounceHour(d.recurrence.announce_hour);
-        setAnnounceMinute(d.recurrence.announce_minute);
-      } else {
-        setRecurrenceEnabled(false);
-        const localTz =
-          typeof Intl !== 'undefined'
-            ? Intl.DateTimeFormat().resolvedOptions().timeZone
-            : 'UTC';
-        setRecurrenceTz(localTz);
-        const t = inferRecurrenceWallTime(
-          sessionStartToDatetimeLocalValue(d.start_time),
-          localTz
-        );
-        if (t) {
-          setRecurrenceWeekday(t.weekday);
-          setRecurrenceHour(t.hour);
-          setRecurrenceMinute(t.minute);
-          setAnnounceWeekday(t.weekday);
-          setAnnounceHour(t.hour);
-          setAnnounceMinute(t.minute);
-        }
-        setAnnounceTz(localTz);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setDetail(null);
@@ -158,17 +115,6 @@ export function AdminSessionDetailPage() {
         max_players: max,
         waitlist_mode: waitlistMode,
         team_assignment_mode: teamMode,
-        recurrence: {
-          enabled: recurrenceEnabled,
-          timezone: recurrenceTz.trim() || 'UTC',
-          weekday: recurrenceWeekday,
-          hour: recurrenceHour,
-          minute: recurrenceMinute,
-          announce_timezone: announceTz.trim() || 'UTC',
-          announce_weekday: announceWeekday,
-          announce_hour: announceHour,
-          announce_minute: announceMinute,
-        },
       });
       await load();
       showToast('Session updated.', 'success');
@@ -540,47 +486,28 @@ export function AdminSessionDetailPage() {
                 <option value="random">Random order (snake)</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Saved with the session; copied for recurring meetups. Random mode
-                allows reshuffling teams without changing the mode.
+                Random mode allows reshuffling teams without changing the mode.
               </p>
             </div>
           </div>
 
-          <AdminSessionRecurrenceForm
-            startLocal={startLocal}
-            enabled={recurrenceEnabled}
-            onEnabledChange={(v) => {
-              setRecurrenceEnabled(v);
-              if (v) {
-                const t = inferRecurrenceWallTime(startLocal, recurrenceTz);
-                if (t) {
-                  setRecurrenceWeekday(t.weekday);
-                  setRecurrenceHour(t.hour);
-                  setRecurrenceMinute(t.minute);
-                  setAnnounceWeekday(t.weekday);
-                  setAnnounceHour(t.hour);
-                  setAnnounceMinute(t.minute);
-                }
-                setAnnounceTz(recurrenceTz);
-              }
-            }}
-            timezone={recurrenceTz}
-            onTimezoneChange={setRecurrenceTz}
-            weekday={recurrenceWeekday}
-            onWeekdayChange={setRecurrenceWeekday}
-            hour={recurrenceHour}
-            onHourChange={setRecurrenceHour}
-            minute={recurrenceMinute}
-            onMinuteChange={setRecurrenceMinute}
-            announceTimezone={announceTz}
-            onAnnounceTimezoneChange={setAnnounceTz}
-            announceWeekday={announceWeekday}
-            onAnnounceWeekdayChange={setAnnounceWeekday}
-            announceHour={announceHour}
-            onAnnounceHourChange={setAnnounceHour}
-            announceMinute={announceMinute}
-            onAnnounceMinuteChange={setAnnounceMinute}
-          />
+          {detail?.game_template_id && detail.game_template && (
+            <div className="sm:col-span-2 rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/20 p-4 space-y-2">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Weekly template
+              </p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                This meetup was created from the template below. Edit schedule and
+                defaults under Templates — this page is only for this session instance.
+              </p>
+              <Link
+                to={`/admin/game-templates/${detail.game_template_id}`}
+                className="inline-flex text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline"
+              >
+                Open “{detail.game_template.name}”
+              </Link>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3">
             <button

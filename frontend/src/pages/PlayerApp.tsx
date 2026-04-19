@@ -12,7 +12,6 @@ import {
   patchSessionTeams,
   sessionDataEventsUrl,
   type SessionDetail,
-  type SessionListItem,
 } from '../api/sessionsApi';
 import { mediaUrl } from '../api/meApi';
 import { clearSessionChatCache } from '../stores/sessionChatCache';
@@ -72,7 +71,6 @@ export function PlayerApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [pastSessions, setPastSessions] = useState<SessionListItem[]>([]);
   const [activeSessionNumericId, setActiveSessionNumericId] = useState<
     number | null
   >(null);
@@ -109,39 +107,23 @@ export function PlayerApp() {
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchSessions();
-      if (list.length === 0) {
-        await clearSessionChatCache();
-        setSession(null);
-        setActiveSessionNumericId(null);
-        setPastSessions([]);
-        setError('No sessions yet. Create one in Admin.');
-        return;
-      }
-      const sorted = [...list].sort(
-        (a, b) =>
-          parseSessionStart(a.start_time).getTime() -
-          parseSessionStart(b.start_time).getTime()
-      );
-      const now = Date.now();
-      const upcoming = sorted.filter(
-        (s) => parseSessionStart(s.start_time).getTime() >= now
-      );
-      const past = sorted
-        .filter((s) => parseSessionStart(s.start_time).getTime() < now)
-        .sort(
-          (a, b) =>
-            parseSessionStart(b.start_time).getTime() -
-            parseSessionStart(a.start_time).getTime()
-        );
-      setPastSessions(past);
-
+      const upcomingRes = await fetchSessions({
+        status: 'upcoming',
+        order: 'asc',
+        limit: 50,
+      });
+      const upcoming = upcomingRes.items;
       if (upcoming.length === 0) {
         await clearSessionChatCache();
         setSession(null);
         setActiveSessionNumericId(null);
         setOfflineDataUpdatedAt(null);
-        setError(null);
+        const anyRes = await fetchSessions({ limit: 1 });
+        if (anyRes.total === 0) {
+          setError('No sessions yet. Create one in Admin.');
+        } else {
+          setError(null);
+        }
         return;
       }
       await loadSession(upcoming[0].id);
@@ -155,7 +137,6 @@ export function PlayerApp() {
           setSession(snap.session);
           setActiveSessionNumericId(Number.parseInt(snap.session.id, 10));
           setOfflineDataUpdatedAt(new Date(snap.updatedAt));
-          setPastSessions([]);
           setError(null);
         } else {
           setError(e instanceof Error ? e.message : 'Failed to load');
@@ -328,7 +309,7 @@ export function PlayerApp() {
         className={memberView === 'history' ? 'block' : 'hidden'}
         aria-hidden={memberView !== 'history'}
       >
-        <HistoryPage pastSessions={pastSessions} />
+        <HistoryPage />
       </div>
     </>
   );

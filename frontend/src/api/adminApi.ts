@@ -4,18 +4,6 @@ export type WaitlistMode = 'broadcast' | 'auto_promote';
 
 export type TeamAssignmentMode = 'balanced' | 'random';
 
-export interface RecurrenceConfigBody {
-  enabled: boolean;
-  timezone: string;
-  weekday: number;
-  hour: number;
-  minute: number;
-  announce_timezone: string;
-  announce_weekday: number;
-  announce_hour: number;
-  announce_minute: number;
-}
-
 export interface SessionCreateBody {
   start_time: string;
   location: string;
@@ -26,8 +14,7 @@ export interface SessionCreateBody {
   longitude?: number | null;
   waitlist_mode?: WaitlistMode;
   team_assignment_mode?: TeamAssignmentMode;
-  recurrence?: RecurrenceConfigBody;
-  /** When true (default), email all users with join links — same as recurrence announcements. */
+  /** When true (default), email all users with join links for this meetup. */
   send_invite_emails?: boolean;
 }
 
@@ -41,8 +28,34 @@ export interface SessionUpdateBody {
   longitude?: number | null;
   waitlist_mode?: WaitlistMode;
   team_assignment_mode?: TeamAssignmentMode;
-  recurrence?: RecurrenceConfigBody;
 }
+
+/** Recurring schedule + defaults (admin `/admin/game-templates`). */
+export interface GameTemplatePayload {
+  name: string;
+  timezone: string;
+  weekday: number;
+  hour: number;
+  minute: number;
+  announce_timezone: string;
+  announce_weekday: number;
+  announce_hour: number;
+  announce_minute: number;
+  location: string;
+  fee: number;
+  min_players: number;
+  max_players: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  waitlist_mode: WaitlistMode;
+  team_assignment_mode: TeamAssignmentMode;
+  is_active: boolean;
+}
+
+export type GameTemplateRow = GameTemplatePayload & {
+  id: number;
+  materialized_session_count?: number;
+};
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -110,9 +123,49 @@ export async function adminMoveAttendance(
   return jsonOrThrow(r);
 }
 
+export async function adminListGameTemplates(): Promise<{
+  items: GameTemplateRow[];
+}> {
+  const r = await apiFetch('/game-templates/');
+  return jsonOrThrow(r);
+}
+
+export async function adminGetGameTemplate(id: number): Promise<GameTemplateRow> {
+  const r = await apiFetch(`/game-templates/${id}`);
+  return jsonOrThrow(r);
+}
+
+export async function adminCreateGameTemplate(
+  body: GameTemplatePayload
+): Promise<GameTemplateRow> {
+  const r = await apiFetch('/game-templates/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminUpdateGameTemplate(
+  id: number,
+  body: Partial<GameTemplatePayload>
+): Promise<GameTemplateRow> {
+  const r = await apiFetch(`/game-templates/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminDeleteGameTemplate(
+  id: number
+): Promise<{ status: string }> {
+  const r = await apiFetch(`/game-templates/${id}`, { method: 'DELETE' });
+  return jsonOrThrow(r);
+}
+
 export async function adminRunRecurringNow(): Promise<{
   status: string;
-  rules_checked: number;
+  templates_checked: number;
   sessions_created: number;
 }> {
   const r = await apiFetch('/sessions/recurring/run-now', { method: 'POST' });

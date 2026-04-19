@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SessionListItem } from '../api/sessionsApi';
+import { fetchSessions } from '../api/sessionsApi';
 import { fetchRatingContext } from '../api/ratingsApi';
 import { SessionRatingsPanel } from '../components/SessionRatingsPanel';
 import { parseSessionStart } from '../utils/datetime';
-import { ArrowDownAZ, CalendarClock, Search } from 'lucide-react';
+import { ArrowDownAZ, CalendarClock, Loader2, Search } from 'lucide-react';
 
-interface HistoryPageProps {
-  pastSessions: SessionListItem[];
-}
+const PAGE_SIZE = 10;
 
 type SortKey = 'date-desc' | 'date-asc' | 'location';
 
@@ -117,10 +116,59 @@ function HistorySessionRow({
   );
 }
 
-export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
+export const HistoryPage: React.FC = () => {
+  const [pastSessions, setPastSessions] = useState<SessionListItem[]>([]);
+  const [pastTotal, setPastTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('date-desc');
   const [query, setQuery] = useState('');
+
+  const loadFirst = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const r = await fetchSessions({
+        status: 'past',
+        order: 'desc',
+        limit: PAGE_SIZE,
+        offset: 0,
+      });
+      setPastSessions(r.items);
+      setPastTotal(r.total);
+    } catch (e) {
+      setPastSessions([]);
+      setPastTotal(0);
+      setLoadError(e instanceof Error ? e.message : 'Failed to load history');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFirst();
+  }, [loadFirst]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || pastSessions.length >= pastTotal) return;
+    setLoadingMore(true);
+    setLoadError(null);
+    try {
+      const r = await fetchSessions({
+        status: 'past',
+        order: 'desc',
+        limit: PAGE_SIZE,
+        offset: pastSessions.length,
+      });
+      setPastSessions((prev) => [...prev, ...r.items]);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load more');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, pastSessions.length, pastTotal]);
 
   const sortedFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -144,6 +192,14 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
     setExpandedSession((prev) => (prev === idStr ? null : idStr));
   }, []);
 
+  if (loading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto flex justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-600" aria-label="Loading" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
       <header className="text-center space-y-2">
@@ -152,6 +208,12 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
           Past meetups for everyone. Only attendees can rate teammates (anonymous).
         </p>
       </header>
+
+      {loadError && (
+        <p className="text-center text-sm text-red-600 dark:text-red-400" role="alert">
+          {loadError}
+        </p>
+      )}
 
       {pastSessions.length > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -206,7 +268,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
         </div>
       )}
 
-      {pastSessions.length === 0 ? (
+      {pastSessions.length === 0 && !loadError ? (
         <p className="text-center text-gray-500 dark:text-gray-400 py-8">
           No past sessions yet.
         </p>
@@ -227,6 +289,21 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ pastSessions }) => {
               />
             );
           })}
+          {pastSessions.length < pastTotal && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-300 dark:border-gray-600 px-5 py-2.5 text-sm font-medium text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : null}
+                Load more ({pastSessions.length} of {pastTotal})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

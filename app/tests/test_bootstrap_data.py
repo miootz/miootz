@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import func, select
 
-import app.models.session_recurrence  # noqa: F401 — register FK target for metadata
+import app.models.game_template  # noqa: F401 — GameSession FK metadata
 from app.bootstrap_data import (
     DEMO_EMAIL_DOMAIN,
     DEMO_SESSION_LOCATION_PREFIX,

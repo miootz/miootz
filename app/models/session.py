@@ -11,7 +11,7 @@ from app.models.user import User
 from app.models.chat import ChatMessage
 
 if TYPE_CHECKING:
-    from app.models.session_recurrence import SessionRecurrenceRule
+    from app.models.game_template import GameTemplate
 
 
 class GameSession(Base):
@@ -41,13 +41,14 @@ class GameSession(Base):
         DateTime, nullable=True
     )
 
-    recurrence_rule_id: Mapped[int | None] = mapped_column(
-        ForeignKey("session_recurrence_rules.id"),
+    #: Source template when this session was created from a recurring template (nullable for one-offs).
+    game_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("game_templates.id"),
         nullable=True,
         index=True,
     )
-    recurrence_rule: Mapped[SessionRecurrenceRule | None] = relationship(
-        "SessionRecurrenceRule",
+    game_template: Mapped["GameTemplate | None"] = relationship(
+        "GameTemplate",
         back_populates="sessions",
     )
 

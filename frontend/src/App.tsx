@@ -10,6 +10,8 @@ import { AdminSessionNewPage } from './pages/admin/AdminSessionNewPage';
 import { AdminSessionDetailPage } from './pages/admin/AdminSessionDetailPage';
 import { AdminInvitesPage } from './pages/admin/AdminInvitesPage';
 import { AdminToolsPage } from './pages/admin/AdminToolsPage';
+import { AdminGameTemplatesPage } from './pages/admin/AdminGameTemplatesPage';
+import { AdminGameTemplateEditPage } from './pages/admin/AdminGameTemplateEditPage';
 import { SessionActionPage } from './pages/SessionActionPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { InviteVerifyPage } from './pages/InviteVerifyPage';
@@ -25,6 +27,9 @@ export default function App() {
           <Route path="sessions" element={<AdminSessionsPage />} />
           <Route path="sessions/new" element={<AdminSessionNewPage />} />
           <Route path="sessions/:sessionId" element={<AdminSessionDetailPage />} />
+          <Route path="game-templates" element={<AdminGameTemplatesPage />} />
+          <Route path="game-templates/new" element={<AdminGameTemplateEditPage />} />
+          <Route path="game-templates/:templateId" element={<AdminGameTemplateEditPage />} />
           <Route path="invites" element={<AdminInvitesPage />} />
           <Route path="tools" element={<AdminToolsPage />} />
         </Route>

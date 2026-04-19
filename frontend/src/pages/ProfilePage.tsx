@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../context/ToastContext';
 import {
   MAX_AVATAR_BYTES,
+  fetchGameTemplateSubscriptions,
   fetchMyStats,
   mediaUrl,
+  patchGameTemplateSubscription,
   patchMyProfile,
   uploadMyAvatar,
+  type GameTemplateSubscriptionRow,
   type UserStats,
 } from '../api/meApi';
 import { AvatarCropDialog } from '../components/AvatarCropDialog';
@@ -47,6 +50,13 @@ export function ProfilePage() {
   const [pushOn, setPushOn] = useState(false);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [templateSubs, setTemplateSubs] = useState<GameTemplateSubscriptionRow[]>(
+    []
+  );
+  const [templateSubsLoading, setTemplateSubsLoading] = useState(false);
+  const [templateToggleBusy, setTemplateToggleBusy] = useState<number | null>(
+    null
+  );
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -70,6 +80,24 @@ export function ProfilePage() {
       const sub = await reg.pushManager.getSubscription();
       if (!cancelled) setPushOn(!!sub);
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTemplateSubsLoading(true);
+    void fetchGameTemplateSubscriptions()
+      .then((r) => {
+        if (!cancelled) setTemplateSubs(r.items);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplateSubs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTemplateSubsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -407,6 +435,79 @@ export function ProfilePage() {
             + service worker).
           </p>
         )}
+
+        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 text-left">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Weekly meetup emails
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Turn off email for a recurring meetup you do not want announcements for.
+            One-off sessions are not listed here.
+          </p>
+          {templateSubsLoading ? (
+            <p className="text-sm text-gray-500">Loading…</p>
+          ) : templateSubs.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              No active weekly templates yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+              {templateSubs.map((row) => (
+                <li
+                  key={row.game_template_id}
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
+                >
+                  <span className="text-sm text-gray-900 dark:text-gray-100 min-w-0 truncate">
+                    {row.name}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={templateToggleBusy === row.game_template_id}
+                    onClick={() => {
+                      const next = !row.notifications_enabled;
+                      setTemplateToggleBusy(row.game_template_id);
+                      setTemplateSubs((prev) =>
+                        prev.map((p) =>
+                          p.game_template_id === row.game_template_id
+                            ? { ...p, notifications_enabled: next }
+                            : p
+                        )
+                      );
+                      void patchGameTemplateSubscription(
+                        row.game_template_id,
+                        next
+                      )
+                        .catch(() => {
+                          setTemplateSubs((prev) =>
+                            prev.map((p) =>
+                              p.game_template_id === row.game_template_id
+                                ? { ...p, notifications_enabled: row.notifications_enabled }
+                                : p
+                            )
+                          );
+                          showToast('Could not update preference.', 'error');
+                        })
+                        .finally(() => setTemplateToggleBusy(null));
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
+                      row.notifications_enabled
+                        ? 'bg-violet-600'
+                        : 'bg-gray-200 dark:bg-gray-600'
+                    } disabled:opacity-50`}
+                    role="switch"
+                    aria-checked={row.notifications_enabled}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
+                        row.notifications_enabled ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {sso && (
           <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">

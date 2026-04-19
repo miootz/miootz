@@ -9,8 +9,9 @@ export function sessionChatEventsUrl(sessionId: string | number): string {
   return `${apiBase()}/sessions/${sessionId}/chat/events`;
 }
 
-export interface SessionRecurrenceInfo {
+export interface GameTemplateInfo {
   id: number;
+  name: string;
   timezone: string;
   weekday: number;
   hour: number;
@@ -22,6 +23,9 @@ export interface SessionRecurrenceInfo {
   is_active: boolean;
   team_assignment_mode?: string;
 }
+
+/** @deprecated use GameTemplateInfo */
+export type SessionRecurrenceInfo = GameTemplateInfo;
 
 export interface SessionListItem {
   id: number;
@@ -36,16 +40,24 @@ export interface SessionListItem {
   team_assignment_mode?: string;
   /** Server bump when roster or session fields change; use to invalidate cached UI. */
   content_revision: number;
-  recurrence_rule_id?: number | null;
+  game_template_id?: number | null;
+  game_template?: GameTemplateInfo | null;
   /** Confirmed roster count (list endpoint only; defaults to 0 if omitted). */
   confirmed_count?: number;
+}
+
+export interface SessionListResponse {
+  items: SessionListItem[];
+  total: number;
+  limit: number | null;
+  offset: number;
 }
 
 export type AttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 
 export interface SessionDetail extends SessionListItem {
   team_assignment_mode?: string;
-  recurrence?: SessionRecurrenceInfo | null;
+  game_template?: GameTemplateInfo | null;
   attendees: {
     user_id: number;
     username: string;
@@ -81,15 +93,19 @@ export async function fetchSessions(options?: {
   offset?: number;
   /** Server-side location contains filter */
   q?: string;
-}): Promise<SessionListItem[]> {
+  status?: 'past' | 'upcoming' | 'all';
+  order?: 'asc' | 'desc';
+}): Promise<SessionListResponse> {
   const p = new URLSearchParams();
   if (options?.limit != null) p.set('limit', String(options.limit));
   if (options?.offset != null) p.set('offset', String(options.offset));
   if (options?.q?.trim()) p.set('q', options.q.trim());
+  if (options?.status) p.set('status', options.status);
+  if (options?.order) p.set('order', options.order);
   const qs = p.toString();
   const r = await apiFetch(`/sessions/${qs ? `?${qs}` : ''}`);
   if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json();
+  return r.json() as Promise<SessionListResponse>;
 }
 
 export async function fetchSessionDetail(id: number): Promise<SessionDetail> {

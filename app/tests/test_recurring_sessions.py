@@ -1,4 +1,4 @@
-"""Recurrence helpers and API (weekly rules + materialize + notify)."""
+"""Game templates + materialize + sessions API (weekly templates + notify)."""
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.models.game_template import GameTemplate
 from app.models.session import GameSession
-from app.models.session_recurrence import SessionRecurrenceRule
 from app.models.user import User
 from app.services.recurring_sessions import (
     materialize_next_session_and_notify,
@@ -36,7 +36,8 @@ def test_utc_start_matches_rule_europe_london():
 
 
 def test_next_occurrence_skips_same_week_if_time_passed():
-    rule = SessionRecurrenceRule(
+    rule = GameTemplate(
+        name="Test",
         timezone="UTC",
         weekday=0,
         hour=10,
@@ -61,7 +62,8 @@ def test_next_occurrence_skips_same_week_if_time_passed():
 @pytest.mark.asyncio
 async def test_materialize_next_idempotent():
     async with AsyncSession(engine) as db:
-        rule = SessionRecurrenceRule(
+        rule = GameTemplate(
+            name="Test",
             timezone="UTC",
             weekday=2,
             hour=12,
@@ -89,7 +91,7 @@ async def test_materialize_next_idempotent():
             min_players=10,
             max_players=15,
             waitlist_mode="auto_promote",
-            recurrence_rule_id=rule.id,
+            game_template_id=rule.id,
         )
         db.add(first)
         await db.commit()
@@ -105,7 +107,7 @@ async def test_materialize_next_idempotent():
 
 
 @pytest.mark.asyncio
-async def test_create_session_with_recurrence_admin():
+async def test_create_game_template_admin():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
@@ -113,70 +115,30 @@ async def test_create_session_with_recurrence_admin():
             db.add(u)
             await db.commit()
 
-        # Monday 18:00 UTC
-        start = datetime(2031, 3, 3, 18, 0, tzinfo=timezone.utc)
-        assert start.weekday() == 0
         body = {
-            "start_time": start.isoformat(),
+            "name": "Monday pitch",
+            "timezone": "UTC",
+            "weekday": 0,
+            "hour": 18,
+            "minute": 0,
+            "announce_timezone": "UTC",
+            "announce_weekday": 3,
+            "announce_hour": 10,
+            "announce_minute": 0,
             "location": "Field A",
             "fee": 5.0,
             "min_players": 8,
             "max_players": 14,
             "waitlist_mode": "auto_promote",
-            "recurrence": {
-                "enabled": True,
-                "timezone": "UTC",
-                "weekday": 0,
-                "hour": 18,
-                "minute": 0,
-                "announce_timezone": "UTC",
-                "announce_weekday": 3,
-                "announce_hour": 10,
-                "announce_minute": 0,
-            },
-            "send_invite_emails": False,
+            "is_active": True,
         }
         r = await ac.post(
-            "/sessions/",
+            "/game-templates/",
             json=body,
             headers={settings.AUTHELIA_USER_HEADER: "adm"},
         )
         assert r.status_code == 201, r.text
         data = r.json()
-        assert data["recurrence_rule_id"] is not None
-        assert data["recurrence"]["is_active"] is True
-        assert data["recurrence"]["announce_weekday"] == 3
-
-
-@pytest.mark.asyncio
-async def test_create_session_recurrence_mismatch_rejected():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        async with AsyncSession(engine) as db:
-            u = User(username="adm2", email="a2@test.com", is_admin=True)
-            db.add(u)
-            await db.commit()
-
-        start = datetime(2031, 3, 3, 18, 0, tzinfo=timezone.utc)
-        body = {
-            "start_time": start.isoformat(),
-            "location": "Field A",
-            "recurrence": {
-                "enabled": True,
-                "timezone": "UTC",
-                "weekday": 2,
-                "hour": 18,
-                "minute": 0,
-                "announce_timezone": "UTC",
-                "announce_weekday": 1,
-                "announce_hour": 9,
-                "announce_minute": 0,
-            },
-            "send_invite_emails": False,
-        }
-        r = await ac.post(
-            "/sessions/",
-            json=body,
-            headers={settings.AUTHELIA_USER_HEADER: "adm2"},
-        )
-        assert r.status_code == 422
+        assert data["id"] is not None
+        assert data["is_active"] is True
+        assert data["announce_weekday"] == 3

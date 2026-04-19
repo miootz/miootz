@@ -27,7 +27,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
         replace_existing=True,
     )
     logger.info(
-        "Scheduler started (%s); kickoff 1h reminders every 1m; recurrence rules register weekly jobs",
+        "Scheduler started (%s); kickoff 1h reminders every 1m; game templates register weekly jobs",
         settings.SCHEDULER_TIMEZONE,
     )
     return scheduler

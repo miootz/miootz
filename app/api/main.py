@@ -6,14 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import invites, session_links, sessions, sms_auth, ratings, users_stats, users
+from app.api import game_templates, invites, session_links, sessions, sms_auth, ratings, users_stats, users
 from app.api.middleware import AutheliaAuthMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine, init_db
-from app.models import session_recurrence  # noqa: F401 — register metadata for create_all
+from app.models import game_template  # noqa: F401 — GameTemplate + GameSession FK
+from app.models import game_template_subscription  # noqa: F401
 from app.models import web_push_subscription  # noqa: F401
 from app.core.migrations import run_sqlite_migrations
-from app.services.recurrence_scheduler import sync_recurrence_jobs_from_db
+from app.services.recurrence_scheduler import sync_game_template_jobs_from_db
 from app.services.scheduler_setup import shutdown_scheduler, start_scheduler
 
 
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     start_scheduler()
-    await sync_recurrence_jobs_from_db()
+    await sync_game_template_jobs_from_db()
     yield
     shutdown_scheduler()
 
@@ -50,6 +51,7 @@ if _hosts:
 app.add_middleware(AutheliaAuthMiddleware)
 
 app.include_router(invites.router)
+app.include_router(game_templates.router)
 app.include_router(sessions.router)
 app.include_router(session_links.router)
 app.include_router(users.router)

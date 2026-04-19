@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_admin
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.game_template import GameTemplate
+from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.user import User
 from app.models.web_push_subscription import WebPushSubscription
 from app.schemas.user import SSOIdentity, UserMe, UserProfileUpdate
@@ -20,6 +22,7 @@ from app.services.avatar_images import (
     load_uploaded_image,
 )
 from app.services.skill_service import update_user_calculated_skill
+from app.services.template_subscriptions import user_wants_template_notifications
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -82,6 +85,74 @@ async def get_my_profile(
 ):
     """Same identity payload as `GET /me` minus admin flags (use `/me` for full auth context)."""
     return me_envelope(request, current_user)
+
+
+class GameTemplateSubscriptionPatch(BaseModel):
+    notifications_enabled: bool
+
+
+@router.get("/me/game-template-subscriptions")
+async def list_my_game_template_subscriptions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Active templates with effective notification preference (default on; explicit row can opt out)."""
+    result = await db.execute(
+        select(GameTemplate)
+        .where(GameTemplate.is_active.is_(True))
+        .order_by(GameTemplate.name.asc())
+    )
+    templates = result.scalars().all()
+    items = []
+    for t in templates:
+        want = await user_wants_template_notifications(db, current_user.id, t.id)
+        items.append(
+            {
+                "game_template_id": t.id,
+                "name": t.name,
+                "notifications_enabled": want,
+            }
+        )
+    return {"items": items}
+
+
+@router.patch("/me/game-template-subscriptions/{template_id}")
+async def patch_my_game_template_subscription(
+    template_id: int,
+    body: GameTemplateSubscriptionPatch,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tmpl = await db.get(GameTemplate, template_id)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    r = await db.execute(
+        select(GameTemplateSubscription).where(
+            GameTemplateSubscription.user_id == current_user.id,
+            GameTemplateSubscription.game_template_id == template_id,
+        )
+    )
+    row = r.scalar_one_or_none()
+    if body.notifications_enabled:
+        if row:
+            await db.delete(row)
+    else:
+        if row:
+            row.notifications_enabled = False
+        else:
+            db.add(
+                GameTemplateSubscription(
+                    user_id=current_user.id,
+                    game_template_id=template_id,
+                    notifications_enabled=False,
+                )
+            )
+    await db.commit()
+    return {
+        "status": "ok",
+        "game_template_id": template_id,
+        "notifications_enabled": body.notifications_enabled,
+    }
 
 
 @router.patch("/me")

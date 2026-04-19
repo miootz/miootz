@@ -8,6 +8,12 @@ type Props = {
   startLocal: string;
   enabled: boolean;
   onEnabledChange: (v: boolean) => void;
+  /** e.g. "Schedule active" on template pages vs "Repeat weekly" on sessions */
+  scheduleToggleLabel?: string;
+  /** Hide "Match start time above" (no session start field on template admin). */
+  hideMatchStartButton?: boolean;
+  /** Replaces the note under meetup time (session vs template copy). */
+  kickoffHelperText?: string;
   /** Kickoff (meetup) each week */
   timezone: string;
   onTimezoneChange: (v: string) => void;
@@ -33,6 +39,9 @@ export function AdminSessionRecurrenceForm({
   startLocal,
   enabled,
   onEnabledChange,
+  scheduleToggleLabel = 'Repeat weekly',
+  hideMatchStartButton = false,
+  kickoffHelperText = 'Must match the session start time field.',
   timezone,
   onTimezoneChange,
   weekday,
@@ -77,7 +86,7 @@ export function AdminSessionRecurrenceForm({
             className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
           />
           <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-            Repeat weekly
+            {scheduleToggleLabel}
           </span>
         </label>
       </div>
@@ -97,16 +106,18 @@ export function AdminSessionRecurrenceForm({
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                 Meetup time (each week)
               </h3>
-              <button
-                type="button"
-                onClick={syncKickoffFromStart}
-                className="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline"
-              >
-                Match start time above
-              </button>
+              {!hideMatchStartButton ? (
+                <button
+                  type="button"
+                  onClick={syncKickoffFromStart}
+                  className="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline"
+                >
+                  Match start time above
+                </button>
+              ) : null}
             </div>
             <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-              Must match the session start time field.
+              {kickoffHelperText}
             </p>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">

@@ -27,12 +27,12 @@ export function AdminToolsPage() {
     setMessage(null);
     try {
       const res = await adminRunRecurringNow();
-      const msg = `Checked ${res.rules_checked} recurrence rule(s); created ${res.sessions_created} new session(s).`;
+      const msg = `Checked ${res.templates_checked} template(s); created ${res.sessions_created} new session(s).`;
       setMessage(msg);
       showToast(msg, 'success');
       appendJobHistory({
         label: 'Run recurring jobs now',
-        detail: `${res.rules_checked} rules · ${res.sessions_created} session(s) created`,
+        detail: `${res.templates_checked} templates · ${res.sessions_created} session(s) created`,
       });
       setHistory(readJobHistory());
     } catch (e) {
@@ -46,7 +46,7 @@ export function AdminToolsPage() {
     setExporting(true);
     setError(null);
     try {
-      const sessions = await fetchSessions();
+      const { items: sessions } = await fetchSessions({ limit: 500 });
       const headers = [
         'id',
         'start_time',
@@ -106,7 +106,7 @@ export function AdminToolsPage() {
           Recurring sessions
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Runs the same logic as each rule’s weekly job: create the next meetup if
+          Runs the same logic as each template’s weekly job: create the next meetup if
           missing, then send invite emails with join links. Use after downtime or
           to test your configured announce times.
         </p>

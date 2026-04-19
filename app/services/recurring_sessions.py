@@ -1,4 +1,4 @@
-"""Weekly recurrence: next kickoff session + invite emails at a scheduled wall time."""
+"""Weekly templates: next kickoff session + invite emails at a scheduled wall time."""
 
 from __future__ import annotations
 
@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
+from app.models.game_template import GameTemplate
 from app.models.session import GameSession
-from app.models.session_recurrence import SessionRecurrenceRule
 from app.models.user import User
 from app.services.notifications import notify_new_session_invites
+from app.services.template_subscriptions import filter_users_by_template_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +41,16 @@ def utc_start_matches_rule(
     )
 
 
-def next_occurrence_utc(rule: SessionRecurrenceRule, after_utc: datetime) -> datetime | None:
-    """First session start at or after `after_utc` (UTC) matching the rule's kickoff wall time."""
+def next_occurrence_utc(
+    template: GameTemplate, after_utc: datetime
+) -> datetime | None:
+    """First session start at or after `after_utc` (UTC) matching the template kickoff wall time."""
     try:
-        z = ZoneInfo(rule.timezone)
+        z = ZoneInfo(template.timezone)
     except ZoneInfoNotFoundError:
-        logger.warning("Invalid timezone %r on recurrence rule %s", rule.timezone, rule.id)
+        logger.warning(
+            "Invalid timezone %r on game template %s", template.timezone, template.id
+        )
         return None
 
     if after_utc.tzinfo is None:
@@ -55,35 +60,35 @@ def next_occurrence_utc(rule: SessionRecurrenceRule, after_utc: datetime) -> dat
 
     for i in range(370):
         d = loc_date + timedelta(days=i)
-        if d.weekday() != rule.weekday:
+        if d.weekday() != template.weekday:
             continue
-        cand = datetime.combine(d, time(rule.hour, rule.minute), tzinfo=z)
+        cand = datetime.combine(d, time(template.hour, template.minute), tzinfo=z)
         if cand > loc:
             return cand.astimezone(timezone.utc)
 
     return None
 
 
-async def materialize_next_session_and_notify(rule_id: int) -> bool:
+async def materialize_next_session_and_notify(template_id: int) -> bool:
     """
-    If the next weekly kickoff slot has no session row yet, create it (details from the rule)
-    and email all users with join links. Idempotent for that kickoff instant.
+    If the next weekly kickoff slot has no session row yet, create it (details from the template)
+    and email users who subscribe to this template. Idempotent for that kickoff instant.
     Returns True if a new session row was created.
     """
     async with async_session() as db:
-        rule = await db.get(SessionRecurrenceRule, rule_id)
-        if not rule or not rule.is_active:
+        template = await db.get(GameTemplate, template_id)
+        if not template or not template.is_active:
             return False
 
         now = datetime.now(timezone.utc)
-        t = next_occurrence_utc(rule, now - timedelta(seconds=1))
+        t = next_occurrence_utc(template, now - timedelta(seconds=1))
         if t is None:
             return False
 
         exists = await db.execute(
             select(GameSession.id)
             .where(
-                GameSession.recurrence_rule_id == rule.id,
+                GameSession.game_template_id == template.id,
                 GameSession.start_time == t,
             )
             .limit(1)
@@ -93,29 +98,35 @@ async def materialize_next_session_and_notify(rule_id: int) -> bool:
 
         session = GameSession(
             start_time=t,
-            location=rule.location,
-            fee=rule.fee,
-            min_players=rule.min_players,
-            max_players=rule.max_players,
-            latitude=rule.latitude,
-            longitude=rule.longitude,
-            waitlist_mode=rule.waitlist_mode,
-            team_assignment_mode=getattr(rule, "team_assignment_mode", None)
+            location=template.location,
+            fee=template.fee,
+            min_players=template.min_players,
+            max_players=template.max_players,
+            latitude=template.latitude,
+            longitude=template.longitude,
+            waitlist_mode=template.waitlist_mode,
+            team_assignment_mode=getattr(template, "team_assignment_mode", None)
             or "balanced",
-            recurrence_rule_id=rule.id,
+            game_template_id=template.id,
         )
         db.add(session)
         await db.commit()
         await db.refresh(session)
 
         result = await db.execute(select(User))
-        recipients = [u for u in result.scalars().all() if u.email]
-        if recipients:
-            await notify_new_session_invites(session, recipients)
+        all_with_email = [u for u in result.scalars().all() if u.email]
+        if all_with_email:
+            ids = [u.id for u in all_with_email]
+            allowed = set(
+                await filter_users_by_template_subscription(db, ids, template.id)
+            )
+            recipients = [u for u in all_with_email if u.id in allowed]
+            if recipients:
+                await notify_new_session_invites(session, recipients)
 
         logger.info(
-            "Recurrence rule %s: created session %s at %s",
-            rule_id,
+            "Game template %s: created session %s at %s",
+            template_id,
             session.id,
             t.isoformat(),
         )

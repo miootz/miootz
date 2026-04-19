@@ -1,6 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from sqlalchemy import String, Integer, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.game_template_subscription import GameTemplateSubscription
 
 
 class User(Base):
@@ -21,3 +29,9 @@ class User(Base):
     self_assessed_skill: Mapped[int] = mapped_column(Integer, nullable=True)
     calculated_skill: Mapped[int] = mapped_column(Integer, nullable=True)
     is_admin: Mapped[bool] = mapped_column(default=False)
+
+    game_template_subscriptions: Mapped[list["GameTemplateSubscription"]] = relationship(
+        "GameTemplateSubscription",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
