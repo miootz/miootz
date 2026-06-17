@@ -1,76 +1,216 @@
-import { useEffect, useRef, useState } from 'react';
-import { useToast } from '../context/ToastContext';
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ExternalLink, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
+import { useToast } from "../context/ToastContext";
+import { useTheme } from "../theme/ThemeProvider";
+import type { ThemePreference } from "../theme/themeStorage";
 import {
-  MAX_AVATAR_BYTES,
   fetchGameTemplateSubscriptions,
   fetchMyStats,
-  mediaUrl,
+  fetchNotificationPreferences,
   patchGameTemplateSubscription,
   patchMyProfile,
-  uploadMyAvatar,
+  patchNotificationPreference,
   type GameTemplateSubscriptionRow,
+  type NotificationCategory,
+  type NotificationPreferenceRow,
+  type Specialty,
   type UserStats,
-} from '../api/meApi';
-import { AvatarCropDialog } from '../components/AvatarCropDialog';
-import { useAuth } from '../auth/useAuth';
-import { StarRating } from '../components/StarRating';
+} from "../api/meApi";
+import { useAuth } from "../auth/useAuth";
+import { getPocketIdUrl } from "../auth/pocketIdOidc";
+import { StarRating } from "../components/StarRating";
+import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import {
   pushSupported,
   subscribeToWebPush,
-  unsubscribeFromWebPush,
-} from '../utils/pushSubscription';
+  fetchPushSubscriptions,
+  deletePushSubscription,
+  type PushSubscriptionRow,
+} from "../utils/pushSubscription";
 
-function ProfileSkeleton() {
-  const pulse =
-    'motion-safe:animate-pulse motion-reduce:animate-none rounded bg-gray-200 dark:bg-gray-700';
+/* ── Constants ─────────────────────────────────────────────────────── */
 
+const SPECIALTY_OPTIONS: { value: Specialty; label: string }[] = [
+  { value: "ATT", label: "Attacker" },
+  { value: "MID", label: "Midfielder" },
+  { value: "DEF", label: "Defender" },
+  { value: "GK", label: "Goalkeeper" },
+];
+
+const SPECIALTY_LABEL: Record<Specialty, string> = Object.fromEntries(
+  SPECIALTY_OPTIONS.map((o) => [o.value, o.label]),
+) as Record<Specialty, string>;
+
+const NOTIF_CATEGORY_META: Record<
+  NotificationCategory,
+  { display_name: string; description: string }
+> = {
+  session_invite: {
+    display_name: "New session announcements",
+    description: "When a new meetup is added to the schedule",
+  },
+  waitlist: {
+    display_name: "Waitlist alerts",
+    description: "When a spot opens or you are promoted from the waitlist",
+  },
+  chat: {
+    display_name: "Chat messages",
+    description: "New messages in sessions you attend",
+  },
+  session_cancelled: {
+    display_name: "Session cancelled",
+    description: "When an admin removes a meetup",
+  },
+  kickoff_reminder: {
+    display_name: "Kickoff reminder",
+    description: "Reminder one hour before kickoff",
+  },
+  rating_reminder: {
+    display_name: "Rating reminder",
+    description: "Prompt to rate teammates after the session ends",
+  },
+};
+
+/* ── Collapsible Section ───────────────────────────────────────────── */
+
+function CollapsibleSection({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="mx-auto max-w-lg space-y-8 p-6" aria-busy="true" aria-label="Loading profile">
-      <div className="space-y-3 text-left">
-        <div className={`h-4 w-40 ${pulse}`} />
-        <div className={`h-8 w-48 ${pulse}`} />
-        <div className={`h-3 w-full max-w-sm ${pulse}`} />
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        aria-expanded={open}
+      >
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          {title}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      <div
+        className={`transition-all duration-200 overflow-hidden ${
+          open ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <div className="px-4 pb-4">{children}</div>
       </div>
-      <div className={`h-40 rounded-xl border border-gray-200 dark:border-gray-800 ${pulse}`} />
-      <div className={`h-56 rounded-xl border border-gray-200 dark:border-gray-800 ${pulse}`} />
     </div>
   );
 }
 
+/* ── Skeleton ──────────────────────────────────────────────────────── */
+
+function ProfileSkeleton() {
+  const pulse =
+    "motion-safe:animate-pulse motion-reduce:animate-none rounded bg-gray-200 dark:bg-gray-700";
+
+  return (
+    <div
+      className="mx-auto max-w-lg space-y-6 p-6"
+      aria-busy="true"
+      aria-label="Loading profile"
+    >
+      <div className={`h-24 rounded-xl ${pulse}`} />
+      <div className={`h-40 rounded-xl ${pulse}`} />
+      <div className={`h-32 rounded-xl ${pulse}`} />
+    </div>
+  );
+}
+
+/* ── Toggle Switch (reusable) ──────────────────────────────────────── */
+
+function ToggleSwitch({
+  enabled,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onChange}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
+        enabled ? "bg-violet-600" : "bg-gray-200 dark:bg-gray-600"
+      } disabled:opacity-50`}
+      role="switch"
+      aria-checked={enabled}
+    >
+      <span
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
+          enabled ? "translate-x-5" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
+/* ── Main Page ─────────────────────────────────────────────────────── */
+
 export function ProfilePage() {
-  const { me, refresh } = useAuth();
+  const { me, logout } = useAuth();
   const { showToast } = useToast();
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [selfAssessed, setSelfAssessed] = useState<number | ''>('');
+  const { preference, setPreference } = useTheme();
+
+  // Profile field state
+  const [selfAssessed, setSelfAssessed] = useState<number | "">("");
+  const [primarySpecialty, setPrimarySpecialty] = useState<Specialty | "">("");
+  const [secondarySpecialty, setSecondarySpecialty] = useState<Specialty | "">("");
   const [saving, setSaving] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Push notification state
   const [pushBusy, setPushBusy] = useState(false);
   const [pushOn, setPushOn] = useState(false);
+  const [pushDevices, setPushDevices] = useState<PushSubscriptionRow[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [deviceRemoveId, setDeviceRemoveId] = useState<number | null>(null);
+
+  // Notification preferences state
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferenceRow[]>([]);
+  const [notifPrefsLoading, setNotifPrefsLoading] = useState(false);
+  const [notifToggleBusy, setNotifToggleBusy] =
+    useState<NotificationCategory | null>(null);
+
+  // Stats state
   const [stats, setStats] = useState<UserStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [templateSubs, setTemplateSubs] = useState<GameTemplateSubscriptionRow[]>(
-    []
-  );
+
+  // Weekly meetup subscriptions state
+  const [templateSubs, setTemplateSubs] = useState<
+    GameTemplateSubscriptionRow[]
+  >([]);
   const [templateSubsLoading, setTemplateSubsLoading] = useState(false);
   const [templateToggleBusy, setTemplateToggleBusy] = useState<number | null>(
-    null
+    null,
   );
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [cropOpen, setCropOpen] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [editingPhone, setEditingPhone] = useState(false);
+
   const skillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Effects ───────────────────────────────────────────────────── */
 
   useEffect(() => {
     if (!me) return;
-    setFullName(me.user.full_name ?? '');
-    setPhone(me.user.phone ?? '');
-    const sa = me.user.self_assessed_skill ?? me.user.skill_level;
-    setSelfAssessed(
-      sa != null && sa >= 1 && sa <= 5 ? sa : ''
-    );
+    const sa = me.user.self_assessed_skill;
+    setSelfAssessed(sa != null && sa >= 1 && sa <= 5 ? sa : "");
+    setPrimarySpecialty(me.user.primary_specialty ?? "");
+    setSecondarySpecialty(me.user.secondary_specialty ?? "");
   }, [me]);
 
   useEffect(() => {
@@ -80,6 +220,43 @@ export function ProfilePage() {
       const sub = await reg.pushManager.getSubscription();
       if (!cancelled) setPushOn(!!sub);
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNotifPrefsLoading(true);
+    void fetchNotificationPreferences()
+      .then((r) => {
+        if (!cancelled) setNotifPrefs(r.items);
+      })
+      .catch(() => {
+        if (!cancelled) setNotifPrefs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setNotifPrefsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD || !pushSupported()) return;
+    let cancelled = false;
+    setDevicesLoading(true);
+    void fetchPushSubscriptions()
+      .then((r) => {
+        if (!cancelled) setPushDevices(r);
+      })
+      .catch(() => {
+        if (!cancelled) setPushDevices([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDevicesLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -115,7 +292,9 @@ export function ProfilePage() {
       .catch((e) => {
         if (!cancelled) {
           setStats(null);
-          setStatsError(e instanceof Error ? e.message : 'Could not load stats');
+          setStatsError(
+            e instanceof Error ? e.message : "Could not load stats",
+          );
         }
       });
     return () => {
@@ -125,135 +304,29 @@ export function ProfilePage() {
 
   useEffect(() => {
     return () => {
-      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    };
-  }, [avatarPreview]);
-
-  useEffect(() => {
-    return () => {
       if (skillSaveTimerRef.current) clearTimeout(skillSaveTimerRef.current);
     };
   }, []);
 
-  if (!me) {
-    return (
-      <div className="min-h-[50vh]">
-        <ProfileSkeleton />
-      </div>
-    );
-  }
+  /* ── Handlers ──────────────────────────────────────────────────── */
 
-  const u = me.user;
-  const sso = me.sso;
-  const pic = mediaUrl(u.profile_pic);
-  const displayPic = avatarPreview ?? pic;
-  const cropEditorSrc = mediaUrl(u.profile_pic_original);
-  const cropInitialPixels = u.avatar_crop_pixels ?? null;
-
-  const syncName = async () => {
+  const saveSpecialty = async (
+    field: "primary_specialty" | "secondary_specialty",
+    value: Specialty | null,
+    prev: Specialty | null | undefined,
+    setter: React.Dispatch<React.SetStateAction<Specialty | "">>,
+  ) => {
+    if (value === prev) return;
     setSaving(true);
     setError(null);
     try {
-      await patchMyProfile({ sync_display_name_from_sso: true });
-      await refresh();
-      showToast('Display name updated from Authelia.', 'success');
+      await patchMyProfile({ [field]: value });
+      showToast("Specialty saved.", "success");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sync failed';
+      const msg = err instanceof Error ? err.message : "Save failed";
       setError(msg);
-      showToast(msg, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const syncEmail = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await patchMyProfile({ sync_email_from_sso: true });
-      await refresh();
-      showToast('Email updated from Authelia.', 'success');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sync failed';
-      setError(msg);
-      showToast(msg, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const onAvatar = async (file: File | undefined) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setError('Choose an image file (JPEG, PNG, or WebP).');
-      return;
-    }
-    if (file.size > MAX_AVATAR_BYTES) {
-      setError(`Image must be at most ${MAX_AVATAR_BYTES / (1024 * 1024)} MB.`);
-      return;
-    }
-    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    const previewUrl = URL.createObjectURL(file);
-    setAvatarPreview(previewUrl);
-    setAvatarBusy(true);
-    setError(null);
-    try {
-      await uploadMyAvatar(file);
-      await refresh();
-      URL.revokeObjectURL(previewUrl);
-      setAvatarPreview(null);
-      showToast('Avatar updated.', 'success');
-    } catch (err) {
-      URL.revokeObjectURL(previewUrl);
-      setAvatarPreview(null);
-      const msg = err instanceof Error ? err.message : 'Upload failed';
-      setError(msg);
-      showToast(msg, 'error');
-    } finally {
-      setAvatarBusy(false);
-    }
-  };
-
-  const selfSkill = u.self_assessed_skill ?? u.skill_level;
-  const calcSkill = u.calculated_skill;
-
-  const saveFullNameBlur = async () => {
-    setEditingName(false);
-    const next = fullName.trim();
-    const prev = (u.full_name ?? '').trim();
-    if (next === prev) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await patchMyProfile({ full_name: next || null });
-      await refresh();
-      showToast('Name saved.', 'success');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Save failed';
-      setError(msg);
-      showToast(msg, 'error');
-      setFullName(u.full_name ?? '');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const savePhoneBlur = async () => {
-    setEditingPhone(false);
-    const next = phone.trim();
-    const prev = (u.phone ?? '').trim();
-    if (next === prev) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await patchMyProfile({ phone: next || null });
-      await refresh();
-      showToast('Phone saved.', 'success');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Save failed';
-      setError(msg);
-      showToast(msg, 'error');
-      setPhone(u.phone ?? '');
+      showToast(msg, "error");
+      setter(prev ?? "");
     } finally {
       setSaving(false);
     }
@@ -265,19 +338,18 @@ export function ProfilePage() {
     skillSaveTimerRef.current = setTimeout(() => {
       skillSaveTimerRef.current = null;
       void (async () => {
-        const baseline = u.self_assessed_skill ?? u.skill_level ?? null;
+        const baseline = u.self_assessed_skill;
         if (baseline != null && v === baseline) return;
         if (v < 1 || v > 5) return;
         setSaving(true);
         setError(null);
         try {
           await patchMyProfile({ self_assessed_skill: v });
-          await refresh();
-          showToast('Skill saved.', 'success');
+          showToast("Skill saved.", "success");
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Save failed';
+          const msg = err instanceof Error ? err.message : "Save failed";
           setError(msg);
-          showToast(msg, 'error');
+          showToast(msg, "error");
         } finally {
           setSaving(false);
         }
@@ -285,164 +357,434 @@ export function ProfilePage() {
     }, 450);
   };
 
+  /* ── Early return ──────────────────────────────────────────────── */
+
+  if (!me) {
+    return (
+      <div className="min-h-[50vh]">
+        <ProfileSkeleton />
+      </div>
+    );
+  }
+
+  const u = me.user;
+  const displayName = u.display_name ?? u.pocket_id_sub ?? "—";
+  const avatarUrl = u.avatar_url ?? undefined;
+  const selfSkill = u.self_assessed_skill;
+  const calcSkill = u.calculated_skill;
+  const pocketIdSettingsUrl = `${getPocketIdUrl()}/settings/account`;
+
+  const pushEnabled = import.meta.env.PROD && pushSupported();
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
-      <div className="max-w-lg mx-auto p-6 space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-left">Profile</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            App profile is stored here; Authelia is the source for SSO identity.
-          </p>
-        </div>
+      <div className="max-w-lg mx-auto p-6 space-y-6">
+        {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
+        <section className="rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 text-white shadow-lg">
+          <div className="flex items-center gap-4">
+            <PlayerAvatarFace
+              name={displayName}
+              avatarUrl={avatarUrl}
+              size="md"
+            />
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold truncate">{displayName}</h1>
+              <p className="text-sm text-violet-100 truncate">
+                {u.username}
+              </p>
+            </div>
+            <a
+              href={pocketIdSettingsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/20 hover:bg-white/30 transition-colors"
+              aria-label="Edit account in Pocket ID"
+            >
+              <User className="w-3.5 h-3.5" />
+              Edit
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
 
+          {/* Position badges */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {u.primary_specialty && (
+              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-white/20">
+                {SPECIALTY_LABEL[u.primary_specialty]}
+              </span>
+            )}
+            {u.secondary_specialty && (
+              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-white/10">
+                {SPECIALTY_LABEL[u.secondary_specialty]}
+              </span>
+            )}
+            {me.is_admin && (
+              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-400/30 text-emerald-100">
+                Admin
+              </span>
+            )}
+          </div>
+        </section>
+
+        {/* ── Zone 2: Stats & Skill ─────────────────────────────── */}
         {statsError && (
-          <p className="text-left text-sm text-amber-800 dark:text-amber-200">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
             {statsError}
           </p>
         )}
 
-        {stats && (
-          <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 text-left">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Your stats
-            </h2>
-            <dl className="grid gap-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Sessions played</dt>
-                <dd className="font-medium tabular-nums">{stats.games_played}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Avg. rating (from peers)</dt>
-                <dd className="font-medium tabular-nums">
-                  {stats.average_rating.toFixed(1)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Ratings received</dt>
-                <dd className="font-medium tabular-nums">{stats.total_ratings}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Listed skill</dt>
-                <dd className="font-medium tabular-nums">{stats.skill_level}</dd>
-              </div>
-            </dl>
-          </section>
-        )}
-
-        {selfSkill != null &&
-          calcSkill != null &&
-          selfSkill >= 1 &&
-          selfSkill <= 5 && (
-            <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 text-left">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                Self vs calculated skill
+        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 space-y-5">
+          {/* Stats grid */}
+          {stats && (
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                Your stats
               </h2>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>Self-assessed</span>
-                  <span className="font-medium text-gray-800 dark:text-gray-200">
-                    {selfSkill}/5
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                  <div
-                    className="h-full rounded-full bg-violet-500"
-                    style={{ width: `${(selfSkill / 5) * 100}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>Calculated (peers)</span>
-                  <span className="font-medium text-gray-800 dark:text-gray-200">
-                    {calcSkill.toFixed(1)}/5
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                  <div
-                    className="h-full rounded-full bg-emerald-500"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, (calcSkill / 5) * 100))}%`,
-                    }}
-                  />
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard label="Sessions played" value={String(stats.games_played)} />
+                <StatCard label="This season" value={String(stats.season_games)} />
+                <StatCard label="Avg. rating" value={stats.average_rating.toFixed(1)} />
+                <StatCard label="Ratings received" value={String(stats.total_ratings)} />
               </div>
-            </section>
+            </div>
           )}
 
-        {import.meta.env.PROD && pushSupported() && (
-          <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 text-left">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Browser notifications
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Get chat while the app is in the background, a reminder about one hour before
-              kickoff, and an alert if a meetup is cancelled. Requires HTTPS and Web Push keys
-              on the server.
-            </p>
-            {pushOn ? (
-              <button
-                type="button"
-                disabled={pushBusy}
-                onClick={() => {
-                  setPushBusy(true);
-                  void (async () => {
-                    try {
-                      await unsubscribeFromWebPush();
-                      setPushOn(false);
-                      showToast('Notifications turned off.', 'success');
-                    } catch (err) {
-                      const msg =
-                        err instanceof Error ? err.message : 'Could not unsubscribe';
-                      showToast(msg, 'error');
-                    } finally {
-                      setPushBusy(false);
-                    }
-                  })();
-                }}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                {pushBusy ? 'Updating…' : 'Turn off notifications'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={pushBusy}
-                onClick={() => {
-                  setPushBusy(true);
-                  void (async () => {
-                    try {
-                      const r = await subscribeToWebPush();
-                      if (r.ok) {
-                        setPushOn(true);
-                        showToast('Notifications enabled.', 'success');
-                      } else {
-                        showToast(r.reason ?? 'Could not enable', 'error');
-                      }
-                    } finally {
-                      setPushBusy(false);
-                    }
-                  })();
-                }}
-                className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-              >
-                {pushBusy ? 'Enabling…' : 'Enable notifications'}
-              </button>
+          {/* Self vs calculated skill bars */}
+          {selfSkill != null &&
+            calcSkill != null &&
+            selfSkill >= 1 &&
+            selfSkill <= 5 && (
+              <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Skill comparison
+                </h2>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>Self-assessed</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                      {selfSkill}/5
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-full rounded-full bg-violet-500"
+                      style={{ width: `${(selfSkill / 5) * 100}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>Calculated (peers)</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                      {calcSkill.toFixed(1)}/5
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                    <div
+                      className="h-full rounded-full bg-emerald-500"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, (calcSkill / 5) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
-          </section>
+
+          {/* Skill editor + positions */}
+          <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Edit profile
+            </h2>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs text-gray-500">
+                Self-assessed skill (1–5)
+              </span>
+              <StarRating
+                value={selfAssessed === "" ? 0 : selfAssessed}
+                onChange={onSkillChange}
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">Primary position</span>
+                <select
+                  value={primarySpecialty}
+                  disabled={saving}
+                  onChange={(e) => {
+                    const val = e.target.value as Specialty | "";
+                    setPrimarySpecialty(val);
+                    void saveSpecialty(
+                      "primary_specialty",
+                      val || null,
+                      u.primary_specialty,
+                      setPrimarySpecialty,
+                    );
+                  }}
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                >
+                  <option value="">— Select —</option>
+                  {SPECIALTY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-xs text-gray-500">Secondary position</span>
+                <select
+                  value={secondarySpecialty}
+                  disabled={saving}
+                  onChange={(e) => {
+                    const val = e.target.value as Specialty | "";
+                    setSecondarySpecialty(val);
+                    void saveSpecialty(
+                      "secondary_specialty",
+                      val || null,
+                      u.secondary_specialty,
+                      setSecondarySpecialty,
+                    );
+                  }}
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                >
+                  <option value="">— Select —</option>
+                  {SPECIALTY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Zone 2b: Appearance ───────────────────────────────── */}
+        <CollapsibleSection title="Appearance">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Choose your preferred theme. Saved automatically.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { value: "system" as ThemePreference, label: "System", Icon: Monitor },
+                { value: "light" as ThemePreference, label: "Light", Icon: Sun },
+                { value: "dark" as ThemePreference, label: "Dark", Icon: Moon },
+              ] as const
+            ).map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setPreference(value)}
+                className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
+                  preference === value
+                    ? "border-violet-500 bg-violet-50 text-violet-700 dark:border-violet-400 dark:bg-violet-950/50 dark:text-violet-300"
+                    : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600"
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </CollapsibleSection>
+
+        {/* ── Zone 3: Preferences (collapsible) ─────────────────── */}
+
+        {pushEnabled && (
+          <CollapsibleSection title="Push notifications">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Receive in-app notifications on registered devices. Tap a
+              notification to open the relevant session.
+            </p>
+
+            {/* Device list */}
+            <div className="space-y-3 mb-4">
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Registered devices
+              </span>
+              {devicesLoading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : pushDevices.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No devices registered yet.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {pushDevices.map((dev) => {
+                    const ep = dev.endpoint;
+                    const host = (() => {
+                      try {
+                        return new URL(ep).hostname;
+                      } catch {
+                        return ep.slice(0, 40) + "…";
+                      }
+                    })();
+                    const date = (() => {
+                      try {
+                        return new Date(dev.created_at).toLocaleDateString();
+                      } catch {
+                        return "";
+                      }
+                    })();
+                    return (
+                      <li
+                        key={dev.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-50/50 dark:bg-gray-950/40"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                            {host}
+                          </p>
+                          {date && (
+                            <p className="text-xs text-gray-500">{date}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={deviceRemoveId === dev.id}
+                          onClick={() => {
+                            setDeviceRemoveId(dev.id);
+                            void deletePushSubscription(dev.id)
+                              .then(() => {
+                                setPushDevices((prev) =>
+                                  prev.filter((d) => d.id !== dev.id),
+                                );
+                                showToast("Device removed.", "success");
+                              })
+                              .catch((e) => {
+                                showToast(
+                                  e instanceof Error
+                                    ? e.message
+                                    : "Could not remove device",
+                                  "error",
+                                );
+                              })
+                              .finally(() => setDeviceRemoveId(null));
+                          }}
+                          className="shrink-0 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
+                        >
+                          {deviceRemoveId === dev.id ? "Removing…" : "Remove"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {!pushOn && (
+                <button
+                  type="button"
+                  disabled={pushBusy}
+                  onClick={() => {
+                    setPushBusy(true);
+                    void (async () => {
+                      try {
+                        const r = await subscribeToWebPush();
+                        if (r.ok) {
+                          setPushOn(true);
+                          const devs = await fetchPushSubscriptions();
+                          setPushDevices(devs);
+                          showToast("Device registered.", "success");
+                        } else {
+                          showToast(
+                            r.reason ?? "Could not register device",
+                            "error",
+                          );
+                        }
+                      } finally {
+                        setPushBusy(false);
+                      }
+                    })();
+                  }}
+                  className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                >
+                  {pushBusy ? "Registering…" : "Register this device"}
+                </button>
+              )}
+              {pushOn && pushDevices.length === 0 && (
+                <p className="text-xs text-gray-500">
+                  This device is registered but not yet visible. Try refreshing.
+                </p>
+              )}
+            </div>
+
+            {/* Notification type toggles */}
+            <div className="space-y-2">
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Notification types
+              </span>
+              {notifPrefsLoading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : notifPrefs.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Could not load preferences.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+                  {notifPrefs.map((row) => (
+                    <li
+                      key={row.category}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-sm text-gray-900 dark:text-gray-100">
+                          {NOTIF_CATEGORY_META[row.category].display_name}
+                        </span>
+                        <p className="text-xs text-gray-500 truncate">
+                          {NOTIF_CATEGORY_META[row.category].description}
+                        </p>
+                      </div>
+                      <ToggleSwitch
+                        enabled={row.enabled}
+                        disabled={notifToggleBusy === row.category}
+                        onChange={() => {
+                          const next = !row.enabled;
+                          setNotifToggleBusy(row.category);
+                          setNotifPrefs((prev) =>
+                            prev.map((p) =>
+                              p.category === row.category
+                                ? { ...p, enabled: next }
+                                : p,
+                            ),
+                          );
+                          void patchNotificationPreference(row.category, next)
+                            .catch(() => {
+                              setNotifPrefs((prev) =>
+                                prev.map((p) =>
+                                  p.category === row.category
+                                    ? { ...p, enabled: row.enabled }
+                                    : p,
+                                ),
+                              );
+                              showToast(
+                                "Could not update preference.",
+                                "error",
+                              );
+                            })
+                            .finally(() => setNotifToggleBusy(null));
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </CollapsibleSection>
         )}
+
         {!import.meta.env.PROD && (
-          <p className="text-left text-xs text-gray-500 dark:text-gray-400">
-            Background push notifications are available in the production build (HTTPS
-            + service worker).
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Push notifications are available in the production build (HTTPS +
+            service worker).
           </p>
         )}
 
-        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 text-left">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Weekly meetup emails
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Turn off email for a recurring meetup you do not want announcements for.
-            One-off sessions are not listed here.
+        <CollapsibleSection title="Weekly meetups">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Per-meetup opt-out. Turning this off removes you from the invite
+            list for that recurring meetup.
           </p>
           {templateSubsLoading ? (
             <p className="text-sm text-gray-500">Loading…</p>
@@ -460,246 +802,112 @@ export function ProfilePage() {
                   <span className="text-sm text-gray-900 dark:text-gray-100 min-w-0 truncate">
                     {row.name}
                   </span>
-                  <button
-                    type="button"
+                  <ToggleSwitch
+                    enabled={row.notifications_enabled}
                     disabled={templateToggleBusy === row.game_template_id}
-                    onClick={() => {
+                    onChange={() => {
                       const next = !row.notifications_enabled;
                       setTemplateToggleBusy(row.game_template_id);
                       setTemplateSubs((prev) =>
                         prev.map((p) =>
                           p.game_template_id === row.game_template_id
                             ? { ...p, notifications_enabled: next }
-                            : p
-                        )
+                            : p,
+                        ),
                       );
                       void patchGameTemplateSubscription(
                         row.game_template_id,
-                        next
+                        next,
                       )
                         .catch(() => {
                           setTemplateSubs((prev) =>
                             prev.map((p) =>
                               p.game_template_id === row.game_template_id
-                                ? { ...p, notifications_enabled: row.notifications_enabled }
-                                : p
-                            )
+                                ? {
+                                    ...p,
+                                    notifications_enabled:
+                                      row.notifications_enabled,
+                                  }
+                                : p,
+                            ),
                           );
-                          showToast('Could not update preference.', 'error');
+                          showToast("Could not update preference.", "error");
                         })
                         .finally(() => setTemplateToggleBusy(null));
                     }}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
-                      row.notifications_enabled
-                        ? 'bg-violet-600'
-                        : 'bg-gray-200 dark:bg-gray-600'
-                    } disabled:opacity-50`}
-                    role="switch"
-                    aria-checked={row.notifications_enabled}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
-                        row.notifications_enabled ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                  />
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </CollapsibleSection>
 
-        {sso && (
-          <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Authelia (this session)
-            </h2>
+        {/* ── Zone 4: Account footer ────────────────────────────── */}
+
+        {me.auth_groups.length > 0 && (
+          <CollapsibleSection title="Debug info">
             <dl className="grid gap-2 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Username</dt>
-                <dd className="text-right font-mono text-xs">{sso.username ?? '—'}</dd>
+                <dt className="text-gray-500">Admin</dt>
+                <dd className="text-right">
+                  {me.is_admin ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      Yes
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">No</span>
+                  )}
+                </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Email</dt>
-                <dd className="text-right break-all">{sso.email ?? '—'}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Display name</dt>
-                <dd className="text-right">{sso.display_name ?? '—'}</dd>
+                <dt className="text-gray-500">Groups</dt>
+                <dd className="text-right">
+                  <div className="flex flex-wrap gap-1.5 justify-end">
+                    {me.auth_groups.map((g) => (
+                      <span
+                        key={g}
+                        className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
+                      >
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                </dd>
               </div>
             </dl>
-            <div className="flex flex-wrap gap-2 pt-2">
-              <button
-                type="button"
-                disabled={saving || !sso.display_name}
-                onClick={() => void syncName()}
-                className="px-3 py-1.5 rounded-lg text-sm bg-violet-600 text-white disabled:opacity-40 hover:bg-violet-700"
-              >
-                Copy display name into app
-              </button>
-              <button
-                type="button"
-                disabled={saving || !sso.email}
-                onClick={() => void syncEmail()}
-                className="px-3 py-1.5 rounded-lg text-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40"
-              >
-                Copy email into app
-              </button>
-            </div>
-          </section>
+          </CollapsibleSection>
         )}
 
-        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Avatar
-          </h2>
-          <div className="flex flex-wrap items-start gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 shrink-0">
-                {displayPic ? (
-                  <img
-                    src={displayPic}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">
-                    No photo
-                  </div>
-                )}
-              </div>
-              {cropEditorSrc ? (
-                <button
-                  type="button"
-                  disabled={avatarBusy}
-                  onClick={() => setCropOpen(true)}
-                  className="text-sm font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 disabled:opacity-50"
-                >
-                  Edit crop
-                </button>
-              ) : null}
-            </div>
-            <label className="text-sm min-w-0 flex-1">
-              <span className="sr-only">Upload avatar</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                disabled={avatarBusy}
-                className="block w-full text-xs text-gray-600 dark:text-gray-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 dark:file:bg-violet-950 dark:file:text-violet-200"
-                onChange={(e) => void onAvatar(e.target.files?.[0])}
-              />
-            </label>
-          </div>
-          <p className="text-xs text-gray-500">
-            JPEG, PNG, or WebP — max {MAX_AVATAR_BYTES / (1024 * 1024)} MB. The app
-            stores your full upload and a square JPEG for fast display; use Edit crop
-            to frame your face (opens the original photo, with your last crop remembered).
-          </p>
-        </section>
-
-        {cropEditorSrc && (
-          <AvatarCropDialog
-            open={cropOpen}
-            imageSrc={cropEditorSrc}
-            initialCroppedAreaPixels={cropInitialPixels}
-            onClose={() => setCropOpen(false)}
-            onSaved={refresh}
-          />
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
 
-        <div className="space-y-4">
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-4 text-left">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              App fields
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Tap a field to edit; changes save when you leave the field (skill saves
-              shortly after you change stars).
-            </p>
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">Full name</span>
-              {editingName ? (
-                <input
-                  autoFocus
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  onBlur={() => void saveFullNameBlur()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                    if (e.key === 'Escape') {
-                      setFullName(u.full_name ?? '');
-                      setEditingName(false);
-                    }
-                  }}
-                  disabled={saving}
-                  className="w-full rounded-lg border border-violet-400 dark:border-violet-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              ) : (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setEditingName(true)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-900"
-                >
-                  {fullName.trim() ? fullName : 'Add name'}
-                </button>
-              )}
-            </div>
-            <div className="space-y-1">
-              <span className="text-xs text-gray-500">Phone</span>
-              {editingPhone ? (
-                <input
-                  autoFocus
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  onBlur={() => void savePhoneBlur()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                    if (e.key === 'Escape') {
-                      setPhone(u.phone ?? '');
-                      setEditingPhone(false);
-                    }
-                  }}
-                  disabled={saving}
-                  autoComplete="tel"
-                  className="w-full rounded-lg border border-violet-400 dark:border-violet-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              ) : (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setEditingPhone(true)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:hover:bg-gray-900"
-                >
-                  {phone.trim() ? phone : 'Add phone'}
-                </button>
-              )}
-            </div>
-            <label className="block space-y-1">
-              <span className="text-xs text-gray-500">
-                Self-assessed skill (1–5)
-              </span>
-              <StarRating
-                value={selfAssessed === '' ? 0 : selfAssessed}
-                onChange={onSkillChange}
-              />
-            </label>
-            {u.calculated_skill != null && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Calculated skill (from peers + self):{' '}
-                <strong className="text-gray-700 dark:text-gray-300">
-                  {u.calculated_skill}
-                </strong>
-              </p>
-            )}
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+        <div className="pt-2 pb-6">
+          <button
+            type="button"
+            onClick={() => {
+              void logout();
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Log out
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Stat Card ─────────────────────────────────────────────────────── */
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-center">
+      <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">
+        {value}
+      </p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
     </div>
   );
 }

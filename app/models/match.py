@@ -1,0 +1,52 @@
+"""SessionMatch: individual team-vs-team match within a GameSession."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.session import GameSession
+
+
+class SessionMatch(Base):
+    __tablename__ = "session_matches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("game_sessions.id"), index=True
+    )
+    #: 1-based sequence within the session.
+    match_number: Mapped[int] = mapped_column(Integer)
+
+    # Team composition (user IDs stored as JSON text arrays)
+    team_a_users: Mapped[str] = mapped_column(Text)  # JSON array of int user IDs
+    team_b_users: Mapped[str] = mapped_column(Text)  # JSON array of int user IDs
+    team_a_name: Mapped[str] = mapped_column(String)
+    team_b_name: Mapped[str] = mapped_column(String)
+
+    score_a: Mapped[int] = mapped_column(Integer, default=0)
+    score_b: Mapped[int] = mapped_column(Integer, default=0)
+
+    #: "pending" | "active" | "time_up" | "completed"
+    status: Mapped[str] = mapped_column(String, default="pending")
+
+    # Timer
+    #: Total match duration in seconds (from session.match_duration_minutes).
+    timer_total_seconds: Mapped[int] = mapped_column(Integer, default=600)
+    #: Server-authoritative remaining seconds.
+    timer_seconds_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: ISO timestamps of pause intervals: JSON array of {"paused_at": iso, "resumed_at": iso | null}
+    timer_pause_intervals: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: When the timer was started (UTC).
+    timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    session: Mapped["GameSession"] = relationship("GameSession")

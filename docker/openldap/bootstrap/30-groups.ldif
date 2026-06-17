@@ -1,9 +1,0 @@
-dn: cn=admins,ou=groups,dc=footylegends,dc=local
-objectClass: groupOfNames
-cn: admins
-member: uid=admin,ou=people,dc=footylegends,dc=local
-
-dn: cn=members,ou=groups,dc=footylegends,dc=local
-objectClass: groupOfNames
-cn: members
-member: uid=admin,ou=people,dc=footylegends,dc=local

@@ -1,4 +1,4 @@
-const PREFIX = 'footy-admin';
+const PREFIX = 'miootz-admin';
 
 export const ADMIN_SESSION_DRAFT_KEY = `${PREFIX}-session-draft-v1`;
 export const ADMIN_LAST_LOCATION_KEY = `${PREFIX}-last-session-location`;

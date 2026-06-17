@@ -1,154 +1,124 @@
 import { apiFetch, parseApiError } from './client';
 
-export interface SSOIdentity {
-  username: string | null;
-  email: string | null;
-  display_name: string | null;
-}
+export type Specialty = 'ATT' | 'MID' | 'DEF' | 'GK';
 
 export interface MeUser {
-  id: number;
-  username: string;
-  email: string;
-  full_name?: string | null;
-  phone?: string | null;
-  profile_pic?: string | null;
-  /** Full upload used only in the crop editor; omit for other users if API hides it. */
-  profile_pic_original?: string | null;
-  /** Natural-pixel crop on the original image; restores editor zoom/pan. */
-  avatar_crop_pixels?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null;
-  skill_level?: number | null;
-  self_assessed_skill?: number | null;
-  calculated_skill?: number | null;
-  is_admin?: boolean;
+    id: number;
+    pocket_id_sub: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+    self_assessed_skill?: number | null;
+    calculated_skill?: number | null;
+    primary_specialty?: Specialty | null;
+    secondary_specialty?: Specialty | null;
+    is_admin: boolean;
 }
 
 export interface MeResponse {
-  user: MeUser;
-  sso: SSOIdentity | null;
-  is_admin: boolean;
-  auth_groups: string[];
+    user: MeUser;
+    is_admin: boolean;
+    auth_groups: string[];
 }
 
 export interface UserStats {
-  games_played: number;
-  average_rating: number;
-  total_ratings: number;
-  skill_level: number;
+    games_played: number;
+    season_games: number;
+    average_rating: number;
+    total_ratings: number;
+    skill_level: number;
 }
 
-export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
-
 export async function fetchMe(): Promise<MeResponse | null> {
-  const r = await apiFetch('/me');
-  if (r.status === 401) return null;
-  if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<MeResponse>;
+    const r = await apiFetch('/me');
+    if (r.status === 401) return null;
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<MeResponse>;
 }
 
 export async function fetchMyStats(): Promise<UserStats> {
-  const r = await apiFetch('/users/me/stats');
-  if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<UserStats>;
+    const r = await apiFetch('/users/me/stats');
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<UserStats>;
 }
 
 export async function patchMyProfile(
-  body: Record<string, unknown>
+    body: Record<string, unknown>
 ): Promise<void> {
-  const r = await apiFetch('/users/me', {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(await parseApiError(r));
-}
-
-export async function uploadMyAvatar(file: File): Promise<{
-  profile_pic: string;
-  profile_pic_original: string;
-}> {
-  const fd = new FormData();
-  fd.append('file', file);
-  const r = await apiFetch('/users/me/avatar', {
-    method: 'POST',
-    body: fd,
-    headers: {},
-  });
-  if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<{
-    profile_pic: string;
-    profile_pic_original: string;
-    avatar_crop_pixels: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  }>;
-}
-
-export async function saveAvatarCrop(crop: {
-  crop_pixels: { x: number; y: number; width: number; height: number };
-}): Promise<{
-  profile_pic: string;
-  avatar_crop_pixels: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}> {
-  const r = await apiFetch('/users/me/avatar/crop', {
-    method: 'POST',
-    body: JSON.stringify(crop),
-  });
-  if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<{
-    profile_pic: string;
-    avatar_crop_pixels: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  }>;
+    const r = await apiFetch('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await parseApiError(r));
 }
 
 export interface GameTemplateSubscriptionRow {
-  game_template_id: number;
-  name: string;
-  notifications_enabled: boolean;
+    game_template_id: number;
+    name: string;
+    notifications_enabled: boolean;
 }
 
 export async function fetchGameTemplateSubscriptions(): Promise<{
-  items: GameTemplateSubscriptionRow[];
+    items: GameTemplateSubscriptionRow[];
 }> {
-  const r = await apiFetch('/users/me/game-template-subscriptions');
-  if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<{ items: GameTemplateSubscriptionRow[] }>;
+    const r = await apiFetch('/users/me/game-template-subscriptions');
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<{ items: GameTemplateSubscriptionRow[] }>;
 }
 
 export async function patchGameTemplateSubscription(
-  templateId: number,
-  notifications_enabled: boolean
+    templateId: number,
+    notifications_enabled: boolean
 ): Promise<void> {
-  const r = await apiFetch(
-    `/users/me/game-template-subscriptions/${templateId}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ notifications_enabled }),
-    }
-  );
-  if (!r.ok) throw new Error(await parseApiError(r));
+    const r = await apiFetch(
+        `/users/me/game-template-subscriptions/${templateId}`,
+        {
+            method: 'PATCH',
+            body: JSON.stringify({ notifications_enabled }),
+        },
+    );
+    if (!r.ok) throw new Error(await parseApiError(r));
+}
+
+// ── Notification preferences ───────────────────────────────────────
+
+export type NotificationCategory =
+    | 'session_invite'
+    | 'waitlist'
+    | 'chat'
+    | 'session_cancelled'
+    | 'kickoff_reminder'
+    | 'rating_reminder';
+
+export interface NotificationPreferenceRow {
+    category: NotificationCategory;
+    enabled: boolean;
+}
+
+export async function fetchNotificationPreferences(): Promise<{
+    items: NotificationPreferenceRow[];
+}> {
+    const r = await apiFetch('/users/me/notification-preferences');
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<{ items: NotificationPreferenceRow[] }>;
+}
+
+export async function patchNotificationPreference(
+    category: NotificationCategory,
+    enabled: boolean,
+): Promise<void> {
+    const r = await apiFetch(
+        `/users/me/notification-preferences/${category}`,
+        {
+            method: 'PATCH',
+            body: JSON.stringify({ enabled }),
+        },
+    );
+    if (!r.ok) throw new Error(await parseApiError(r));
 }
 
 /** Same-origin path e.g. `/uploads/uuid.jpg` — works behind Vite `/uploads` proxy in dev. */
 export function mediaUrl(path: string | null | undefined): string | undefined {
-  if (!path) return undefined;
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return path;
+    if (!path) return undefined;
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    return path;
 }

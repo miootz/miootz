@@ -9,8 +9,9 @@ import {
   Calendar,
   Home,
   LayoutDashboard,
-  Mail,
+  LogOut,
   Menu,
+  Users,
   Repeat,
   UserCircle,
   Wrench,
@@ -44,9 +45,9 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
         <Repeat className="w-4 h-4 shrink-0" />
         Templates
       </NavLink>
-      <NavLink to="/admin/invites" className={navCls} onClick={onNavigate}>
-        <Mail className="w-4 h-4 shrink-0" />
-        Invites
+      <NavLink to="/admin/users" className={navCls} onClick={onNavigate}>
+        <Users className="w-4 h-4 shrink-0" />
+        Users
       </NavLink>
       <NavLink to="/admin/tools" className={navCls} onClick={onNavigate}>
         <Wrench className="w-4 h-4 shrink-0" />
@@ -171,10 +172,7 @@ export function AdminLayout() {
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
             Admin
           </p>
-          <p
-            className="truncate text-sm font-medium text-gray-900 dark:text-gray-100"
-            title={me.user.email}
-          >
+          <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
             {me.user.username}
           </p>
         </div>
@@ -200,20 +198,30 @@ export function AdminLayout() {
           <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <span className="text-violet-600">Admin</span>
           </h2>
-          <p className="text-xs text-gray-500 truncate mt-1" title={me.user.email}>
+          <p className="text-xs text-gray-500 truncate mt-1" title={me.user.username}>
             {me.user.username}
           </p>
         </div>
         <nav className="p-2 flex flex-col gap-1 flex-1">
           <AdminNavLinks />
         </nav>
-        <div className="p-4 mt-auto border-t border-gray-200 dark:border-gray-800">
+        <div className="p-4 mt-auto border-t border-gray-200 dark:border-gray-800 space-y-2">
           <button
             type="button"
             onClick={() => void refresh()}
             className="text-xs text-gray-500 hover:text-violet-600"
           >
             Refresh session
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void logout();
+            }}
+            className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Log out
           </button>
         </div>
       </aside>

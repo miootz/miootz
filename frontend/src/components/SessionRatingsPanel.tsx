@@ -22,7 +22,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [ratees, setRatees] = useState<RateeContext[]>([]);
   const [editable, setEditable] = useState(false);
-  const [beforeStart, setBeforeStart] = useState(false);
+  const [beforeEnd, setBeforeEnd] = useState(false);
   const [locked, setLocked] = useState(false);
   const [lockHint, setLockHint] = useState<string | null>(null);
   const [viewerAttended, setViewerAttended] = useState(true);
@@ -35,7 +35,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
       const ctx = await fetchRatingContext(sessionId);
       setRatees(ctx.ratees);
       setEditable(ctx.ratings_editable);
-      setBeforeStart(ctx.before_session_start);
+      setBeforeEnd(ctx.before_session_end);
       setLocked(ctx.ratings_locked);
       setLockHint(ctx.ratings_lock_at);
       setViewerAttended(ctx.viewer_attended ?? true);
@@ -50,7 +50,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         const ctx = cached.data;
         setRatees(ctx.ratees);
         setEditable(ctx.ratings_editable);
-        setBeforeStart(ctx.before_session_start);
+        setBeforeEnd(ctx.before_session_end);
         setLocked(ctx.ratings_locked);
         setLockHint(ctx.ratings_lock_at);
         setViewerAttended(ctx.viewer_attended ?? true);
@@ -112,7 +112,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
     );
   }
 
-  if (beforeStart) {
+  if (beforeEnd) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
         Ratings open after this session&apos;s start time.
@@ -152,9 +152,9 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
             className="flex flex-wrap items-center gap-3 justify-between"
           >
             <div className="flex items-center gap-2 min-w-0">
-              {r.profile_pic ? (
+              {r.avatar_url ? (
                 <img
-                  src={mediaUrl(r.profile_pic) || ''}
+                  src={mediaUrl(r.avatar_url) || ''}
                   alt=""
                   className="w-8 h-8 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
                 />

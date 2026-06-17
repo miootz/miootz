@@ -1,9 +1,9 @@
 /**
- * Footy Legends service worker — precache-free build (Vite hashes assets).
+ * Miootz service worker — precache-free build (Vite hashes assets).
  * Push notifications + offline outbox + stale-while-revalidate for read-only API GETs.
  */
 
-const API_CACHE = 'footy-api-swr-v1';
+const API_CACHE = 'miootz-api-swr-v1';
 const API_MAX_AGE_MS = {
   sessionsList: 5 * 60 * 1000,
   sessionDetail: 2 * 60 * 1000,
@@ -81,30 +81,72 @@ self.addEventListener('push', (event) => {
   } catch {
     /* ignore */
   }
-  const title = data.title || 'Footy Legends';
+  const title = data.title || 'Miootz';
   const body = data.body || '';
+  const url = data.url || '/';
+  const actions = data.actions || [];
+
+  // Map backend action descriptors to Web Notification action format.
+  // Each action gets an { action, title } entry; the url is stored in a
+  // lookup so the notificationclick handler can resolve it.
+  const actionMap: Record<string, string> = {};
+  const notifActions = actions.map((a, i) => {
+    const key = `action-${i}`;          // unique action ID for the browser
+    actionMap[key] = a.url || url;       // full URL to open on tap
+    return { action: key, title: a.title };
+  });
+
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon: '/favicon.svg',
       badge: '/favicon.svg',
+      actions: notifActions,
+      data: { url, actionMap },
     })
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  let urlPath = '/';
+  try {
+    const data = event.notification.data || {};
+    urlPath = data.url || '/';
+    // If the user tapped an action button, resolve its URL
+    if (event.action && data.actionMap && data.actionMap[event.action]) {
+      // actionMap stores full URLs — extract just the pathname
+      const fullUrl = new URL(data.actionMap[event.action], self.location.origin);
+      urlPath = fullUrl.pathname + fullUrl.search;
+    }
+  } catch {
+    /* ignore */
+  }
+  // Fallback: check event.data (some browsers pass it differently)
+  if (!urlPath || urlPath === '/') {
+    try {
+      const payload = event.data ? event.data.json() : {};
+      urlPath = (payload && payload.url) || '/';
+    } catch { /* ignore */ }
+  }
+
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       if (clientList.length) {
-        return clientList[0].focus();
+        const client = clientList[0];
+        const winUrl = new URL(client.url);
+        if (winUrl.origin === self.location.origin) {
+          return client.navigate(urlPath).then(() => client.focus());
+        }
+        return client.focus();
       }
-      return self.clients.openWindow('/');
+      return self.clients.openWindow(urlPath);
     })
   );
 });
 
-const OFFLINE_DB_NAME = 'footy-offline';
+const OFFLINE_DB_NAME = 'miootz-offline';
 const OFFLINE_DB_VERSION = 1;
 
 function openOfflineDb() {
@@ -174,13 +216,13 @@ async function processOutboxFromSw() {
         }
       }
     } catch (err) {
-      console.warn('Footy outbox sync failed for item', item?.id, err);
+      console.warn('Miootz outbox sync failed for item', item?.id, err);
     }
   }
 }
 
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'footy-outbox') {
+  if (event.tag === 'miootz-outbox') {
     event.waitUntil(processOutboxFromSw());
   }
 });

@@ -23,12 +23,13 @@ export const TeamPlayerRow: React.FC<TeamPlayerRowProps> = ({
     }`}
   >
     <div className="flex items-center gap-2 min-w-0 flex-1">
-      <PlayerAvatarFace name={player.name} avatarUrl={player.avatarUrl} size="sm" />
+      <PlayerAvatarFace name={player.name} avatarUrl={player.avatarUrl} size="sm" isPlusOne={player.isPlusOne} />
       <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
         {player.name}
       </span>
     </div>
     <div className="flex shrink-0 items-center gap-1">
+
       <SkillBadge score={player.skillScore} size="sm" />
       {onToggleLock && (
         <button

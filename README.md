@@ -1,4 +1,14 @@
-# Footy Legends
+# Miootz
+
+## Quick Start
+
+Bootstrap the full stack (Pocket ID + API + Frontend) in one command:
+
+```bash
+./scripts/bootstrap.sh --dev --admin-username yourname
+```
+
+See [INITIAL_SETUP.md](INITIAL_SETUP.md) for details.
 
 ## Development Setup (Local)
 
@@ -38,34 +48,28 @@
 
 ### Docker Development
 
-To run the full infrastructure stack locally (including Traefik, Authelia, and Mailhog):
+To run the full infrastructure stack locally (including Traefik, Pocket ID, and Mailhog):
 
 ```bash
 docker-compose -f docker-compose.dev.yml up -d
 ```
 
-- **Mailhog Web UI**: `http://mail.footylegends.local` or `http://localhost:8025`
+- **Mailhog Web UI**: `http://mail.miootz.local` or `http://localhost:8025`
 - **SMTP Server**: `localhost:1025`
+- **Pocket ID**: `https://auth.miootz.local:8443`
 
-The project is dockerized. Configuration for Traefik and Authelia can be found in the `docker/` directory.
+The project is dockerized. Configuration for Traefik can be found in the `docker/` directory.
 
-### Create an admin (OpenLDAP + database)
+### Create an admin (database only)
 
-Run the CLI **inside the API container** so it uses the same `DATABASE_URL` and `LDAP_URI=ldap://openldap:389` as the running stack:
+Run the CLI **inside the API container** so it uses the same `DATABASE_URL` as the running stack:
 
 ```bash
 docker-compose -f docker-compose.dev.yml exec api \
   uv run python -m app.cli --username <uid> --email <email> [--display-name "Full Name"]
 ```
 
-If the LDAP user already exists (for example the bootstrap `uid=admin` from `docker/openldap/bootstrap/`), add `--skip-ldap` to only create or update the database row:
-
-```bash
-docker-compose -f docker-compose.dev.yml exec api \
-  uv run python -m app.cli --username admin --email admin@footylegends.local --skip-ldap
-```
-
-When LDAP is provisioned by the CLI, the temporary password is printed once; sign in through Authelia and change the password there.
+This creates a database user with `is_admin=True`. To grant admin access in Pocket ID, visit `https://auth.miootz.local:8443/login/setup` to create your admin account, then add yourself to the `admins` group in the Pocket ID admin UI.
 
 ### Demo data (members, past sessions, ratings)
 
@@ -103,4 +107,4 @@ docker compose -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.dev.yml exec api uv run python -m app.bootstrap_data
 ```
 
-Past sessions use `start_time` in the past so they show on the member **History** tab. Demo users are DB-only (no LDAP); sign in as a real user to browse history, or add matching LDAP entries if you need SSO for `demo_m01`, etc.
+Past sessions use `start_time` in the past so they show on the member **History** tab. Demo users are DB-only (no Pocket ID); sign in as a real user to browse history.

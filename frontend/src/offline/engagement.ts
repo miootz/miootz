@@ -1,6 +1,6 @@
-const SESSION_VIEWS_KEY = 'footy:session-views';
+const SESSION_VIEWS_KEY = 'miootz:session-views';
 
-const ENGAGEMENT_EVENT = 'footy-engagement';
+const ENGAGEMENT_EVENT = 'miootz-engagement';
 
 /** Increment after a successful meetup session load; returns new count. */
 export function recordSessionView(): number {
@@ -27,7 +27,7 @@ export function getSessionViewCount(): number {
 
 export const engagementChangedEventName = ENGAGEMENT_EVENT;
 
-const INSTALL_DISMISSED_KEY = 'footy:install-prompt-dismissed';
+const INSTALL_DISMISSED_KEY = 'miootz:install-prompt-dismissed';
 
 export function isInstallPromptDismissed(): boolean {
   try {

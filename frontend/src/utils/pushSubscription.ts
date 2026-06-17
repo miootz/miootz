@@ -59,9 +59,27 @@ export async function subscribeToWebPush(): Promise<{ ok: boolean; reason?: stri
   return { ok: true };
 }
 
+export interface PushSubscriptionRow {
+  id: number;
+  endpoint: string;
+  created_at: string;
+}
+
 export async function unsubscribeFromWebPush(): Promise<void> {
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
   if (sub) await sub.unsubscribe();
   await apiFetch('/users/me/push/subscription', { method: 'DELETE' });
+}
+
+export async function fetchPushSubscriptions(): Promise<PushSubscriptionRow[]> {
+  const r = await apiFetch('/users/me/push/subscriptions');
+  if (!r.ok) throw new Error('Could not fetch push subscriptions');
+  const data = (await r.json()) as { items: PushSubscriptionRow[] };
+  return data.items;
+}
+
+export async function deletePushSubscription(id: number): Promise<void> {
+  const r = await apiFetch(`/users/me/push/subscriptions/${id}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error('Could not remove device');
 }

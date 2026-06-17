@@ -58,19 +58,54 @@ export type AttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 export interface SessionDetail extends SessionListItem {
   team_assignment_mode?: string;
   game_template?: GameTemplateInfo | null;
+  /** Session duration in minutes (null defaults to 120). */
+  duration_minutes?: number | null;
   attendees: {
     user_id: number;
-    username: string;
-    full_name: string | null;
-    profile_pic: string | null;
+    display_name: string;
+    avatar_url: string | null;
     status: string;
     joined_at: string | null;
     skill: number;
     self_assessed_skill?: number | null;
     calculated_skill?: number | null;
+    /** True when this attendee is a plus-one guest reservation. */
+    is_plus_one?: boolean;
+    primary_specialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
+    secondary_specialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
   }[];
   /** Present when the request is authenticated; caller's registration for this session. */
   my_attendance: AttendanceStatus | null;
+}
+
+export interface PlusOneCreate {
+  first_name: string;
+  last_name: string;
+  self_assessed_skill: number;
+}
+
+export interface PlusOneRecord {
+  id: number;
+  guest_user_id: number;
+  first_name: string;
+  last_name: string;
+  self_assessed_skill: number;
+  inviter_id: number;
+  inviter_username: string;
+  claim_token: string;
+  status: string;
+  created_at: string;
+}
+
+export interface PlusOneClaimCheck {
+  id: number;
+  status: string;
+  first_name: string;
+  last_name: string;
+  self_assessed_skill: number;
+  session_id: number;
+  inviter_username: string;
+  guest_username: string;
 }
 
 export interface TeamsResponse {
@@ -78,12 +113,16 @@ export interface TeamsResponse {
   content_revision: number;
   teams: {
     id: string;
+    name: string;
     players: {
       id: string;
       name: string;
       skillScore: number;
       isLocked: boolean;
       profilePic?: string | null;
+      primarySpecialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
+      secondarySpecialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
+      calculatedSkill?: number | null;
     }[];
   }[];
 }
@@ -118,6 +157,43 @@ export async function fetchSessionTeams(id: number): Promise<TeamsResponse> {
   const r = await apiFetch(`/sessions/${id}/teams`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
+}
+
+// ── Match scores ──────────────────────────────────────────────────
+
+export interface MatchScoreItem {
+  id: number;
+  player_id: number;
+  username: string;
+  full_name: string | null;
+  score: number;
+  type: string;
+}
+
+export async function fetchSessionScores(
+  sessionId: number
+): Promise<MatchScoreItem[]> {
+  const r = await apiFetch(`/sessions/${sessionId}/scores`);
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<MatchScoreItem[]>;
+}
+
+export interface MatchScoreSubmit {
+  session_id: number;
+  player_id: number;
+  score: number;
+  type: 'team' | 'individual';
+}
+
+export async function submitMatchScore(
+  input: MatchScoreSubmit
+): Promise<{ status: string }> {
+  const r = await apiFetch('/users/report-score', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<{ status: string }>;
 }
 
 /** Persist admin team lineups (confirmed roster only). */
@@ -161,3 +237,71 @@ export async function postSessionChatTyping(
 
 /** @deprecated use apiBase from client — kept for any legacy imports */
 export { apiBase as getApiBase };
+
+// ── Plus-one guest reservations ──────────────────────────────────
+
+export async function addPlusOne(
+  sessionId: number,
+  body: PlusOneCreate
+): Promise<{
+  id: number;
+  guest_user_id: number;
+  first_name: string;
+  last_name: string;
+  self_assessed_skill: number;
+  claim_token: string;
+  claim_url: string;
+  attendance_status: string;
+}> {
+  const r = await apiFetch(`/sessions/${sessionId}/plus-one`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function fetchPlusOnes(
+  sessionId: number
+): Promise<PlusOneRecord[]> {
+  const r = await apiFetch(`/sessions/${sessionId}/plus-one`);
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function cancelPlusOne(
+  sessionId: number,
+  plusOneId: number
+): Promise<{ status: string }> {
+  const r = await apiFetch(`/sessions/${sessionId}/plus-one/${plusOneId}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function checkPlusOneClaim(
+  claimToken: string
+): Promise<PlusOneClaimCheck> {
+  const r = await apiFetch(`/sessions/plus-one/${claimToken}`);
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function claimPlusOne(
+  claimToken: string,
+  body: { username: string }
+): Promise<{
+  status: string;
+  user_id: number;
+  username: string;
+  full_name: string;
+  self_assessed_skill: number;
+}> {
+  const r = await apiFetch(`/sessions/plus-one/${claimToken}/claim`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}

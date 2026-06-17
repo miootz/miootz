@@ -5,7 +5,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 from app.core.config import settings
 
-_serializer = URLSafeSerializer(settings.SECRET_KEY, salt="footy-session-actions")
+_serializer = URLSafeSerializer(settings.SECRET_KEY, salt="miootz-session-actions")
 
 
 def sign_action_token(

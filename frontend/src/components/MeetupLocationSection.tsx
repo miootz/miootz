@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
-import { MapPin, Navigation } from 'lucide-react';
+import { Navigation } from 'lucide-react';
 import { formatDistance, haversineKm } from '../utils/geo';
 
 const defaultIcon = new L.Icon({
@@ -83,10 +83,6 @@ export function MeetupLocationSection({
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-gray-800 dark:bg-gray-900/50">
-      <div className="mb-3 flex items-center gap-2">
-        <MapPin className="h-5 w-5 shrink-0 text-violet-600 dark:text-violet-400" aria-hidden />
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Location</h2>
-      </div>
       {location && (
         <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{location}</p>
       )}

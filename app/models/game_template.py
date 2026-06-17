@@ -46,6 +46,8 @@ class GameTemplate(Base):
 
     #: When False, scheduled jobs do not create new sessions for this template.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    #: Default match duration in minutes for live team-vs-team matches.
+    match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     sessions: Mapped[list["GameSession"]] = relationship(
         "GameSession", back_populates="game_template"

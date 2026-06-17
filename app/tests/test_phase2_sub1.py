@@ -1,161 +1,206 @@
-from io import BytesIO
+"""Tests for Phase 2 Sub-task 1: Session CRUD, attendance, and admin actions."""
+
+from datetime import datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
-from app.core.config import settings
-from app.core.database import Base, engine, async_session
+from app.core.database import Base, engine
+from app.models.session import Attendance, GameSession
 from app.models.user import User
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function", autouse=True)
 async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-
-    async with async_session() as session:
-        user = User(username="testuser", email="test@example.com", is_admin=False)
-        session.add(user)
-        await session.commit()
+    yield
 
 
-def _auth_headers():
-    return {settings.AUTHELIA_USER_HEADER: "testuser"}
-
-
-@pytest.mark.asyncio
-async def test_profile_update(setup_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        response = await ac.patch(
-            "/users/me",
-            json={"full_name": "John Doe", "skill_level": 3},
-            headers=_auth_headers(),
-        )
-        assert response.status_code == 200
-        assert response.json()["message"] == "Profile updated successfully"
+async def _create_user(db: AsyncSession, display_name: str, pocket_id_sub: str, is_admin: bool = False) -> User:
+    user = User(pocket_id_sub=pocket_id_sub, sso_display_name=display_name, is_admin=is_admin)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 @pytest.mark.asyncio
-async def test_avatar_upload(setup_db):
-    buf = BytesIO()
-    Image.new("RGB", (120, 100), color=(200, 100, 50)).save(buf, format="JPEG")
-    jpeg_bytes = buf.getvalue()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        files = {"file": ("test.jpg", jpeg_bytes, "image/jpeg")}
-        response = await ac.post(
-            "/users/me/avatar", files=files, headers=_auth_headers()
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "/uploads/" in data["profile_pic"]
-        assert data["profile_pic"].endswith(".jpg")
-        assert "/uploads/" in data["profile_pic_original"]
-        assert "_src." in data["profile_pic_original"]
-        acp = data["avatar_crop_pixels"]
-        assert acp["width"] == acp["height"]
-        assert acp["x"] >= 0 and acp["y"] >= 0
+async def test_create_session_as_admin():
+    """Admin can create a session."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
 
-
-@pytest.mark.asyncio
-async def test_avatar_crop(setup_db):
-    buf = BytesIO()
-    Image.new("RGB", (200, 160), color=(10, 90, 200)).save(buf, format="JPEG")
-    jpeg_bytes = buf.getvalue()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        up = await ac.post(
-            "/users/me/avatar",
-            files={"file": ("a.jpg", jpeg_bytes, "image/jpeg")},
-            headers=_auth_headers(),
-        )
-        assert up.status_code == 200
-        r = await ac.post(
-            "/users/me/avatar/crop",
-            json={"crop_pixels": {"x": 20, "y": 10, "width": 80, "height": 80}},
-            headers=_auth_headers(),
-        )
-        assert r.status_code == 200
-        out = r.json()
-        assert "/uploads/avatar_" in out["profile_pic"]
-        assert "avatar_crop_pixels" in out
-        assert out["avatar_crop_pixels"]["width"] > 0
-
-
-@pytest.mark.asyncio
-async def test_avatar_rejects_wrong_content_type(setup_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        files = {"file": ("x.gif", b"x", "image/gif")}
-        response = await ac.post(
-            "/users/me/avatar", files=files, headers=_auth_headers()
-        )
-        assert response.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_me_includes_sso_snapshot(setup_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        r = await ac.get(
-            "/me",
-            headers={
-                settings.AUTHELIA_USER_HEADER: "testuser",
-                settings.AUTHELIA_NAME_HEADER: "SSO Display",
-                settings.AUTHELIA_EMAIL_HEADER: "test@example.com",
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
             },
+            headers={"Authorization": "Bearer adminadm"},
         )
-        assert r.status_code == 200
-        body = r.json()
-        assert body["sso"] is not None
-        assert body["sso"]["display_name"] == "SSO Display"
-        assert body["sso"]["email"] == "test@example.com"
+        assert resp.status_code == 201, resp.text
+        session = resp.json()
+        assert session["location"] == "Test Pitch"
 
 
 @pytest.mark.asyncio
-async def test_sync_display_name_from_sso(setup_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        patch = await ac.patch(
-            "/users/me",
-            json={"sync_display_name_from_sso": True},
-            headers={
-                settings.AUTHELIA_USER_HEADER: "testuser",
-                settings.AUTHELIA_NAME_HEADER: "Authelia Name",
+async def test_join_session_as_player():
+    """Player can join a session."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
+            await _create_user(db, "p1", "p1-uuid")
+
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
             },
+            headers={"Authorization": "Bearer adminadm"},
         )
-        assert patch.status_code == 200
-        me = await ac.get(
-            "/me",
-            headers={
-                settings.AUTHELIA_USER_HEADER: "testuser",
-                settings.AUTHELIA_NAME_HEADER: "Authelia Name",
-            },
+        session_id = resp.json()["id"]
+
+        join_resp = await ac.post(
+            f"/sessions/{session_id}/join",
+            headers={"Authorization": "Bearer p1"},
         )
-        assert me.json()["user"]["full_name"] == "Authelia Name"
+        assert join_resp.status_code == 200, join_resp.text
+        assert join_resp.json()["status"] == "confirmed"
 
 
 @pytest.mark.asyncio
-async def test_sms_auth_flow(setup_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        # Request OTP
-        req_res = await ac.post("/auth/sms/request?phone=+123456789")
-        assert req_res.status_code == 200
-        otp = req_res.json()["message"].split(": ")[1].replace(")", "")
+async def test_leave_session():
+    """Player can leave a session."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
+            await _create_user(db, "p1", "p1-uuid")
 
-        # Verify OTP
-        ver_res = await ac.post(f"/auth/sms/verify?phone=+123456789&otp={otp}")
-        assert ver_res.status_code == 200
-        assert "Authenticated successfully" in ver_res.json()["message"]
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
+            },
+            headers={"Authorization": "Bearer adminadm"},
+        )
+        session_id = resp.json()["id"]
+
+        await ac.post(
+            f"/sessions/{session_id}/join",
+            headers={"Authorization": "Bearer p1"},
+        )
+
+        leave_resp = await ac.delete(
+            f"/sessions/{session_id}/leave",
+            headers={"Authorization": "Bearer p1"},
+        )
+        assert leave_resp.status_code == 200, leave_resp.text
+
+
+@pytest.mark.asyncio
+async def test_admin_can_manage_attendance():
+    """Admin can move players between confirmed/waitlisted."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
+            p1 = await _create_user(db, "p1", "p1-uuid")
+
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
+            },
+            headers={"Authorization": "Bearer adminadm"},
+        )
+        session_id = resp.json()["id"]
+
+        await ac.post(
+            f"/sessions/{session_id}/join",
+            headers={"Authorization": "Bearer p1"},
+        )
+
+        move_resp = await ac.post(
+            f"/sessions/{session_id}/admin/move?user_id={p1.id}&new_status=waitlisted",
+            headers={"Authorization": "Bearer adminadm"},
+        )
+        assert move_resp.status_code == 200, move_resp.text
+        assert move_resp.json()["status"] == "moved"
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_create_session():
+    """Non-admin users cannot create sessions."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "p1", "p1-uuid")
+
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
+            },
+            headers={"Authorization": "Bearer p1"},
+        )
+        assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_session_list_shows_active_sessions():
+    """GET /sessions/ returns active sessions."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
+            await _create_user(db, "p1", "p1-uuid")
+
+        resp = await ac.post(
+            "/sessions/",
+            json={
+                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "location": "Test Pitch",
+                "min_players": 1,
+                "max_players": 10,
+                "send_push_notifications": False,
+            },
+            headers={"Authorization": "Bearer adminadm"},
+        )
+        assert resp.status_code == 201
+
+        list_resp = await ac.get(
+            "/sessions/?status=upcoming",
+            headers={"Authorization": "Bearer p1"},
+        )
+        assert list_resp.status_code == 200, list_resp.text
+        data = list_resp.json()
+        sessions = data.get("items", [])
+        assert any(s["location"] == "Test Pitch" for s in sessions)

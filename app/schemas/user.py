@@ -1,42 +1,29 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-class SSOIdentity(BaseModel):
-    username: str | None = None
-    email: str | None = None
-    display_name: str | None = None
-
-
-class AvatarCropPixelsOut(BaseModel):
-    x: int
-    y: int
-    width: int
-    height: int
+SPECIALTY_OPTIONS = Literal["ATT", "MID", "DEF", "GK"]
 
 
 class UserMe(BaseModel):
+    """User identity + app-specific profile data."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    username: str
-    email: str
-    full_name: str | None = None
-    phone: str | None = None
-    profile_pic: str | None = None
-    profile_pic_original: str | None = None
-    avatar_crop_pixels: AvatarCropPixelsOut | None = None
-    skill_level: int | None = None
+    pocket_id_sub: str
+    #: Display name from Pocket ID (sso_display_name)
+    display_name: str | None = None
+    #: Pocket ID avatar URL (computed from pocket_id_sub)
+    avatar_url: str | None = None
     self_assessed_skill: int | None = None
-    calculated_skill: int | None = None
+    calculated_skill: float | None = None
+    primary_specialty: SPECIALTY_OPTIONS | None = None
+    secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool = False
 
 
 class UserProfileUpdate(BaseModel):
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    skill_level: Optional[int] = Field(None, ge=1, le=5)
+    """User-editable profile fields (identity is managed by Pocket ID)."""
     self_assessed_skill: Optional[int] = Field(None, ge=1, le=5)
-    sync_display_name_from_sso: bool = False
-    sync_email_from_sso: bool = False
+    primary_specialty: Optional[SPECIALTY_OPTIONS] = None
+    secondary_specialty: Optional[SPECIALTY_OPTIONS] = None

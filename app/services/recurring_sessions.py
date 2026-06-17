@@ -1,4 +1,4 @@
-"""Weekly templates: next kickoff session + invite emails at a scheduled wall time."""
+"""Weekly templates: next kickoff session + push notifications at a scheduled wall time."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from app.core.database import async_session
 from app.models.game_template import GameTemplate
 from app.models.session import GameSession
 from app.models.user import User
-from app.services.notifications import notify_new_session_invites
 from app.services.template_subscriptions import filter_users_by_template_subscription
+from app.services.web_push import notify_new_session_invites
 
 logger = logging.getLogger(__name__)
 
@@ -108,21 +108,26 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             team_assignment_mode=getattr(template, "team_assignment_mode", None)
             or "balanced",
             game_template_id=template.id,
+            match_duration_minutes=getattr(template, "match_duration_minutes", None)
+            or 10,
         )
+        # Auto-generate team names (default 3 teams for max_players=15)
+        from app.services.manual_teams import ensure_team_names
+        ensure_team_names(session, 3)
         db.add(session)
         await db.commit()
         await db.refresh(session)
 
         result = await db.execute(select(User))
-        all_with_email = [u for u in result.scalars().all() if u.email]
-        if all_with_email:
-            ids = [u.id for u in all_with_email]
+        all_users = result.scalars().all()
+        if all_users:
+            ids = [u.id for u in all_users]
             allowed = set(
                 await filter_users_by_template_subscription(db, ids, template.id)
             )
-            recipients = [u for u in all_with_email if u.id in allowed]
+            recipients = [u for u in all_users if u.id in allowed]
             if recipients:
-                await notify_new_session_invites(session, recipients)
+                await notify_new_session_invites(db, session, recipients)
 
         logger.info(
             "Game template %s: created session %s at %s",
@@ -130,4 +135,9 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             session.id,
             t.isoformat(),
         )
+
+        # Schedule rating reminder at session end time
+        from app.services.rating_reminder_scheduler import register_rating_reminder
+
+        register_rating_reminder(session)
         return True

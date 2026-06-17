@@ -18,70 +18,57 @@ services:
     networks:
       - web
 
-  authelia:
-    image: authelia/authelia
-    container_name: authelia
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:latest
+    container_name: pocket_id
     environment:
-      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+      APP_URL: "https://auth.miootz.local"
+      TRUST_PROXY: "true"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      STATIC_API_KEY: "${POCKET_ID_STATIC_API_KEY:-}"
     volumes:
-      - ./docker/authelia/config.yml:/config/configuration.yml
+      - ./data/pocket_id:/app/data
     networks:
       - web
-    depends_on:
-      openldap:
-        condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.authelia.rule=Host(`auth.footylegends.local`)"
-      - "traefik.http.routers.authelia.entrypoints=websecure"
-      - "traefik.http.routers.authelia.tls=true"
-      - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+      - "traefik.http.routers.pocketid.rule=Host(`auth.miootz.local`)"
+      - "traefik.http.routers.pocketid.entrypoints=websecure"
+      - "traefik.http.routers.pocketid.tls=true"
+      - "traefik.http.services.pocketid.loadbalancer.server.port=1411"
 
   api:
     build: .
-    container_name: footy_api
+    container_name: miootz_api
     env_file: .env
     environment:
-      # Traefik sets X-Forwarded-*; require them before trusting Remote-User (spoof protection).
-      AUTH_REQUIRE_FORWARDED_HEADERS: "true"
       UPLOAD_DIR: /data/uploads
-      LDAP_URI: ldap://openldap:389
-      LDAP_BASE_DN: dc=footylegends,dc=local
-      LDAP_BIND_DN: cn=admin,dc=footylegends,dc=local
-      LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
-      LDAP_USERS_OU: ou=people
-      LDAP_GROUPS_OU: ou=groups
-      AUTHELIA_INVITE_DEFAULT_GROUPS: members
+      POCKET_ID_INTERNAL_URL: "http://pocket-id:1411"
+      POCKET_ID_APP_URL: "https://auth.miootz.local"
+      POCKET_ID_STATIC_API_KEY: "${POCKET_ID_STATIC_API_KEY:-}"
+      POCKET_ID_API_KEY: "${POCKET_ID_API_KEY:-}"
+      POCKET_ID_OIDC_CLIENT_ID: "miootz-app"
+      POCKET_ID_OIDC_ISSUER: "https://auth.miootz.local"
     volumes:
       - ./app:/app/app
       - ./data:/data
     networks:
       - web
-    depends_on:
-      openldap:
-        condition: service_healthy
-      authelia:
-        condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
-      - "traefik.http.routers.api.rule=Host(`api.footylegends.local`)"
+      - "traefik.http.routers.api.rule=Host(`api.miootz.local`)"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
-      - "traefik.http.middlewares.footy-auth.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
-      - "traefik.http.middlewares.footy-auth.forwardauth.trustForwardHeader=true"
-      - "traefik.http.middlewares.footy-auth.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
-      - "traefik.http.routers.api.middlewares=footy-auth@docker"
-      - "traefik.http.routers.api-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/api`)"
       - "traefik.http.routers.api-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-on-app.tls=true"
-      - "traefik.http.routers.api-on-app.middlewares=footy-auth@docker,api-strip@docker"
+      - "traefik.http.routers.api-on-app.middlewares=api-strip@docker"
       - "traefik.http.routers.api-on-app.service=api"
       - "traefik.http.routers.api-on-app.priority=100"
-      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/uploads`)"
+      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/uploads`)"
       - "traefik.http.routers.api-uploads-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-uploads-on-app.tls=true"
-      - "traefik.http.routers.api-uploads-on-app.middlewares=footy-auth@docker"
       - "traefik.http.routers.api-uploads-on-app.service=api"
       - "traefik.http.routers.api-uploads-on-app.priority=50"
 
@@ -89,47 +76,21 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: footy_frontend
+      args:
+        VITE_POCKET_ID_ISSUER: "https://auth.miootz.local"
+        VITE_POCKET_ID_CLIENT_SECRET: "${POCKET_ID_OIDC_CLIENT_SECRET:-}"
+    container_name: miootz_frontend
     networks:
       - web
     depends_on:
       - api
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`app.footylegends.local`)"
+      - "traefik.http.routers.frontend.rule=Host(`app.miootz.local`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
-
-  openldap:
-    build:
-      context: ./docker/openldap
-    image: footy-legends-openldap:dev
-    container_name: openldap
-    environment:
-      LDAP_ORGANISATION: "Footy Legends"
-      LDAP_DOMAIN: "footylegends.local"
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
-    volumes:
-      - openldap_data:/var/lib/ldap
-      - openldap_config:/etc/ldap/slapd.d
-    networks:
-      - web
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'ldapsearch -x -H ldap://127.0.0.1 -D cn=admin,dc=footylegends,dc=local -w "$$LDAP_ADMIN_PASSWORD" -b dc=footylegends,dc=local -s base',
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 25s
-
-volumes:
-  openldap_data:
-  openldap_config:
 
 networks:
   web:

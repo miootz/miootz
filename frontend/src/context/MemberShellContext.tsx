@@ -12,6 +12,10 @@ export type MemberView = 'details' | 'history';
 export interface MemberHeaderInfo {
   line1: string;
   line2?: string;
+  location?: string;
+  fee?: number;
+  sessionId?: number;
+  sseLive?: boolean;
 }
 
 interface MemberShellContextValue {

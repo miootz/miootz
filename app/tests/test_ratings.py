@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
-from app.core.config import settings
 from app.core.database import Base, async_session, engine
 from app.models.session import Attendance, GameSession
 from app.models.user import User
@@ -20,13 +19,13 @@ async def setup_db():
 @pytest.mark.asyncio
 async def test_rating_constraint_unattended_session():
     async with async_session() as db:
-        auth_user = User(username="tester", email="test@test.com")
+        auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
         db.add(auth_user)
         await db.commit()
         await db.refresh(auth_user)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=1),
+            start_time=datetime.utcnow() - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
@@ -41,7 +40,7 @@ async def test_rating_constraint_unattended_session():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.post(
             "/ratings/",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
             json={
                 "session_id": session_id,
                 "ratee_id": ratee_id,
@@ -58,15 +57,15 @@ async def test_rating_constraint_unattended_session():
 @pytest.mark.asyncio
 async def test_anonymity_check():
     async with async_session() as db:
-        auth_user = User(username="tester", email="test@test.com")
-        player = User(username="player1", email="player1@test.com")
+        auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
+        player = User(pocket_id_sub="test-player1", sso_display_name="player1")
         db.add_all([auth_user, player])
         await db.commit()
         await db.refresh(auth_user)
         await db.refresh(player)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=1),
+            start_time=datetime.utcnow() - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
@@ -83,7 +82,7 @@ async def test_anonymity_check():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         await ac.post(
             "/ratings/",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
             json={
                 "session_id": sid,
                 "ratee_id": pid,
@@ -93,7 +92,7 @@ async def test_anonymity_check():
 
         resp = await ac.get(
             f"/ratings/players/{pid}",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
         )
     assert resp.status_code == 200
     data = resp.json()
@@ -107,15 +106,15 @@ async def test_anonymity_check():
 async def test_score_update_verification():
     """Two ratings in different sessions; no earlier session locks the first."""
     async with async_session() as db:
-        auth_user = User(username="tester", email="test@test.com")
-        player1 = User(username="p1", email="p1@test.com")
+        auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
+        player1 = User(pocket_id_sub="test-p1", sso_display_name="p1")
         db.add_all([auth_user, player1])
         await db.commit()
         await db.refresh(auth_user)
         await db.refresh(player1)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(days=2),
+            start_time=datetime.utcnow() - timedelta(days=3),
             location="Test Park",
             max_players=10,
         )
@@ -134,7 +133,7 @@ async def test_score_update_verification():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r1 = await ac.post(
             "/ratings/",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
             json={
                 "session_id": sid1,
                 "ratee_id": p1id,
@@ -145,7 +144,7 @@ async def test_score_update_verification():
 
         async with async_session() as db:
             session2 = GameSession(
-                start_time=datetime.utcnow() - timedelta(days=1),
+                start_time=datetime.utcnow() - timedelta(days=2),
                 location="Test Park 2",
                 max_players=10,
             )
@@ -159,7 +158,7 @@ async def test_score_update_verification():
 
         r2 = await ac.post(
             "/ratings/",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
             json={
                 "session_id": sid2,
                 "ratee_id": p1id,
@@ -170,7 +169,7 @@ async def test_score_update_verification():
 
         resp = await ac.get(
             f"/ratings/players/{p1id}",
-            headers={settings.AUTHELIA_USER_HEADER: "tester"},
+            headers={"Authorization": "Bearer tester"},
         )
     assert resp.status_code == 200
     assert resp.json()["average_score"] == 4.0
@@ -179,15 +178,15 @@ async def test_score_update_verification():
 @pytest.mark.asyncio
 async def test_rating_context_allows_non_attendee_read_only():
     async with async_session() as db:
-        viewer = User(username="viewer", email="viewer@test.com")
-        player = User(username="player1", email="p1@test.com")
+        viewer = User(pocket_id_sub="viewer-uuid", sso_display_name="viewer")
+        player = User(pocket_id_sub="test-player1", sso_display_name="player1")
         db.add_all([viewer, player])
         await db.commit()
         await db.refresh(viewer)
         await db.refresh(player)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=2),
+            start_time=datetime.utcnow() - timedelta(hours=5),
             location="Pitch A",
             max_players=10,
         )
@@ -210,7 +209,7 @@ async def test_rating_context_allows_non_attendee_read_only():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.get(
             f"/ratings/sessions/{sid}/context",
-            headers={settings.AUTHELIA_USER_HEADER: "viewer"},
+            headers={"Authorization": "Bearer viewer"},
         )
     assert resp.status_code == 200
     data = resp.json()

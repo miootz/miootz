@@ -8,16 +8,10 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
-from app.core.config import settings
 from app.core.database import Base, engine
 from app.models.game_template import GameTemplate
 from app.models.session import GameSession
 from app.models.user import User
-from app.services.recurring_sessions import (
-    materialize_next_session_and_notify,
-    next_occurrence_utc,
-    utc_start_matches_rule,
-)
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -31,11 +25,13 @@ async def setup_db():
 def test_utc_start_matches_rule_europe_london():
     # 2024-06-03 is Monday; 18:00 in London = 17:00 UTC (BST)
     start = datetime(2024, 6, 3, 17, 0, tzinfo=timezone.utc)
+    from app.services.recurring_sessions import utc_start_matches_rule
     assert utc_start_matches_rule(start, "Europe/London", 0, 18, 0) is True
     assert utc_start_matches_rule(start, "Europe/London", 1, 18, 0) is False
 
 
 def test_next_occurrence_skips_same_week_if_time_passed():
+    from app.services.recurring_sessions import next_occurrence_utc
     rule = GameTemplate(
         name="Test",
         timezone="UTC",
@@ -61,6 +57,8 @@ def test_next_occurrence_skips_same_week_if_time_passed():
 
 @pytest.mark.asyncio
 async def test_materialize_next_idempotent():
+    from app.services.recurring_sessions import materialize_next_session_and_notify
+
     async with AsyncSession(engine) as db:
         rule = GameTemplate(
             name="Test",
@@ -111,7 +109,7 @@ async def test_create_game_template_admin():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
-            u = User(username="adm", email="a@test.com", is_admin=True)
+            u = User(pocket_id_sub="adm-uuid", sso_display_name="adm", is_admin=True)
             db.add(u)
             await db.commit()
 
@@ -135,7 +133,7 @@ async def test_create_game_template_admin():
         r = await ac.post(
             "/game-templates/",
             json=body,
-            headers={settings.AUTHELIA_USER_HEADER: "adm"},
+            headers={"Authorization": "Bearer adm"},
         )
         assert r.status_code == 201, r.text
         data = r.json()

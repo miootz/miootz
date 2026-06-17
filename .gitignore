@@ -97,3 +97,5 @@ docker/traefik/acme.json
 
 
 .pi/
+private_key.pem
+!.env.dev.example

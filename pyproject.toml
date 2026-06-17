@@ -1,7 +1,8 @@
 [project]
-name = "footy-legends"
+name = "miootz"
 version = "0.1.0"
-description = "Footy Legends API"
+description = "Miootz API"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
@@ -16,9 +17,9 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "apscheduler>=3.10.0",
     "aiosmtplib>=5.1.0",
-    "ldap3>=2.9.1",
     "pywebpush>=2.3.0",
     "pillow>=10.0.0",
+    "py-vapid>=1.9.4",
 ]
 
 [tool.pytest.ini_options]

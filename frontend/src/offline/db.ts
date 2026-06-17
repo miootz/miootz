@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
-export const OFFLINE_DB_NAME = 'footy-offline';
+export const OFFLINE_DB_NAME = 'miootz-offline';
 export const OFFLINE_DB_VERSION = 1;
 
 export interface CacheEnvelope<T = unknown> {
@@ -8,7 +8,7 @@ export interface CacheEnvelope<T = unknown> {
   data: T;
 }
 
-interface FootyOfflineSchema extends DBSchema {
+interface MiootzOfflineSchema extends DBSchema {
   cache: {
     key: string;
     value: CacheEnvelope;
@@ -38,11 +38,11 @@ export type OutboxRating = {
 
 export type OutboxItem = OutboxChat | OutboxRating;
 
-let dbPromise: Promise<IDBPDatabase<FootyOfflineSchema>> | null = null;
+let dbPromise: Promise<IDBPDatabase<MiootzOfflineSchema>> | null = null;
 
-export function getOfflineDb(): Promise<IDBPDatabase<FootyOfflineSchema>> {
+export function getOfflineDb(): Promise<IDBPDatabase<MiootzOfflineSchema>> {
   if (!dbPromise) {
-    dbPromise = openDB<FootyOfflineSchema>(
+    dbPromise = openDB<MiootzOfflineSchema>(
       OFFLINE_DB_NAME,
       OFFLINE_DB_VERSION,
       {

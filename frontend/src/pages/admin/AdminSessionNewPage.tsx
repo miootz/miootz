@@ -39,7 +39,7 @@ export function AdminSessionNewPage() {
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
   const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
-  const [sendInviteEmails, setSendInviteEmails] = useState(true);
+  const [sendPushNotifs, setSendPushNotifs] = useState(true);
 
   useEffect(() => {
     try {
@@ -129,7 +129,7 @@ export function AdminSessionNewPage() {
         max_players: max,
         waitlist_mode: waitlistMode,
         team_assignment_mode: teamMode,
-        send_invite_emails: sendInviteEmails,
+        send_push_notifications: sendPushNotifs,
       };
       if (!body.location) {
         setError('Location is required.');
@@ -388,8 +388,8 @@ export function AdminSessionNewPage() {
             <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-950/40 px-3 py-3 transition-colors">
               <input
                 type="checkbox"
-                checked={sendInviteEmails}
-                onChange={(e) => setSendInviteEmails(e.target.checked)}
+                checked={sendPushNotifs}
+                onChange={(e) => setSendPushNotifs(e.target.checked)}
                 className="mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -397,7 +397,7 @@ export function AdminSessionNewPage() {
                   Email all players
                 </span>
                 <span className="block text-gray-600 dark:text-gray-400 mt-0.5">
-                  Send join links to everyone with an email.
+                  Send a push notification to everyone with the join link.
                 </span>
               </span>
             </label>

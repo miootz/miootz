@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from app.services.team_assignment import assign_teams_random, assign_teams_snake, team_counts
+from app.services.team_names import generate_team_names
 
 
 def parse_manual_teams_json(raw: str | None) -> list[list[int]] | None:
@@ -74,21 +75,61 @@ def resolve_session_teams_nested(
     return assign_teams_snake(players)
 
 
+def get_team_names(session: Any) -> list[str] | None:
+    """Parse team_names_json from a session object."""
+    raw = getattr(session, "team_names_json", None)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def ensure_team_names(session: Any, num_teams: int | None = None) -> list[str]:
+    """Ensure the session has team names, generating if needed.
+
+    Returns the list of team names. Does NOT persist — caller must flush.
+    """
+    existing = get_team_names(session)
+    if existing and len(existing) >= (num_teams or 2):
+        return existing
+
+    # Determine number of teams needed
+    if num_teams is None:
+        num_teams = 2
+    names = generate_team_names(num_teams)
+    session.team_names_json = json.dumps(names)
+    return names
+
+
 def format_teams_api_payload(
     teams_nested: list[list[dict[str, Any]]],
+    team_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    """Format resolved teams for the API response.
+
+    When *team_names* is provided (from session.team_names_json), uses those
+    names. Otherwise falls back to "Team 1", "Team 2", …
+    """
     out: list[dict[str, Any]] = []
     for i, team in enumerate(teams_nested, start=1):
+        name = (team_names[i - 1] if team_names and i - 1 < len(team_names)
+                else f"Team {i}")
         out.append(
             {
                 "id": f"t{i}",
+                "name": name,
                 "players": [
                     {
                         "id": p["id"],
                         "name": p["name"],
                         "skillScore": p["skill"],
                         "isLocked": False,
-                        "profilePic": p.get("profile_pic"),
+                        "profilePic": p.get("avatar_url"),
+                        "primarySpecialty": p.get("primary_specialty"),
+                        "secondarySpecialty": p.get("secondary_specialty"),
+                        "calculatedSkill": p.get("calculated_skill"),
                     }
                     for p in team
                 ],

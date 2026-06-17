@@ -42,6 +42,7 @@ export function AdminGameTemplateEditPage() {
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
   const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
+  const [matchDuration, setMatchDuration] = useState('10');
   const [isActive, setIsActive] = useState(true);
   const [anchorStartLocal, setAnchorStartLocal] = useState(defaultStartLocal);
 
@@ -76,6 +77,7 @@ export function AdminGameTemplateEditPage() {
       setMaxPlayers(String(t.max_players));
       setWaitlistMode(t.waitlist_mode === 'broadcast' ? 'broadcast' : 'auto_promote');
       setTeamMode(t.team_assignment_mode === 'random' ? 'random' : 'balanced');
+      setMatchDuration(String(t.match_duration_minutes ?? 10));
       setIsActive(t.is_active);
       setRecurrenceTz(t.timezone);
       setRecurrenceWeekday(t.weekday);
@@ -126,6 +128,7 @@ export function AdminGameTemplateEditPage() {
       waitlist_mode: waitlistMode,
       team_assignment_mode: teamMode,
       is_active: isActive,
+      match_duration_minutes: Number(matchDuration) || 10,
     };
     setSaving(true);
     setError(null);
@@ -317,6 +320,23 @@ export function AdminGameTemplateEditPage() {
             <option value="balanced">Balanced (skill snake)</option>
             <option value="random">Random order (snake)</option>
           </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Match duration (minutes)
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={matchDuration}
+            onChange={(e) => setMatchDuration(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Duration for each team-vs-team match during live meetups.
+          </p>
         </div>
 
         <div>

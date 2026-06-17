@@ -15,7 +15,7 @@ export interface SessionCreateBody {
   waitlist_mode?: WaitlistMode;
   team_assignment_mode?: TeamAssignmentMode;
   /** When true (default), email all users with join links for this meetup. */
-  send_invite_emails?: boolean;
+  send_push_notifications?: boolean;
 }
 
 export interface SessionUpdateBody {
@@ -50,6 +50,7 @@ export interface GameTemplatePayload {
   waitlist_mode: WaitlistMode;
   team_assignment_mode: TeamAssignmentMode;
   is_active: boolean;
+  match_duration_minutes?: number;
 }
 
 export type GameTemplateRow = GameTemplatePayload & {
@@ -172,18 +173,75 @@ export async function adminRunRecurringNow(): Promise<{
   return jsonOrThrow(r);
 }
 
-export async function adminCreateInvite(email: string): Promise<{
+export async function adminCreateUser(body: {
+  first_name: string;
+  last_name: string;
+}): Promise<AdminUserRow> {
+  const r = await apiFetch('/users', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminGenerateInvite(userId: number): Promise<{
   invite_link: string;
   expires_at: string;
 }> {
-  const q = new URLSearchParams({ email });
-  const r = await apiFetch(`/invites/create?${q}`, { method: 'POST' });
+  const r = await apiFetch(`/users/${userId}/invite`, {
+    method: 'POST',
+  });
+  return jsonOrThrow(r);
+}
+
+export type AdminUserRow = {
+  id: number;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  self_assessed_skill: number | null;
+  calculated_skill: number | null;
+  primary_specialty: string | null;
+  secondary_specialty: string | null;
+  is_admin: boolean;
+  pocket_id_sub: string | null;
+  has_pocket_id: boolean;
+};
+
+export interface AdminUserUpdate {
+  self_assessed_skill?: number | null;
+  primary_specialty?: string | null;
+  secondary_specialty?: string | null;
+  is_admin?: boolean;
+  display_name?: string | null;
+}
+
+export async function adminListUsers(): Promise<AdminUserRow[]> {
+  const r = await apiFetch('/users');
+  const data = await jsonOrThrow<{ items: AdminUserRow[] }>(r);
+  return data.items;
+}
+
+export async function adminUpdateUser(
+  userId: number,
+  body: AdminUserUpdate
+): Promise<{ message: string }> {
+  const r = await apiFetch(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminDeleteUser(userId: number): Promise<{ message: string }> {
+  const r = await apiFetch(`/users/${userId}`, { method: 'DELETE' });
   return jsonOrThrow(r);
 }
 
 export type AdminInviteRow = {
   token: string;
-  email: string;
+  first_name: string;
+  last_name: string;
   created_at: string;
   expires_at: string;
   used: boolean;

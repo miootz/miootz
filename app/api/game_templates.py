@@ -53,6 +53,8 @@ def _template_json(t: GameTemplate, *, session_count: int | None = None) -> dict
         "team_assignment_mode": getattr(t, "team_assignment_mode", None)
         or "balanced",
         "is_active": t.is_active,
+        "match_duration_minutes": getattr(t, "match_duration_minutes", None)
+        or 10,
     }
     if session_count is not None:
         out["materialized_session_count"] = session_count
@@ -78,6 +80,8 @@ class GameTemplateCreate(BaseModel):
     waitlist_mode: str = Field(default="auto_promote")
     team_assignment_mode: str = Field(default="balanced")
     is_active: bool = True
+    match_duration_minutes: int = Field(default=10, ge=1, le=60)
+    match_duration_minutes: int = Field(default=10, ge=1, le=60)
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
@@ -126,6 +130,7 @@ class GameTemplateUpdate(BaseModel):
     waitlist_mode: str | None = None
     team_assignment_mode: str | None = None
     is_active: bool | None = None
+    match_duration_minutes: int | None = Field(default=None, ge=1, le=60)
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
@@ -206,6 +211,7 @@ async def create_game_template(
         waitlist_mode=body.waitlist_mode,
         team_assignment_mode=body.team_assignment_mode,
         is_active=body.is_active,
+        match_duration_minutes=body.match_duration_minutes,
     )
     db.add(t)
     await db.commit()

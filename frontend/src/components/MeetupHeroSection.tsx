@@ -62,7 +62,7 @@ export function MeetupHeroSection({ session }: MeetupHeroSectionProps) {
     hapticLight();
     const url = window.location.origin + '/';
     const ok = await shareMeetup({
-      title: 'Footy Legends meetup',
+      title: 'Miootz meetup',
       text: `${session.location ?? 'Meetup'} · ${session.date} ${timeLine}`,
       url,
     });
@@ -119,11 +119,7 @@ export function MeetupHeroSection({ session }: MeetupHeroSectionProps) {
         session.longitude != null &&
         session.startTime && (
           <div className="mt-2">
-            <MeetupWeatherBadge
-              latitude={session.latitude}
-              longitude={session.longitude}
-              startTime={session.startTime}
-            />
+            <MeetupWeatherBadge sessionId={Number(session.id)} />
           </div>
         )}
 

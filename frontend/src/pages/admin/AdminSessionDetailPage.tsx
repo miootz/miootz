@@ -4,29 +4,40 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   ArrowLeft,
   ClipboardList,
+  ExternalLink,
   LayoutGrid,
   Loader2,
+  Play,
   Search,
   Settings2,
   Share2,
+  Shuffle,
+  Trophy,
   UserCheck,
   Users,
 } from 'lucide-react';
+import type { User } from '../../types';
 import {
   fetchSessionDetail,
+  fetchSessionScores,
   fetchSessionTeams,
+  submitMatchScore,
+  type MatchScoreItem,
   type SessionDetail,
+  type TeamsResponse,
 } from '../../api/sessionsApi';
 import {
   adminMoveAttendance,
   adminReshuffleTeams,
-  adminSetUserSelfAssessedSkill,
   adminUpdateSession,
   type TeamAssignmentMode,
   type WaitlistMode,
 } from '../../api/adminApi';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
+import { MatchHistoryList } from '../../components/MatchHistoryList';
+import { MeetupWeatherBadge } from '../../components/MeetupWeatherBadge';
 import { PlayerAvatarFace, SkillBadge } from '../../components/PlayerAvatar';
+import { TeamRoster } from '../../components/TeamRoster';
 import { useToast } from '../../context/ToastContext';
 import {
   parseSessionStart,
@@ -34,7 +45,39 @@ import {
 } from '../../utils/datetime';
 import { hapticLight } from '../../utils/haptics';
 import { shareMeetup } from '../../utils/share';
-import { MeetupWeatherBadge } from '../../components/MeetupWeatherBadge';
+
+const TEAM_COLORS = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#22c55e', '#eab308'];
+
+const SPECIALTY_LABELS: Record<string, string> = {
+  ATT: 'Attacker',
+  MID: 'Midfielder',
+  DEF: 'Defender',
+  GK: 'Goalkeeper',
+};
+
+function formatSpecialty(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return SPECIALTY_LABELS[code] ?? code;
+}
+
+function mapTeamPlayers(
+  team: TeamsResponse['teams'][0]
+): User[] {
+  return team.players.map((p) => ({
+    id: p.id,
+    name: p.name,
+    skillScore: p.skillScore,
+    isLocked: p.isLocked,
+    avatarUrl: p.profilePic ?? undefined,
+    primarySpecialty: p.primarySpecialty ?? undefined,
+    secondarySpecialty: p.secondarySpecialty ?? undefined,
+    calculatedSkill: p.calculatedSkill ?? null,
+  }));
+}
+
+function getTeamName(team: TeamsResponse['teams'][0], index: number): string {
+  return team.name ?? `Team ${index + 1}`;
+}
 
 export function AdminSessionDetailPage() {
   const { showToast } = useToast();
@@ -52,21 +95,20 @@ export function AdminSessionDetailPage() {
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
   const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   const [savingMeta, setSavingMeta] = useState(false);
   const [movingKey, setMovingKey] = useState<string | null>(null);
-  const [tab, setTab] = useState<'details' | 'attendance' | 'teams'>('details');
+  const [tab, setTab] = useState<'details' | 'attendance' | 'teams' | 'scores'>('details');
   const [attFilter, setAttFilter] = useState<
     'all' | 'confirmed' | 'waitlisted' | 'cancelled'
   >('all');
   const [attSearch, setAttSearch] = useState('');
-  const [teamsData, setTeamsData] = useState<Awaited<
-    ReturnType<typeof fetchSessionTeams>
-  > | null>(null);
+  const [teamsData, setTeamsData] = useState<TeamsResponse | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
   const [reshuffling, setReshuffling] = useState(false);
-  const [skillBusy, setSkillBusy] = useState<number | null>(null);
+  const [playerScores, setPlayerScores] = useState<Record<string, number | null>>({});
 
   const load = useCallback(async () => {
     if (Number.isNaN(id)) return;
@@ -140,20 +182,6 @@ export function AdminSessionDetailPage() {
     }
   }
 
-  async function setPlayerSkill(userId: number, value: number) {
-    setSkillBusy(userId);
-    setError(null);
-    try {
-      await adminSetUserSelfAssessedSkill(userId, value);
-      await load();
-      showToast('Skill updated.', 'success');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Skill update failed');
-    } finally {
-      setSkillBusy(null);
-    }
-  }
-
   async function moveUser(userId: number, next: 'confirmed' | 'waitlisted') {
     if (Number.isNaN(id)) return;
     setMovingKey(`${userId}-${next}`);
@@ -196,9 +224,21 @@ export function AdminSessionDetailPage() {
     if (tab !== 'teams' || Number.isNaN(id)) return;
     let cancelled = false;
     setTeamsLoading(true);
-    void fetchSessionTeams(id)
-      .then((t) => {
-        if (!cancelled) setTeamsData(t);
+    setPlayerScores({});
+    void Promise.all([
+      fetchSessionTeams(id),
+      fetchSessionScores(id).catch(() => [] as MatchScoreItem[]),
+    ])
+      .then(([t, rawScores]) => {
+        if (cancelled) return;
+        setTeamsData(t);
+        const scoreMap: Record<string, number | null> = {};
+        for (const s of rawScores) {
+          if (s.type === 'individual') {
+            scoreMap[String(s.player_id)] = s.score;
+          }
+        }
+        setPlayerScores(scoreMap);
       })
       .catch(() => {
         if (!cancelled) setTeamsData(null);
@@ -211,41 +251,81 @@ export function AdminSessionDetailPage() {
     };
   }, [tab, id, detail?.content_revision]);
 
+  const handlePlayerRating = useCallback(
+    async (playerId: string, score: number) => {
+      if (Number.isNaN(id)) return;
+      const key = String(playerId);
+      try {
+        await submitMatchScore({
+          session_id: id,
+          player_id: parseInt(key, 10),
+          score,
+          type: 'individual',
+        });
+        setPlayerScores((prev) => ({ ...prev, [key]: score }));
+        hapticLight();
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Rating failed', 'error');
+      }
+    },
+    [id, showToast]
+  );
+
   const filteredAttendees = useMemo(() => {
     if (!detail) return [];
     const q = attSearch.trim().toLowerCase();
     return detail.attendees.filter((a) => {
       if (attFilter !== 'all' && a.status !== attFilter) return false;
       if (q) {
-        const name = (a.full_name || a.username).toLowerCase();
-        if (!name.includes(q) && !a.username.toLowerCase().includes(q))
+        const name = a.display_name.toLowerCase();
+        if (!name.includes(q))
           return false;
       }
       return true;
     });
   }, [detail, attFilter, attSearch]);
 
+  // ── Attendance counts for filter chips ──────────────────────────
+
+  const attCounts = useMemo(() => {
+    if (!detail) return { all: 0, confirmed: 0, waitlisted: 0, cancelled: 0 };
+    return {
+      all: detail.attendees.length,
+      confirmed: detail.attendees.filter((a) => a.status === 'confirmed').length,
+      waitlisted: detail.attendees.filter((a) => a.status === 'waitlisted').length,
+      cancelled: detail.attendees.filter((a) => a.status === 'cancelled').length,
+    };
+  }, [detail]);
+
+  // ── Tab definitions ─────────────────────────────────────────────
+
+  const tabs: { key: typeof tab; label: string; icon: typeof ArrowLeft; badge?: number }[] = [
+    { key: 'details', label: 'Details', icon: Settings2 },
+    { key: 'attendance', label: 'Attendance', icon: ClipboardList, badge: detail?.attendees.length },
+    { key: 'teams', label: 'Teams', icon: LayoutGrid },
+    { key: 'scores', label: 'Scores', icon: Trophy },
+  ];
+
+  // ── Loading / error states ──────────────────────────────────────
+
   if (Number.isNaN(id)) {
-    return (
-      <p className="text-red-600 dark:text-red-400">Invalid session id.</p>
-    );
+    return <p className="text-red-600 dark:text-red-400">Invalid session id.</p>;
   }
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-6 animate-pulse">
+      <div className="max-w-3xl mx-auto space-y-4 animate-pulse">
         <div className="h-4 w-48 rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="h-9 w-3/4 max-w-md rounded-lg bg-gray-200 dark:bg-gray-700" />
+        <div className="h-7 w-3/4 max-w-md rounded bg-gray-200 dark:bg-gray-700" />
         <div className="h-4 w-56 rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="h-32 rounded-2xl bg-gray-200 dark:bg-gray-800" />
-        <div className="h-64 rounded-2xl bg-gray-200 dark:bg-gray-800" />
+        <div className="h-48 rounded-xl bg-gray-200 dark:bg-gray-800" />
       </div>
     );
   }
 
   if (error && !detail) {
     return (
-      <div className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-red-800 dark:text-red-200">
+      <div className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-800 dark:text-red-200">
         {error}
       </div>
     );
@@ -257,9 +337,35 @@ export function AdminSessionDetailPage() {
   const kickoffFuture = startDate.getTime() > Date.now();
   const countdown =
     kickoffFuture ? formatDistanceToNow(startDate, { addSuffix: true }) : null;
+  const sessionActive = !kickoffFuture;
+  const currentMatch = (detail as Record<string, unknown>).current_match as
+    | { status: string; match_number: number }
+    | null
+    | undefined;
+  const matchActive = currentMatch?.status === 'active' || currentMatch?.status === 'time_up';
+  const canReshuffle = teamMode === 'random';
+
+  // ── Shared handlers ─────────────────────────────────────────────
+
+  const handleShare = () => {
+    hapticLight();
+    void shareMeetup({
+      title: 'Miootz meetup',
+      text: `${detail.location} · ${format(startDate, 'EEE d MMM HH:mm')}`,
+      url: window.location.origin + '/',
+    }).then((ok) =>
+      showToast(
+        ok ? 'Link copied or shared.' : 'Could not share.',
+        ok ? 'success' : 'error'
+      )
+    );
+  };
+
+  // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-8">
+    <div className="max-w-3xl mx-auto space-y-4 pb-8">
+      {/* Breadcrumb */}
       <AdminBreadcrumb
         items={[
           { label: 'Admin', to: '/admin' },
@@ -268,114 +374,151 @@ export function AdminSessionDetailPage() {
         ]}
       />
 
-      <div>
-        <Link
-          to="/admin/sessions"
-          className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-violet-600 mb-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 rounded transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          All sessions
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
-              {detail.location}
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Session #{detail.id} · {format(startDate, 'EEE d MMM yyyy')} ·{' '}
-              {format(startDate, 'HH:mm')}
-              {countdown ? (
-                <span className="text-emerald-600 dark:text-emerald-400">
-                  {' '}
-                  · Kickoff {countdown}
-                </span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
-            {detail.latitude != null && detail.longitude != null ? (
-              <MeetupWeatherBadge
-                latitude={detail.latitude}
-                longitude={detail.longitude}
-                startTime={detail.start_time}
-              />
+      {/* Header */}
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to="/admin/sessions"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 mb-2 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            All sessions
+          </Link>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">
+            {detail.location}
+          </h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            #{detail.id} · {format(startDate, 'EEE, d MMM yyyy')} ·{' '}
+            {format(startDate, 'HH:mm')}
+            {countdown ? (
+              <span className="text-emerald-600 dark:text-emerald-400 ml-1">
+                · {countdown}
+              </span>
             ) : null}
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 min-h-[44px] rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-violet-800 shadow-sm hover:bg-violet-50 active:scale-[0.98] transition-colors dark:border-violet-800 dark:bg-gray-900 dark:text-violet-200 dark:hover:bg-violet-950/50"
-              onClick={() => {
-                hapticLight();
-                void shareMeetup({
-                  title: 'Footy Legends meetup',
-                  text: `${detail.location} · ${format(startDate, 'EEE d MMM HH:mm')}`,
-                  url: window.location.origin + '/',
-                }).then((ok) =>
-                  showToast(
-                    ok ? 'Link copied or shared.' : 'Could not share.',
-                    ok ? 'success' : 'error'
-                  )
-                );
-              }}
-            >
-              <Share2 className="w-4 h-4" aria-hidden />
-              Share
-            </button>
-          </div>
+          </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {!Number.isNaN(id) && (
+            <MeetupWeatherBadge sessionId={id} />
+          )}
+        </div>
+      </header>
+
+      {/* Quick actions bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {matchActive && (
+          <Link
+            to={`/session-matches/${id}`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 active:scale-[0.98] transition-colors"
+          >
+            <Play className="w-3.5 h-3.5" />
+            Manage match {currentMatch?.match_number ?? ''}
+          </Link>
+        )}
+        {sessionActive && !currentMatch && (
+          <Link
+            to={`/session-matches/${id}`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 active:scale-[0.98] transition-colors"
+          >
+            <Play className="w-3.5 h-3.5" />
+            Start matches
+          </Link>
+        )}
+        {canReshuffle && (
+          <button
+            type="button"
+            disabled={reshuffling}
+            onClick={() => void reshuffleTeams()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60 active:scale-[0.98] transition-colors"
+          >
+            {reshuffling ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Shuffle className="w-3.5 h-3.5" />
+            )}
+            Reshuffle teams
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleShare}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 active:scale-[0.98] transition-colors"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          Share
+        </button>
+      </div>
+
+      {/* Tabs — horizontal scroll on desktop, accordion on mobile */}
+      <div className="sm:hidden" role="tablist" aria-label="Session sections">
+        {tabs.map(({ key, label, icon: Icon, badge }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`w-full flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-colors active:scale-[0.99] ${
+              tab === key
+                ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Icon className="w-4 h-4" aria-hidden />
+              {label}
+            </div>
+            {badge != null && (
+              <span
+                className={`text-xs tabular-nums ${
+                  tab === key
+                    ? 'text-violet-500 dark:text-violet-400'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       <div
-        className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-800 pb-1"
+        className="hidden sm:flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Session sections"
       >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'details'}
-          onClick={() => setTab('details')}
-          className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-            tab === 'details'
-              ? 'bg-violet-100 text-violet-900 dark:bg-violet-950/60 dark:text-violet-200'
-              : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-          }`}
-        >
-          <Settings2 className="w-4 h-4 shrink-0" aria-hidden />
-          Details
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'attendance'}
-          onClick={() => setTab('attendance')}
-          className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${
-            tab === 'attendance'
-              ? 'bg-violet-100 text-violet-900 dark:bg-violet-950/60 dark:text-violet-200'
-              : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-          }`}
-        >
-          <ClipboardList className="w-4 h-4 shrink-0" aria-hidden />
-          Attendance
-          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs tabular-nums text-gray-700 dark:bg-gray-700 dark:text-gray-200">
-            {detail.attendees.length}
-          </span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'teams'}
-          onClick={() => setTab('teams')}
-          className={`inline-flex items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px] ${
-            tab === 'teams'
-              ? 'bg-violet-100 text-violet-900 dark:bg-violet-950/60 dark:text-violet-200'
-              : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-          }`}
-        >
-          <LayoutGrid className="w-4 h-4 shrink-0" aria-hidden />
-          Teams
-        </button>
+        {tabs.map(({ key, label, icon: Icon, badge }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium transition-colors active:scale-[0.97] ${
+              tab === key
+                ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" aria-hidden />
+            {label}
+            {badge != null && (
+              <span
+                className={`text-[11px] tabular-nums ${
+                  tab === key
+                    ? 'text-violet-500 dark:text-violet-400'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
+      {/* Error banner */}
       {error && (
         <div
           className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
@@ -385,386 +528,331 @@ export function AdminSessionDetailPage() {
         </div>
       )}
 
+      {/* ── Details tab ─────────────────────────────────────────── */}
+
       {tab === 'details' && (
-      <section>
-        <h2 className="sr-only">Details</h2>
-        <form
-          onSubmit={(e) => void saveMeta(e)}
-          className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm space-y-4"
-        >
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Start time
-              </label>
-              <input
-                type="datetime-local"
-                required
-                value={startLocal}
-                onChange={(e) => setStartLocal(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Location
-              </label>
-              <input
-                type="text"
-                required
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Min players
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={minPlayers}
-                onChange={(e) => setMinPlayers(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Max players
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={maxPlayers}
-                onChange={(e) => setMaxPlayers(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Fee
-              </label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={fee}
-                onChange={(e) => setFee(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Waitlist mode
-              </label>
-              <select
-                value={waitlistMode}
-                onChange={(e) =>
-                  setWaitlistMode(e.target.value as WaitlistMode)
-                }
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
-              >
-                <option value="auto_promote">Auto-promote</option>
-                <option value="broadcast">Broadcast</option>
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Team assignment
-              </label>
-              <select
-                value={teamMode}
-                onChange={(e) =>
-                  setTeamMode(e.target.value as TeamAssignmentMode)
-                }
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
-              >
-                <option value="balanced">Balanced (skill snake)</option>
-                <option value="random">Random order (snake)</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Random mode allows reshuffling teams without changing the mode.
-              </p>
-            </div>
-          </div>
-
-          {detail?.game_template_id && detail.game_template && (
-            <div className="sm:col-span-2 rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/20 p-4 space-y-2">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                Weekly template
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                This meetup was created from the template below. Edit schedule and
-                defaults under Templates — this page is only for this session instance.
-              </p>
-              <Link
-                to={`/admin/game-templates/${detail.game_template_id}`}
-                className="inline-flex text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline"
-              >
-                Open “{detail.game_template.name}”
-              </Link>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={savingMeta}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-60"
-            >
-              {savingMeta ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              Save changes
-            </button>
-            {teamMode === 'random' && (
-              <button
-                type="button"
-                disabled={reshuffling}
-                onClick={() => void reshuffleTeams()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60"
-              >
-                {reshuffling ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : null}
-                Reshuffle teams
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
-      )}
-
-      {tab === 'attendance' && (
-      <section>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-          <Users className="w-5 h-5 text-violet-600" />
-          Attendance
-        </h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Move players between confirmed and waitlisted. Cancelled spots require
-          the player to rejoin from the app when policy allows.
-        </p>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center mb-4">
-          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
-            <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-            <input
-              type="search"
-              value={attSearch}
-              onChange={(e) => setAttSearch(e.target.value)}
-              placeholder="Search players…"
-              className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none dark:text-white"
-              aria-label="Search attendance"
-            />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ['all', 'All'],
-                ['confirmed', 'Confirmed'],
-                ['waitlisted', 'Waitlisted'],
-                ['cancelled', 'Cancelled'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setAttFilter(key)}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium min-h-[44px] transition-colors active:scale-[0.98] ${
-                  attFilter === key
-                    ? 'border-violet-500 bg-violet-50 text-violet-900 dark:bg-violet-950/50 dark:text-violet-200'
-                    : 'border-gray-200 dark:border-gray-700'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            disabled={bulkWorking}
-            onClick={() => void confirmAllWaitlisted()}
-            className="inline-flex items-center justify-center gap-2 min-h-[44px] rounded-xl border border-emerald-600/50 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
-          >
-            {bulkWorking ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Confirm all waitlisted
-          </button>
-        </div>
-
-        <div className="md:hidden space-y-3 mb-4">
-          {filteredAttendees.length === 0 ? (
-            <p className="text-center text-sm text-gray-500 py-6">No matching players.</p>
-          ) : (
-            filteredAttendees.map((a) => {
-              const canMove =
-                a.status === 'confirmed' || a.status === 'waitlisted';
-              const busy =
-                movingKey === `${a.user_id}-confirmed` ||
-                movingKey === `${a.user_id}-waitlisted`;
-              const displayName = a.full_name || a.username;
-              const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
-              return (
-                <div
-                  key={a.user_id}
-                  className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm space-y-3 transition-colors"
-                >
-                  <div className="flex items-start gap-3">
-                    <PlayerAvatarFace
-                      name={displayName}
-                      avatarUrl={a.profile_pic ?? undefined}
-                      size="sm"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {displayName}
-                      </div>
-                      <div className="text-xs text-gray-500">@{a.username}</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <SkillBadge score={mmSkill} size="sm" />
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            a.status === 'confirmed'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                              : a.status === 'waitlisted'
-                                ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                          }`}
-                        >
-                          {a.status}
-                        </span>
-                      </div>
-                    </div>
+        <section>
+          {/* Collapsed summary */}
+          {!detailsExpanded && (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-6">
+                <div className="grid sm:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Start time</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5">
+                      {format(startDate, 'EEE, d MMM yyyy')} at {format(startDate, 'HH:mm')}
+                    </p>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Self skill</label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 text-sm px-2 py-2"
-                      disabled={skillBusy === a.user_id}
-                      value={String(
-                        a.self_assessed_skill != null &&
-                          a.self_assessed_skill >= 1 &&
-                          a.self_assessed_skill <= 5
-                          ? a.self_assessed_skill
-                          : mmSkill
-                      )}
-                      onChange={(e) =>
-                        void setPlayerSkill(a.user_id, Number(e.target.value))
-                      }
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Location</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 truncate">{location}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Players</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5">
+                      {minPlayers}–{maxPlayers}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Fee</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5">${Number(fee).toFixed(0)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Team mode</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 capitalize">
+                      {teamMode === 'random' ? 'Random' : 'Balanced (skill snake)'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Waitlist</span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 capitalize">
+                      {waitlistMode === 'broadcast' ? 'Broadcast' : 'Auto-promote'}
+                    </p>
+                  </div>
+                </div>
+                {detail.game_template_id && detail.game_template && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Template</span>
+                    <Link
+                      to={`/admin/game-templates/${detail.game_template_id}`}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline ml-1"
                     >
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
+                      &quot;{detail.game_template.name}&quot;
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsExpanded(true)}
+                className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium text-violet-700 dark:text-violet-300 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                Edit details
+              </button>
+            </div>
+          )}
+
+          {/* Expanded form */}
+          {detailsExpanded && (
+            <form
+              onSubmit={(e) => void saveMeta(e)}
+              className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-5"
+            >
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+                  Schedule
+                </h3>
+                <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Start time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={startLocal}
+                      onChange={(e) => setStartLocal(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Location
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+                  Settings
+                </h3>
+                <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Min players
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={minPlayers}
+                      onChange={(e) => setMinPlayers(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Max players
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={maxPlayers}
+                      onChange={(e) => setMaxPlayers(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Fee
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={fee}
+                      onChange={(e) => setFee(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Waitlist mode
+                    </label>
+                    <select
+                      value={waitlistMode}
+                      onChange={(e) =>
+                        setWaitlistMode(e.target.value as WaitlistMode)
+                      }
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+                    >
+                      <option value="auto_promote">Auto-promote</option>
+                      <option value="broadcast">Broadcast</option>
                     </select>
                   </div>
-                  {canMove ? (
-                    <div className="flex flex-wrap gap-2">
-                      {a.status !== 'confirmed' && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void moveUser(a.user_id, 'confirmed')}
-                          className="flex-1 min-h-[44px] rounded-lg border border-emerald-600/50 text-emerald-700 dark:text-emerald-400 text-sm font-medium"
-                        >
-                          Confirm
-                        </button>
-                      )}
-                      {a.status !== 'waitlisted' && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void moveUser(a.user_id, 'waitlisted')}
-                          className="flex-1 min-h-[44px] rounded-lg border border-amber-600/50 text-amber-800 dark:text-amber-300 text-sm font-medium"
-                        >
-                          Waitlist
-                        </button>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900 shadow-sm hidden md:block transition-colors">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-                  <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">
-                    Player
-                  </th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">
-                    Status
-                  </th>
-                  <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">
-                    Self skill
-                  </th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-700 dark:text-gray-300">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.attendees.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="py-8 px-4 text-center text-gray-500"
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                      Team assignment
+                    </label>
+                    <select
+                      value={teamMode}
+                      onChange={(e) =>
+                        setTeamMode(e.target.value as TeamAssignmentMode)
+                      }
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
                     >
-                      No sign-ups yet.
-                    </td>
-                  </tr>
-                ) : filteredAttendees.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-8 px-4 text-center text-gray-500">
-                      No matching players.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredAttendees.map((a) => {
-                    const canMove =
-                      a.status === 'confirmed' || a.status === 'waitlisted';
-                    const busy =
-                      movingKey === `${a.user_id}-confirmed` ||
-                      movingKey === `${a.user_id}-waitlisted`;
-                    const displayName = a.full_name || a.username;
-                    const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
-                    return (
-                      <tr
-                        key={a.user_id}
-                        className="border-b border-gray-100 dark:border-gray-800/80 last:border-0"
-                      >
-                        <td className="py-3 px-4">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <PlayerAvatarFace
-                              name={displayName}
-                              avatarUrl={a.profile_pic ?? undefined}
-                              size="sm"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {displayName}
-                                </span>
-                                <SkillBadge score={mmSkill} size="sm" />
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                @{a.username}
-                                {a.calculated_skill != null && (
-                                  <span> · calc {a.calculated_skill}</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 align-top">
+                      <option value="balanced">Balanced (skill snake)</option>
+                      <option value="random">Random order (snake)</option>
+                    </select>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                      Random mode allows reshuffling teams without changing the mode.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {detail.game_template_id && detail.game_template && (
+                <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/20 p-3 sm:p-4 space-y-1.5">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    Weekly template
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    This meetup was created from the template below. Edit schedule and
+                    defaults under Templates — this page is only for this session instance.
+                  </p>
+                  <Link
+                    to={`/admin/game-templates/${detail.game_template_id}`}
+                    className="inline-flex text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline"
+                  >
+                    Open &quot;{detail.game_template.name}&quot;
+                  </Link>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={savingMeta}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-60 active:scale-[0.98]"
+                >
+                  {savingMeta ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Save changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailsExpanded(false)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 active:scale-[0.98]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
+
+      {/* ── Attendance tab ──────────────────────────────────────── */}
+
+      {tab === 'attendance' && (
+        <section className="space-y-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Move players between confirmed and waitlisted. Cancelled spots require
+            the player to rejoin from the app.
+          </p>
+
+          {/* Search + filters */}
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+              <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+              <input
+                type="search"
+                value={attSearch}
+                onChange={(e) => setAttSearch(e.target.value)}
+                placeholder="Search players…"
+                className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none dark:text-white"
+                aria-label="Search attendance"
+              />
+            </label>
+
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {(['all', 'confirmed', 'waitlisted', 'cancelled'] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setAttFilter(key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
+                    attFilter === key
+                      ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
+                  }`}
+                >
+                  {key.charAt(0).toUpperCase() + key.slice(1)}
+                  <span
+                    className={`ml-1 text-[11px] tabular-nums ${
+                      attFilter === key
+                        ? 'text-violet-500 dark:text-violet-400'
+                        : 'text-gray-400 dark:text-gray-500'
+                    }`}
+                  >
+                    {attCounts[key]}
+                  </span>
+                </button>
+              ))}
+              <div className="w-px py-1 bg-gray-200 dark:bg-gray-700 shrink-0 mx-1" />
+              <button
+                type="button"
+                disabled={bulkWorking}
+                onClick={() => void confirmAllWaitlisted()}
+                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 disabled:opacity-50 active:scale-[0.97]"
+              >
+                {bulkWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                Confirm all
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-2">
+            {filteredAttendees.length === 0 ? (
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-8">No matching players.</p>
+            ) : (
+              filteredAttendees.map((a) => {
+                const canMove =
+                  a.status === 'confirmed' || a.status === 'waitlisted';
+                const busy =
+                  movingKey === `${a.user_id}-confirmed` ||
+                  movingKey === `${a.user_id}-waitlisted`;
+                const displayName = a.display_name;
+                const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
+                const primaryPos = formatSpecialty(a.primary_specialty);
+                const secondaryPos = formatSpecialty(a.secondary_specialty);
+                const posLabel = [primaryPos, secondaryPos].filter(Boolean).join('/') || null;
+                return (
+                  <div
+                    key={a.user_id}
+                    className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 shadow-sm transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <PlayerAvatarFace
+                        name={displayName}
+                        avatarUrl={a.avatar_url ?? undefined}
+                        size="sm"
+                        isPlusOne={a.is_plus_one}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                            {displayName}
+                          </span>
+                          {posLabel && (
+                            <span className="shrink-0 text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-full px-1.5 py-0.5">
+                              {posLabel}
+                            </span>
+                          )}
+                          <SkillBadge score={mmSkill} size="sm" />
                           <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                               a.status === 'confirmed'
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
                                 : a.status === 'waitlisted'
@@ -774,126 +862,242 @@ export function AdminSessionDetailPage() {
                           >
                             {a.status}
                           </span>
-                        </td>
-                        <td className="py-3 px-4 align-top">
-                          <select
-                            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 text-xs px-2 py-1 max-w-full"
-                            disabled={skillBusy === a.user_id}
-                            value={String(
-                              a.self_assessed_skill != null &&
-                                a.self_assessed_skill >= 1 &&
-                                a.self_assessed_skill <= 5
-                                ? a.self_assessed_skill
-                                : mmSkill
-                            )}
-                            onChange={(e) =>
-                              void setPlayerSkill(
-                                a.user_id,
-                                Number(e.target.value)
-                              )
-                            }
-                            title="Self-assessed skill (updates matchmaking)"
-                          >
-                            {[1, 2, 3, 4, 5].map((n) => (
-                              <option key={n} value={n}>
-                                {n}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3 px-4 text-right align-top">
-                          {canMove ? (
-                            <div className="inline-flex flex-wrap justify-end gap-2">
-                              {a.status !== 'confirmed' && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void moveUser(a.user_id, 'confirmed')
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-600/50 text-emerald-700 dark:text-emerald-400 px-2 py-1 text-xs hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
-                                >
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                  Confirm
-                                </button>
-                              )}
-                              {a.status !== 'waitlisted' && (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void moveUser(a.user_id, 'waitlisted')
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-lg border border-amber-600/50 text-amber-800 dark:text-amber-300 px-2 py-1 text-xs hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-50"
-                                >
-                                  <Users className="w-3.5 h-3.5" />
-                                  Waitlist
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                        </div>
+                        {a.calculated_skill != null && (
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                            calc {a.calculated_skill}
+                          </div>
+                        )}
+                      </div>
+                      {canMove && (
+                        <div className="flex gap-1.5 shrink-0">
+                          {a.status !== 'confirmed' && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void moveUser(a.user_id, 'confirmed')}
+                              className="min-h-[36px] px-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50"
+                            >
+                              Confirm
+                            </button>
                           )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          {a.status !== 'waitlisted' && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void moveUser(a.user_id, 'waitlisted')}
+                              className="min-h-[36px] px-2.5 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs font-medium bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/40 disabled:opacity-50"
+                            >
+                              Waitlist
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
-        </div>
-      </section>
+
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900 shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+                    <th className="text-left py-2.5 px-4 font-medium text-gray-600 dark:text-gray-400 text-xs">
+                      Player
+                    </th>
+                    <th className="text-left py-2.5 px-4 font-medium text-gray-600 dark:text-gray-400 text-xs">
+                      Position
+                    </th>
+                    <th className="text-left py-2.5 px-4 font-medium text-gray-600 dark:text-gray-400 text-xs">
+                      Status
+                    </th>
+                    <th className="text-right py-2.5 px-4 font-medium text-gray-600 dark:text-gray-400 text-xs">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAttendees.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="py-8 px-4 text-center text-gray-500 dark:text-gray-400"
+                      >
+                        No matching players.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAttendees.map((a) => {
+                      const canMove =
+                        a.status === 'confirmed' || a.status === 'waitlisted';
+                      const busy =
+                        movingKey === `${a.user_id}-confirmed` ||
+                        movingKey === `${a.user_id}-waitlisted`;
+                      const displayName = a.display_name;
+                      const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
+                      const primaryPos = formatSpecialty(a.primary_specialty);
+                      const secondaryPos = formatSpecialty(a.secondary_specialty);
+                      const posLabel = [primaryPos, secondaryPos].filter(Boolean).join('/') || '—';
+                      return (
+                        <tr
+                          key={a.user_id}
+                          className="border-b border-gray-100 dark:border-gray-800/80 last:border-0"
+                        >
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <PlayerAvatarFace
+                                name={displayName}
+                                avatarUrl={a.avatar_url ?? undefined}
+                                size="sm"
+                                isPlusOne={a.is_plus_one}
+                              />
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm">
+                                    {displayName}
+                                  </span>
+                                  <SkillBadge score={mmSkill} size="sm" />
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  {a.calculated_skill != null && (
+                                    <span>calc {a.calculated_skill}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4 align-top">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">
+                              {posLabel}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 align-top">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                                a.status === 'confirmed'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                                  : a.status === 'waitlisted'
+                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              }`}
+                            >
+                              {a.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right align-top">
+                            {canMove ? (
+                              <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                {a.status !== 'confirmed' && (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void moveUser(a.user_id, 'confirmed')
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 px-2.5 py-1.5 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5" />
+                                    Confirm
+                                  </button>
+                                )}
+                                {a.status !== 'waitlisted' && (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void moveUser(a.user_id, 'waitlisted')
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-2.5 py-1.5 text-xs font-medium bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/40 disabled:opacity-50"
+                                  >
+                                    <Users className="w-3.5 h-3.5" />
+                                    Waitlist
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       )}
 
+      {/* ── Teams tab ───────────────────────────────────────────── */}
+
       {tab === 'teams' && (
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <LayoutGrid className="w-5 h-5 text-violet-600" />
-            Teams
-          </h2>
+        <section className="space-y-3">
           {teamsLoading ? (
             <div className="flex justify-center py-12 text-gray-500">
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
           ) : !teamsData || teamsData.teams.length === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
-              No team assignments yet — players need to join and teams must be formed for this
-              meetup.
-            </p>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {teamsData.teams.map((team, idx) => (
-                <div
-                  key={team.id}
-                  className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-violet-50/80 to-white dark:from-violet-950/30 dark:to-gray-900 p-4 shadow-sm transition-colors"
-                >
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                    Team {idx + 1}
-                  </h3>
-                  <ul className="space-y-2">
-                    {team.players.map((p) => (
-                      <li
-                        key={p.id}
-                        className="flex items-center justify-between gap-2 text-sm"
-                      >
-                        <span className="truncate text-gray-800 dark:text-gray-200">
-                          {p.name}
-                        </span>
-                        <SkillBadge score={Math.round(p.skillScore)} size="sm" />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+            <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
+              <LayoutGrid className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No team assignments yet — players need to join and teams must be formed.
+              </p>
             </div>
+          ) : (
+            <>
+              {/* Team lists — side by side on sm+, stacked on mobile */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {teamsData.teams.map((team, idx) => {
+                  const players = mapTeamPlayers(team);
+                  const teamName = getTeamName(team, idx);
+                  const color = TEAM_COLORS[idx % TEAM_COLORS.length];
+                  return (
+                    <div key={team.id} className="space-y-1.5">
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0"
+                            style={{ backgroundColor: color }}
+                          />
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {teamName}
+                          </h3>
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {players.length} player{players.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <TeamRoster
+                        players={players}
+                        ratingMode="inline"
+                        ratingScores={playerScores}
+                        onRatingChange={handlePlayerRating}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </section>
       )}
 
-      <footer className="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-800 pt-6 transition-colors">
-        Data revision #{detail.content_revision}. Updates when you save session details or change
-        roster.
+      {/* ── Scores tab ──────────────────────────────────────────── */}
+
+      {tab === 'scores' && (
+        <section className="space-y-3">
+          <MatchHistoryList sessionId={id} editable />
+        </section>
+      )}
+
+      {/* Footer */}
+      <footer className="text-[11px] text-gray-400 dark:text-gray-500 border-t border-gray-200 dark:border-gray-800 pt-4">
+        Data revision #{detail.content_revision}
       </footer>
     </div>
   );

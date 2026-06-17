@@ -5,7 +5,7 @@ class UserStats(BaseModel):
     games_played: int
     average_rating: float
     total_ratings: int
-    skill_level: int
+    skill_level: float
 
 
 class MatchScoreReport(BaseModel):

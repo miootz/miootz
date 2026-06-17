@@ -3,14 +3,15 @@ import { apiFetch, parseApiError } from './client';
 export interface RateeContext {
   user_id: number;
   display_name: string;
-  profile_pic: string | null;
+  avatar_url: string | null;
   my_score: number | null;
 }
 
 export interface RatingContextResponse {
   session_id: number;
   session_start_time: string;
-  before_session_start: boolean;
+  session_end_time: string;
+  before_session_end: boolean;
   ratings_locked: boolean;
   ratings_editable: boolean;
   ratings_lock_at: string | null;

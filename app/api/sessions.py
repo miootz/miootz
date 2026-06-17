@@ -1,4 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import logging
+import secrets
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -11,10 +15,16 @@ import json
 from app.api.deps import require_admin
 from app.core.database import get_db
 from app.models.game_template import GameTemplate
-from app.models.session import GameSession, Attendance
+from app.models.session import GameSession, Attendance, MatchScore
+from app.models.match import SessionMatch
 from app.models.user import User
 from app.models.chat import ChatMessage
+from app.models.guest_plus_one import GuestPlusOne
 from app.core.chat_manager import chat_manager
+from app.services.skill_service import (
+    recalculate_skills_for_attendance_change,
+    update_user_calculated_skill,
+)
 from app.core.session_data_manager import session_data_manager
 from app.services.session_promotion import handle_leave_or_cancel
 from app.services.session_revision import (
@@ -23,17 +33,20 @@ from app.services.session_revision import (
     notify_session_deleted,
 )
 from app.services.manual_teams import (
+    ensure_team_names,
     format_teams_api_payload,
+    get_team_names,
     resolve_session_teams_nested,
     validate_team_partition,
     build_teams_from_manual,
 )
-from app.services.notifications import notify_new_session_invites
 from app.services.web_push import (
+    notify_new_session_invites,
     notify_session_cancelled_recipients,
     notify_session_chat_recipients,
 )
 from app.services.recurring_sessions import materialize_next_session_and_notify
+from app.services import weather_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -57,8 +70,8 @@ class SessionCreate(BaseModel):
     longitude: float | None = None
     waitlist_mode: str = Field(default="auto_promote")
     team_assignment_mode: str = Field(default="balanced")
-    #: When True (default), email all users with join links for this instance.
-    send_invite_emails: bool = True
+    #: When True (default), push all users a join notification for this instance.
+    send_push_notifications: bool = True
 
     @field_validator("waitlist_mode")
     @classmethod
@@ -112,14 +125,26 @@ class ChatTypingBody(BaseModel):
     typing: bool = True
 
 
+class PlusOneCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=80)
+    last_name: str = Field(..., min_length=1, max_length=80)
+    self_assessed_skill: int = Field(..., ge=1, le=5)
+
+
+class PlusOneClaim(BaseModel):
+    """Claim a plus-one guest reservation.
+    
+    The guest must already have a Pocket ID account.
+    Their pocket_id_sub is extracted from the auth middleware.
+    """
+
+
 def _user_skill(u: User) -> float:
     """Single display skill for matchmaking: calculated first, then fallbacks."""
     if u.calculated_skill is not None:
         v = u.calculated_skill
     elif u.self_assessed_skill is not None:
         v = u.self_assessed_skill
-    elif u.skill_level is not None:
-        v = u.skill_level
     else:
         v = None
     return float(v) if v is not None else 50.0
@@ -151,20 +176,25 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    payload = session_data.model_dump(exclude={"send_invite_emails"})
+    payload = session_data.model_dump(exclude={"send_push_notifications"})
     new_session = GameSession(**payload, game_template_id=None)
+    # Auto-generate team names (default 3 teams for max_players=15)
+    ensure_team_names(new_session, 3)
     db.add(new_session)
     await db.flush()
     await db.commit()
     await db.refresh(new_session)
 
-    if session_data.send_invite_emails:
+    if session_data.send_push_notifications:
         result = await db.execute(select(User))
-        all_users = [u for u in result.scalars().all() if u.email]
+        all_users = result.scalars().all()
         if all_users:
-            recipients = all_users
-            if recipients:
-                await notify_new_session_invites(new_session, recipients)
+            await notify_new_session_invites(db, new_session, list(all_users))
+
+    # Schedule rating reminder at session end time
+    from app.services.rating_reminder_scheduler import register_rating_reminder
+
+    register_rating_reminder(new_session)
 
     return {
         "id": new_session.id,
@@ -297,19 +327,33 @@ async def get_session(
     )
     rows = result.all()
 
+    # Resolve which attendees are plus-one guests
+    plus_one_user_ids: set[int] = set()
+    if rows:
+        user_ids = [u.id for _, u in rows]
+        po_result = await db.execute(
+            select(GuestPlusOne.guest_user_id).where(
+                GuestPlusOne.session_id == session_id,
+                GuestPlusOne.guest_user_id.in_(user_ids),
+            )
+        )
+        plus_one_user_ids = {row[0] for row in po_result.all()}
+
     attendees = []
     for att, user in rows:
         attendees.append(
             {
                 "user_id": user.id,
-                "username": user.username,
-                "full_name": user.full_name,
-                "profile_pic": user.profile_pic,
+                "display_name": user.display_name,
+                "avatar_url": user.avatar_url,
                 "status": att.status,
                 "joined_at": att.joined_at.isoformat() if att.joined_at else None,
                 "skill": _user_skill(user),
                 "self_assessed_skill": user.self_assessed_skill,
                 "calculated_skill": user.calculated_skill,
+                "is_plus_one": user.id in plus_one_user_ids,
+                "primary_specialty": user.primary_specialty,
+                "secondary_specialty": user.secondary_specialty,
             }
         )
 
@@ -320,6 +364,47 @@ async def get_session(
             if u.id == user.id:
                 my_attendance = att.status
                 break
+
+    # Current active/pending match
+    current_match = None
+    result = await db.execute(
+        select(SessionMatch)
+        .where(SessionMatch.session_id == session_id)
+        .where(SessionMatch.status.in_(["active", "time_up", "pending"]))
+        .order_by(SessionMatch.match_number.desc())
+        .limit(1)
+    )
+    active_match = result.scalar_one_or_none()
+    if active_match:
+        import json as _json
+        team_a_users = _json.loads(active_match.team_a_users)
+        team_b_users = _json.loads(active_match.team_b_users)
+        user_map = {r[1].id: r[1] for _, r in []}
+        # Build from existing attendee data
+        attendee_map = {a["user_id"]: a for a in attendees}
+
+        def _user_list(ids):
+            out = []
+            for uid in ids:
+                a = attendee_map.get(uid)
+                if a:
+                    out.append({"id": uid, "display_name": a["display_name"], "avatar_url": a["avatar_url"]})
+                else:
+                    out.append({"id": uid, "display_name": f"User {uid}", "avatar_url": None})
+            return out
+
+        current_match = {
+            "id": active_match.id,
+            "match_number": active_match.match_number,
+            "team_a": {"name": active_match.team_a_name, "users": _user_list(team_a_users)},
+            "team_b": {"name": active_match.team_b_name, "users": _user_list(team_b_users)},
+            "score_a": active_match.score_a,
+            "score_b": active_match.score_b,
+            "status": active_match.status,
+            "timer_total_seconds": active_match.timer_total_seconds,
+            "timer_seconds_remaining": active_match.timer_seconds_remaining,
+            "timer_paused": active_match.timer_pause_intervals is not None,
+        }
 
     return {
         "id": session.id,
@@ -336,8 +421,10 @@ async def get_session(
         "content_revision": session.content_revision or 0,
         "game_template_id": session.game_template_id,
         "game_template": _game_template_json(session.game_template),
+        "duration_minutes": session.duration_minutes,
         "attendees": attendees,
         "my_attendance": my_attendance,
+        "current_match": current_match,
     }
 
 
@@ -360,10 +447,13 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
     players = [
         {
             "id": str(user.id),
-            "name": user.full_name or user.username,
+            "name": user.display_name,
             "skill": _user_skill(user),
             "user_id": user.id,
-            "profile_pic": user.profile_pic,
+            "avatar_url": user.avatar_url,
+            "primary_specialty": user.primary_specialty,
+            "secondary_specialty": user.secondary_specialty,
+            "calculated_skill": user.calculated_skill,
         }
         for _, user in rows
     ]
@@ -373,12 +463,35 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
         mode,
         players,
     )
-    out = format_teams_api_payload(teams_nested)
+    team_names = get_team_names(session)
+    out = format_teams_api_payload(teams_nested, team_names)
     return {
         "session_id": session_id,
         "content_revision": session.content_revision or 0,
         "teams": out,
     }
+
+
+@router.get("/{session_id}/scores")
+async def get_session_scores(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all match scores for a session."""
+    result = await db.execute(
+        select(MatchScore, User)
+        .join(User, MatchScore.player_id == User.id)
+        .where(MatchScore.session_id == session_id)
+        .order_by(User.sso_display_name.asc(), User.pocket_id_sub.asc())
+    )
+    rows = result.all()
+    return [
+        {
+            "id": ms.id,
+            "player_id": ms.player_id,
+            "display_name": user.display_name,
+            "score": ms.score,
+            "type": ms.type,
+        }
+        for ms, user in rows
+    ]
 
 
 @router.patch("/{session_id}/teams")
@@ -406,10 +519,10 @@ async def patch_session_teams(
     players = [
         {
             "id": str(user.id),
-            "name": user.full_name or user.username,
+            "name": user.display_name,
             "skill": _user_skill(user),
             "user_id": user.id,
-            "profile_pic": user.profile_pic,
+            "avatar_url": user.avatar_url,
         }
         for _, user in rows
     ]
@@ -541,6 +654,7 @@ async def join_session(
             await db.commit()
             if rev is not None:
                 await notify_session_data_changed(session_id, rev)
+            await recalculate_skills_for_attendance_change(db, session_id, user_id)
             await db.refresh(attendance)
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined session")
@@ -562,6 +676,7 @@ async def join_session(
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
+    await recalculate_skills_for_attendance_change(db, session_id, user_id)
     await db.refresh(new_attendance)
 
     return {"status": status_new, "attendance_id": new_attendance.id}
@@ -602,6 +717,7 @@ async def leave_session(
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
+    await recalculate_skills_for_attendance_change(db, session_id, user_id)
 
     if prev == "confirmed":
         await handle_leave_or_cancel(db, session, prev)
@@ -635,7 +751,29 @@ async def move_attendance(
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
+    await recalculate_skills_for_attendance_change(db, session_id, user_id)
     return {"status": "moved"}
+
+
+@router.get("/{session_id}/scores")
+async def get_session_scores(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all match scores for a session."""
+    result = await db.execute(
+        select(MatchScore, User)
+        .join(User, MatchScore.player_id == User.id)
+        .where(MatchScore.session_id == session_id)
+    )
+    rows = result.all()
+    return [
+        {
+            "id": ms.id,
+            "player_id": ms.player_id,
+            "display_name": user.display_name,
+            "score": ms.score,
+            "type": ms.type,
+        }
+        for ms, user in rows
+    ]
 
 
 @router.post("/recurring/run-now")
@@ -671,6 +809,12 @@ async def delete_session(
 
     await notify_session_cancelled_recipients(db, session)
     await notify_session_deleted(session_id)
+
+    # Unschedule rating reminder job
+    from app.services.rating_reminder_scheduler import unregister_rating_reminder
+
+    unregister_rating_reminder(session_id)
+
     await db.delete(session)
     await db.commit()
     return {"status": "deleted"}
@@ -719,22 +863,21 @@ async def get_session_chat(session_id: int, db: AsyncSession = Depends(get_db)):
         .order_by(ChatMessage.created_at.asc())
     )
     messages = result.scalars().all()
-    def _username_color(username: str) -> str:
-        """Deterministic pastel color from username for chat bubbles."""
-        h = hash(username) & 0xFFFFFF
+    def _name_color(name: str) -> str:
+        """Deterministic pastel color from display name for chat bubbles."""
+        h = hash(name) & 0xFFFFFF
         r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
-        # Shift hue toward readable range, keep saturation moderate
         return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
 
     return [
         {
             "id": m.id,
             "user_id": m.user_id,
-            "username": m.user.username if m.user else "Unknown",
+            "username": m.user.display_name if m.user else "Unknown",
             "message": m.message,
             "created_at": m.created_at,
-            "avatar_url": m.user.profile_pic if m.user else None,
-            "username_color": _username_color(m.user.username if m.user else "Unknown"),
+            "avatar_url": m.user.avatar_url if m.user else None,
+            "username_color": _name_color(m.user.display_name if m.user else "Unknown"),
         }
         for m in messages
     ]
@@ -758,13 +901,13 @@ async def chat_typing_indicator(
         raise HTTPException(status_code=404, detail="Session not found")
 
     u = request.state.user
-    _username = u.username if hasattr(u, "username") else "Unknown"
+    _display_name = u.display_name if hasattr(u, "display_name") else "Unknown"
     await chat_manager.broadcast(
         session_id,
         {
             "type": "typing",
             "user_id": u.id,
-            "username": _username,
+            "username": _display_name,
             "typing": body.typing,
         },
     )
@@ -794,14 +937,14 @@ async def send_message(
     await db.commit()
     await db.refresh(new_msg)
 
-    _username = (
-        request.state.user.username
-        if hasattr(request.state.user, "username")
+    _display_name = (
+        request.state.user.display_name
+        if hasattr(request.state.user, "display_name")
         else "Unknown"
     )
 
-    def _username_color(username: str) -> str:
-        h = hash(username) & 0xFFFFFF
+    def _name_color(name: str) -> str:
+        h = hash(name) & 0xFFFFFF
         r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
         return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
 
@@ -809,11 +952,11 @@ async def send_message(
         "type": "message",
         "id": new_msg.id,
         "user_id": new_msg.user_id,
-        "username": _username,
+        "username": _display_name,
         "message": new_msg.message,
         "created_at": new_msg.created_at.isoformat(),
-        "avatar_url": getattr(request.state.user, "profile_pic", None),
-        "username_color": _username_color(_username),
+        "avatar_url": getattr(request.state.user, "avatar_url", None),
+        "username_color": _name_color(_display_name),
     }
     await chat_manager.broadcast(session_id, broadcast_data)
 
@@ -821,8 +964,459 @@ async def send_message(
         db,
         session_id,
         request.state.user.id,
-        _username,
+        _display_name,
         new_msg.message,
     )
 
     return {"status": "sent", "message_id": new_msg.id}
+
+
+# ── Plus-one guest reservations ──────────────────────────────────
+
+def _generate_claim_token() -> str:
+    return secrets.token_urlsafe(24)  # ~32 chars
+
+
+def _make_guest_pocket_id_sub() -> str:
+    """Generate a synthetic pocket_id_sub for an unclaimed plus-one guest."""
+    return f"guest.{secrets.token_hex(8)}"
+
+
+@router.post("/{session_id}/plus-one", status_code=201)
+async def add_plus_one(
+    session_id: int,
+    body: PlusOneCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a plus-one guest to a session.
+
+    Creates a placeholder User account and an Attendance row.
+    Returns a claim link the guest can use to claim the account.
+    """
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    inviter = request.state.user
+
+    # Verify session exists
+    result = await db.execute(
+        select(GameSession).where(GameSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Check inviter is confirmed for this session
+    att_result = await db.execute(
+        select(Attendance).where(
+            Attendance.session_id == session_id,
+            Attendance.user_id == inviter.id,
+            Attendance.status == "confirmed",
+        )
+    )
+    if not att_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=403,
+            detail="You must be confirmed for this session to add a plus-one",
+        )
+
+    # Check if inviter already has a plus-one for this session
+    existing = await db.execute(
+        select(GuestPlusOne).where(
+            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.inviter_id == inviter.id,
+            GuestPlusOne.status == "pending",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="You already have a plus-one for this session",
+        )
+
+    first_name = body.first_name.strip()
+    last_name = body.last_name.strip()
+    if not first_name or not last_name:
+        raise HTTPException(status_code=400, detail="Names are required")
+
+    # Create placeholder User with synthetic pocket_id_sub
+    guest_sub = _make_guest_pocket_id_sub()
+    guest_user = User(
+        pocket_id_sub=guest_sub,
+        sso_display_name=f"{first_name} {last_name}",
+        self_assessed_skill=body.self_assessed_skill,
+    )
+    db.add(guest_user)
+    await db.flush()
+
+    # Create Attendance for the guest
+    confirmed_result = await db.execute(
+        select(Attendance).where(
+            Attendance.session_id == session_id,
+            Attendance.status == "confirmed",
+        )
+    )
+    confirmed_count = len(confirmed_result.scalars().all())
+    att_status = "confirmed" if confirmed_count < session.max_players else "waitlisted"
+
+    attendance = Attendance(
+        session_id=session_id,
+        user_id=guest_user.id,
+        status=att_status,
+    )
+    db.add(attendance)
+
+    # Create GuestPlusOne record
+    claim_token = _generate_claim_token()
+    plus_one = GuestPlusOne(
+        session_id=session_id,
+        inviter_id=inviter.id,
+        guest_user_id=guest_user.id,
+        first_name=first_name,
+        last_name=last_name,
+        self_assessed_skill=body.self_assessed_skill,
+        claim_token=claim_token,
+        status="pending",
+    )
+    db.add(plus_one)
+    await db.flush()
+
+    rev = await bump_session_revision(db, session_id)
+    await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
+
+    # Build claim URL (frontend handles the claim page)
+    claim_url = f"/plus-one/{claim_token}"
+
+    return {
+        "id": plus_one.id,
+        "guest_user_id": guest_user.id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "self_assessed_skill": body.self_assessed_skill,
+        "claim_token": claim_token,
+        "claim_url": claim_url,
+        "attendance_status": att_status,
+    }
+
+
+@router.get("/{session_id}/plus-one")
+async def list_plus_ones(session_id: int, db: AsyncSession = Depends(get_db)):
+    """List pending plus-one reservations for a session."""
+    result = await db.execute(
+        select(GuestPlusOne)
+        .where(
+            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.status == "pending",
+        )
+        .options(
+            selectinload(GuestPlusOne.inviter),
+            selectinload(GuestPlusOne.guest_user),
+        )
+    )
+    plus_ones = result.scalars().all()
+    return [
+        {
+            "id": po.id,
+            "guest_user_id": po.guest_user_id,
+            "first_name": po.first_name,
+            "last_name": po.last_name,
+            "self_assessed_skill": po.self_assessed_skill,
+            "inviter_id": po.inviter_id,
+            "inviter_display_name": po.inviter.display_name,
+            "claim_token": po.claim_token,
+            "status": po.status,
+            "created_at": po.created_at.isoformat(),
+        }
+        for po in plus_ones
+    ]
+
+
+@router.delete("/{session_id}/plus-one/{plus_one_id}")
+async def cancel_plus_one(
+    session_id: int,
+    plus_one_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a plus-one reservation (inviter only)."""
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    result = await db.execute(
+        select(GuestPlusOne)
+        .where(
+            GuestPlusOne.id == plus_one_id,
+            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.inviter_id == request.state.user.id,
+            GuestPlusOne.status == "pending",
+        )
+        .options(selectinload(GuestPlusOne.guest_user))
+    )
+    plus_one = result.scalar_one_or_none()
+    if not plus_one:
+        raise HTTPException(status_code=404, detail="Plus-one not found")
+
+    # Cancel the guest's attendance
+    att_result = await db.execute(
+        select(Attendance).where(
+            Attendance.session_id == session_id,
+            Attendance.user_id == plus_one.guest_user_id,
+        )
+    )
+    attendance = att_result.scalar_one_or_none()
+    if attendance:
+        prev = attendance.status
+        attendance.status = "cancelled"
+        if prev == "confirmed":
+            from app.services.session_promotion import handle_leave_or_cancel
+
+            session_result = await db.execute(
+                select(GameSession).where(GameSession.id == session_id)
+            )
+            session = session_result.scalar_one_or_none()
+            if session:
+                await handle_leave_or_cancel(db, session, prev)
+
+    # Delete the placeholder user
+    guest_user = plus_one.guest_user
+    if guest_user:
+        await db.delete(guest_user)
+
+    # Delete the plus-one record
+    await db.delete(plus_one)
+
+    rev = await bump_session_revision(db, session_id)
+    await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
+
+    return {"status": "cancelled"}
+
+
+@router.get("/plus-one/{claim_token}")
+async def check_plus_one_claim(claim_token: str, db: AsyncSession = Depends(get_db)):
+    """Public: check claim status for a plus-one token."""
+    result = await db.execute(
+        select(GuestPlusOne)
+        .where(GuestPlusOne.claim_token == claim_token)
+        .options(
+            selectinload(GuestPlusOne.inviter),
+            selectinload(GuestPlusOne.guest_user),
+        )
+    )
+    plus_one = result.scalar_one_or_none()
+    if not plus_one:
+        raise HTTPException(status_code=404, detail="Invalid claim token")
+
+    return {
+        "id": plus_one.id,
+        "status": plus_one.status,
+        "first_name": plus_one.first_name,
+        "last_name": plus_one.last_name,
+        "self_assessed_skill": plus_one.self_assessed_skill,
+        "session_id": plus_one.session_id,
+        "inviter_display_name": plus_one.inviter.display_name,
+        "guest_display_name": plus_one.guest_user.display_name,
+    }
+
+
+@router.post("/plus-one/{claim_token}/claim")
+async def claim_plus_one(
+    claim_token: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Claim a plus-one reservation.
+
+    The guest must be authenticated via Pocket ID.
+    The placeholder user is linked to the guest's Pocket ID account.
+    """
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    result = await db.execute(
+        select(GuestPlusOne)
+        .where(
+            GuestPlusOne.claim_token == claim_token,
+            GuestPlusOne.status == "pending",
+        )
+        .options(
+            selectinload(GuestPlusOne.guest_user),
+            selectinload(GuestPlusOne.session),
+        )
+    )
+    plus_one = result.scalar_one_or_none()
+    if not plus_one:
+        raise HTTPException(status_code=404, detail="Invalid or already claimed token")
+
+    # Update the placeholder user with the guest's Pocket ID identity
+    guest_user = plus_one.guest_user
+    if not guest_user:
+        raise HTTPException(status_code=400, detail="Guest account not found")
+
+    guest_user.pocket_id_sub = request.state.user.pocket_id_sub
+    guest_user.sso_display_name = request.state.user.sso_display_name
+    guest_user.sso_groups = request.state.user.sso_groups
+    # Preserve the self-assessed skill set by the inviter
+    guest_user.self_assessed_skill = plus_one.self_assessed_skill
+
+    # Mark as claimed
+    plus_one.status = "claimed"
+    plus_one.claimed_by_user_id = guest_user.id
+    plus_one.claimed_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(guest_user)
+
+    return {
+        "status": "claimed",
+        "user_id": guest_user.id,
+        "display_name": guest_user.display_name,
+        "self_assessed_skill": guest_user.self_assessed_skill,
+    }
+
+
+# ── Weather ─────────────────────────────────────────────────────
+
+@router.get("/{session_id}/weather")
+async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Get weather forecast for a session (cached 1 h) or recorded conditions.
+
+    Returns:
+    - ``recorded``: actual conditions captured at session end (if available)
+    - ``forecast``: cached forecast for the session date (if available, < 1 h old)
+    - ``can_refresh``: whether the client may request a fresh forecast
+    """
+    from datetime import timedelta
+
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    response: dict = {}
+
+    # Recorded actuals (always include if present)
+    if session.weather_actual_temp_c is not None:
+        response["recorded"] = {
+            "temperature_c": session.weather_actual_temp_c,
+            "weather_code": session.weather_actual_code,
+            "label": session.weather_actual_label,
+            "recorded_at": session.weather_actual_recorded_at.isoformat()
+            if session.weather_actual_recorded_at
+            else None,
+        }
+
+    # Cached forecast
+    now = datetime.utcnow()
+    forecast_age_ok = (
+        session.weather_forecast_fetched_at
+        and session.weather_forecast_fetched_at > now - timedelta(hours=1)
+    )
+    if forecast_age_ok and session.weather_forecast_temp_c is not None:
+        response["forecast"] = {
+            "temperature_c": session.weather_forecast_temp_c,
+            "weather_code": session.weather_forecast_code,
+            "label": session.weather_forecast_label,
+            "cached_at": session.weather_forecast_fetched_at.isoformat(),
+        }
+        response["can_refresh"] = False
+    else:
+        response["can_refresh"] = True
+
+    return response
+
+
+@router.post("/{session_id}/weather/refresh")
+async def refresh_session_weather(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch a fresh forecast from Open-Meteo and cache it for 1 hour."""
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.latitude is None or session.longitude is None:
+        raise HTTPException(status_code=400, detail="Session has no coordinates")
+
+    start_time = session.start_time.astimezone()
+    duration = session.duration_minutes or 120
+    end_time = start_time + timedelta(minutes=duration)
+    forecast = await weather_service.fetch_forecast(
+        session.latitude, session.longitude, start_time, end_time
+    )
+    if forecast is None:
+        # Forecast failed — fall back to current conditions.
+        logger.info(
+            "Weather forecast unavailable for %s, using current conditions",
+            start_time.strftime("%Y-%m-%d %H:%M"),
+        )
+        current = await weather_service.fetch_current(
+            session.latitude, session.longitude
+        )
+        if current is None:
+            raise HTTPException(status_code=502, detail="Weather service unavailable")
+        session.weather_forecast_temp_c = current["temp_c"]
+        session.weather_forecast_code = current["weather_code"]
+        session.weather_forecast_label = current["label"]
+        session.weather_forecast_fetched_at = datetime.utcnow()
+        await db.commit()
+        return {
+            "status": "ok",
+            "temperature_c": current["temp_c"],
+            "weather_code": current["weather_code"],
+            "label": current["label"],
+        }
+
+    session.weather_forecast_temp_c = forecast["temp_c"]
+    session.weather_forecast_code = forecast["weather_code"]
+    session.weather_forecast_label = forecast["label"]
+    session.weather_forecast_fetched_at = datetime.utcnow()
+
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "temperature_c": forecast["temp_c"],
+        "weather_code": forecast["weather_code"],
+        "label": forecast["label"],
+    }
+
+
+@router.post("/{session_id}/weather/record")
+async def record_session_weather(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Capture current conditions and save as the session's recorded weather.
+
+    Admin-only. Typically called after the session ends.
+    """
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.latitude is None or session.longitude is None:
+        raise HTTPException(status_code=400, detail="Session has no coordinates")
+
+    current = await weather_service.fetch_current(
+        session.latitude, session.longitude
+    )
+    if current is None:
+        raise HTTPException(status_code=502, detail="Weather service unavailable")
+
+    session.weather_actual_temp_c = current["temp_c"]
+    session.weather_actual_code = current["weather_code"]
+    session.weather_actual_label = current["label"]
+    session.weather_actual_recorded_at = datetime.utcnow()
+
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "temperature_c": current["temp_c"],
+        "weather_code": current["weather_code"],
+        "label": current["label"],
+    }

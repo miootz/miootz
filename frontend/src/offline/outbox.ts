@@ -85,7 +85,7 @@ export async function requestBackgroundSync(): Promise<void> {
       }
     ).sync;
     if (sync) {
-      await sync.register('footy-outbox');
+      await sync.register('miootz-outbox');
     }
   } catch {
     /* Sync API may be unavailable */

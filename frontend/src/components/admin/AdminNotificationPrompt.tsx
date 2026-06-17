@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bell, X } from 'lucide-react';
 
-const DISMISS_KEY = 'footy-admin-notify-prompt-dismissed';
+const DISMISS_KEY = 'miootz-admin-notify-prompt-dismissed';
 
 /**
  * One-time style banner to request Web Notification permission (admin / power users).

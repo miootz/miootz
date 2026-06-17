@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import game_templates, invites, session_links, sessions, sms_auth, ratings, users_stats, users
-from app.api.middleware import AutheliaAuthMiddleware
+from app.api import game_templates, invites, matches, session_links, sessions, ratings, users_stats, users
+from app.api.middleware import PocketIdAuthMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine, init_db
 from app.models import game_template  # noqa: F401 — GameTemplate + GameSession FK
 from app.models import game_template_subscription  # noqa: F401
+from app.models import match  # noqa: F401 — SessionMatch
 from app.models import web_push_subscription  # noqa: F401
+from app.models import user_notification_preference  # noqa: F401
 from app.core.migrations import run_sqlite_migrations
 from app.services.recurrence_scheduler import sync_game_template_jobs_from_db
 from app.services.scheduler_setup import shutdown_scheduler, start_scheduler
@@ -24,6 +26,14 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await run_sqlite_migrations(conn)
+
+    # Pre-fetch Pocket ID JWKS so the first auth request isn't blocked
+    try:
+        from app.services.pocket_id_jwt import _fetch_jwks
+
+        await _fetch_jwks()
+    except Exception:
+        pass  # non-fatal — will be retried on first auth request
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     start_scheduler()
@@ -48,14 +58,14 @@ _hosts = [h.strip() for h in settings.TRUSTED_HOSTS.split(",") if h.strip()]
 if _hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=_hosts)
 
-app.add_middleware(AutheliaAuthMiddleware)
+app.add_middleware(PocketIdAuthMiddleware)
 
 app.include_router(invites.router)
+app.include_router(session_links.router)
 app.include_router(game_templates.router)
 app.include_router(sessions.router)
-app.include_router(session_links.router)
+app.include_router(matches.router)
 app.include_router(users.router)
-app.include_router(sms_auth.router)
 app.include_router(ratings.router)
 app.include_router(users_stats.router)
 
@@ -76,9 +86,19 @@ async def health_check():
 async def get_me(request: Request):
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    body = users.me_envelope(request, request.state.user)
+    user = request.state.user
     return {
-        **body,
+        "user": {
+            "id": user.id,
+            "pocket_id_sub": user.pocket_id_sub,
+            "display_name": getattr(request.state, "sso_display_name", None),
+            "avatar_url": user.avatar_url,
+            "self_assessed_skill": user.self_assessed_skill,
+            "calculated_skill": user.calculated_skill,
+            "primary_specialty": user.primary_specialty,
+            "secondary_specialty": user.secondary_specialty,
+            "is_admin": getattr(request.state, "is_admin", False),
+        },
         "is_admin": getattr(request.state, "is_admin", False),
         "auth_groups": getattr(request.state, "auth_groups", []),
     }

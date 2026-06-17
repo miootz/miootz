@@ -1,7 +1,0 @@
-dn: ou=people,dc=footylegends,dc=local
-objectClass: organizationalUnit
-ou: people
-
-dn: ou=groups,dc=footylegends,dc=local
-objectClass: organizationalUnit
-ou: groups

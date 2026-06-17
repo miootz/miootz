@@ -1,7 +1,7 @@
-import os
-import uuid
+from datetime import datetime, timedelta
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,47 +11,139 @@ from app.core.database import get_db
 from app.models.game_template import GameTemplate
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.user import User
-from app.models.web_push_subscription import WebPushSubscription
-from app.schemas.user import SSOIdentity, UserMe, UserProfileUpdate
-from app.services.avatar_images import (
-    CropPixels,
-    center_square_crop_pixels_dict,
-    clamp_crop_to_image,
-    crop_resize_save_jpeg,
-    default_square_avatar,
-    load_uploaded_image,
+from app.models.user_notification_preference import (
+    NOTIFICATION_CATEGORIES,
+    UserNotificationPreference,
 )
+from app.models.web_push_subscription import WebPushSubscription
+from app.schemas.user import SPECIALTY_OPTIONS, UserMe, UserProfileUpdate
+from app.models.invite import InviteToken
+from app.services.pocket_id_client import create_signup_token, delete_user, get_user_by_id
 from app.services.skill_service import update_user_calculated_skill
 from app.services.template_subscriptions import user_wants_template_notifications
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-ALLOWED_AVATAR_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
-_AVATAR_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+# Avatars are managed via Pocket ID — users set their profile picture at
+# {POCKET_ID_APP_URL}/settings/account.  The avatar URL is computed from
+# the user's pocket_id_sub: {POCKET_ID_APP_URL}/api/users/{sub}/profile-picture.png
 
 
-def _fs_path(relative: str | None) -> str | None:
-    if not relative or not relative.startswith("/uploads/"):
-        return None
-    return os.path.join(settings.UPLOAD_DIR, relative.removeprefix("/uploads/"))
+def _slugify(s: str) -> str:
+    return "".join(c.lower() for c in s if c.isalnum())
 
 
-def _remove_upload_file(relative: str | None) -> None:
-    p = _fs_path(relative)
-    if p and os.path.isfile(p):
-        os.remove(p)
+def _synthetic_email(first_name: str, last_name: str) -> str:
+    """Generate a synthetic email for Pocket ID (never shown to the user)."""
+    slug = _slugify(f"{first_name} {last_name}") or "player"
+    import secrets
+    suffix = secrets.token_hex(4)
+    return f"{slug}.{suffix}@passkey.internal"
 
 
-class CropPixelsIn(BaseModel):
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
-    width: int = Field(ge=1)
-    height: int = Field(ge=1)
+@router.post("")
+async def admin_create_user(
+    body: AdminUserCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Create a new user account (admin only). User has no Pocket ID link yet."""
+    first_name = body.first_name.strip()
+    last_name = body.last_name.strip()
+    if not first_name or not last_name:
+        raise HTTPException(status_code=400, detail="First name and last name are required")
+
+    user = User(
+        sso_display_name=f"{first_name} {last_name}",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "id": user.id,
+        "pocket_id_sub": user.pocket_id_sub,
+        "display_name": user.sso_display_name,
+        "username": None,
+        "avatar_url": user.avatar_url,
+        "self_assessed_skill": user.self_assessed_skill,
+        "calculated_skill": user.calculated_skill,
+        "primary_specialty": user.primary_specialty,
+        "secondary_specialty": user.secondary_specialty,
+        "is_admin": user.is_admin,
+        "has_pocket_id": bool(user.pocket_id_sub),
+    }
 
 
-class AvatarCropIn(BaseModel):
-    crop_pixels: CropPixelsIn
+@router.post("/{user_id}/invite")
+async def admin_generate_invite(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Generate a Pocket ID invite link for an existing user (admin only)."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.pocket_id_sub:
+        raise HTTPException(
+            status_code=409,
+            detail="User already has a Pocket ID account",
+        )
+
+    display = user.sso_display_name or ""
+    parts = display.split(maxsplit=1)
+    first_name = parts[0] if len(parts) else "player"
+    last_name = parts[1] if len(parts) > 1 else ""
+
+    synthetic_email = _synthetic_email(first_name, last_name)
+
+    try:
+        pocket_token = await create_signup_token(
+            email=synthetic_email,
+            ttl="168h",  # 7 days
+            usage_limit=1,
+            user_group_ids=(
+                [settings.POCKET_ID_MEMBERS_GROUP_ID]
+                if settings.POCKET_ID_MEMBERS_GROUP_ID
+                else None
+            ),
+        )
+    except Exception as e:
+        logger.exception("Failed to create Pocket ID signup token: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to create invite. Pocket ID may not be available.",
+        ) from e
+
+    if not pocket_token:
+        raise HTTPException(status_code=502, detail="Failed to create invite.")
+
+    token = pocket_token.get("token", "")
+    expires_at = (
+        datetime.fromisoformat(pocket_token.get("expiresAt", ""))
+        if pocket_token.get("expiresAt")
+        else datetime.utcnow() + timedelta(days=7)
+    )
+
+    invite = InviteToken(
+        token=token,
+        first_name=first_name,
+        last_name=last_name,
+        expires_at=expires_at,
+        user_id=user.id,
+    )
+    db.add(invite)
+    await db.commit()
+
+    base = settings.POCKET_ID_APP_URL.rstrip("/")
+    invite_link = f"{base}/st/{token}"
+
+    return {
+        "invite_link": invite_link,
+        "expires_at": expires_at.isoformat(),
+    }
 
 
 def get_current_user(request: Request) -> User:
@@ -63,28 +155,24 @@ def get_current_user(request: Request) -> User:
     return user
 
 
-def sso_snapshot(request: Request) -> dict | None:
-    u = getattr(request.state, "sso_username", None)
-    e = getattr(request.state, "sso_email", None)
-    d = getattr(request.state, "sso_display_name", None)
-    if not u and not e and not d:
-        return None
-    return SSOIdentity(username=u, email=e, display_name=d).model_dump()
-
-
-def me_envelope(request: Request, user: User) -> dict:
-    return {
-        "user": UserMe.model_validate(user).model_dump(),
-        "sso": sso_snapshot(request),
-    }
-
-
 @router.get("/me")
 async def get_my_profile(
     request: Request, current_user: User = Depends(get_current_user)
 ):
     """Same identity payload as `GET /me` minus admin flags (use `/me` for full auth context)."""
-    return me_envelope(request, current_user)
+    return {
+        "user": {
+            "id": current_user.id,
+            "pocket_id_sub": current_user.pocket_id_sub,
+            "display_name": getattr(request.state, "sso_display_name", None),
+            "avatar_url": current_user.avatar_url,
+            "self_assessed_skill": current_user.self_assessed_skill,
+            "calculated_skill": current_user.calculated_skill,
+            "primary_specialty": current_user.primary_specialty,
+            "secondary_specialty": current_user.secondary_specialty,
+            "is_admin": getattr(request.state, "is_admin", False),
+        },
+    }
 
 
 class GameTemplateSubscriptionPatch(BaseModel):
@@ -167,54 +255,15 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     dumped = update_data.model_dump(exclude_unset=True)
-    sync_dn = dumped.pop("sync_display_name_from_sso", False)
-    sync_em = dumped.pop("sync_email_from_sso", False)
-
-    if sync_dn:
-        dn = getattr(request.state, "sso_display_name", None)
-        if not dn:
-            raise HTTPException(
-                status_code=400,
-                detail="No display name from Authelia (Remote-Name) on this request",
-            )
-        user.full_name = dn
-
-    if sync_em:
-        new_email = getattr(request.state, "sso_email", None)
-        if not new_email:
-            raise HTTPException(
-                status_code=400,
-                detail="No email from Authelia (Remote-Email) on this request",
-            )
-        new_email = new_email.strip()
-        if new_email.lower() != user.email.lower():
-            conflict = await db.execute(
-                select(User.id).where(func.lower(User.email) == new_email.lower())
-            )
-            other_id = conflict.scalar_one_or_none()
-            if other_id is not None and other_id != user.id:
-                raise HTTPException(
-                    status_code=409,
-                    detail="That email is already used by another account",
-                )
-        user.email = new_email
-
     skill_changed = False
     if "self_assessed_skill" in dumped:
         v = dumped.pop("self_assessed_skill")
         if v is not None:
             user.self_assessed_skill = v
-            user.skill_level = v
-            skill_changed = True
-    if "skill_level" in dumped:
-        v = dumped.pop("skill_level")
-        if v is not None and not skill_changed:
-            user.skill_level = v
-            user.self_assessed_skill = v
             skill_changed = True
 
     for key, value in dumped.items():
-        if key in ("full_name", "phone") and value == "":
+        if key in ("primary_specialty", "secondary_specialty") and value == "":
             value = None
         setattr(user, key, value)
 
@@ -282,6 +331,7 @@ async def delete_push_subscriptions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Deprecated — use DELETE /me/push/subscriptions/{id} to remove individual devices."""
     await db.execute(
         delete(WebPushSubscription).where(
             WebPushSubscription.user_id == current_user.id
@@ -291,8 +341,228 @@ async def delete_push_subscriptions(
     return {"status": "ok"}
 
 
+@router.get("/me/push/subscriptions")
+async def list_push_subscriptions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all registered push devices for the current user."""
+    result = await db.execute(
+        select(WebPushSubscription)
+        .where(WebPushSubscription.user_id == current_user.id)
+        .order_by(WebPushSubscription.created_at.desc())
+    )
+    subs = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": sub.id,
+                "endpoint": sub.endpoint,
+                "created_at": sub.created_at.isoformat(),
+            }
+            for sub in subs
+        ]
+    }
+
+
+@router.delete("/me/push/subscriptions/{subscription_id}")
+async def delete_push_subscription(
+    subscription_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove a specific push device."""
+    sub = await db.get(WebPushSubscription, subscription_id)
+    if not sub or sub.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    await db.delete(sub)
+    await db.commit()
+    return {"status": "ok"}
+
+
+class NotificationPreferencePatch(BaseModel):
+    enabled: bool
+
+
+@router.get("/me/notification-preferences")
+async def list_notification_preferences(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all notification categories with current enabled state (missing row = enabled)."""
+    result = await db.execute(
+        select(UserNotificationPreference).where(
+            UserNotificationPreference.user_id == current_user.id
+        )
+    )
+    explicit = {row.category: row.enabled for row in result.scalars().all()}
+    items = []
+    for cat in NOTIFICATION_CATEGORIES:
+        items.append({
+            "category": cat,
+            "enabled": explicit.get(cat, True),
+        })
+    return {"items": items}
+
+
+@router.patch("/me/notification-preferences/{category}")
+async def patch_notification_preference(
+    category: str,
+    body: NotificationPreferencePatch,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if category not in NOTIFICATION_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Unknown category: {category}")
+    r = await db.execute(
+        select(UserNotificationPreference).where(
+            UserNotificationPreference.user_id == current_user.id,
+            UserNotificationPreference.category == category,
+        )
+    )
+    row = r.scalar_one_or_none()
+    if body.enabled:
+        # Opt back in: delete explicit row (default is enabled)
+        if row:
+            await db.delete(row)
+    else:
+        # Opt out: create or set to disabled
+        if row:
+            row.enabled = False
+        else:
+            db.add(
+                UserNotificationPreference(
+                    user_id=current_user.id,
+                    category=category,
+                    enabled=False,
+                )
+            )
+    await db.commit()
+    return {
+        "status": "ok",
+        "category": category,
+        "enabled": body.enabled,
+    }
+
+
+class AdminUserCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=80)
+    last_name: str = Field(..., min_length=1, max_length=80)
+
+
+class AdminUserListOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    pocket_id_sub: str | None
+    display_name: str | None = None
+    username: str | None = None
+    avatar_url: str | None = None
+    self_assessed_skill: int | None = None
+    calculated_skill: float | None = None
+    primary_specialty: SPECIALTY_OPTIONS | None = None
+    secondary_specialty: SPECIALTY_OPTIONS | None = None
+    is_admin: bool = False
+    has_pocket_id: bool = False
+
+
+class AdminUserUpdate(BaseModel):
+    self_assessed_skill: int | None = Field(None, ge=1, le=5)
+    primary_specialty: SPECIALTY_OPTIONS | None = None
+    secondary_specialty: SPECIALTY_OPTIONS | None = None
+    is_admin: bool | None = None
+    display_name: str | None = None
+
+
 class AdminSelfAssessedBody(BaseModel):
     self_assessed_skill: int = Field(..., ge=1, le=5)
+
+
+@router.get("")
+async def list_users_admin(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """List all users for the admin UI, enriched with fresh Pocket ID profile data."""
+    from sqlalchemy import func
+
+    result = await db.execute(
+        select(User, func.count().over().label("total"))
+        .order_by(User.sso_display_name.asc(), User.pocket_id_sub.asc())
+    )
+    rows = result.all()
+
+    # Fetch fresh SSO profiles in parallel for all users with a pocket_id_sub
+    subs = [(user, _total) for (user, _total) in rows if user.pocket_id_sub]
+    sso_cache: dict[str, dict[str, Any]] = {}
+    if subs:
+        import asyncio
+        results = await asyncio.gather(
+            *(get_user_by_id(user.pocket_id_sub) for user, _ in subs),
+        )
+        for (user, _), sso_data in zip(subs, results):
+            if sso_data and user.pocket_id_sub:
+                sso_cache[user.pocket_id_sub] = sso_data
+
+    users = []
+    for (user, _total) in rows:
+        sso = sso_cache.get(user.pocket_id_sub) if user.pocket_id_sub else None
+        display_name = (
+            sso.get("displayName")
+            if sso
+            else user.sso_display_name
+        )
+        username = (
+            sso.get("preferredUsername") or sso.get("username")
+            if sso
+            else user.sso_preferred_username
+        )
+        users.append({
+            **AdminUserListOut.model_validate(user).model_dump(),
+            "display_name": display_name,
+            "username": username,
+            "has_pocket_id": bool(user.pocket_id_sub),
+        })
+    return {"items": users}
+
+
+@router.patch("/{user_id}")
+async def admin_update_user(
+    user_id: int,
+    body: AdminUserUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Update a user's profile fields (admin only)."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    dumped = body.model_dump(exclude_unset=True)
+    skill_changed = False
+
+    for key in ("primary_specialty", "secondary_specialty"):
+        if key in dumped and dumped[key] == "":
+            dumped[key] = None
+
+    if "self_assessed_skill" in dumped:
+        v = dumped.pop("self_assessed_skill")
+        if v is not None:
+            user.self_assessed_skill = v
+            skill_changed = True
+
+    if "display_name" in dumped:
+        val = dumped.pop("display_name")
+        user.sso_display_name = val if val else None
+
+    for key, value in dumped.items():
+        setattr(user, key, value)
+
+    await db.commit()
+    await db.refresh(user)
+    if skill_changed:
+        await update_user_calculated_skill(db, user_id=user.id)
+    return {"message": "User updated successfully"}
 
 
 @router.patch("/{user_id}/self-assessed-skill")
@@ -302,137 +572,31 @@ async def admin_set_self_assessed_skill(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    """Deprecated — use PATCH /users/{user_id} instead."""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.self_assessed_skill = body.self_assessed_skill
-    user.skill_level = body.self_assessed_skill
     await db.commit()
     await update_user_calculated_skill(db, user_id=user_id)
     return {"message": "Self-assessed skill updated"}
 
 
-@router.post("/me/avatar")
-async def upload_avatar(
-    file: UploadFile = File(...),
+
+
+@router.delete("/{user_id}")
+async def admin_delete_user(
+    user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
-    user = await db.get(User, current_user.id)
+    """Delete a user from both the local DB and Pocket ID (admin only)."""
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    ct = (file.content_type or "").split(";")[0].strip().lower()
-    if ct not in ALLOWED_AVATAR_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail="Avatar must be JPEG, PNG, or WebP",
-        )
-
-    max_b = settings.MAX_AVATAR_BYTES
-    raw = await file.read(max_b + 1)
-    if len(raw) > max_b:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Avatar must be at most {max_b // (1024 * 1024)} MB",
-        )
-
-    try:
-        img = load_uploaded_image(raw)
-    except OSError:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not read image data",
-        ) from None
-
-    ext = _AVATAR_EXT.get(ct, ".jpg")
-    orig_name = f"{uuid.uuid4()}_src{ext}"
-    orig_fs = os.path.join(settings.UPLOAD_DIR, orig_name)
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    with open(orig_fs, "wb") as buffer:
-        buffer.write(raw)
-
-    old_orig = user.profile_pic_original
-    old_disp = user.profile_pic
-    disp_rel = f"/uploads/avatar_{user.id}.jpg"
-    disp_fs = os.path.join(settings.UPLOAD_DIR, f"avatar_{user.id}.jpg")
-
-    default_square_avatar(img, disp_fs)
-
-    if old_orig:
-        _remove_upload_file(old_orig)
-    if old_disp and old_disp != disp_rel:
-        _remove_upload_file(old_disp)
-
-    user.profile_pic_original = f"/uploads/{orig_name}"
-    user.profile_pic = disp_rel
-    w, h = img.size
-    user.avatar_crop_pixels = center_square_crop_pixels_dict(w, h)
+    # Remove from Pocket ID first
+    if user.pocket_id_sub:
+        await delete_user(user.pocket_id_sub)
+    await db.delete(user)
     await db.commit()
-    await db.refresh(user)
-
-    return {
-        "profile_pic": user.profile_pic,
-        "profile_pic_original": user.profile_pic_original,
-        "avatar_crop_pixels": user.avatar_crop_pixels,
-    }
-
-
-@router.post("/me/avatar/crop")
-async def save_avatar_crop(
-    body: AvatarCropIn,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    user = await db.get(User, current_user.id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    source_rel = user.profile_pic_original or user.profile_pic
-    if not source_rel:
-        raise HTTPException(status_code=400, detail="No avatar to crop")
-
-    src_fs = _fs_path(source_rel)
-    if not src_fs or not os.path.isfile(src_fs):
-        raise HTTPException(status_code=404, detail="Avatar source file missing")
-
-    with open(src_fs, "rb") as f:
-        raw = f.read()
-    try:
-        img = load_uploaded_image(raw)
-    except OSError:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not read image data",
-        ) from None
-
-    iw, ih = img.size
-    cp = CropPixels(
-        x=body.crop_pixels.x,
-        y=body.crop_pixels.y,
-        width=body.crop_pixels.width,
-        height=body.crop_pixels.height,
-    )
-    box = clamp_crop_to_image(cp, iw, ih)
-    disp_rel = f"/uploads/avatar_{user.id}.jpg"
-    disp_fs = os.path.join(settings.UPLOAD_DIR, f"avatar_{user.id}.jpg")
-    old_disp = user.profile_pic
-    crop_resize_save_jpeg(img, box, disp_fs)
-
-    x1, y1, x2, y2 = box
-    user.avatar_crop_pixels = {
-        "x": x1,
-        "y": y1,
-        "width": x2 - x1,
-        "height": y2 - y1,
-    }
-    user.profile_pic = disp_rel
-    if old_disp and old_disp != disp_rel:
-        _remove_upload_file(old_disp)
-    await db.commit()
-    await db.refresh(user)
-
-    return {
-        "profile_pic": user.profile_pic,
-        "avatar_crop_pixels": user.avatar_crop_pixels,
-    }
+    return {"message": "User deleted successfully"}

@@ -1,13 +1,24 @@
-# Agent Instructions: Footy Legends
+# Agent Instructions: Miootz
 
 ## Architecture
 
-- **Backend**: FastAPI application located in `app/`. 
+- **Backend**: FastAPI application located in `app/`.
   - Entrypoint: `app/api/main.py`
   - Database: SQLite (async via `aiosqlite`) with SQLAlchemy.
-  - Auth: Uses `AutheliaAuthMiddleware` for authentication.
+  - Auth: Validates Pocket ID JWT tokens from `Authorization: Bearer` header.
+  - JWT validation: `app/services/pocket_id_jwt.py` (RS256, JWKS caching).
+  - Pocket ID admin client: `app/services/pocket_id_client.py` (API key auth for signup tokens).
 - **Frontend**: React + TypeScript + Vite located in `frontend/`.
-- **Infrastructure**: Dockerized setup with Traefik, Authelia (LDAP via OpenLDAP). Invites use `POST /invites/verify/begin` then `POST /invites/verify/complete` (password on the confirmation page); the API sets LDAP `userPassword`, calls Authelia `POST /api/firstfactor` via `AUTHELIA_INTERNAL_URL`, and forwards `Set-Cookie` to the browser. `docker/authelia/config.yml` must **bypass** `/api/invites/verify/` (and `/invites/verify/` on the API host) so unauthenticated clients can register. **Authelia branding** (logo, favicon, English copy) lives in `docker/authelia/branding/` via `server.asset_path`; replace `logo.png` with a transparent PNG from design when ready. Browser push uses Web Push (VAPID) from the API, not a separate notify service.
+  - Auth: OIDC authorization code flow with Pocket ID (PKCE S256).
+  - OIDC client: `frontend/src/auth/pocketIdOidc.ts`.
+  - Tokens stored in memory (React AuthContext state) + sessionStorage for persistence across reloads.
+  - All API requests include `Authorization: Bearer <accessToken>` via `apiFetch()` / `useApiFetch()`.
+- **Infrastructure**: Dockerized setup with Traefik and Pocket ID (passkey-only OIDC).
+  - No forward-auth proxy — Pocket ID handles authentication directly.
+  - Pocket ID routed at `auth.miootz.local`.
+  - API and frontend have no auth middleware — open to all (auth handled by Pocket ID tokens).
+  - Invite flow: Admin creates signup token via Pocket ID admin API → returns Pocket ID signup link.
+  - Browser push uses Web Push (VAPID) from the API.
 
 ## Developer Commands
 
@@ -15,7 +26,7 @@
 
 - **Run API**: `uv run uvicorn app.api.main:app --reload`
 - **Test**: `uv run pytest` (async mode enabled via `pyproject.toml`)
-- **Create admin (DB + OpenLDAP)**: `uv run python -m app.cli --username <uid> --email <mail>` (requires `LDAP_URI`, `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` in `.env`). Use `--skip-ldap` if the LDAP user already exists (e.g. bootstrap `uid=admin`). Optional `--display-name`.
+- **Create admin (DB only)**: `uv run python -m app.cli --username <uid> --email <mail>` (creates DB user with `is_admin=True`). Create admin in Pocket ID via `/login/setup` and link by email.
 
 ### Frontend (TS/React)
 
@@ -27,8 +38,24 @@
 ## Conventions & Quirks
 
 - **Database Initialization**: Tables are automatically created on startup in `app/api/main.py`.
-- **Auth State**: `AutheliaAuthMiddleware` sets `request.state.user`, `request.state.is_admin` (DB **or** Authelia `Remote-Groups` per `AUTH_ADMIN_GROUPS`), and `request.state.auth_groups`.
-- **Production (Docker + Traefik)**: API is protected with Traefik **forward-auth** to Authelia (`footy-auth` middleware in `docker-compose*.yml`). Set `AUTH_REQUIRE_FORWARDED_HEADERS=true` (set in compose) so `Remote-User` is ignored unless `X-Forwarded-For` / `Forwarded` is present (spoof protection on direct access).
-- **Local `uvicorn`**: Keep `AUTH_REQUIRE_FORWARDED_HEADERS=false` (default) and send `Remote-User` for tests/dev, or add `X-Forwarded-For: 127.0.0.1` when testing strict mode.
+- **Auth State**: `PocketIdAuthMiddleware` sets `request.state.user`, `request.state.is_admin` (from `"admins" in groups` claim OR `User.is_admin`), and `request.state.auth_groups`.
+- **JIT Provisioning**: First valid Pocket ID token for a new user auto-creates a DB row (matched by `pocket_id_sub`, fallback to email).
+- **Production (Docker + Traefik)**: No forward-auth middleware. Pocket ID handles auth at `auth.miootz.local`. API validates Pocket ID JWT tokens.
+- **Local `uvicorn`**: Frontend OIDC flow works with Pocket ID running in Docker. Vite proxies `/api` to `localhost:8000`.
 - **CORS / Host**: Optional `CORS_ORIGINS` and `TRUSTED_HOSTS` (comma-separated) in `.env` for browser clients and Host validation.
 - **Data Storage**: SQLite databases and uploads are stored in the `data/` directory.
+- **Settings**: `app/core/config.py` uses `extra='ignore'` to tolerate stale env vars in `.env`.
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/api/middleware.py` | `PocketIdAuthMiddleware` — JWT validation, user resolution, JIT provisioning |
+| `app/services/pocket_id_jwt.py` | RS256 JWT validation, JWKS fetch + caching |
+| `app/services/pocket_id_client.py` | Pocket ID admin API client (signup tokens) |
+| `app/api/invites.py` | Invite CRUD (proxies to Pocket ID signup token API) |
+| `app/core/config.py` | Settings (Pocket ID OIDC + admin API config) |
+| `frontend/src/auth/pocketIdOidc.ts` | PKCE S256 OIDC client (authorize, token exchange, refresh, logout) |
+| `frontend/src/auth/AuthProvider.tsx` | Auth context, session restore, token management |
+| `frontend/src/auth/RequireAuth.tsx` | Protected route guard → redirect to Pocket ID login |
+| `frontend/src/api/client.ts` | API fetch with auto Bearer token injection |

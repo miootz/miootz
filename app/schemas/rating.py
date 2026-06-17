@@ -23,14 +23,15 @@ class RatingResponse(BaseModel):
 class RateeContext(BaseModel):
     user_id: int
     display_name: str
-    profile_pic: str | None = None
+    avatar_url: str | None = None
     my_score: int | None = None
 
 
 class RatingContextResponse(BaseModel):
     session_id: int
     session_start_time: datetime
-    before_session_start: bool
+    session_end_time: datetime
+    before_session_end: bool
     ratings_locked: bool
     ratings_editable: bool
     ratings_lock_at: str | None = None

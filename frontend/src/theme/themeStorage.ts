@@ -1,6 +1,6 @@
 export type ThemePreference = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'footy-theme';
+const STORAGE_KEY = 'miootz-theme';
 
 export function readStoredTheme(): ThemePreference {
   try {

@@ -43,7 +43,7 @@ export function AdminGameTemplatesPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Templates drive the cron job that materializes the next session and sends invite emails.
+          Templates drive the cron job that materializes the next session and sends push notifications.
         </p>
         <Link
           to="/admin/game-templates/new"

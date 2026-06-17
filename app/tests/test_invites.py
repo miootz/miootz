@@ -1,10 +1,10 @@
+"""Tests for user creation and invite flow."""
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from app.api.main import app
-from app.core.config import settings
-from app.core.database import Base, async_session, engine
+from app.core.database import Base, engine, async_session
 from app.models.user import User
 
 
@@ -13,156 +13,186 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    async with async_session() as session:
+        session.add(
+            User(
+                pocket_id_sub="admin-uuid",
+                sso_display_name="Admin",
+                sso_groups=["admins", "members"],
+            )
+        )
+        await session.commit()
     yield
 
 
-def _fake_ldap_provision(*, email: str, display_name: str | None = None):
-    return ("newinv", "unused-random-password")
-
-
-def _fake_ldap_replace(*, uid: str, plaintext: str) -> None:
-    assert uid == "newinv"
-    assert len(plaintext) >= 10
-
-
-async def _fake_authelia_login(**_kwargs):
-    return (
-        ["authelia_session=fake; Path=/; Domain=footylegends.local; HttpOnly; Secure; SameSite=Lax"],
-        "https://app.footylegends.local/",
-    )
+@pytest.mark.asyncio
+async def test_admin_create_user(monkeypatch):
+    """Admin can create a user without Pocket ID."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        r = await ac.post(
+            "/users",
+            json={"first_name": "New", "last_name": "Player"},
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] is not None
+        assert body["display_name"] == "New Player"
+        assert body["pocket_id_sub"] is None
+        assert body["has_pocket_id"] is False
 
 
 @pytest.mark.asyncio
-async def test_create_begin_complete_invite_provisions_user(monkeypatch):
-    sent: list[tuple[str, str]] = []
-
-    async def fake_send(to_email: str, subject: str, text_body: str, html_body=None):
-        sent.append((to_email, subject))
-        return True
-
-    monkeypatch.setattr("app.api.invites.send_smtp_email", fake_send)
-    monkeypatch.setattr("app.services.smtp_mail.send_smtp_email", fake_send)
-    monkeypatch.setattr(
-        "app.api.invites.provision_ldap_invite_user",
-        _fake_ldap_provision,
-    )
-    monkeypatch.setattr(
-        "app.api.invites.ldap_replace_user_password",
-        _fake_ldap_replace,
-    )
-    monkeypatch.setattr(
-        "app.api.invites.authelia_first_factor_login",
-        _fake_authelia_login,
-    )
-    monkeypatch.setattr(settings, "AUTHELIA_INTERNAL_URL", "http://authelia:9091")
-
+async def test_admin_create_user_requires_names():
+    """Creating a user requires first and last name."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        inv = await ac.post(
-            "/invites/create?email=newinv@example.com",
-            headers={"Remote-User": "admin", "Remote-Groups": "admins"},
+        r = await ac.post(
+            "/users",
+            json={"first_name": "", "last_name": "Player"},
+            headers={"Authorization": "Bearer admintoken"},
         )
-        assert inv.status_code == 200, inv.text
-        link = inv.json()["invite_link"]
-        assert "/invites/verify/" in link
-        token = link.split("/invites/verify/")[-1]
-
-        b = await ac.post("/invites/verify/begin", json={"token": token})
-        assert b.status_code == 200, b.text
-        begin = b.json()
-        assert begin["username"] == "newinv"
-        assert begin["email"] == "newinv@example.com"
-        assert begin.get("setup_token")
-
-        c = await ac.post(
-            "/invites/verify/complete",
-            json={
-                "setup_token": begin["setup_token"],
-                "password": "longenoughpw",
-                "password_confirm": "longenoughpw",
-            },
-        )
-        assert c.status_code == 200, c.text
-        body = c.json()
-        assert body["username"] == "newinv"
-        assert body["redirect"].startswith("https://")
-
-    async with async_session() as db:
-        result = await db.execute(select(User).where(User.email == "newinv@example.com"))
-        u = result.scalar_one_or_none()
-        assert u is not None
-        assert u.username == "newinv"
-
-    assert len(sent) == 1
-    assert "invited" in sent[0][1].lower() or "invite" in sent[0][1].lower()
+        assert r.status_code == 422, r.text  # Pydantic min_length validation
 
 
 @pytest.mark.asyncio
-async def test_complete_password_mismatch(monkeypatch):
-    async def fake_send(*_a, **_k):
-        return True
+async def test_admin_create_user_requires_admin(monkeypatch):
+    """Non-admin cannot create users."""
+    async def _mock_validate_user_token(token: str) -> dict | None:
+        if token == "usertoken":
+            return {
+                "sub": "user-uuid",
+                "email": "user@test.com",
+                "preferred_username": "user",
+                "name": "User",
+                "groups": ["members"],
+            }
+        return None
 
-    monkeypatch.setattr("app.api.invites.send_smtp_email", fake_send)
-    monkeypatch.setattr("app.services.smtp_mail.send_smtp_email", fake_send)
-    monkeypatch.setattr("app.api.invites.provision_ldap_invite_user", _fake_ldap_provision)
+    monkeypatch.setattr(
+        "app.services.pocket_id_jwt.validate_pocket_id_token",
+        _mock_validate_user_token,
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        await ac.post(
-            "/invites/create?email=pw@example.com",
-            headers={"Remote-User": "admin", "Remote-Groups": "admins"},
+        r = await ac.post(
+            "/users",
+            json={"first_name": "User", "last_name": "Test"},
+            headers={"Authorization": "Bearer usertoken"},
         )
-        inv_row = await ac.get("/invites/admin/list", headers={"Remote-User": "admin", "Remote-Groups": "admins"})
-        token = next(x["token"] for x in inv_row.json() if x["email"] == "pw@example.com")
-
-        b = await ac.post("/invites/verify/begin", json={"token": token})
-        assert b.status_code == 200
-        begin = b.json()
-
-        c = await ac.post(
-            "/invites/verify/complete",
-            json={
-                "setup_token": begin["setup_token"],
-                "password": "longenoughpw",
-                "password_confirm": "otherpassword",
-            },
-        )
-        assert c.status_code == 400
+        assert r.status_code == 403, r.text
 
 
 @pytest.mark.asyncio
-async def test_deprecated_get_invite_verify_returns_405():
+async def test_admin_generate_invite_for_user(monkeypatch):
+    """Admin can generate a Pocket ID invite for an existing user."""
+    async def _mock_create_signup_token(
+        email: str,
+        ttl: str = "168h",
+        usage_limit: int = 1,
+        user_group_ids: list[str] | None = None,
+    ) -> dict:
+        return {
+            "token": "pocket-id-test-token-123",
+            "expiresAt": "2025-01-01T00:00:00",
+        }
+
+    monkeypatch.setattr(
+        "app.api.users.create_signup_token",
+        _mock_create_signup_token,
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        r = await ac.get("/invites/verify/some-uuid-token")
-    assert r.status_code == 405
-    assert r.headers.get("allow") == "POST"
-    body = r.json()
-    assert "detail" in body
-    assert "begin" in body["detail"].lower()
+        # First create a user
+        create_r = await ac.post(
+            "/users",
+            json={"first_name": "Invited", "last_name": "Player"},
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert create_r.status_code == 200
+        user_id = create_r.json()["id"]
+
+        # Generate invite
+        invite_r = await ac.post(
+            f"/users/{user_id}/invite",
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert invite_r.status_code == 200, invite_r.text
+        body = invite_r.json()
+        assert "/st/" in body["invite_link"]
+        assert body["expires_at"]
+
+
+@pytest.mark.asyncio
+async def test_admin_generate_invite_rejects_linked_user(monkeypatch):
+    """Cannot generate invite for a user who already has Pocket ID."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Admin user already has pocket_id_sub
+        r = await ac.post(
+            "/users/1/invite",
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert r.status_code == 409, r.text
+
+
+@pytest.mark.asyncio
+async def test_admin_generate_invite_404_for_missing_user(monkeypatch):
+    """Generating invite for non-existent user returns 404."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        r = await ac.post(
+            "/users/9999/invite",
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert r.status_code == 404, r.text
 
 
 @pytest.mark.asyncio
 async def test_admin_list_invites(monkeypatch):
-    async def fake_send(*_a, **_k):
-        return True
+    """Admin can list invites."""
+    async def _mock_create_signup_token(
+        email: str,
+        ttl: str = "168h",
+        usage_limit: int = 1,
+        user_group_ids: list[str] | None = None,
+    ) -> dict:
+        return {
+            "token": "pocket-id-test-token-123",
+            "expiresAt": "2025-01-01T00:00:00",
+        }
 
-    monkeypatch.setattr("app.api.invites.send_smtp_email", fake_send)
+    monkeypatch.setattr(
+        "app.api.users.create_signup_token",
+        _mock_create_signup_token,
+    )
 
     transport = ASGITransport(app=app)
-    headers = {"Remote-User": "admin", "Remote-Groups": "admins"}
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        c = await ac.post(
-            "/invites/create?email=listtest@example.com",
-            headers=headers,
+        # Create user + invite
+        create_r = await ac.post(
+            "/users",
+            json={"first_name": "List", "last_name": "Test"},
+            headers={"Authorization": "Bearer admintoken"},
         )
-        assert c.status_code == 200, c.text
+        user_id = create_r.json()["id"]
+        await ac.post(
+            f"/users/{user_id}/invite",
+            headers={"Authorization": "Bearer admintoken"},
+        )
 
-        r = await ac.get("/invites/admin/list", headers=headers)
+        r = await ac.get(
+            "/invites/admin/list",
+            headers={"Authorization": "Bearer admintoken"},
+        )
         assert r.status_code == 200, r.text
         data = r.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-        row = next(x for x in data if x["email"] == "listtest@example.com")
+        row = next(x for x in data if x["first_name"] == "List" and x["last_name"] == "Test")
         assert "invite_link" in row
         assert row["used"] is False
+        assert row["user_id"] == user_id

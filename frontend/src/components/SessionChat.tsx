@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { hapticLight } from '../utils/haptics';
 
-const chatLastReadKey = (sessionId: string) => `footy:chat:lastRead:${sessionId}`;
+const chatLastReadKey = (sessionId: string) => `miootz:chat:lastRead:${sessionId}`;
 
 const QUICK_EMOJIS = [
   '⚽',
@@ -379,7 +379,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     if (raw === null) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
-        new CustomEvent('footy-chat-unread', {
+        new CustomEvent('miootz-chat-unread', {
           detail: { sessionId, unread: false },
         })
       );
@@ -388,7 +388,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     if (isExpanded) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
-        new CustomEvent('footy-chat-unread', {
+        new CustomEvent('miootz-chat-unread', {
           detail: { sessionId, unread: false },
         })
       );
@@ -397,7 +397,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     const lastRead = Number(raw) || 0;
     const unread = latestId > lastRead;
     window.dispatchEvent(
-      new CustomEvent('footy-chat-unread', {
+      new CustomEvent('miootz-chat-unread', {
         detail: { sessionId, unread },
       })
     );
@@ -597,7 +597,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     return (
       <section className="max-w-2xl mx-auto w-full">
         <div
-          className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden"
+          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
         >
           {/* Header */}
           <button
@@ -615,7 +615,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
                 </span>
               )}
             </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronUp className="w-4 h-4 text-gray-400" />
           </button>
 
           {/* Preview (last 2 messages) */}
@@ -656,7 +656,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       }`}
     >
       <div
-        className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-md:rounded-xl h-[min(75vh,600px)] ${
+        className={`relative bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-md:rounded-xl h-[min(75vh,600px)] ${
           isExpanded ? 'max-md:h-[calc(100dvh-1rem)]' : ''
         }`}
       >
@@ -680,7 +680,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500"
             aria-label="Collapse chat"
           >
-            <ChevronUp className="w-4 h-4" />
+            <ChevronDown className="w-4 h-4" />
           </button>
         </div>
 

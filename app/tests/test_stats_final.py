@@ -54,8 +54,8 @@ async def client(db: AsyncSession):
 @pytest.fixture(name="auth_user")
 async def auth_user(db: AsyncSession):
     user = User(
-        username="tester",
-        email="test@test.com",
+        pocket_id_sub="tester-uuid",
+        sso_display_name="tester",
         self_assessed_skill=3,
         calculated_skill=3,
     )
@@ -91,7 +91,7 @@ async def test_games_played_count_matches_confirmed_sessions(
 
 @pytest.mark.asyncio
 async def test_dashboard_load_zero_vs_many_games(client: AsyncClient, db: AsyncSession):
-    user_many = User(username="pro", email="pro@test.com", calculated_skill=4)
+    user_many = User(pocket_id_sub="test-pro", sso_display_name="pro", calculated_skill=4)
     db.add(user_many)
     await db.commit()
 

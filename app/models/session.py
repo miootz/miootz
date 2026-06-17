@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +12,7 @@ from app.models.chat import ChatMessage
 
 if TYPE_CHECKING:
     from app.models.game_template import GameTemplate
+    from app.models.match import SessionMatch
 
 
 class GameSession(Base):
@@ -40,6 +41,34 @@ class GameSession(Base):
     kickoff_reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
+    #: Expected session length in minutes (used for end-time calculations, rating reminders).
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Set when the post-session rating reminder has been sent (one per session).
+    rating_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    #: Match duration in minutes for live team-vs-team matches (copied from template).
+    match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: JSON array of team names generated at session creation (e.g. ["Red Devils", "Blue Stars"]).
+    team_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Weather ────────────────────────────────────────────────────
+    #: Cached forecast temperature (°C) for the session date.
+    weather_forecast_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: WMO weather code for the forecast (0 = clear, 1-3 = cloudy, etc.).
+    weather_forecast_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Human-readable label for the forecast (e.g. "Partly cloudy").
+    weather_forecast_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: When the forecast was last fetched.
+    weather_forecast_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: Actual temperature recorded at session end (°C).
+    weather_actual_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: WMO weather code for actual conditions.
+    weather_actual_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Human-readable label for actual conditions.
+    weather_actual_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: When actual conditions were recorded.
+    weather_actual_recorded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     #: Source template when this session was created from a recurring template (nullable for one-offs).
     game_template_id: Mapped[int | None] = mapped_column(
@@ -63,6 +92,12 @@ class GameSession(Base):
     )
     scores: Mapped[list["MatchScore"]] = relationship(
         "MatchScore", back_populates="session", cascade="all, delete-orphan"
+    )
+    matches: Mapped[list["SessionMatch"]] = relationship(
+        "SessionMatch", back_populates="session", cascade="all, delete-orphan"
+    )
+    matches: Mapped[list["SessionMatch"]] = relationship(
+        "SessionMatch", back_populates="session", cascade="all, delete-orphan"
     )
 
 

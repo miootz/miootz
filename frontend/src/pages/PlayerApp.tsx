@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../context/ToastContext';
 import { format, parseISO } from 'date-fns';
 import { MeetupDetails } from './MeetupDetails';
-import { HistoryPage } from './HistoryPage';
 import type { Session, User, Team } from '../types';
 import { rebalanceTeams } from '../services/teamService';
 import {
@@ -34,12 +33,15 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
     )
     .map((a: SessionDetail['attendees'][number]) => ({
       id: String(a.user_id),
-      name: a.full_name || a.username,
+      name: a.display_name,
       skillScore: Math.round(a.skill),
       isLocked: false,
-      avatarUrl: mediaUrl(a.profile_pic ?? undefined),
+      avatarUrl: mediaUrl(a.avatar_url ?? undefined),
       attendanceStatus:
         a.status === 'waitlisted' ? 'waitlisted' : 'confirmed',
+      isPlusOne: a.is_plus_one ?? false,
+      primarySpecialty: a.primary_specialty ?? null,
+      secondarySpecialty: a.secondary_specialty ?? null,
     }));
   const ma = detail.my_attendance;
   return {
@@ -64,7 +66,7 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
 }
 
 export function PlayerApp() {
-  const { memberView, setHeader } = useMemberShell();
+  const { setHeader } = useMemberShell();
   const { me } = useAuth();
   const { showToast } = useToast();
 
@@ -76,6 +78,7 @@ export function PlayerApp() {
   >(null);
   const [rosterChannelLive, setRosterChannelLive] = useState(false);
   const [lastRosterSync, setLastRosterSync] = useState<Date | null>(null);
+  const [sseReconnectKey, setSseReconnectKey] = useState(0);
   const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
     null
   );
@@ -87,12 +90,15 @@ export function PlayerApp() {
     ]);
     const t = teamsRes.teams.map((x) => ({
       id: x.id,
+      name: x.name ?? `Team ${x.id.replace('t', '')}`,
       players: x.players.map((p) => ({
         id: p.id,
         name: p.name,
         skillScore: p.skillScore,
         isLocked: p.isLocked,
-        avatarUrl: mediaUrl(p.profilePic ?? undefined),
+        avatarUrl: mediaUrl(p.avatarUrl ?? undefined),
+        primarySpecialty: p.primarySpecialty ?? null,
+        secondarySpecialty: p.secondarySpecialty ?? null,
       })),
     }));
     const mapped = mapDetailToSession(detail, t);
@@ -182,11 +188,22 @@ export function PlayerApp() {
     es.onerror = () => {
       setRosterChannelLive(false);
     };
+    // Listen for browser offline/online events — EventSource doesn't
+    // always reconnect reliably after DevTools Offline Mode is toggled.
+    const goOffline = () => setRosterChannelLive(false);
+    const goOnline = () => {
+      es.close();
+      setSseReconnectKey((k) => k + 1); // force this effect to re-run
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
     return () => {
       es.close();
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
       setRosterChannelLive(false);
     };
-  }, [activeSessionNumericId, loadSession, loadInitialData]);
+  }, [activeSessionNumericId, loadSession, loadInitialData, sseReconnectKey]);
 
   useEffect(() => {
     if (loading || !session) {
@@ -211,10 +228,13 @@ export function PlayerApp() {
     }
     setHeader({
       line1,
-      line2: session.location || undefined,
+      location: session.location || undefined,
+      fee: session.fee ?? undefined,
+      sessionId: activeSessionNumericId ?? undefined,
+      sseLive: rosterChannelLive,
     });
     return () => setHeader(null);
-  }, [session, loading, setHeader]);
+  }, [session, loading, setHeader, activeSessionNumericId, rosterChannelLive]);
 
   const handleToggleLock = (userId: string) => {
     if (!session) return;
@@ -274,43 +294,32 @@ export function PlayerApp() {
 
   return (
     <>
-      <div
-        className={memberView === 'details' ? 'block' : 'hidden'}
-        aria-hidden={memberView !== 'details'}
-      >
-        {loading && <MeetupDetailsSkeleton />}
-        {error && !loading && (
-          <p className="mx-auto max-w-lg p-8 text-center text-amber-700 dark:text-amber-400">
-            {error}
-          </p>
-        )}
-        {!loading && !session && !error && (
-          <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
-            No upcoming meetup. Past sessions are in History.
-          </p>
-        )}
-        {!loading && session && (
-          <MeetupDetails
-            session={session}
-            onToggleLock={handleToggleLock}
-            onMovePlayer={handleMovePlayer}
-            canDragTeams={Boolean(me?.is_admin)}
-            rosterChannelLive={rosterChannelLive}
-            lastRosterSync={lastRosterSync}
-            offlineDataUpdatedAt={offlineDataUpdatedAt}
-            onRosterUpdated={() =>
-              activeSessionNumericId != null &&
-              void loadSession(activeSessionNumericId)
-            }
-          />
-        )}
-      </div>
-      <div
-        className={memberView === 'history' ? 'block' : 'hidden'}
-        aria-hidden={memberView !== 'history'}
-      >
-        <HistoryPage />
-      </div>
+      {loading && <MeetupDetailsSkeleton />}
+      {error && !loading && (
+        <p className="mx-auto max-w-lg p-8 text-center text-amber-700 dark:text-amber-400">
+          {error}
+        </p>
+      )}
+      {!loading && !session && !error && (
+        <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
+          No upcoming meetup. Past sessions are in History.
+        </p>
+      )}
+      {!loading && session && (
+        <MeetupDetails
+          session={session}
+          onToggleLock={handleToggleLock}
+          onMovePlayer={handleMovePlayer}
+          canDragTeams={Boolean(me?.is_admin)}
+          rosterChannelLive={rosterChannelLive}
+          lastRosterSync={lastRosterSync}
+          offlineDataUpdatedAt={offlineDataUpdatedAt}
+          onRosterUpdated={() =>
+            activeSessionNumericId != null &&
+            void loadSession(activeSessionNumericId)
+          }
+        />
+      )}
     </>
   );
 }

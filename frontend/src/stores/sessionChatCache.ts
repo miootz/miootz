@@ -2,7 +2,7 @@ import type { ChatMessage } from '../types';
 import { cacheGet, cachePut, getOfflineDb } from '../offline/db';
 import { CACHE_SESSION_ACTIVE, cacheKeyChat } from '../offline/cacheKeys';
 
-const LEGACY_SESSION_STORAGE_KEY = 'footy:sessionChatCache';
+const LEGACY_SESSION_STORAGE_KEY = 'miootz:sessionChatCache';
 const LEGACY_VERSION = 3;
 
 /** One-time migration from sessionStorage (Phase 1) to IndexedDB. */

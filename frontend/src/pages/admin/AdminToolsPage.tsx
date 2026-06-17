@@ -78,7 +78,7 @@ export function AdminToolsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `footy-sessions-${format(new Date(), 'yyyy-MM-dd-HHmm')}.csv`;
+      a.download = `miootz-sessions-${format(new Date(), 'yyyy-MM-dd-HHmm')}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('CSV downloaded.', 'success');
@@ -107,7 +107,7 @@ export function AdminToolsPage() {
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
           Runs the same logic as each template’s weekly job: create the next meetup if
-          missing, then send invite emails with join links. Use after downtime or
+          missing, then send push notifications with join links. Use after downtime or
           to test your configured announce times.
         </p>
 

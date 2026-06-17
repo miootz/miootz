@@ -1,29 +1,4 @@
 services:
-  openldap:
-    build:
-      context: ./docker/openldap
-    image: footy-legends-openldap:dev
-    container_name: openldap
-    environment:
-      LDAP_ORGANISATION: "Footy Legends"
-      LDAP_DOMAIN: "footylegends.local"
-      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
-    volumes:
-      - openldap_data:/var/lib/ldap
-      - openldap_config:/etc/ldap/slapd.d
-    networks:
-      - web
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'ldapsearch -x -H ldap://127.0.0.1 -D cn=admin,dc=footylegends,dc=local -w "$$LDAP_ADMIN_PASSWORD" -b dc=footylegends,dc=local -s base',
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 25s
-
   traefik:
     image: traefik:v2.10
     container_name: traefik
@@ -31,98 +6,69 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      # No ACME here: *.footylegends.local is not public-DNS friendly; TLS uses Traefik's default cert.
+      # No ACME here: *.miootz.local is not public-DNS friendly; TLS uses Traefik's default cert.
       - "--entrypoints.websecure.address=:8443"
       # Plain HTTP for local dev (avoids "404" when hitting :8443 with http:// — websecure is HTTPS-only).
       - "--entrypoints.web.address=:8880"
     ports:
       - "8443:8443"
-      - "8880:8880"
+      #- "8880:8880"
       - "8081:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
       - web
 
-  authelia:
-    image: authelia/authelia
-    container_name: authelia
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:latest
+    container_name: pocket_id
+    env_file: .env.dev
     environment:
-      # Portal is on :8443 in this compose file; session cookie URL must match the browser origin.
-      AUTHELIA_SESSION_COOKIES_0_AUTHELIA_URL: "https://auth.footylegends.local:8443"
-      # Match OpenLDAP admin password (docker/openldap bootstrap uses LDAP_ADMIN_PASSWORD).
-      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
+      APP_URL: "https://auth.miootz.local:8443"
+      TRUST_PROXY: "true"
+      STATIC_API_KEY: "${POCKET_ID_STATIC_API_KEY:-}"
     volumes:
-      - ./docker/authelia/config.yml:/config/configuration.yml
-      - ./docker/authelia/branding:/config/branding:ro
+      - ./data/pocket_id:/app/data
     networks:
       - web
-    depends_on:
-      openldap:
-        condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.authelia.rule=Host(`auth.footylegends.local`)"
-      - "traefik.http.routers.authelia.entrypoints=websecure"
-      - "traefik.http.routers.authelia.tls=true"
-      - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+      - "traefik.http.routers.pocketid.rule=Host(`auth.miootz.local`)"
+      - "traefik.http.routers.pocketid.entrypoints=websecure"
+      - "traefik.http.routers.pocketid.tls=true"
+      - "traefik.http.services.pocketid.loadbalancer.server.port=1411"
 
   api:
     build: .
-    container_name: footy_api
-    env_file: .env
+    container_name: miootz_api
+    env_file: .env.dev
     environment:
-      AUTH_REQUIRE_FORWARDED_HEADERS: "true"
-      UPLOAD_DIR: /data/uploads
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
-      SMTP_STARTTLS: "false"
-      SMTP_USE_TLS: "false"
-      AUTH_PORTAL_URL: "https://auth.footylegends.local:8443"
-      AUTHELIA_INTERNAL_URL: "http://authelia:9091"
-      PUBLIC_APP_URL: "https://app.footylegends.local"
-      LDAP_URI: ldap://openldap:389
-      LDAP_BASE_DN: dc=footylegends,dc=local
-      LDAP_BIND_DN: cn=admin,dc=footylegends,dc=local
-      LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
-      LDAP_USERS_OU: ou=people
-      LDAP_GROUPS_OU: ou=groups
-      AUTHELIA_INVITE_DEFAULT_GROUPS: members
+      PUBLIC_APP_URL: "https://app.miootz.local"
+      POCKET_ID_INTERNAL_URL: "http://pocket-id:1411"
     volumes:
       - ./app:/app/app
       - ./data:/data
     networks:
       - web
     depends_on:
-      openldap:
-        condition: service_healthy
-      authelia:
-        condition: service_started
-      mailhog:
+      pocket-id:
         condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
-      - "traefik.http.routers.api.rule=Host(`api.footylegends.local`)"
+      - "traefik.http.routers.api.rule=Host(`api.miootz.local`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
-      # Tell Authelia the public portal URL (must include :8443 in this compose file).
-      - "traefik.http.middlewares.footy-auth.forwardauth.address=http://authelia:9091/api/authz/forward-auth?authelia_url=https%3A%2F%2Fauth.footylegends.local%3A8443"
-      - "traefik.http.middlewares.footy-auth.forwardauth.trustForwardHeader=true"
-      - "traefik.http.middlewares.footy-auth.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
-      - "traefik.http.routers.api.middlewares=footy-auth@docker"
-      # Same API via app host (browser same-origin /api/... → Authelia → strip /api → FastAPI)
-      - "traefik.http.routers.api-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/api`)"
       - "traefik.http.routers.api-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-on-app.tls=true"
-      - "traefik.http.routers.api-on-app.middlewares=footy-auth@docker,api-strip@docker"
+      - "traefik.http.routers.api-on-app.middlewares=api-strip@docker"
       - "traefik.http.routers.api-on-app.service=api"
       - "traefik.http.routers.api-on-app.priority=100"
-      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.footylegends.local`) && PathPrefix(`/uploads`)"
+      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/uploads`)"
       - "traefik.http.routers.api-uploads-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-uploads-on-app.tls=true"
-      - "traefik.http.routers.api-uploads-on-app.middlewares=footy-auth@docker"
       - "traefik.http.routers.api-uploads-on-app.service=api"
       - "traefik.http.routers.api-uploads-on-app.priority=50"
 
@@ -130,10 +76,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    container_name: footy_frontend
+    container_name: miootz_frontend
     environment:
-      # API is reached via Traefik (same origin /api); do not proxy from Vite to the API container.
       VITE_DOCKER_DEV: "1"
+      VITE_POCKET_ID_ISSUER: "https://auth.miootz.local:8443"
+      VITE_POCKET_ID_CLIENT_SECRET: "${POCKET_ID_OIDC_CLIENT_SECRET:-}"
+    env_file: .env.dev
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
@@ -149,31 +97,14 @@ services:
       - api
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`app.footylegends.local`)"
+      - "traefik.http.routers.frontend.rule=Host(`app.miootz.local`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
 
-  mailhog:
-    image: mailhog/mailhog
-    container_name: mailhog
-    networks:
-      - web
-    ports:
-      - "1025:1025" # SMTP server
-      - "8025:8025" # Web UI
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mailhog.rule=Host(`mail.footylegends.local`)"
-      - "traefik.http.routers.mailhog.entrypoints=websecure"
-      - "traefik.http.routers.mailhog.tls=true"
-      - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
-
 volumes:
   frontend_node_modules:
-  openldap_data:
-  openldap_config:
 
 networks:
   web:

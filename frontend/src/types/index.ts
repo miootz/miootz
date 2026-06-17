@@ -1,3 +1,5 @@
+export type Specialty = 'ATT' | 'MID' | 'DEF' | 'GK';
+
 export interface User {
   id: string;
   name: string;
@@ -7,6 +9,16 @@ export interface User {
   avatarUrl?: string;
   /** Roster attendance row status (non-cancelled attendees only). */
   attendanceStatus?: 'confirmed' | 'waitlisted';
+  /** True when this user is a plus-one guest reservation. */
+  isPlusOne?: boolean;
+  /** Primary playing position. */
+  primarySpecialty?: Specialty | null;
+  /** Secondary playing position. */
+  secondarySpecialty?: Specialty | null;
+  /** Assigned pitch position (computed from specialty + skill priority). */
+  pitchPosition?: Specialty;
+  /** Computed skill rating from session history (1–5). Preferred display value. */
+  calculatedSkill?: number | null;
 }
 
 export interface ChatMessage {
@@ -15,7 +27,7 @@ export interface ChatMessage {
   username: string;
   message: string;
   created_at: string;
-  /** User's profile picture URL (from User.profile_pic). */
+  /** User's Pocket ID profile-picture URL. */
   avatar_url?: string | null;
   /** Hex color assigned to the user for chat bubbles. */
   username_color?: string | null;
@@ -23,6 +35,7 @@ export interface ChatMessage {
 
 export interface Team {
   id: string;
+  name: string;
   players: User[];
 }
 

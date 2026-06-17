@@ -29,7 +29,7 @@ def _ensure_sqlite_parent_dir(database_url: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        # e.g. Docker URL `sqlite+aiosqlite:////data/footy.db` on a host where `/data` is read-only / missing
+        # e.g. Docker URL `sqlite+aiosqlite:////data/miootz.db` on a host where `/data` is read-only / missing
         logger.debug(
             "Skipping SQLite parent mkdir for %s (%s).",
             path.parent,

@@ -1,13 +1,16 @@
-"""Rating time windows: open after session start; editable until next session starts."""
+"""Rating time windows: open after session ends; editable until next session starts."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import GameSession
+
+#: Default session length in minutes when `duration_minutes` is not set.
+_DEFAULT_DURATION_MINUTES = 120
 
 
 def to_utc_aware(dt: datetime) -> datetime:
@@ -18,6 +21,15 @@ def to_utc_aware(dt: datetime) -> datetime:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def session_end_time(session: GameSession) -> datetime:
+    """Calculate session end time from start_time + duration_minutes.
+
+    Falls back to 120 minutes when duration_minutes is not set.
+    """
+    duration = session.duration_minutes or _DEFAULT_DURATION_MINUTES
+    return to_utc_aware(session.start_time) + timedelta(minutes=duration)
 
 
 async def next_session_start_after(
@@ -47,8 +59,9 @@ def may_rate_or_edit(
     session: GameSession,
     next_session_start: datetime | None,
 ) -> tuple[bool, str | None]:
-    if now < to_utc_aware(session.start_time):
-        return False, "Session has not started yet"
+    end = session_end_time(session)
+    if now < end:
+        return False, "Ratings open after the session ends"
     if ratings_locked(now, session, next_session_start):
         return False, "Ratings for this session are locked"
     return True, None

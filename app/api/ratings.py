@@ -18,6 +18,7 @@ from app.services.rating_windows import (
     may_rate_or_edit,
     next_session_start_after,
     ratings_locked,
+    session_end_time,
     to_utc_aware,
     utc_now,
 )
@@ -129,8 +130,8 @@ async def get_rating_context(
     now = utc_now()
     nxt = await next_session_start_after(db, session)
     ok, _ = may_rate_or_edit(now, session, nxt)
-    before_start = now < to_utc_aware(session.start_time)
-    locked = ratings_locked(now, session, nxt) and not before_start
+    before_end = now < session_end_time(session)
+    locked = ratings_locked(now, session, nxt) and not before_end
 
     result = await db.execute(
         select(Attendance).where(
@@ -151,7 +152,7 @@ async def get_rating_context(
             Attendance.status == "confirmed",
             Attendance.user_id != current_user.id,
         )
-        .order_by(User.username.asc())
+        .order_by(User.sso_display_name.asc())
     )
     rows = result.all()
 
@@ -171,18 +172,20 @@ async def get_rating_context(
     ratees = [
         RateeContext(
             user_id=u.id,
-            display_name=u.full_name or u.username,
-            profile_pic=u.profile_pic,
+            display_name=u.display_name,
+            avatar_url=u.avatar_url,
             my_score=my_scores.get(u.id),
         )
         for _, u in rows
     ]
 
     locks_at = to_utc_aware(nxt) if nxt else None
+    end = session_end_time(session)
     return RatingContextResponse(
         session_id=session_id,
         session_start_time=session.start_time,
-        before_session_start=before_start,
+        session_end_time=end,
+        before_session_end=before_end,
         ratings_locked=locked,
         ratings_editable=ok,
         ratings_lock_at=locks_at.isoformat() if locks_at else None,

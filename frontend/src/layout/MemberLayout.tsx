@@ -4,11 +4,9 @@ import {
   History,
   LayoutGrid,
   Menu,
-  Monitor,
-  Moon,
   Shield,
-  Sun,
   UserCircle,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
@@ -16,40 +14,23 @@ import { setPreferMemberView } from '../auth/memberViewStorage';
 import { MemberShellProvider, useMemberShell } from '../context/MemberShellContext';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { InstallAppBanner } from '../components/InstallAppBanner';
-import { useTheme } from '../theme/ThemeProvider';
-import type { ThemePreference } from '../theme/themeStorage';
+import { MemberNotificationPrompt } from '../components/MemberNotificationPrompt';
+import { MeetupWeatherBadge } from '../components/MeetupWeatherBadge';
 
 const BOTTOM_NAV_H = '4.5rem';
 
-function ThemeCycleButton() {
-  const { preference, setPreference } = useTheme();
-
-  const cycle = () => {
-    const order: ThemePreference[] = ['system', 'light', 'dark'];
-    const i = order.indexOf(preference);
-    setPreference(order[(i + 1) % order.length]);
-  };
-
-  const label =
-    preference === 'dark'
-      ? 'Dark theme'
-      : preference === 'light'
-        ? 'Light theme'
-        : 'Match system theme';
-
-  const Icon =
-    preference === 'dark' ? Moon : preference === 'light' ? Sun : Monitor;
-
+function SseIndicator({ live }: { live: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={cycle}
-      title={label}
-      aria-label={`Theme: ${label}. Click to change.`}
-      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-950"
-    >
-      <Icon className="h-5 w-5" aria-hidden />
-    </button>
+    <span className="ml-1.5 inline-flex items-center" aria-hidden>
+      {live ? (
+        <span className="relative block h-2 w-2">
+          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative block h-2 w-2 rounded-full bg-emerald-500" />
+        </span>
+      ) : (
+        <WifiOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+      )}
+    </span>
   );
 }
 
@@ -67,14 +48,15 @@ function MemberChrome() {
       const d = (e as CustomEvent<{ unread?: boolean }>).detail;
       setChatUnread(!!d?.unread);
     };
-    window.addEventListener('footy-chat-unread', onUnread);
-    return () => window.removeEventListener('footy-chat-unread', onUnread);
+    window.addEventListener('miootz-chat-unread', onUnread);
+    return () => window.removeEventListener('miootz-chat-unread', onUnread);
   }, []);
 
   const isProfile = location.pathname === '/profile';
+  const isHistory = location.pathname.startsWith('/history');
   const isPlayerHome =
     location.pathname === '/' ||
-    (location.pathname !== '/profile' && !location.pathname.startsWith('/admin'));
+    (location.pathname !== '/profile' && !location.pathname.startsWith('/admin') && !isHistory);
 
   const goDetails = () => {
     navigate('/');
@@ -82,8 +64,7 @@ function MemberChrome() {
   };
 
   const goHistory = () => {
-    navigate('/');
-    setMemberView('history');
+    navigate('/history');
   };
 
   return (
@@ -96,21 +77,39 @@ function MemberChrome() {
       </a>
       <OfflineBanner />
       <InstallAppBanner />
+      <MemberNotificationPrompt />
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-gray-50/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
           <div className="min-w-0 flex-1 text-left">
             <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
-              Footy Legends
+              Miootz
+              {header?.sseLive != null && <SseIndicator live={header.sseLive} />}
             </p>
             {header ? (
               <>
-                <p className="truncate text-base font-semibold text-gray-900 dark:text-white">
+                <p className="text-base font-semibold text-gray-900 dark:text-white">
                   {header.line1}
                 </p>
-                {header.line2 && (
-                  <p className="truncate text-sm text-gray-600 dark:text-gray-400">
-                    {header.line2}
-                  </p>
+                {(header.location != null || header.fee != null || header.sessionId != null) && (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-gray-600 dark:text-gray-400">
+                    {header.location != null && (
+                      <span className="truncate max-w-[min(100%,20rem)]">{header.location}</span>
+                    )}
+                    {header.location != null && (header.fee != null || header.sessionId != null) && (
+                      <span className="shrink-0 text-gray-400 dark:text-gray-500">&middot;</span>
+                    )}
+                    {header.fee != null && header.fee > 0 && (
+                      <span className="shrink-0 font-medium text-gray-800 dark:text-gray-200">
+                        ${header.fee.toFixed(0)}
+                      </span>
+                    )}
+                    {header.fee != null && header.fee > 0 && header.sessionId != null && (
+                      <span className="shrink-0 text-gray-400 dark:text-gray-500">&middot;</span>
+                    )}
+                    {header.sessionId != null && (
+                      <MeetupWeatherBadge sessionId={header.sessionId} />
+                    )}
+                  </div>
                 )}
               </>
             ) : (
@@ -120,7 +119,7 @@ function MemberChrome() {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {/* sm+: admin + theme */}
+            {/* sm+: admin */}
             <div className="hidden items-center gap-2 sm:flex">
               {!authLoading && isAdmin && (
                 <Link
@@ -132,11 +131,9 @@ function MemberChrome() {
                   Admin
                 </Link>
               )}
-              <ThemeCycleButton />
             </div>
             {/* xs: overflow */}
             <div className="relative flex items-center gap-2 sm:hidden">
-              <ThemeCycleButton />
               <button
                 type="button"
                 onClick={() => setOverflowOpen((o) => !o)}
@@ -264,7 +261,7 @@ function MemberChrome() {
             type="button"
             onClick={goHistory}
             className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
-              !isProfile && memberView === 'history' && isPlayerHome
+              isHistory
                 ? 'text-violet-600 dark:text-violet-400'
                 : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
@@ -273,7 +270,7 @@ function MemberChrome() {
             <span className="truncate">History</span>
             <span
               className={`h-0.5 w-8 rounded-full ${
-                !isProfile && memberView === 'history' && isPlayerHome
+                isHistory
                   ? 'bg-violet-600 dark:bg-violet-400'
                   : 'bg-transparent'
               }`}

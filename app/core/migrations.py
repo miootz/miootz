@@ -1,7 +1,11 @@
 """Lightweight additive SQLite migrations (no Alembic)."""
 
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+logger = logging.getLogger(__name__)
 
 
 async def run_sqlite_migrations(conn: AsyncConnection) -> None:
@@ -149,22 +153,21 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE game_sessions ADD COLUMN manual_teams_json TEXT")
         )
 
-    if not await has_column("users", "profile_pic_original"):
+    # (legacy) profile_pic columns are now removed - Pocket ID serves avatars.
+    # Keep this migration for databases that still have the old columns.
+
+    # Game templates: FK on sessions + copy legacy session_recurrence_rules → game_templates
+    if not await has_column("users", "pocket_id_sub"):
         await conn.execute(
-            text("ALTER TABLE users ADD COLUMN profile_pic_original VARCHAR")
+            text("ALTER TABLE users ADD COLUMN pocket_id_sub VARCHAR")
         )
-    if await has_column("users", "profile_pic_original"):
         await conn.execute(
             text(
-                "UPDATE users SET profile_pic_original = profile_pic "
-                "WHERE profile_pic_original IS NULL AND profile_pic IS NOT NULL"
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub "
+                "ON users (pocket_id_sub)"
             )
         )
 
-    if not await has_column("users", "avatar_crop_pixels"):
-        await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_crop_pixels TEXT"))
-
-    # Game templates: FK on sessions + copy legacy session_recurrence_rules → game_templates
     if not await has_column("game_sessions", "game_template_id"):
         await conn.execute(
             text("ALTER TABLE game_sessions ADD COLUMN game_template_id INTEGER")
@@ -226,3 +229,483 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     """
                 )
             )
+
+    if not await has_column("users", "primary_specialty"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN primary_specialty VARCHAR")
+        )
+    if not await has_column("users", "secondary_specialty"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN secondary_specialty VARCHAR")
+        )
+
+    if not await has_column("game_sessions", "duration_minutes"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN duration_minutes INTEGER")
+        )
+    if not await has_column("game_sessions", "rating_reminder_sent_at"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN rating_reminder_sent_at TIMESTAMP")
+        )
+
+    # ── Remove email from users; replace with display_name ──────────────
+    # SQLite < 3.35 can't DROP COLUMN, so recreate the table.
+    if await has_column("users", "email"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE users_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username VARCHAR UNIQUE,
+                    phone VARCHAR UNIQUE,
+                    full_name VARCHAR,
+                    profile_pic_original VARCHAR,
+                    profile_pic VARCHAR,
+                    avatar_crop_pixels TEXT,
+                    skill_level INTEGER,
+                    self_assessed_skill INTEGER,
+                    calculated_skill FLOAT,
+                    primary_specialty VARCHAR,
+                    secondary_specialty VARCHAR,
+                    is_admin INTEGER DEFAULT 0,
+                    pocket_id_sub VARCHAR UNIQUE
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO users_new (
+                    id, username, phone, full_name, profile_pic_original,
+                    profile_pic, avatar_crop_pixels, skill_level,
+                    self_assessed_skill, calculated_skill,
+                    primary_specialty, secondary_specialty, is_admin, pocket_id_sub
+                )
+                SELECT
+                    id, username, phone, full_name, profile_pic_original,
+                    profile_pic, avatar_crop_pixels, skill_level,
+                    self_assessed_skill, calculated_skill,
+                    primary_specialty, secondary_specialty, is_admin, pocket_id_sub
+                FROM users
+                """
+            )
+        )
+        await conn.execute(text("DROP TABLE users"))
+        await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
+        # Recreate indexes
+        await conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+        )
+        await conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)")
+        )
+        await conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)")
+        )
+
+    # ── Replace email with first_name + last_name in invite_tokens ──────
+    if await has_column("invite_tokens", "email") and not await has_column(
+        "invite_tokens", "first_name"
+    ):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE invite_tokens_new (
+                    token VARCHAR PRIMARY KEY,
+                    first_name VARCHAR DEFAULT '',
+                    last_name VARCHAR DEFAULT '',
+                    created_at TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    used INTEGER DEFAULT 0
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO invite_tokens_new (token, created_at, expires_at, used)
+                SELECT token, created_at, expires_at, used FROM invite_tokens
+                """
+            )
+        )
+        await conn.execute(text("DROP TABLE invite_tokens"))
+        await conn.execute(text("ALTER TABLE invite_tokens_new RENAME TO invite_tokens"))
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_invite_tokens_first_name "
+                "ON invite_tokens (first_name)"
+            )
+        )
+
+    # ── guest_plus_ones table ────────────────────────────────────────
+    if not await has_table("guest_plus_ones"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE guest_plus_ones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER NOT NULL REFERENCES game_sessions(id),
+                    inviter_id INTEGER NOT NULL REFERENCES users(id),
+                    guest_user_id INTEGER NOT NULL REFERENCES users(id),
+                    first_name VARCHAR NOT NULL,
+                    last_name VARCHAR NOT NULL,
+                    self_assessed_skill INTEGER NOT NULL,
+                    claim_token VARCHAR NOT NULL UNIQUE,
+                    status VARCHAR NOT NULL DEFAULT 'pending',
+                    claimed_by_user_id INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP,
+                    claimed_at TIMESTAMP
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_guest_plus_ones_session_id "
+                "ON guest_plus_ones (session_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_guest_plus_ones_inviter_id "
+                "ON guest_plus_ones (inviter_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_guest_plus_ones_claim_token "
+                "ON guest_plus_ones (claim_token)"
+            )
+        )
+
+    # ── Remove legacy skill_level column from users ──────────────────
+    if await has_column("users", "skill_level"):
+        r = await conn.execute(text("SELECT sqlite_version()"))
+        version = r.scalar_one_or_none() or ""
+        # SQLite >= 3.35 supports DROP COLUMN IF EXISTS
+        if _parse_sqlite_version(version) >= (3, 35, 0):
+            await conn.execute(
+                text("ALTER TABLE users DROP COLUMN IF EXISTS skill_level")
+            )
+        else:
+            # Recreate table without skill_level (same pattern as email removal)
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE users_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username VARCHAR UNIQUE,
+                        phone VARCHAR UNIQUE,
+                        full_name VARCHAR,
+                        profile_pic_original VARCHAR,
+                        profile_pic VARCHAR,
+                        avatar_crop_pixels TEXT,
+                        self_assessed_skill INTEGER,
+                        calculated_skill FLOAT,
+                        primary_specialty VARCHAR,
+                        secondary_specialty VARCHAR,
+                        is_admin INTEGER DEFAULT 0,
+                        pocket_id_sub VARCHAR UNIQUE
+                    )
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO users_new (
+                        id, username, phone, full_name, profile_pic_original,
+                        profile_pic, avatar_crop_pixels,
+                        self_assessed_skill, calculated_skill,
+                        primary_specialty, secondary_specialty, is_admin, pocket_id_sub
+                    )
+                    SELECT
+                        id, username, phone, full_name, profile_pic_original,
+                        profile_pic, avatar_crop_pixels,
+                        self_assessed_skill, calculated_skill,
+                        primary_specialty, secondary_specialty, is_admin, pocket_id_sub
+                    FROM users
+                    """
+                )
+            )
+            await conn.execute(text("DROP TABLE users"))
+            await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
+            await conn.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+            )
+            await conn.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)")
+            )
+            await conn.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)")
+            )
+
+    # ── Cache SSO display name and groups from Pocket ID ─────────────
+    if not await has_column("users", "sso_display_name"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN sso_display_name VARCHAR")
+        )
+    if not await has_column("users", "sso_preferred_username"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN sso_preferred_username VARCHAR")
+        )
+    if not await has_column("users", "sso_groups"):
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN sso_groups TEXT")
+        )
+
+    # ── Remove local avatar columns (avatars now served by Pocket ID) ──
+    for col in ("profile_pic", "profile_pic_original", "avatar_crop_pixels"):
+        if await has_column("users", col):
+            r = await conn.execute(text("SELECT sqlite_version()"))
+            version = r.scalar_one_or_none() or ""
+            if _parse_sqlite_version(version) >= (3, 35, 0):
+                await conn.execute(text(f"ALTER TABLE users DROP COLUMN {col}"))
+            else:
+                # SQLite < 3.35 can't DROP COLUMN - leave stale columns
+                logger.warning(
+                    "Cannot drop column '%s' from users (SQLite < 3.35)", col
+                )
+
+
+    # ── Replace username with pocket_id_sub as primary identity ──
+    # Remove: username, full_name, phone (if still present)
+    # Make pocket_id_sub NOT NULL, backfill legacy users
+    if await has_column("users", "username") or await has_column("users", "full_name"):
+        # Backfill null pocket_id_sub with legacy identifier
+        await conn.execute(
+            text(
+                """UPDATE users SET pocket_id_sub = 'legacy-' || id
+                   WHERE pocket_id_sub IS NULL OR pocket_id_sub = ''"""
+            )
+        )
+
+        r = await conn.execute(text("SELECT sqlite_version()"))
+        version = r.scalar_one_or_none() or ""
+        if _parse_sqlite_version(version) >= (3, 35, 0):
+            # SQLite >= 3.35: can DROP columns
+            # Drop indexes that reference columns we're about to remove
+            await conn.execute(text("DROP INDEX IF EXISTS ix_users_username"))
+            await conn.execute(text("DROP INDEX IF EXISTS ix_users_phone"))
+            for col in ("username", "full_name", "phone"):
+                if await has_column("users", col):
+                    await conn.execute(text(f"ALTER TABLE users DROP COLUMN {col}"))
+            # NOTE: SQLite doesn't support ALTER COLUMN SET NOT NULL (even 3.35+).
+            # pocket_id_sub is already UNIQUE and backfilled above.
+        else:
+            # SQLite < 3.35: recreate table
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE users_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        pocket_id_sub VARCHAR UNIQUE,
+                        sso_display_name VARCHAR,
+                        sso_groups TEXT,
+                        self_assessed_skill INTEGER,
+                        calculated_skill FLOAT,
+                        primary_specialty VARCHAR,
+                        secondary_specialty VARCHAR,
+                        is_admin INTEGER DEFAULT 0
+                    )
+                    """
+                )
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO users_new (
+                        id, pocket_id_sub, sso_display_name, sso_groups,
+                        self_assessed_skill, calculated_skill,
+                        primary_specialty, secondary_specialty, is_admin
+                    )
+                    SELECT
+                        id,
+                        COALESCE(NULLIF(pocket_id_sub, ''), 'legacy-' || id),
+                        sso_display_name,
+                        sso_groups,
+                        self_assessed_skill,
+                        calculated_skill,
+                        primary_specialty,
+                        secondary_specialty,
+                        is_admin
+                    FROM users
+                    WHERE COALESCE(NULLIF(pocket_id_sub, ''), 'legacy-' || id) IS NOT NULL
+                    """
+                )
+            )
+            await conn.execute(text("DROP TABLE users"))
+            await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub "
+                    "ON users (pocket_id_sub)"
+                )
+            )
+
+    # ── Add pocket_id_user_id to invite_tokens ──
+    if await has_table("invite_tokens") and not await has_column(
+        "invite_tokens", "pocket_id_user_id"
+    ):
+        await conn.execute(
+            text("ALTER TABLE invite_tokens ADD COLUMN pocket_id_user_id VARCHAR")
+        )
+
+    # ── Add user_id FK to invite_tokens (for inviting existing users) ──
+    if await has_table("invite_tokens") and not await has_column(
+        "invite_tokens", "user_id"
+    ):
+        await conn.execute(
+            text("ALTER TABLE invite_tokens ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        )
+
+    # ── Live match management ──
+    if not await has_column("game_templates", "match_duration_minutes"):
+        await conn.execute(
+            text(
+                "ALTER TABLE game_templates ADD COLUMN match_duration_minutes INTEGER DEFAULT 10"
+            )
+        )
+    if not await has_column("game_sessions", "match_duration_minutes"):
+        await conn.execute(
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN match_duration_minutes INTEGER"
+            )
+        )
+
+    # ── Weather: cached forecast + recorded actuals ───────────────────
+    if not await has_column("game_sessions", "weather_forecast_temp_c"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_temp_c FLOAT")
+        )
+    if not await has_column("game_sessions", "weather_forecast_code"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_code INTEGER")
+        )
+    if not await has_column("game_sessions", "weather_forecast_label"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_label VARCHAR")
+        )
+    if not await has_column("game_sessions", "weather_forecast_fetched_at"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_fetched_at TIMESTAMP")
+        )
+    if not await has_column("game_sessions", "weather_actual_temp_c"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_temp_c FLOAT")
+        )
+    if not await has_column("game_sessions", "weather_actual_code"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_code INTEGER")
+        )
+    if not await has_column("game_sessions", "weather_actual_label"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_label VARCHAR")
+        )
+    if not await has_column("game_sessions", "weather_actual_recorded_at"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_recorded_at TIMESTAMP")
+        )
+
+    # ── Team names: persisted random names per session ─────────────────
+    if not await has_column("game_sessions", "team_names_json"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN team_names_json TEXT")
+        )
+
+    # Backfill team_names_json from existing session_matches (idempotent).
+    if await has_table("session_matches"):
+        _r = await conn.execute(
+            text(
+                """
+                SELECT gs.id, GROUP_CONCAT(DISTINCT sn.team_a_name) || ',' ||
+                       GROUP_CONCAT(DISTINCT sn.team_b_name) AS all_names
+                FROM game_sessions gs
+                JOIN session_matches sn ON sn.session_id = gs.id
+                WHERE gs.team_names_json IS NULL
+                GROUP BY gs.id
+                """
+            )
+        )
+        import json as _json
+        for _row in _r.fetchall():
+            _sid, _all_names = _row
+            _names = [
+                _n.strip()
+                for _n in _all_names.split(",")
+                if _n.strip() and not _n.strip().startswith("Team ")
+            ]
+            _seen: set[str] = set()
+            _unique: list[str] = []
+            for _n in _names:
+                if _n not in _seen:
+                    _seen.add(_n)
+                    _unique.append(_n)
+            if _unique:
+                await conn.execute(
+                    text(
+                        "UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"
+                    ),
+                    {"val": _json.dumps(_unique), "sid": _sid},
+                )
+
+    # Generate team names for sessions that still have NULL (no matches yet).
+    _needs_names = await conn.execute(
+        text(
+            """
+            SELECT id, COALESCE(max_players, 15) AS mp
+            FROM game_sessions
+            WHERE team_names_json IS NULL
+            """
+        )
+    )
+    import random as _random
+    _pool = [
+        "Red Devils", "Blue Stars", "Golden Boot", "Iron Leg",
+        "Thunder FC", "Lightning United", "Phoenix Rising", "Eagles Soar",
+        "Crimson Tide", "Silver Arrows", "Wildcats", "Panthers",
+        "Raptors", "Hawks", "Vipers", "Cobras", "Tigers", "Lions",
+        "Sharks", "Wolves", "Galacticos", "Night Owls", "Fire Storm",
+        "Ice Breakers", "Diamondbacks", "Steel City", "Rough Riders",
+        "Storm Chasers", "Blaze", "Vendetta", "Renegades", "Warriors",
+        "Gladiators", "Spartans", "Crusaders", "Titans", "Vikings",
+        "Samurai", "Ninjas", "Phantoms", "Spectres", "Rebels",
+        "Outlaws", "Bandits", "Corsairs", "Marauders", "Conquerors",
+        "Legion", "Dynasty",
+    ]
+    _used_names: set[str] = set()
+    # Collect already-used names to avoid repeats
+    _existing = await conn.execute(
+        text("SELECT team_names_json FROM game_sessions WHERE team_names_json IS NOT NULL")
+    )
+    for _erow in _existing.fetchall():
+        try:
+            for _en in _json.loads(_erow[0]):
+                _used_names.add(_en)
+        except Exception:
+            pass
+    for _nrow in _needs_names.fetchall():
+        _nsid, _nmp = _nrow
+        _nteam_count = 3 if _nmp >= 13 else 2
+        _available = [n for n in _pool if n not in _used_names]
+        if len(_available) >= _nteam_count:
+            _picked = _random.sample(_available, _nteam_count)
+        else:
+            _picked = list(_available)
+            while len(_picked) < _nteam_count:
+                _picked.append(f"Team {len(_picked) + 1}")
+        for _p in _picked:
+            _used_names.add(_p)
+        await conn.execute(
+            text(
+                "UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"
+            ),
+            {"val": _json.dumps(_picked), "sid": _nsid},
+        )
+
+
+def _parse_sqlite_version(version: str) -> tuple[int, ...]:
+    """Parse '3.35.1' -> (3, 35, 1)."""
+    return tuple(int(p) for p in version.split(".") if p.isdigit())

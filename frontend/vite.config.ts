@@ -10,8 +10,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
-    // Traefik forwards Host: app.footylegends.local; Vite 6+ blocks unknown hosts by default.
-    allowedHosts: viteDocker ? true : ['localhost', '127.0.0.1', 'app.footylegends.local'],
+    // Traefik forwards Host: app.miootz.local; Vite 6+ blocks unknown hosts by default.
+    allowedHosts: viteDocker ? true : ['localhost', '127.0.0.1', 'app.miootz.local'],
     watch: viteDocker ? { usePolling: true } : undefined,
     hmr: viteDocker ? { clientPort: 8443 } : undefined,
     ...(viteDocker
