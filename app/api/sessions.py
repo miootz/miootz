@@ -20,6 +20,7 @@ from app.models.match import SessionMatch
 from app.models.user import User
 from app.models.chat import ChatMessage
 from app.models.guest_plus_one import GuestPlusOne
+from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
@@ -40,12 +41,16 @@ from app.services.manual_teams import (
     validate_team_partition,
     build_teams_from_manual,
 )
+from app.services.team_adjustment import expand_teams, contract_teams
 from app.services.web_push import (
     notify_new_session_invites,
     notify_session_cancelled_recipients,
     notify_session_chat_recipients,
 )
-from app.services.recurring_sessions import materialize_next_session_and_notify
+from app.services.recurring_sessions import (
+    materialize_next_session_and_notify,
+    next_announce_occurrence_utc,
+)
 from app.services import weather_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -72,6 +77,8 @@ class SessionCreate(BaseModel):
     team_assignment_mode: str = Field(default="balanced")
     #: When True (default), push all users a join notification for this instance.
     send_push_notifications: bool = True
+    #: Upper bound on team count. When None, team count is purely algorithmic.
+    max_teams: int | None = None
 
     @field_validator("waitlist_mode")
     @classmethod
@@ -117,6 +124,13 @@ class TeamsUpdateBody(BaseModel):
     teams: list[list[str]]
 
 
+class TeamsAdjustBody(BaseModel):
+    """Expand or contract teams, auto-promoting/returning waitlisted players."""
+
+    operation: str  # "expand" | "contract"
+    num_teams: int = 1
+
+
 class ChatMessageCreate(BaseModel):
     message: str
 
@@ -153,6 +167,11 @@ def _user_skill(u: User) -> float:
 def _game_template_json(t: GameTemplate | None) -> dict | None:
     if not t:
         return None
+    next_announce = (
+        next_announce_occurrence_utc(t, datetime.now(timezone.utc))
+        if t.is_active
+        else None
+    )
     return {
         "id": t.id,
         "name": t.name,
@@ -167,6 +186,7 @@ def _game_template_json(t: GameTemplate | None) -> dict | None:
         "is_active": t.is_active,
         "team_assignment_mode": getattr(t, "team_assignment_mode", None)
         or "balanced",
+        "next_announce_at": next_announce.isoformat() if next_announce else None,
     }
 
 
@@ -358,12 +378,21 @@ async def get_session(
         )
 
     my_attendance = None
+    my_waitlist_position = None
     user = getattr(request.state, "user", None)
     if user is not None:
         for att, u in rows:
             if u.id == user.id:
                 my_attendance = att.status
                 break
+        if my_attendance == "waitlisted":
+            waitlist = [
+                u.id
+                for att, u in rows
+                if att.status == "waitlisted"
+            ]
+            if user.id in waitlist:
+                my_waitlist_position = waitlist.index(user.id) + 1
 
     # Current active/pending match
     current_match = None
@@ -422,9 +451,51 @@ async def get_session(
         "game_template_id": session.game_template_id,
         "game_template": _game_template_json(session.game_template),
         "duration_minutes": session.duration_minutes,
+        "max_teams": session.max_teams,
         "attendees": attendees,
         "my_attendance": my_attendance,
+        "my_waitlist_position": my_waitlist_position,
         "current_match": current_match,
+    }
+
+
+@router.get("/{session_id}/history-summary")
+async def get_session_history_summary(
+    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Lightweight per-session summary for the History list: match count, final
+    result, and the viewer's average rating. One request instead of N+1."""
+    user = getattr(request.state, "user", None)
+    result = await db.execute(
+        select(SessionMatch)
+        .where(SessionMatch.session_id == session_id)
+        .where(SessionMatch.status == "completed")
+        .order_by(SessionMatch.completed_at.asc(), SessionMatch.match_number.asc())
+    )
+    matches = result.scalars().all()
+    final = None
+    if matches:
+        last = matches[-1]
+        final = {
+            "team_a_name": last.team_a_name,
+            "score_a": last.score_a,
+            "team_b_name": last.team_b_name,
+            "score_b": last.score_b,
+        }
+    my_rating_avg = None
+    if user is not None:
+        r = await db.execute(
+            select(Rating.score)
+            .where(Rating.session_id == session_id)
+            .where(Rating.rater_id == user.id)
+        )
+        scores = [row[0] for row in r.all() if row[0] and row[0] > 0]
+        if scores:
+            my_rating_avg = sum(scores) / len(scores)
+    return {
+        "match_count": len(matches),
+        "final": final,
+        "my_rating_avg": my_rating_avg,
     }
 
 
@@ -462,6 +533,7 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
         getattr(session, "manual_teams_json", None),
         mode,
         players,
+        max_teams=getattr(session, "max_teams", None),
     )
     team_names = get_team_names(session)
     out = format_teams_api_payload(teams_nested, team_names)
@@ -532,7 +604,7 @@ async def patch_session_teams(
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid user id in teams")
 
-    if not validate_team_partition(int_teams, confirmed_ids):
+    if not validate_team_partition(int_teams, confirmed_ids, max_teams=session.max_teams):
         raise HTTPException(
             status_code=400,
             detail="Teams must partition all confirmed players with valid team sizes",
@@ -576,6 +648,40 @@ async def reshuffle_session_teams(
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
     return {"status": "reshuffled", "content_revision": rev}
+
+
+@router.post("/{session_id}/teams/adjust")
+async def adjust_session_teams(
+    session_id: int,
+    body: TeamsAdjustBody,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Expand or contract teams, auto-promoting/returning waitlisted players.
+
+    - **expand**: adds *num_teams* teams and promotes waitlisted players (FIFO by joined_at).
+    - **contract**: removes *num_teams* teams and returns excess confirmed players to waitlist (LIFO).
+    """
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    op = body.operation.lower().strip()
+    if op not in ("expand", "contract"):
+        raise HTTPException(status_code=400, detail="operation must be 'expand' or 'contract'")
+    if body.num_teams < 1:
+        raise HTTPException(status_code=400, detail="num_teams must be >= 1")
+
+    if op == "expand":
+        outcome = await expand_teams(db, session, body.num_teams)
+    else:
+        outcome = await contract_teams(db, session, body.num_teams)
+
+    if "error" in outcome:
+        raise HTTPException(status_code=400, detail=outcome["error"])
+
+    return outcome
 
 
 @router.patch("/{session_id}")
@@ -753,27 +859,6 @@ async def move_attendance(
         await notify_session_data_changed(session_id, rev)
     await recalculate_skills_for_attendance_change(db, session_id, user_id)
     return {"status": "moved"}
-
-
-@router.get("/{session_id}/scores")
-async def get_session_scores(session_id: int, db: AsyncSession = Depends(get_db)):
-    """Get all match scores for a session."""
-    result = await db.execute(
-        select(MatchScore, User)
-        .join(User, MatchScore.player_id == User.id)
-        .where(MatchScore.session_id == session_id)
-    )
-    rows = result.all()
-    return [
-        {
-            "id": ms.id,
-            "player_id": ms.player_id,
-            "display_name": user.display_name,
-            "score": ms.score,
-            "type": ms.type,
-        }
-        for ms, user in rows
-    ]
 
 
 @router.post("/recurring/run-now")

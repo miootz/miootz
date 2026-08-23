@@ -6,7 +6,7 @@ import {
   setScores,
   type MatchSummary,
 } from '../api/matchesApi';
-import { Loader2, Plus, Trash2, Trophy } from 'lucide-react';
+import { Flag, Loader2, Plus, Trash2, Trophy } from 'lucide-react';
 import { AuthContext } from '../auth/auth-context';
 import { useToast } from '../context/ToastContext';
 
@@ -147,10 +147,8 @@ export function MatchHistoryList({
     );
   }
 
-  const overallWinner = (() => {
-    const last = matches[matches.length - 1];
-    return last.score_a > last.score_b ? last.team_a.name : last.team_b.name;
-  })();
+  const finalMatch = matches[matches.length - 1];
+  const finalResultText = `${finalMatch.team_a.name} ${finalMatch.score_a} – ${finalMatch.score_b} ${finalMatch.team_b.name}`;
 
   return (
     <div className="space-y-3">
@@ -166,8 +164,8 @@ export function MatchHistoryList({
 
       {matches.length > 1 && (
         <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-400 px-1">
-          <Trophy className="h-4 w-4" aria-hidden />
-          <span>Overall winner: {overallWinner}</span>
+          <Flag className="h-4 w-4" aria-hidden />
+          <span>Final match: {finalResultText}</span>
         </div>
       )}
       <div className="space-y-2">

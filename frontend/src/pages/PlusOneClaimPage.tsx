@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { SKILL_SCALE_BLURB } from '../components/OnboardingCard';
 import { useParams, useNavigate } from 'react-router-dom';
 import { checkPlusOneClaim, claimPlusOne } from '../api/sessionsApi';
 import { useToast } from '../context/ToastContext';
@@ -12,7 +13,10 @@ export const PlusOneClaimPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [claimed, setClaimed] = useState(false);
+  const [claimState, setClaimState] = useState<
+    'none' | 'justClaimed' | 'alreadyClaimed'
+  >('none');
+  const [notNow, setNotNow] = useState(false);
 
   const [guestInfo, setGuestInfo] = useState<{
     first_name: string;
@@ -35,7 +39,7 @@ export const PlusOneClaimPage: React.FC = () => {
     void checkPlusOneClaim(token)
       .then((data) => {
         if (data.status === 'claimed') {
-          setClaimed(true);
+          setClaimState('alreadyClaimed');
         } else {
           setGuestInfo({
             first_name: data.first_name,
@@ -52,6 +56,17 @@ export const PlusOneClaimPage: React.FC = () => {
         setLoading(false);
       })
       .catch((e) => {
+        // Belt-and-braces: if this browser already claimed the token, show
+        // the saved state even if the check call failed (e.g. offline).
+        try {
+          if (localStorage.getItem(`miootz:plusone:claimed:${token}`) === '1') {
+            setClaimState('justClaimed');
+            setLoading(false);
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
         setError(e instanceof Error ? e.message : 'Invalid claim link');
         setLoading(false);
       });
@@ -75,9 +90,12 @@ export const PlusOneClaimPage: React.FC = () => {
       });
       hapticSuccess();
       showToast(`Welcome, ${result.username}! You've claimed your spot.`, 'success');
-      setClaimed(true);
-      // Auto-redirect to the main app after a short delay
-      setTimeout(() => navigate('/'), 2000);
+      try {
+        localStorage.setItem(`miootz:plusone:claimed:${token}`, '1');
+      } catch {
+        /* ignore */
+      }
+      setClaimState('justClaimed');
     } catch (e) {
       hapticError();
       const msg = e instanceof Error ? e.message : 'Failed to claim';
@@ -119,23 +137,40 @@ export const PlusOneClaimPage: React.FC = () => {
     );
   }
 
-  if (claimed) {
+  if (claimState === 'justClaimed' || claimState === 'alreadyClaimed') {
+    const justClaimed = claimState === 'justClaimed';
     return (
       <div className="flex items-center justify-center min-h-[60vh] p-6">
         <div className="text-center space-y-4 max-w-sm">
           <CheckCircle className="mx-auto text-emerald-500" size={48} />
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            Already Claimed
+            {justClaimed
+              ? 'Your spot is saved ✓'
+              : 'Already claimed'}
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            This plus-one spot has already been claimed.
+            {justClaimed
+              ? notNow
+                ? "You can sign in whenever you're ready — your host will see you on the roster."
+                : "You'll sign in with a passkey to join the meetup. Your host can help you set one up."
+              : 'This plus-one spot has already been claimed. Sign in if this was you.'}
           </p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
-          >
-            Go home
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => navigate('/')}
+              className="w-full px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
+            >
+              Sign in
+            </button>
+            {justClaimed && !notNow && (
+              <button
+                onClick={() => setNotNow(true)}
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                Not now
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -176,6 +211,9 @@ export const PlusOneClaimPage: React.FC = () => {
               {guestInfo.self_assessed_skill}/5
             </span>
           </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {SKILL_SCALE_BLURB}
+          </p>
         </div>
 
         <form onSubmit={handleClaim} className="space-y-4">

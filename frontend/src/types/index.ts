@@ -61,6 +61,8 @@ export interface Session {
   teamAssignmentMode?: TeamAssignmentMode;
   /** Set when the viewer is logged in (from GET /sessions/:id). */
   myAttendance?: MyAttendanceStatus | null;
+  /** 1-based waitlist position when the viewer is waitlisted. */
+  myWaitlistPosition?: number | null;
 }
 
 export interface MatchSummary {

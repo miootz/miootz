@@ -1,4 +1,3 @@
-import React from 'react';
 import { mediaUrl } from '../api/meApi';
 
 export function Avatar({

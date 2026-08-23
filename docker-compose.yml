@@ -8,6 +8,7 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--tls.stores.default.defaultCertificate=/certs/cert.pem,/certs/key.pem"
     ports:
       - "80:80"
       - "443:443"
@@ -15,8 +16,12 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./docker/traefik/acme.json:/acme.json"
+      - "./docker/traefik/certs:/certs:ro"
     networks:
       - web
+    labels:
+      - "traefik.http.routers.traefik.tls.certfile=/certs/cert.pem"
+      - "traefik.http.routers.traefik.tls.keyfile=/certs/key.pem"
 
   pocket-id:
     image: ghcr.io/pocket-id/pocket-id:latest

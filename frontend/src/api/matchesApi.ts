@@ -1,4 +1,4 @@
-import { apiFetch, parseApiError } from './client';
+import { apiFetch, parseApiError } from "./client";
 
 export interface MatchTeamInfo {
   name: string;
@@ -13,10 +13,12 @@ export interface MatchSummary {
   team_b: MatchTeamInfo;
   score_a: number;
   score_b: number;
-  status: 'pending' | 'active' | 'time_up' | 'completed';
+  status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;
   timer_paused: boolean;
+  /** Server-authoritative end time (UTC ISO) while the timer runs; null when paused/finished. */
+  timer_ends_at?: string | null;
   created_at: string | null;
   completed_at: string | null;
 }
@@ -35,10 +37,10 @@ export interface MatchCreateBody {
 
 export async function createMatch(
   sessionId: number,
-  body: MatchCreateBody
+  body: MatchCreateBody,
 ): Promise<{ status: string; match: MatchSummary }> {
   const r = await apiFetch(`/sessions/${sessionId}/matches/create`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -46,7 +48,7 @@ export async function createMatch(
 }
 
 export async function fetchSessionMatches(
-  sessionId: number
+  sessionId: number,
 ): Promise<SessionMatchesResponse> {
   const r = await apiFetch(`/sessions/${sessionId}/matches`);
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -55,7 +57,7 @@ export async function fetchSessionMatches(
 
 export async function fetchMatch(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<MatchSummary> {
   const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}`);
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -63,10 +65,12 @@ export async function fetchMatch(
 }
 
 export async function startMatches(
-  sessionId: number
+  sessionId: number,
+  body?: { team_a_idx?: number; team_b_idx?: number },
 ): Promise<{ status: string; match: MatchSummary }> {
   const r = await apiFetch(`/sessions/${sessionId}/matches/start`, {
-    method: 'POST',
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -74,10 +78,10 @@ export async function startMatches(
 
 export async function createNewPendingMatch(
   sessionId: number,
-  body?: { team_a_idx?: number; team_b_idx?: number }
+  body?: { team_a_idx?: number; team_b_idx?: number },
 ): Promise<{ status: string; match: MatchSummary }> {
   const r = await apiFetch(`/sessions/${sessionId}/matches/new`, {
-    method: 'POST',
+    method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -87,23 +91,23 @@ export async function createNewPendingMatch(
 export async function swapMatchTeams(
   sessionId: number,
   matchId: number,
-  body: { team_a_users: number[]; team_b_users: number[] }
+  body: { team_a_users: number[]; team_b_users: number[] },
 ): Promise<MatchSummary> {
-  const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/teams`,
-    { method: 'PATCH', body: JSON.stringify(body) }
-  );
+  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/teams`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function startTimer(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
     `/sessions/${sessionId}/matches/${matchId}/timer/start`,
-    { method: 'POST' }
+    { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -111,11 +115,11 @@ export async function startTimer(
 
 export async function pauseTimer(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
     `/sessions/${sessionId}/matches/${matchId}/timer/pause`,
-    { method: 'POST' }
+    { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -123,11 +127,11 @@ export async function pauseTimer(
 
 export async function resumeTimer(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
     `/sessions/${sessionId}/matches/${matchId}/timer/resume`,
-    { method: 'POST' }
+    { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -135,11 +139,11 @@ export async function resumeTimer(
 
 export async function resetMatch(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<MatchSummary> {
   const r = await apiFetch(
     `/sessions/${sessionId}/matches/${matchId}/timer/reset`,
-    { method: 'POST' }
+    { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -148,13 +152,13 @@ export async function resetMatch(
 export async function incrementScore(
   sessionId: number,
   matchId: number,
-  team: 'a' | 'b',
-  delta = 1
+  team: "a" | "b",
+  delta = 1,
 ): Promise<{ score_a: number; score_b: number }> {
-  const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/score`,
-    { method: 'POST', body: JSON.stringify({ team, delta }) }
-  );
+  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/score`, {
+    method: "POST",
+    body: JSON.stringify({ team, delta }),
+  });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -163,12 +167,12 @@ export async function setScores(
   sessionId: number,
   matchId: number,
   score_a: number,
-  score_b: number
+  score_b: number,
 ): Promise<{ score_a: number; score_b: number }> {
-  const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/score`,
-    { method: 'PATCH', body: JSON.stringify({ score_a, score_b }) }
-  );
+  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/score`, {
+    method: "PATCH",
+    body: JSON.stringify({ score_a, score_b }),
+  });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -176,29 +180,31 @@ export async function setScores(
 export async function endMatch(
   sessionId: number,
   matchId: number,
-  winner_team?: 'a' | 'b'
+  winner_team?: "a" | "b",
 ): Promise<{
   status: string;
   match: MatchSummary;
-  winner_team: 'a' | 'b';
+  winner_team: "a" | "b";
   winner_name: string;
   next_match?: MatchSummary;
   all_matches_complete?: boolean;
 }> {
   const body: Record<string, unknown> = {};
   if (winner_team) body.winner_team = winner_team;
-  const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/end`,
-    { method: 'POST', body: JSON.stringify(body) }
-  );
+  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/end`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function deleteMatch(
   sessionId: number,
-  matchId: number
+  matchId: number,
 ): Promise<void> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}`, { method: 'DELETE' });
+  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}`, {
+    method: "DELETE",
+  });
   if (!r.ok) throw new Error(await parseApiError(r));
 }

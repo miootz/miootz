@@ -6,7 +6,8 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      # No ACME here: *.miootz.local is not public-DNS friendly; TLS uses Traefik's default cert.
+      # No ACME: *.miootz.local is not public-DNS friendly; TLS uses mkcert certs.
+      - "--providers.file.filename=/etc/traefik/tls.yml"
       - "--entrypoints.websecure.address=:8443"
       # Plain HTTP for local dev (avoids "404" when hitting :8443 with http:// — websecure is HTTPS-only).
       - "--entrypoints.web.address=:8880"
@@ -16,6 +17,8 @@ services:
       - "8081:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./docker/traefik/certs:/certs:ro"
+      - "./docker/traefik/tls.yml:/etc/traefik/tls.yml:ro"
     networks:
       - web
 

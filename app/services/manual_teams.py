@@ -32,10 +32,11 @@ def parse_manual_teams_json(raw: str | None) -> list[list[int]] | None:
 def validate_team_partition(
     teams: list[list[int]],
     confirmed_ids: set[int],
+    max_teams: int | None = None,
 ) -> bool:
     """Teams must partition `confirmed_ids` with sizes matching team_counts(n)."""
     n = len(confirmed_ids)
-    expected = team_counts(n)
+    expected = team_counts(n, max_teams=max_teams)
     if n == 0:
         return teams == []
 
@@ -63,16 +64,17 @@ def resolve_session_teams_nested(
     manual_teams_json: str | None,
     team_assignment_mode: str,
     players: list[dict[str, Any]],
+    max_teams: int | None = None,
 ) -> list[list[dict[str, Any]]]:
     """Algorithm or stored manual lineup (when valid for current confirmed roster)."""
     confirmed_ids = {int(p["id"]) for p in players}
     manual = parse_manual_teams_json(manual_teams_json)
-    if manual is not None and validate_team_partition(manual, confirmed_ids):
+    if manual is not None and validate_team_partition(manual, confirmed_ids, max_teams=max_teams):
         return build_teams_from_manual(players, manual)
     mode = (team_assignment_mode or "balanced").lower()
     if mode == "random":
-        return assign_teams_random(players)
-    return assign_teams_snake(players)
+        return assign_teams_random(players, max_teams=max_teams)
+    return assign_teams_snake(players, max_teams=max_teams)
 
 
 def get_team_names(session: Any) -> list[str] | None:

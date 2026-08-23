@@ -8,7 +8,6 @@ import {
   CloudLightning,
   RefreshCw,
   Sun,
-  Thermometer,
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
@@ -69,7 +68,7 @@ export function MeetupWeatherBadge({
   sessionId,
 }: MeetupWeatherBadgeProps) {
   const [data, setData] = useState<WeatherResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState(false);
 
@@ -133,7 +132,7 @@ export function MeetupWeatherBadge({
         method: 'POST',
       });
       if (r.ok) {
-        void load(true);
+        void load();
       }
     } finally {
       setRefreshing(false);

@@ -7,7 +7,9 @@ import {
   ExternalLink,
   LayoutGrid,
   Loader2,
+  Minus,
   Play,
+  Plus,
   Search,
   Settings2,
   Share2,
@@ -27,6 +29,7 @@ import {
   type TeamsResponse,
 } from '../../api/sessionsApi';
 import {
+  adminAdjustTeams,
   adminMoveAttendance,
   adminReshuffleTeams,
   adminUpdateSession,
@@ -109,6 +112,7 @@ export function AdminSessionDetailPage() {
   const [bulkWorking, setBulkWorking] = useState(false);
   const [reshuffling, setReshuffling] = useState(false);
   const [playerScores, setPlayerScores] = useState<Record<string, number | null>>({});
+  const [adjustingTeam, setAdjustingTeam] = useState<'expand' | 'contract' | null>(null);
 
   const load = useCallback(async () => {
     if (Number.isNaN(id)) return;
@@ -179,6 +183,38 @@ export function AdminSessionDetailPage() {
       setError(err instanceof Error ? err.message : 'Reshuffle failed');
     } finally {
       setReshuffling(false);
+    }
+  }
+
+  async function adjustTeams(op: 'expand' | 'contract') {
+    if (Number.isNaN(id)) return;
+    setAdjustingTeam(op);
+    setError(null);
+    try {
+      const result = await adminAdjustTeams(id, op, 1);
+      await load();
+      if (op === 'expand') {
+        const count = result.promoted_user_ids?.length ?? 0;
+        showToast(
+          count > 0
+            ? `Added team — ${count} player(s) promoted from waitlist.`
+            : 'Team capacity increased.',
+          'success'
+        );
+      } else {
+        const count = result.returned_user_ids?.length ?? 0;
+        showToast(
+          count > 0
+            ? `Removed team — ${count} player(s) returned to waitlist.`
+            : 'Team removed.',
+          'success'
+        );
+      }
+      hapticLight();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Adjustment failed');
+    } finally {
+      setAdjustingTeam(null);
     }
   }
 
@@ -338,7 +374,7 @@ export function AdminSessionDetailPage() {
   const countdown =
     kickoffFuture ? formatDistanceToNow(startDate, { addSuffix: true }) : null;
   const sessionActive = !kickoffFuture;
-  const currentMatch = (detail as Record<string, unknown>).current_match as
+  const currentMatch = (detail as unknown as Record<string, unknown>).current_match as
     | { status: string; match_number: number }
     | null
     | undefined;
@@ -1037,6 +1073,75 @@ export function AdminSessionDetailPage() {
 
       {tab === 'teams' && (
         <section className="space-y-3">
+          {/* Team capacity card */}
+          {detail && (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    Team capacity
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {teamsData
+                      ? `${teamsData.teams.length} team(s) · ${detail.attendees.filter((a) => a.status === 'confirmed').length} confirmed`
+                      : 'Loading…'}
+                    <span className="text-amber-600 dark:text-amber-400 ml-1">
+                      · {detail.attendees.filter((a) => a.status === 'waitlisted').length} waitlisted
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={
+                      !detail.max_teams ||
+                      detail.max_teams <= 2 ||
+                      adjustingTeam !== null
+                    }
+                    onClick={() => void adjustTeams('contract')}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs font-medium bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                    title="Remove a team (returns players to waitlist)"
+                  >
+                    {adjustingTeam === 'contract' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Minus className="w-3.5 h-3.5" />
+                    )}
+                    Remove
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      detail.attendees.filter((a) => a.status === 'waitlisted').length === 0 ||
+                      adjustingTeam !== null
+                    }
+                    onClick={() => void adjustTeams('expand')}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                    title="Add a team (promotes players from waitlist)"
+                  >
+                    {adjustingTeam === 'expand' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    Add
+                  </button>
+                </div>
+              </div>
+              {detail.attendees.filter((a) => a.status === 'waitlisted').length > 0 &&
+                detail.attendees.filter((a) => a.status === 'waitlisted').length < 5 && (
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2">
+                  Only {detail.attendees.filter((a) => a.status === 'waitlisted').length} waitlisted player(s) — adding a team will create a partial team.
+                </p>
+              )}
+              {!detail.max_teams && (
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2">
+                  Team count is automatic. Adding a team sets an explicit cap.
+                </p>
+              )}
+            </div>
+          )}
+
           {teamsLoading ? (
             <div className="flex justify-center py-12 text-gray-500">
               <Loader2 className="w-8 h-8 animate-spin" />

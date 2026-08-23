@@ -13,6 +13,7 @@ import {
 import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
+import { LocationPicker, type GeoPoint } from '../../components/admin/LocationPicker';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
 
@@ -37,6 +38,7 @@ export function AdminGameTemplateEditPage() {
 
   const [name, setName] = useState('Meetup');
   const [location, setLocation] = useState('');
+  const [coords, setCoords] = useState<GeoPoint | null>(null);
   const [fee, setFee] = useState('0');
   const [minPlayers, setMinPlayers] = useState('10');
   const [maxPlayers, setMaxPlayers] = useState('15');
@@ -72,6 +74,11 @@ export function AdminGameTemplateEditPage() {
       const t = await adminGetGameTemplate(id);
       setName(t.name);
       setLocation(t.location);
+      if (t.latitude != null && t.longitude != null) {
+        setCoords({ lat: t.latitude, lng: t.longitude });
+      } else {
+        setCoords(null);
+      }
       setFee(String(t.fee));
       setMinPlayers(String(t.min_players));
       setMaxPlayers(String(t.max_players));
@@ -122,6 +129,8 @@ export function AdminGameTemplateEditPage() {
       announce_hour: announceHour,
       announce_minute: announceMinute,
       location: location.trim(),
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
       fee: Number(fee) || 0,
       min_players: min,
       max_players: max,
@@ -245,6 +254,13 @@ export function AdminGameTemplateEditPage() {
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
             required
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Venue coordinates <span className="text-gray-400">(optional)</span>
+          </label>
+          <LocationPicker value={coords} onChange={setCoords} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">

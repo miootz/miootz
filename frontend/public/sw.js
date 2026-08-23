@@ -89,7 +89,7 @@ self.addEventListener('push', (event) => {
   // Map backend action descriptors to Web Notification action format.
   // Each action gets an { action, title } entry; the url is stored in a
   // lookup so the notificationclick handler can resolve it.
-  const actionMap: Record<string, string> = {};
+  const actionMap = {};
   const notifActions = actions.map((a, i) => {
     const key = `action-${i}`;          // unique action ID for the browser
     actionMap[key] = a.url || url;       // full URL to open on tap

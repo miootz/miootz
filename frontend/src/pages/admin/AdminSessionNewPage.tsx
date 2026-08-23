@@ -8,6 +8,7 @@ import {
   type WaitlistMode,
 } from '../../api/adminApi';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
+import { LocationPicker, type GeoPoint } from '../../components/admin/LocationPicker';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import {
   ADMIN_LAST_LOCATION_KEY,
@@ -34,6 +35,7 @@ export function AdminSessionNewPage() {
   const [error, setError] = useState<string | null>(null);
   const [startLocal, setStartLocal] = useState(defaultStartLocal);
   const [location, setLocation] = useState('');
+  const [coords, setCoords] = useState<GeoPoint | null>(null);
   const [fee, setFee] = useState('0');
   const [minPlayers, setMinPlayers] = useState('10');
   const [maxPlayers, setMaxPlayers] = useState('15');
@@ -56,6 +58,12 @@ export function AdminSessionNewPage() {
     if (draft && typeof draft === 'object') {
       if (typeof draft.startLocal === 'string') setStartLocal(draft.startLocal);
       if (typeof draft.location === 'string') setLocation(draft.location);
+      if (
+        typeof draft.latitude === 'number' &&
+        typeof draft.longitude === 'number'
+      ) {
+        setCoords({ lat: draft.latitude, lng: draft.longitude });
+      }
       if (typeof draft.fee === 'string') setFee(draft.fee);
       if (typeof draft.minPlayers === 'string') setMinPlayers(draft.minPlayers);
       if (typeof draft.maxPlayers === 'string') setMaxPlayers(draft.maxPlayers);
@@ -73,6 +81,8 @@ export function AdminSessionNewPage() {
       writeSessionDraft({
         startLocal,
         location,
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
         fee,
         minPlayers,
         maxPlayers,
@@ -85,6 +95,7 @@ export function AdminSessionNewPage() {
   }, [
     startLocal,
     location,
+    coords,
     fee,
     minPlayers,
     maxPlayers,
@@ -124,6 +135,8 @@ export function AdminSessionNewPage() {
       const body: SessionCreateBody = {
         start_time: new Date(startLocal).toISOString(),
         location: location.trim(),
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
         fee: Number(fee) || 0,
         min_players: min,
         max_players: max,
@@ -267,6 +280,12 @@ export function AdminSessionNewPage() {
                 placeholder="Pitch address or venue name"
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-violet-500 transition-colors"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Venue coordinates <span className="text-gray-400">(optional)</span>
+              </label>
+              <LocationPicker value={coords} onChange={setCoords} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

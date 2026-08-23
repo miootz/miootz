@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react';
-import { Download, Smartphone, X } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { Download, Smartphone, X } from "lucide-react";
 import {
   engagementChangedEventName,
   getSessionViewCount,
-} from '../offline/engagement';
-import { isDisplayModeStandalone, isIosSafari } from '../utils/pwaDetect';
-import { useOverlayLock } from '../context/OverlayLock';
+} from "../offline/engagement";
+import { isDisplayModeStandalone, isIosSafari } from "../utils/pwaDetect";
+import { useOverlayLock } from "../context/OverlayLock";
 
 /** Chromium `beforeinstallprompt` (not in all TS lib targets). */
 interface PwaInstallEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
 /**
@@ -20,7 +20,7 @@ interface PwaInstallEvent extends Event {
  * installing the app instead of using it in a browser tab.
  * Dismissing only hides it for the current page session.
  */
-export function InstallAppBanner() {
+export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   const { tryAcquire, release } = useOverlayLock();
   const [lockAcquired, setLockAcquired] = useState(false);
   const [deferred, setDeferred] = useState<PwaInstallEvent | null>(null);
@@ -33,8 +33,8 @@ export function InstallAppBanner() {
       e.preventDefault();
       setDeferred(e as PwaInstallEvent);
     };
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
   useEffect(() => {
@@ -45,19 +45,33 @@ export function InstallAppBanner() {
 
   // Watch for display-mode changes (user installs while overlay is open)
   useEffect(() => {
-    const mq = window.matchMedia('(display-mode: standalone)');
+    const mq = window.matchMedia("(display-mode: standalone)");
     const handler = () => setStandalone(mq.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   // Acquire the overlay lock in an effect (not during render) to avoid
   // "Cannot update a component while rendering a different component".
   useEffect(() => {
-    if (!lockAcquired) {
-      setLockAcquired(tryAcquire('install'));
+    // One-shot lock acquire; guarded by lockAcquired so it never cascades.
+    if (!lockAcquired && enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLockAcquired(tryAcquire("install"));
     }
-  }, [tryAcquire, lockAcquired]);
+  }, [tryAcquire, lockAcquired, enabled]);
+
+  // If disabled while holding the lock, release it so queued overlays can show
+  useEffect(() => {
+    if (!enabled && lockAcquired) {
+      release("install");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLockAcquired(false);
+    }
+  }, [enabled, lockAcquired, release]);
+
+  // Don't show when suppressed (e.g. offline — a lower-priority banner is up)
+  if (!enabled) return null;
 
   // Don't show if already installed (standalone mode)
   if (standalone) return null;
@@ -84,14 +98,17 @@ export function InstallAppBanner() {
       <div className="w-full max-w-sm rounded-2xl border border-violet-200 bg-white p-6 shadow-2xl dark:border-violet-800 dark:bg-gray-900">
         <div className="flex items-start justify-between">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40">
-            <Smartphone className="h-6 w-6 text-violet-600 dark:text-violet-400" aria-hidden />
+            <Smartphone
+              className="h-6 w-6 text-violet-600 dark:text-violet-400"
+              aria-hidden
+            />
           </div>
           <button
             type="button"
             className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
             aria-label="Dismiss"
             onClick={() => {
-              release('install');
+              release("install");
               setDismissedThisSession(true);
             }}
           >
@@ -103,8 +120,8 @@ export function InstallAppBanner() {
           Install Miootz
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-          Get instant access from your home screen, push notifications for kickoff reminders, and a
-          faster app experience.
+          Get instant access from your home screen, push notifications for
+          kickoff reminders, and a faster app experience.
         </p>
 
         {showSafariHint && (
@@ -117,15 +134,14 @@ export function InstallAppBanner() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-800 dark:bg-violet-800 dark:text-violet-200">
                   1
                 </span>
-                Tap the{' '}
-                <span className="font-semibold">Share</span>{' '}
+                Tap the <span className="font-semibold">Share</span>{" "}
                 <span className="text-lg">⬆</span> button at the bottom
               </li>
               <li className="flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-800 dark:bg-violet-800 dark:text-violet-200">
                   2
                 </span>
-                Scroll and tap{' '}
+                Scroll and tap{" "}
                 <span className="font-semibold">Add to Home Screen</span>
               </li>
             </ol>
@@ -141,7 +157,7 @@ export function InstallAppBanner() {
                 void (async () => {
                   await deferred.prompt();
                   const choice = await deferred.userChoice;
-                  if (choice.outcome === 'accepted') {
+                  if (choice.outcome === "accepted") {
                     setDeferred(null);
                   } else {
                     setDismissedThisSession(true);
@@ -157,7 +173,7 @@ export function InstallAppBanner() {
             type="button"
             className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
             onClick={() => {
-              release('install');
+              release("install");
               setDismissedThisSession(true);
             }}
           >

@@ -33,7 +33,9 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [isHalfTime, setIsHalfTime] = useState(false);
+  const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
+  const [halfTimeFlash, setHalfTimeFlash] = useState(false);
+  const prevRatioRef = useRef<number | null>(null);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -48,14 +50,15 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
         setCurrentMatch(active);
         setTimerSeconds(active.timer_seconds_remaining);
         setIsPaused(active.timer_paused);
-        // Half-time check: if timer is at ~50% and active
-        const ratio = active.timer_seconds_remaining / active.timer_total_seconds;
-        setIsHalfTime(ratio <= 0.55 && ratio >= 0.45 && active.status === 'active');
+        setTimerEndsAt(
+          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null
+        );
       } else {
         setCurrentMatch(null);
         setTimerSeconds(0);
         setIsPaused(false);
-        setIsHalfTime(false);
+        setTimerEndsAt(null);
+        prevRatioRef.current = null;
       }
     } catch {
       // silent
@@ -66,10 +69,12 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     void (async () => { await loadMatch(); })();
   }, [loadMatch]);
 
-  // Derive half-time flash from ref (shows for 3 seconds after half-time detected)
-  const halfTimeFlash =
-    halfTimeTriggeredAt.current != null &&
-    Date.now() - halfTimeTriggeredAt.current < 3000;
+  // Keep the half-time flash visible for 3 seconds
+  useEffect(() => {
+    if (!halfTimeFlash) return;
+    const t = setTimeout(() => setHalfTimeFlash(false), 3000);
+    return () => clearTimeout(t);
+  }, [halfTimeFlash]);
 
   // SSE listener
   useEffect(() => {
@@ -82,13 +87,16 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
         if (data.type === 'match_timer_started') {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(false);
-          setIsHalfTime(false);
+          prevRatioRef.current = null;
+          setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
         } else if (data.type === 'match_timer_paused') {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(true);
+          setTimerEndsAt(null);
         } else if (data.type === 'match_timer_resumed') {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(false);
+          setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
         } else if (data.type === 'match_timer_expired') {
           setTimerSeconds(0);
           setIsPaused(false);
@@ -118,26 +126,41 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
       return;
     }
     intervalRef.current = setInterval(() => {
-      setTimerSeconds((prev) => {
-        if (prev <= 1) {
-          // Timer expired — reload to get updated status
-          void loadMatch();
-          return 0;
-        }
-        const next = prev - 1;
-        // Detect half-time crossing
-        const ratio = next / currentMatch.timer_total_seconds;
-        if (ratio <= 0.55 && ratio >= 0.45 && halfTimeTriggeredAt.current == null) {
+      const total = currentMatch.timer_total_seconds;
+      if (timerEndsAt != null) {
+        // Server-authoritative: derive remaining from the shared end timestamp
+        const secs = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
+        setTimerSeconds(secs);
+        const ratio = secs / total;
+        const prev = prevRatioRef.current;
+        prevRatioRef.current = ratio;
+        if (prev != null && prev > 0.5 && ratio <= 0.5) {
           halfTimeTriggeredAt.current = Date.now();
-          setIsHalfTime(true);
+          setHalfTimeFlash(true);
         }
-        return next;
-      });
+      } else {
+        setTimerSeconds((prev) => {
+          if (prev <= 1) {
+            // Timer expired — reload to get updated status
+            void loadMatch();
+            return 0;
+          }
+          const next = prev - 1;
+          const ratio = next / total;
+          const prevRatio = prevRatioRef.current;
+          prevRatioRef.current = ratio;
+          if (prevRatio != null && prevRatio > 0.5 && ratio <= 0.5) {
+            halfTimeTriggeredAt.current = Date.now();
+            setHalfTimeFlash(true);
+          }
+          return next;
+        });
+      }
     }, 1000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [currentMatch?.id, isPaused, currentMatch?.status, loadMatch]);
+  }, [currentMatch?.id, isPaused, currentMatch?.status, loadMatch, timerEndsAt]);
 
   if (!currentMatch) return null;
 
@@ -165,11 +188,6 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
             Match {currentMatch.match_number}
           </span>
-          {isHalfTime && !halfTimeFlash && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-              Half-time
-            </span>
-          )}
           {isTimeUp && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
               Time's up!

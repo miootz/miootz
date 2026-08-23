@@ -1,54 +1,56 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { SessionListItem } from '../api/sessionsApi';
-import { fetchSessions } from '../api/sessionsApi';
-import { fetchSessionMatches } from '../api/matchesApi';
-import { fetchRatingContext } from '../api/ratingsApi';
-import { parseSessionStart } from '../utils/datetime';
-import {
-  ChevronRight,
-  Loader2,
-  Search,
-  Users,
-} from 'lucide-react';
-import { format } from 'date-fns';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import type { SessionListItem } from "../api/sessionsApi";
+import { fetchSessions, fetchSessionHistorySummary } from "../api/sessionsApi";
+import { parseSessionStart } from "../utils/datetime";
+import { ChevronRight, Loader2, Search, Users } from "lucide-react";
+import { format } from "date-fns";
 
 const PAGE_SIZE = 10;
 
-type SortKey = 'date-desc' | 'date-asc' | 'location';
+type SortKey = "date-desc" | "date-asc" | "location";
 
 interface MatchSummaryMini {
   matchCount: number;
-  overallWinner: string | null;
+  final: {
+    teamA: string;
+    scoreA: number;
+    teamB: string;
+    scoreB: number;
+  } | null;
+  ratingAvg: number | null;
 }
 
-/* ── Per-session match summary ──────────────────────── */
+/* ── Per-session summary (single request) ─────────────── */
 
-function useSessionMatchSummary(sessionId: number): MatchSummaryMini {
+function useHistorySummary(sessionId: number): MatchSummaryMini {
   const [summary, setSummary] = useState<MatchSummaryMini>({
     matchCount: 0,
-    overallWinner: null,
+    final: null,
+    ratingAvg: null,
   });
 
   useEffect(() => {
     let cancelled = false;
-    void fetchSessionMatches(sessionId)
+    void fetchSessionHistorySummary(sessionId)
       .then((res) => {
-        const completed = res.matches.filter((m) => m.status === 'completed');
         if (cancelled) return;
-        const winner =
-          completed.length > 1
-            ? (() => {
-                const last = completed[completed.length - 1];
-                return last.score_a > last.score_b
-                  ? last.team_a.name
-                  : last.team_b.name;
-              })()
-            : null;
-        setSummary({ matchCount: completed.length, overallWinner: winner });
+        setSummary({
+          matchCount: res.match_count,
+          final: res.final
+            ? {
+                teamA: res.final.team_a_name,
+                scoreA: res.final.score_a,
+                teamB: res.final.team_b_name,
+                scoreB: res.final.score_b,
+              }
+            : null,
+          ratingAvg: res.my_rating_avg,
+        });
       })
       .catch(() => {
-        if (!cancelled) setSummary({ matchCount: 0, overallWinner: null });
+        if (!cancelled)
+          setSummary({ matchCount: 0, final: null, ratingAvg: null });
       });
     return () => {
       cancelled = true;
@@ -58,39 +60,11 @@ function useSessionMatchSummary(sessionId: number): MatchSummaryMini {
   return summary;
 }
 
-/* ── Per-session rating average ─────────────────────── */
-
-function useMyRatingsAverage(sessionId: number) {
-  const [avg, setAvg] = useState<number | null | 'loading'>('loading');
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchRatingContext(sessionId)
-      .then((ctx) => {
-        const scores = ctx.ratees
-          .map((r) => r.my_score)
-          .filter((s): s is number => s != null && s > 0);
-        if (cancelled) return;
-        if (scores.length === 0) setAvg(null);
-        else setAvg(scores.reduce((a, b) => a + b, 0) / scores.length);
-      })
-      .catch(() => {
-        if (!cancelled) setAvg(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
-
-  return avg;
-}
-
 /* ── Session row ──────────────────────────────────────── */
 
 function HistorySessionRow({ row }: { row: SessionListItem }) {
   const start = parseSessionStart(row.start_time);
-  const { matchCount, overallWinner } = useSessionMatchSummary(row.id);
-  const ratingAvg = useMyRatingsAverage(row.id);
+  const { matchCount, final, ratingAvg } = useHistorySummary(row.id);
 
   return (
     <Link
@@ -102,13 +76,13 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
         <div className="shrink-0 mt-0.5">
           <div className="rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-center min-w-[52px]">
             <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase leading-tight">
-              {format(start, 'EEE')}
+              {format(start, "EEE")}
             </div>
             <div className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
-              {format(start, 'd')}
+              {format(start, "d")}
             </div>
             <div className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
-              {format(start, 'MMM')}
+              {format(start, "MMM")}
             </div>
           </div>
         </div>
@@ -119,7 +93,8 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
           <div className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
             <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {row.confirmed_count ?? 0} player{row.confirmed_count !== 1 ? 's' : ''}
+              {row.confirmed_count ?? 0} player
+              {row.confirmed_count !== 1 ? "s" : ""}
             </span>
           </div>
 
@@ -127,15 +102,16 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
           <div className="flex flex-wrap items-center gap-1.5">
             {matchCount > 0 && (
               <span className="rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400">
-                {matchCount} match{matchCount !== 1 ? 'es' : ''}
-                {overallWinner && (
-                  <span className="text-amber-600 dark:text-amber-400 ml-1">
-                    · {overallWinner} won
+                {matchCount} match{matchCount !== 1 ? "es" : ""}
+                {final && (
+                  <span className="ml-1 text-gray-500 dark:text-gray-400">
+                    · Final: {final.teamA} {final.scoreA} – {final.scoreB}{" "}
+                    {final.teamB}
                   </span>
                 )}
               </span>
             )}
-            {ratingAvg !== 'loading' && ratingAvg != null && (
+            {ratingAvg != null && (
               <span className="rounded-md bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
                 ★ {ratingAvg.toFixed(1)}
               </span>
@@ -180,16 +156,16 @@ export const HistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('date-desc');
-  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>("date-desc");
+  const [query, setQuery] = useState("");
 
   const loadFirst = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const r = await fetchSessions({
-        status: 'past',
-        order: 'desc',
+        status: "past",
+        order: "desc",
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -198,7 +174,7 @@ export const HistoryPage: React.FC = () => {
     } catch (e) {
       setPastSessions([]);
       setPastTotal(0);
-      setLoadError(e instanceof Error ? e.message : 'Failed to load history');
+      setLoadError(e instanceof Error ? e.message : "Failed to load history");
     } finally {
       setLoading(false);
     }
@@ -214,14 +190,14 @@ export const HistoryPage: React.FC = () => {
     setLoadError(null);
     try {
       const r = await fetchSessions({
-        status: 'past',
-        order: 'desc',
+        status: "past",
+        order: "desc",
         limit: PAGE_SIZE,
         offset: pastSessions.length,
       });
       setPastSessions((prev) => [...prev, ...r.items]);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : 'Failed to load more');
+      setLoadError(e instanceof Error ? e.message : "Failed to load more");
     } finally {
       setLoadingMore(false);
     }
@@ -233,14 +209,14 @@ export const HistoryPage: React.FC = () => {
       ? pastSessions.filter((s) => s.location.toLowerCase().includes(q))
       : [...pastSessions];
     rows.sort((a, b) => {
-      if (sortKey === 'location') {
+      if (sortKey === "location") {
         return a.location.localeCompare(b.location, undefined, {
-          sensitivity: 'base',
+          sensitivity: "base",
         });
       }
       const ta = parseSessionStart(a.start_time).getTime();
       const tb = parseSessionStart(b.start_time).getTime();
-      return sortKey === 'date-desc' ? tb - ta : ta - tb;
+      return sortKey === "date-desc" ? tb - ta : ta - tb;
     });
     return rows;
   }, [pastSessions, query, sortKey]);
@@ -248,9 +224,9 @@ export const HistoryPage: React.FC = () => {
   /* ── Sort options ───────────────────────────────────── */
 
   const sortOptions: { key: SortKey; label: string }[] = [
-    { key: 'date-desc', label: 'Newest' },
-    { key: 'date-asc', label: 'Oldest' },
-    { key: 'location', label: 'Location' },
+    { key: "date-desc", label: "Newest" },
+    { key: "date-asc", label: "Oldest" },
+    { key: "location", label: "Location" },
   ];
 
   /* ── Render ─────────────────────────────────────────── */
@@ -278,7 +254,10 @@ export const HistoryPage: React.FC = () => {
       </header>
 
       {loadError && (
-        <p className="text-center text-sm text-red-600 dark:text-red-400" role="alert">
+        <p
+          className="text-center text-sm text-red-600 dark:text-red-400"
+          role="alert"
+        >
           {loadError}
         </p>
       )}
@@ -306,8 +285,8 @@ export const HistoryPage: React.FC = () => {
                 onClick={() => setSortKey(key)}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   sortKey === key
-                    ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
+                    ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                 }`}
               >
                 {label}

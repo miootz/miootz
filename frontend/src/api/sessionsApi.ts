@@ -1,4 +1,4 @@
-import { apiBase, apiFetch, parseApiError } from './client';
+import { apiBase, apiFetch, parseApiError } from "./client";
 
 /** Same-origin URL for session roster/detail SSE (join, leave, admin moves, team reshuffle). */
 export function sessionDataEventsUrl(sessionId: number): string {
@@ -22,6 +22,8 @@ export interface GameTemplateInfo {
   announce_minute: number;
   is_active: boolean;
   team_assignment_mode?: string;
+  /** Next scheduled announce run (UTC ISO), null when template inactive/unscheduled. */
+  next_announce_at?: string | null;
 }
 
 /** @deprecated use GameTemplateInfo */
@@ -53,13 +55,15 @@ export interface SessionListResponse {
   offset: number;
 }
 
-export type AttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
+export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
 
 export interface SessionDetail extends SessionListItem {
   team_assignment_mode?: string;
   game_template?: GameTemplateInfo | null;
   /** Session duration in minutes (null defaults to 120). */
   duration_minutes?: number | null;
+  /** Upper bound on team count. Null = algorithmic. */
+  max_teams?: number | null;
   attendees: {
     user_id: number;
     display_name: string;
@@ -71,11 +75,32 @@ export interface SessionDetail extends SessionListItem {
     calculated_skill?: number | null;
     /** True when this attendee is a plus-one guest reservation. */
     is_plus_one?: boolean;
-    primary_specialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
-    secondary_specialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
+    primary_specialty?: "ATT" | "MID" | "DEF" | "GK" | null;
+    secondary_specialty?: "ATT" | "MID" | "DEF" | "GK" | null;
   }[];
   /** Present when the request is authenticated; caller's registration for this session. */
   my_attendance: AttendanceStatus | null;
+  /** 1-based position in the waitlist when `my_attendance === 'waitlisted'`. */
+  my_waitlist_position?: number | null;
+}
+
+export interface SessionHistorySummary {
+  match_count: number;
+  final: {
+    team_a_name: string;
+    score_a: number;
+    team_b_name: string;
+    score_b: number;
+  } | null;
+  my_rating_avg: number | null;
+}
+
+export async function fetchSessionHistorySummary(
+  sessionId: number,
+): Promise<SessionHistorySummary> {
+  const r = await apiFetch(`/sessions/${sessionId}/history-summary`);
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
 }
 
 export interface PlusOneCreate {
@@ -120,8 +145,8 @@ export interface TeamsResponse {
       skillScore: number;
       isLocked: boolean;
       profilePic?: string | null;
-      primarySpecialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
-      secondarySpecialty?: 'ATT' | 'MID' | 'DEF' | 'GK' | null;
+      primarySpecialty?: "ATT" | "MID" | "DEF" | "GK" | null;
+      secondarySpecialty?: "ATT" | "MID" | "DEF" | "GK" | null;
       calculatedSkill?: number | null;
     }[];
   }[];
@@ -132,17 +157,17 @@ export async function fetchSessions(options?: {
   offset?: number;
   /** Server-side location contains filter */
   q?: string;
-  status?: 'past' | 'upcoming' | 'all';
-  order?: 'asc' | 'desc';
+  status?: "past" | "upcoming" | "all";
+  order?: "asc" | "desc";
 }): Promise<SessionListResponse> {
   const p = new URLSearchParams();
-  if (options?.limit != null) p.set('limit', String(options.limit));
-  if (options?.offset != null) p.set('offset', String(options.offset));
-  if (options?.q?.trim()) p.set('q', options.q.trim());
-  if (options?.status) p.set('status', options.status);
-  if (options?.order) p.set('order', options.order);
+  if (options?.limit != null) p.set("limit", String(options.limit));
+  if (options?.offset != null) p.set("offset", String(options.offset));
+  if (options?.q?.trim()) p.set("q", options.q.trim());
+  if (options?.status) p.set("status", options.status);
+  if (options?.order) p.set("order", options.order);
   const qs = p.toString();
-  const r = await apiFetch(`/sessions/${qs ? `?${qs}` : ''}`);
+  const r = await apiFetch(`/sessions/${qs ? `?${qs}` : ""}`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<SessionListResponse>;
 }
@@ -171,7 +196,7 @@ export interface MatchScoreItem {
 }
 
 export async function fetchSessionScores(
-  sessionId: number
+  sessionId: number,
 ): Promise<MatchScoreItem[]> {
   const r = await apiFetch(`/sessions/${sessionId}/scores`);
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -182,14 +207,14 @@ export interface MatchScoreSubmit {
   session_id: number;
   player_id: number;
   score: number;
-  type: 'team' | 'individual';
+  type: "team" | "individual";
 }
 
 export async function submitMatchScore(
-  input: MatchScoreSubmit
+  input: MatchScoreSubmit,
 ): Promise<{ status: string }> {
-  const r = await apiFetch('/users/report-score', {
-    method: 'POST',
+  const r = await apiFetch("/users/report-score", {
+    method: "POST",
     body: JSON.stringify(input),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -199,10 +224,10 @@ export async function submitMatchScore(
 /** Persist admin team lineups (confirmed roster only). */
 export async function patchSessionTeams(
   id: number,
-  teams: string[][]
+  teams: string[][],
 ): Promise<TeamsResponse> {
   const r = await apiFetch(`/sessions/${id}/teams`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: JSON.stringify({ teams }),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -213,23 +238,23 @@ export async function joinSession(id: number): Promise<{
   status: string;
   attendance_id?: number;
 }> {
-  const r = await apiFetch(`/sessions/${id}/join`, { method: 'POST' });
+  const r = await apiFetch(`/sessions/${id}/join`, { method: "POST" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string; attendance_id?: number }>;
 }
 
 export async function leaveSession(id: number): Promise<{ status: string }> {
-  const r = await apiFetch(`/sessions/${id}/leave`, { method: 'DELETE' });
+  const r = await apiFetch(`/sessions/${id}/leave`, { method: "DELETE" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string }>;
 }
 
 export async function postSessionChatTyping(
   sessionId: string | number,
-  typing: boolean
+  typing: boolean,
 ): Promise<void> {
   const r = await apiFetch(`/sessions/${sessionId}/chat/typing`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify({ typing }),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -242,7 +267,7 @@ export { apiBase as getApiBase };
 
 export async function addPlusOne(
   sessionId: number,
-  body: PlusOneCreate
+  body: PlusOneCreate,
 ): Promise<{
   id: number;
   guest_user_id: number;
@@ -254,7 +279,7 @@ export async function addPlusOne(
   attendance_status: string;
 }> {
   const r = await apiFetch(`/sessions/${sessionId}/plus-one`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -262,7 +287,7 @@ export async function addPlusOne(
 }
 
 export async function fetchPlusOnes(
-  sessionId: number
+  sessionId: number,
 ): Promise<PlusOneRecord[]> {
   const r = await apiFetch(`/sessions/${sessionId}/plus-one`);
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -271,17 +296,17 @@ export async function fetchPlusOnes(
 
 export async function cancelPlusOne(
   sessionId: number,
-  plusOneId: number
+  plusOneId: number,
 ): Promise<{ status: string }> {
   const r = await apiFetch(`/sessions/${sessionId}/plus-one/${plusOneId}`, {
-    method: 'DELETE',
+    method: "DELETE",
   });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function checkPlusOneClaim(
-  claimToken: string
+  claimToken: string,
 ): Promise<PlusOneClaimCheck> {
   const r = await apiFetch(`/sessions/plus-one/${claimToken}`);
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -290,7 +315,7 @@ export async function checkPlusOneClaim(
 
 export async function claimPlusOne(
   claimToken: string,
-  body: { username: string }
+  body: { username: string },
 ): Promise<{
   status: string;
   user_id: number;
@@ -299,7 +324,7 @@ export async function claimPlusOne(
   self_assessed_skill: number;
 }> {
   const r = await apiFetch(`/sessions/plus-one/${claimToken}/claim`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));

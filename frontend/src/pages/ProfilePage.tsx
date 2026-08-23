@@ -19,6 +19,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { StarRating } from "../components/StarRating";
+import { SKILL_SCALE_BLURB } from '../components/OnboardingCard';
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import {
   pushSupported,
@@ -202,6 +203,8 @@ export function ProfilePage() {
   );
 
   const skillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skillSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [skillSaved, setSkillSaved] = useState(false);
 
   /* ── Effects ───────────────────────────────────────────────────── */
 
@@ -345,7 +348,9 @@ export function ProfilePage() {
         setError(null);
         try {
           await patchMyProfile({ self_assessed_skill: v });
-          showToast("Skill saved.", "success");
+          setSkillSaved(true);
+          if (skillSavedTimerRef.current) clearTimeout(skillSavedTimerRef.current);
+          skillSavedTimerRef.current = setTimeout(() => setSkillSaved(false), 1500);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Save failed";
           setError(msg);
@@ -390,7 +395,7 @@ export function ProfilePage() {
             <div className="min-w-0 flex-1">
               <h1 className="text-xl font-bold truncate">{displayName}</h1>
               <p className="text-sm text-violet-100 truncate">
-                {u.username}
+                {u.pocket_id_sub ?? ''}
               </p>
             </div>
             <a
@@ -503,6 +508,17 @@ export function ProfilePage() {
                 value={selfAssessed === "" ? 0 : selfAssessed}
                 onChange={onSkillChange}
               />
+              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                {SKILL_SCALE_BLURB}
+              </span>
+              {skillSaved && (
+                <span
+                  className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                  role="status"
+                >
+                  Saved ✓
+                </span>
+              )}
             </label>
 
             <div className="grid grid-cols-2 gap-3">

@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { logout } from '../../auth/pocketIdOidc';
 import { useAuth } from '../../auth/useAuth';
 import { setPreferMemberView } from '../../auth/memberViewStorage';
 import { OfflineBanner } from '../../components/OfflineBanner';
@@ -171,9 +172,10 @@ export function AdminLayout() {
         <div className="min-w-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
             Admin
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Viewing as Admin</span>
           </p>
           <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-            {me.user.username}
+            {me.user.display_name}
           </p>
         </div>
         <div className="w-10" aria-hidden />
@@ -197,9 +199,12 @@ export function AdminLayout() {
           </Link>
           <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <span className="text-violet-600">Admin</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              Viewing as Admin
+            </span>
           </h2>
-          <p className="text-xs text-gray-500 truncate mt-1" title={me.user.username}>
-            {me.user.username}
+          <p className="text-xs text-gray-500 truncate mt-1" title={me.user.display_name ?? ''}>
+            {me.user.display_name}
           </p>
         </div>
         <nav className="p-2 flex flex-col gap-1 flex-1">
@@ -243,9 +248,10 @@ export function AdminLayout() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                   Admin
+                <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Viewing as Admin</span>
                 </p>
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {me.user.username}
+                  {me.user.display_name}
                 </p>
               </div>
               <button

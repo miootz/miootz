@@ -69,6 +69,37 @@ def next_occurrence_utc(
     return None
 
 
+def next_announce_occurrence_utc(
+    template: GameTemplate, after_utc: datetime
+) -> datetime | None:
+    """First *announce* run at or after `after_utc` (UTC) matching the template's announce wall time."""
+    if template.announce_weekday is None:
+        return None
+    try:
+        z = ZoneInfo(template.announce_timezone or template.timezone)
+    except ZoneInfoNotFoundError:
+        return None
+
+    if after_utc.tzinfo is None:
+        after_utc = after_utc.replace(tzinfo=timezone.utc)
+    loc = after_utc.astimezone(z)
+    loc_date = loc.date()
+
+    for i in range(370):
+        d = loc_date + timedelta(days=i)
+        if d.weekday() != template.announce_weekday:
+            continue
+        cand = datetime.combine(
+            d,
+            time(template.announce_hour or 0, template.announce_minute or 0),
+            tzinfo=z,
+        )
+        if cand > loc:
+            return cand.astimezone(timezone.utc)
+
+    return None
+
+
 async def materialize_next_session_and_notify(template_id: int) -> bool:
     """
     If the next weekly kickoff slot has no session row yet, create it (details from the template)

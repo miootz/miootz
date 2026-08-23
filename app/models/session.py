@@ -51,6 +51,9 @@ class GameSession(Base):
     match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: JSON array of team names generated at session creation (e.g. ["Red Devils", "Blue Stars"]).
     team_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Upper bound on number of teams. When None, team count is purely algorithmic (≤10→2, 11–15→3).
+    #: When set, the admin can expand/contract teams and waitlisted players are auto-promoted/returned.
+    max_teams: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Weather ────────────────────────────────────────────────────
     #: Cached forecast temperature (°C) for the session date.

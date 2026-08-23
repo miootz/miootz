@@ -1,32 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Clock,
-  Loader2,
-  MapPin,
-  MessageSquare,
-  Trophy,
-} from 'lucide-react';
-import type { User } from '../types';
-import { fetchSessionTeams, type TeamsResponse } from '../api/sessionsApi';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Clock, Loader2, MapPin, MessageSquare, Trophy } from "lucide-react";
+import type { User } from "../types";
+import { fetchSessionTeams, type TeamsResponse } from "../api/sessionsApi";
 import {
   fetchRatingContext,
   submitRating,
   type RateeContext,
-} from '../api/ratingsApi';
-import { TeamRoster } from './TeamRoster';
-import { MatchHistoryList } from './MatchHistoryList';
-import { RecordedWeatherBadge } from './MeetupWeatherBadge';
-import { useToast } from '../context/ToastContext';
-import { apiFetch } from '../api/client';
-import { groupMessages, formatDateHeader, formatCompactTime } from '../utils/chat';
-import { Avatar } from './Avatar';
-import { useAuth } from '../auth/useAuth';
+} from "../api/ratingsApi";
+import { TeamRoster } from "./TeamRoster";
+import { MatchHistoryList } from "./MatchHistoryList";
+import { RecordedWeatherBadge } from "./MeetupWeatherBadge";
+import { useToast } from "../context/ToastContext";
+import { apiFetch } from "../api/client";
+import {
+  groupMessages,
+  formatDateHeader,
+  formatCompactTime,
+} from "../utils/chat";
+import { Avatar } from "./Avatar";
+import { useAuth } from "../auth/useAuth";
 
 /* ── Team player → User mapping ───────────────────────── */
 
-function mapTeamPlayers(
-  team: TeamsResponse['teams'][0]
-): User[] {
+function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
   return team.players.map((p) => ({
     id: p.id,
     name: p.name,
@@ -58,6 +54,8 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Initial loading state for the fetch-on-mount pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     apiFetch(`/sessions/${sessionId}/chat`)
       .then((r) => r.json() as Promise<ChatMsg[]>)
@@ -68,7 +66,9 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   if (loading) return null;
@@ -84,7 +84,7 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
       text: m.message,
       time: new Date(m.created_at),
     })),
-    me?.id ?? null
+    me?.user?.id ?? null,
   );
 
   return (
@@ -93,7 +93,7 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
         <MessageSquare className="h-4 w-4" aria-hidden />
         Chat history
         <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-auto">
-          {messages.length} message{messages.length !== 1 ? 's' : ''}
+          {messages.length} message{messages.length !== 1 ? "s" : ""}
         </span>
       </h3>
       <div className="space-y-4">
@@ -103,7 +103,11 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
             <div key={group.messages[0].id} className="space-y-1">
               {group.showHeader && (
                 <div className="flex items-center gap-2 mt-1">
-                  <Avatar url={group.avatarUrl ?? undefined} username={group.username} size={20} />
+                  <Avatar
+                    url={group.avatarUrl ?? undefined}
+                    username={group.username}
+                    size="sm"
+                  />
                   <span
                     className="text-xs font-medium"
                     style={{ color: group.usernameColor }}
@@ -120,8 +124,8 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
                   key={msg.id}
                   className={`px-3 py-1.5 rounded-2xl text-sm max-w-[85%] ${
                     group.isMine
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-100 ml-auto'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
+                      ? "bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-100 ml-auto"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
                   }`}
                 >
                   <p className="break-words whitespace-pre-wrap">{msg.text}</p>
@@ -152,7 +156,7 @@ export function SessionDetailPanel({
   sessionFee?: number;
 }) {
   const { showToast } = useToast();
-  const [teams, setTeams] = useState<TeamsResponse['teams'] | null>(null);
+  const [teams, setTeams] = useState<TeamsResponse["teams"] | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [ratees, setRatees] = useState<RateeContext[]>([]);
   const [ratingsEditable, setRatingsEditable] = useState(false);
@@ -237,7 +241,7 @@ export function SessionDetailPanel({
       if (!canRate) return;
       const rateeId = rateeIdMap[playerId];
       if (!rateeId) {
-        showToast("Couldn't find player to rate", 'error');
+        showToast("Couldn't find player to rate", "error");
         return;
       }
 
@@ -245,14 +249,14 @@ export function SessionDetailPanel({
         await submitRating(sessionId, rateeId, score);
         setRatees((prev) =>
           prev.map((r) =>
-            r.user_id === rateeId ? { ...r, my_score: score } : r
-          )
+            r.user_id === rateeId ? { ...r, my_score: score } : r,
+          ),
         );
       } catch (e) {
-        showToast(e instanceof Error ? e.message : 'Rating failed', 'error');
+        showToast(e instanceof Error ? e.message : "Rating failed", "error");
       }
     },
-    [canRate, rateeIdMap, sessionId, showToast]
+    [canRate, rateeIdMap, sessionId, showToast],
   );
 
   /* ── Render ─────────────────────────────────────────── */
@@ -260,7 +264,10 @@ export function SessionDetailPanel({
   return (
     <div className="space-y-5">
       {/* ── Session details ──────────────────────────────── */}
-      {(sessionLocation || sessionTime || sessionFee != null || weatherData) && (
+      {(sessionLocation ||
+        sessionTime ||
+        sessionFee != null ||
+        weatherData) && (
         <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 space-y-2">
           <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Session details
@@ -327,11 +334,13 @@ export function SessionDetailPanel({
                 <div key={team.id} className="space-y-1.5">
                   <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 text-center">
                     {team.name ?? team.id}
-                    <span className="text-gray-400 font-normal ml-1">({players.length})</span>
+                    <span className="text-gray-400 font-normal ml-1">
+                      ({players.length})
+                    </span>
                   </div>
                   <TeamRoster
                     players={players}
-                    ratingMode={canRate ? 'inline' : 'none'}
+                    ratingMode={canRate ? "inline" : "none"}
                     ratingScores={canRate ? scoreMap : undefined}
                     onRatingChange={canRate ? handleRatingChange : undefined}
                   />
@@ -357,7 +366,6 @@ export function SessionDetailPanel({
 
       {/* ── Chat history ──────────────────────────────── */}
       <ChatHistorySection sessionId={sessionId} />
-
     </div>
   );
 }

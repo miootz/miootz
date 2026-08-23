@@ -98,6 +98,40 @@ export async function adminReshuffleTeams(
   return jsonOrThrow(r);
 }
 
+export interface AdjustTeamsResponse {
+  operation: 'expand' | 'contract';
+  max_teams: number;
+  teams: Array<{
+    id: string;
+    name: string;
+    players: Array<{
+      id: string;
+      name: string;
+      skillScore: number;
+      isLocked: boolean;
+      profilePic?: string | null;
+      primarySpecialty?: string | null;
+      secondarySpecialty?: string | null;
+      calculatedSkill?: number | null;
+    }>;
+  }>;
+  promoted_user_ids?: number[];
+  returned_user_ids?: number[];
+  content_revision: number;
+}
+
+export async function adminAdjustTeams(
+  sessionId: number,
+  operation: 'expand' | 'contract',
+  numTeams: number = 1
+): Promise<AdjustTeamsResponse> {
+  const r = await apiFetch(`/sessions/${sessionId}/teams/adjust`, {
+    method: 'POST',
+    body: JSON.stringify({ operation, num_teams: numTeams }),
+  });
+  return jsonOrThrow(r);
+}
+
 export async function adminSetUserSelfAssessedSkill(
   userId: number,
   selfAssessedSkill: number

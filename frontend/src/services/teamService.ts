@@ -36,6 +36,7 @@ function assignSnakeWithCaps(players: User[], counts: number[]): Team[] {
   const nTeams = counts.length;
   const teams: Team[] = Array.from({ length: nTeams }, (_, i) => ({
     id: `t${i + 1}`,
+    name: `Team ${i + 1}`,
     players: [] as User[],
   }));
   const sorted = [...players].sort((a, b) => b.skillScore - a.skillScore);
@@ -87,6 +88,7 @@ export const rebalanceTeams = (currentSession: {
 
   const teams: Team[] = Array.from({ length: teamCount }, (_, i) => ({
     id: `t${i + 1}`,
+    name: `Team ${i + 1}`,
     players: [] as User[],
   }));
 

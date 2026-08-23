@@ -560,8 +560,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     const mine =
       myUserId != null && m.user_id === myUserId;
     const cropped =
-      mine && me?.user.profile_pic != null
-        ? me.user.profile_pic
+      mine && me != null && (me.user as unknown as Record<string, unknown>)?.profile_pic != null
+        ? String((me.user as unknown as Record<string, unknown>).profile_pic)
         : m.avatar_url;
     return {
       id: m.id,
@@ -618,8 +618,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             <ChevronUp className="w-4 h-4 text-gray-400" />
           </button>
 
-          {/* Preview (last 2 messages) */}
-          <div className="px-4 pb-3 space-y-3 max-h-[120px] overflow-hidden relative">
+          {/* Preview (last 4 messages) */}
+          <div className="px-4 pb-3 space-y-3 max-h-[190px] overflow-hidden relative">
             {isLoading ? (
               <div className="text-center text-sm text-gray-400">Loading…</div>
             ) : flatMessages.length === 0 ? (
@@ -628,7 +628,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
               </div>
             ) : (
               <>
-                {flatMessages.slice(-2).map((m) => (
+                {flatMessages.slice(-4).map((m) => (
                   <div key={m.id} className="flex gap-2">
                     <Avatar url={m.avatarUrl} username={m.username} />
                     <div className="rounded-2xl px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700/70 text-gray-800 dark:text-gray-100 max-w-[85%]">
@@ -737,13 +737,14 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             {emojiOpen && (
               <div
                 className="absolute bottom-full left-0 z-20 mb-2 flex w-[13.5rem] flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-900"
-                role="listbox"
+                role="menu"
+                aria-label="Quick emoji"
               >
                 {QUICK_EMOJIS.map((em) => (
                   <button
                     key={em}
                     type="button"
-                    role="option"
+                    role="menuitem"
                     className="rounded p-1.5 text-lg leading-none hover:bg-gray-100 dark:hover:bg-gray-800"
                     onClick={() => {
                       setNewMessage((m) =>

@@ -23,6 +23,7 @@ import { hapticError, hapticSuccess } from "../utils/haptics";
 import { shareLink } from "../utils/share";
 import { UserPlus, X } from "lucide-react";
 import { StarRating } from "../components/StarRating";
+import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 
 interface MeetupDetailsProps {
 	session: Session;
@@ -55,6 +56,7 @@ function PlusOneModal({
 	const { showToast } = useToast();
 
 	const handleSharePlusOne = async () => {
+		if (!result) return;
 		const url = `${window.location.origin}${result.claim_url}`;
 		const success = await shareLink(
 			url,
@@ -207,6 +209,7 @@ function PlusOneModal({
 									Skill level
 								</label>
 								<StarRating value={skill} onChange={setSkill} size={28} />
+								<p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{SKILL_SCALE_BLURB}</p>
 							</div>
 
 							{error && (
@@ -246,10 +249,12 @@ function MeetupAttendanceActions({
 	sessionId,
 	myAttendance,
 	onUpdated,
+	myWaitlistPosition,
 }: {
 	sessionId: string;
 	myAttendance: Session["myAttendance"];
 	onUpdated: () => void;
+	myWaitlistPosition?: number | null;
 }) {
 	const { showToast } = useToast();
 	const [busy, setBusy] = useState(false);
@@ -327,7 +332,16 @@ function MeetupAttendanceActions({
 			)}
 			<p className="text-sm text-gray-600 dark:text-gray-400">
 				{status === "confirmed" && `You're confirmed for this meetup.`}
-				{status === "waitlisted" && `You're on the waitlist.`}
+				{status === "waitlisted" && (
+					<span>
+						You're on the waitlist.
+						{myWaitlistPosition != null && (
+							<span className="ml-2 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+								#{myWaitlistPosition} on waitlist
+							</span>
+						)}
+					</span>
+				)}
 				{status === "cancelled" && `You're not attending (you can join again).`}
 				{status == null && `You're not signed up for this meetup yet.`}
 			</p>
@@ -427,6 +441,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 				<MeetupAttendanceActions
 					sessionId={session.id}
 					myAttendance={session.myAttendance}
+					myWaitlistPosition={session.myWaitlistPosition}
 					onUpdated={onRosterUpdated}
 				/>
 			)}

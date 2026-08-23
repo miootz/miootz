@@ -705,6 +705,12 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             {"val": _json.dumps(_picked), "sid": _nsid},
         )
 
+    # ── max_teams: upper bound on team count for dynamic expansion ──
+    if not await has_column("game_sessions", "max_teams"):
+        await conn.execute(
+            text("ALTER TABLE game_sessions ADD COLUMN max_teams INTEGER")
+        )
+
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""

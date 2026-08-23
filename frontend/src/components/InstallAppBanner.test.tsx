@@ -42,7 +42,7 @@ describe('InstallAppBanner', () => {
   });
 
   it('does not render when dismissed', async () => {
-    const { rerender } = render(
+    render(
       <OverlayLockProvider>
         <InstallAppBanner />
       </OverlayLockProvider>,

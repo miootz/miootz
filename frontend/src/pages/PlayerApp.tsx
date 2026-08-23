@@ -19,6 +19,7 @@ import { loadSessionSnapshot, saveSessionSnapshot } from '../offline/sessionSnap
 import { parseSessionStart } from '../utils/datetime';
 import { useMemberShell } from '../context/MemberShellContext';
 import { MeetupDetailsSkeleton } from '../components/MeetupDetailsSkeleton';
+import { OnboardingCard } from '../components/OnboardingCard';
 import { useAuth } from '../auth/useAuth';
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
@@ -62,6 +63,7 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
         : null,
     teamAssignmentMode:
       detail.team_assignment_mode === 'random' ? 'random' : 'balanced',
+    myWaitlistPosition: detail.my_waitlist_position ?? null,
   };
 }
 
@@ -79,6 +81,7 @@ export function PlayerApp() {
   const [rosterChannelLive, setRosterChannelLive] = useState(false);
   const [lastRosterSync, setLastRosterSync] = useState<Date | null>(null);
   const [sseReconnectKey, setSseReconnectKey] = useState(0);
+  const [nextAnnounceAt, setNextAnnounceAt] = useState<string | null>(null);
   const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
     null
   );
@@ -96,7 +99,7 @@ export function PlayerApp() {
         name: p.name,
         skillScore: p.skillScore,
         isLocked: p.isLocked,
-        avatarUrl: mediaUrl(p.avatarUrl ?? undefined),
+        avatarUrl: mediaUrl(p.profilePic ?? undefined),
         primarySpecialty: p.primarySpecialty ?? null,
         secondarySpecialty: p.secondarySpecialty ?? null,
       })),
@@ -124,10 +127,20 @@ export function PlayerApp() {
         setSession(null);
         setActiveSessionNumericId(null);
         setOfflineDataUpdatedAt(null);
-        const anyRes = await fetchSessions({ limit: 1 });
+        setNextAnnounceAt(null);
+        const anyRes = await fetchSessions({
+          status: 'all',
+          order: 'desc',
+          limit: 5,
+        });
         if (anyRes.total === 0) {
           setError('No sessions yet. Create one in Admin.');
         } else {
+          setNextAnnounceAt(
+            anyRes.items.find(
+              (s) => s.game_template?.next_announce_at
+            )?.game_template?.next_announce_at ?? null
+          );
           setError(null);
         }
         return;
@@ -302,11 +315,22 @@ export function PlayerApp() {
       )}
       {!loading && !session && !error && (
         <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
-          No upcoming meetup. Past sessions are in History.
+          {me?.is_admin
+            ? 'No upcoming meetup. Create one in Admin.'
+            : nextAnnounceAt
+              ? `Next meetup coming soon — signups open ${format(
+                  new Date(nextAnnounceAt),
+                  'EEEE, HH:mm'
+                )}`
+              : 'No upcoming meetup. Past sessions are in History.'}
         </p>
       )}
       {!loading && session && (
-        <MeetupDetails
+        <>
+          <div className="mx-auto max-w-6xl px-4 pt-4">
+            <OnboardingCard userId={me?.user.pocket_id_sub ?? 'anon'} />
+          </div>
+          <MeetupDetails
           session={session}
           onToggleLock={handleToggleLock}
           onMovePlayer={handleMovePlayer}
@@ -319,7 +343,8 @@ export function PlayerApp() {
             void loadSession(activeSessionNumericId)
           }
         />
-      )}
+          </>
+        )}
     </>
   );
 }

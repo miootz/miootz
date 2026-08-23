@@ -39,8 +39,8 @@ describe('Team Assignment Logic', () => {
       { id: '2', name: 'P2', skillScore: 90, isLocked: false },
     ];
     const teams = [
-      { id: 't1', players: [attendance[0]] },
-      { id: 't2', players: [attendance[1]] },
+      { id: 't1', name: 'Team 1', players: [attendance[0]] },
+      { id: 't2', name: 'Team 2', players: [attendance[1]] },
     ];
 
     const rebalanced = rebalanceTeams({ attendance, teams });
@@ -56,9 +56,10 @@ describe('Team Assignment Logic', () => {
     const teams = [
       {
         id: 't1',
+        name: 'Team 1',
         players: [{ id: '1', name: 'P1', skillScore: 100, isLocked: false }],
       },
-      { id: 't2', players: [attendance[1]] },
+      { id: 't2', name: 'Team 2', players: [attendance[1]] },
     ];
 
     const rebalanced = rebalanceTeams({ attendance, teams });

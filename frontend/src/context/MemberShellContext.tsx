@@ -7,8 +7,6 @@ import {
   type ReactNode,
 } from 'react';
 
-export type MemberView = 'details' | 'history';
-
 export interface MemberHeaderInfo {
   line1: string;
   line2?: string;
@@ -19,8 +17,6 @@ export interface MemberHeaderInfo {
 }
 
 interface MemberShellContextValue {
-  memberView: MemberView;
-  setMemberView: (v: MemberView) => void;
   header: MemberHeaderInfo | null;
   setHeader: (info: MemberHeaderInfo | null) => void;
 }
@@ -28,12 +24,7 @@ interface MemberShellContextValue {
 const MemberShellContext = createContext<MemberShellContextValue | null>(null);
 
 export function MemberShellProvider({ children }: { children: ReactNode }) {
-  const [memberView, setMemberViewState] = useState<MemberView>('details');
   const [header, setHeaderState] = useState<MemberHeaderInfo | null>(null);
-
-  const setMemberView = useCallback((v: MemberView) => {
-    setMemberViewState(v);
-  }, []);
 
   const setHeader = useCallback((info: MemberHeaderInfo | null) => {
     setHeaderState(info);
@@ -41,12 +32,10 @@ export function MemberShellProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      memberView,
-      setMemberView,
       header,
       setHeader,
     }),
-    [memberView, setMemberView, header, setHeader]
+    [header, setHeader]
   );
 
   return (

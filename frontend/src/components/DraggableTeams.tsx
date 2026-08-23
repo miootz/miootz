@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import {
   DndContext,
   MouseSensor,
@@ -225,46 +225,46 @@ function TeamColumn({
   onToggleLock,
   canDrag,
 }: {
-  team: { id: string };
+  team: { id: string; name?: string };
   index: number;
   players: User[];
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
 }) {
-  const Wrapper = canDrag ? DroppableZone : 'div';
-  const wrapperProps = canDrag ? { id: team.id } : {};
-
-  return (
-    <Wrapper {...wrapperProps}>
-      <div className="space-y-2">
-        <div className="flex justify-between items-center px-1">
-          <h3 className="font-bold text-base text-purple-600 dark:text-purple-400">
-            {team.name ?? `Team ${index + 1}`}
-          </h3>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {players.length} player{players.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        {players.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center">
-            <span className="text-sm text-gray-500 dark:text-gray-400">No players yet</span>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {players.map((player) => (
-              <PlayerRow
-                key={player.id}
-                player={player}
-                teamId={team.id}
-                onToggleLock={canDrag ? onToggleLock : undefined}
-                canDrag={canDrag}
-              />
-            ))}
-          </div>
-        )}
+  const content = (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center px-1">
+        <h3 className="font-bold text-base text-purple-600 dark:text-purple-400">
+          {team.name ?? `Team ${index + 1}`}
+        </h3>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {players.length} player{players.length !== 1 ? 's' : ''}
+        </span>
       </div>
-    </Wrapper>
+      {players.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center">
+          <span className="text-sm text-gray-500 dark:text-gray-400">No players yet</span>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {players.map((player) => (
+            <PlayerRow
+              key={player.id}
+              player={player}
+              teamId={team.id}
+              onToggleLock={canDrag ? onToggleLock : undefined}
+              canDrag={canDrag}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
+
+  if (canDrag) {
+    return <DroppableZone id={team.id}>{content}</DroppableZone>;
+  }
+  return <div>{content}</div>;
 }
 
 /* ── Main component ──────────────────────────────────────────────── */

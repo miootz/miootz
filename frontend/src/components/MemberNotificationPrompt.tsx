@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { Bell, X } from 'lucide-react';
-import { subscribeToWebPush, pushSupported } from '../utils/pushSubscription';
-import { useToast } from '../context/ToastContext';
-import { useOverlayLock } from '../context/OverlayLock';
+import { useEffect, useRef, useState } from "react";
+import { Bell, X } from "lucide-react";
+import { subscribeToWebPush, pushSupported } from "../utils/pushSubscription";
+import { useToast } from "../context/ToastContext";
+import { useOverlayLock } from "../context/OverlayLock";
 
 const SHOW_DELAY_MS = 8000; // Show after 8 seconds (after install prompt has time to appear)
 
@@ -12,7 +12,11 @@ const SHOW_DELAY_MS = 8000; // Show after 8 seconds (after install prompt has ti
  * Shown every session to push users toward enabling push notifications.
  * Dismissing only hides it for the current page session.
  */
-export function MemberNotificationPrompt() {
+export function MemberNotificationPrompt({
+  enabled = true,
+}: {
+  enabled?: boolean;
+}) {
   const { showToast } = useToast();
   const { tryAcquire, release } = useOverlayLock();
   const lockAcquiredRef = useRef(false);
@@ -20,25 +24,38 @@ export function MemberNotificationPrompt() {
   const [dismissedThisSession, setDismissedThisSession] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return;
     if (dismissedThisSession) return;
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     if (!pushSupported()) return;
-    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    if (!("Notification" in window) || Notification.permission !== "default")
+      return;
 
     const timer = setTimeout(() => {
       // Try to acquire the lock when timer fires
-      if (!lockAcquiredRef.current && tryAcquire('notifications')) {
+      if (!lockAcquiredRef.current && tryAcquire("notifications")) {
         lockAcquiredRef.current = true;
         setVisible(true);
       }
     }, SHOW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [dismissedThisSession, tryAcquire]);
+  }, [dismissedThisSession, tryAcquire, enabled]);
 
-  if (!visible) return null;
+  // If disabled while holding the lock, release it so other overlays can show
+  useEffect(() => {
+    if (!enabled && lockAcquiredRef.current) {
+      release("notifications");
+      lockAcquiredRef.current = false;
+      // One-shot release on disable; guarded by lockAcquiredRef so no cascade.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVisible(false);
+    }
+  }, [enabled, release]);
+
+  if (!enabled || !visible) return null;
 
   const dismiss = () => {
-    release('notifications');
+    release("notifications");
     lockAcquiredRef.current = false;
     setVisible(false);
     setDismissedThisSession(true);
@@ -54,7 +71,10 @@ export function MemberNotificationPrompt() {
       <div className="w-full max-w-sm rounded-2xl border border-violet-200 bg-white p-6 shadow-2xl dark:border-violet-800 dark:bg-gray-900">
         <div className="flex items-start justify-between">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40">
-            <Bell className="h-6 w-6 text-violet-600 dark:text-violet-400" aria-hidden />
+            <Bell
+              className="h-6 w-6 text-violet-600 dark:text-violet-400"
+              aria-hidden
+            />
           </div>
           <button
             type="button"
@@ -70,8 +90,8 @@ export function MemberNotificationPrompt() {
           Never miss a kickoff
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-          Get notified about kickoff reminders, roster changes, and chat messages — even when the
-          app is in the background.
+          Get notified about kickoff reminders, roster changes, and chat
+          messages — even when the app is in the background.
         </p>
 
         <div className="mt-5 flex gap-2">
@@ -82,9 +102,12 @@ export function MemberNotificationPrompt() {
               const result = await subscribeToWebPush();
               dismiss();
               if (result.ok) {
-                showToast('Notifications enabled', 'success');
-              } else if (result.reason !== 'Notification permission denied') {
-                showToast(result.reason ?? 'Could not enable notifications', 'error');
+                showToast("Notifications enabled", "success");
+              } else if (result.reason !== "Notification permission denied") {
+                showToast(
+                  result.reason ?? "Could not enable notifications",
+                  "error",
+                );
               }
             }}
           >

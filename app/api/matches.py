@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -49,6 +49,11 @@ class MatchScoreDelta(BaseModel):
 
 
 class CreatePendingMatchBody(BaseModel):
+    team_a_idx: int | None = None
+    team_b_idx: int | None = None
+
+
+class StartMatchesBody(BaseModel):
     team_a_idx: int | None = None
     team_b_idx: int | None = None
 
@@ -113,6 +118,35 @@ def _is_half_time(match: SessionMatch) -> bool:
     return ratio <= 0.55 and ratio >= 0.45
 
 
+def _timer_ends_at_iso(match: SessionMatch) -> str | None:
+    """Server-authoritative end time (UTC ISO) while the timer runs; None when
+    not started, finished, or currently paused. Lets clients render the
+    remaining time from a shared timestamp instead of free-running counters."""
+    if match.status != "active" or match.timer_started_at is None:
+        return None
+    if _is_currently_paused(match):
+        return None
+    try:
+        intervals: list[dict] = (
+            json.loads(match.timer_pause_intervals)
+            if match.timer_pause_intervals
+            else []
+        )
+    except (json.JSONDecodeError, TypeError):
+        intervals = []
+    ends = match.timer_started_at.replace(tzinfo=timezone.utc) + timedelta(
+        seconds=match.timer_total_seconds
+    )
+    for interval in intervals:
+        paused_at = interval.get("paused_at")
+        resumed_at = interval.get("resumed_at")
+        if paused_at and resumed_at:
+            pa = datetime.fromisoformat(paused_at).replace(tzinfo=timezone.utc)
+            ra = datetime.fromisoformat(resumed_at).replace(tzinfo=timezone.utc)
+            ends -= ra - pa
+    return ends.isoformat()
+
+
 async def _check_timer_expiry(
     match: SessionMatch, db: AsyncSession  # pylint: disable=unused-argument
 ) -> bool:
@@ -172,6 +206,7 @@ def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
         "timer_total_seconds": match.timer_total_seconds,
         "timer_seconds_remaining": _compute_timer_remaining(match),
         "timer_paused": match.timer_pause_intervals is not None and _is_currently_paused(match),
+        "timer_ends_at": _timer_ends_at_iso(match),
         "is_half_time": _is_half_time(match) if match.status == "active" else False,
         "created_at": match.created_at.isoformat() if match.created_at else None,
         "completed_at": match.completed_at.isoformat() if match.completed_at else None,
@@ -264,10 +299,12 @@ async def get_match(
 @router.post("/{session_id}/matches/start", status_code=201)
 async def start_matches(
     session_id: int,
+    body: StartMatchesBody | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    """Start the match session. Creates the first match (Team 1 vs Team 2)."""
+    """Start the match session. Creates the first match (Team 1 vs Team 2 by default,
+    or the given team indices when provided)."""
     session = await db.get(GameSession, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -326,8 +363,20 @@ async def start_matches(
     team_names = ensure_team_names(session, len(teams_nested))
     await db.flush()
 
-    team_a = teams_nested[0]
-    team_b = teams_nested[1]
+    team_a_idx = body.team_a_idx if body and body.team_a_idx is not None else 0
+    team_b_idx = body.team_b_idx if body and body.team_b_idx is not None else 1
+    if (
+        not 0 <= team_a_idx < len(teams_nested)
+        or not 0 <= team_b_idx < len(teams_nested)
+        or team_a_idx == team_b_idx
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="team_a_idx/team_b_idx must be distinct valid team indices.",
+        )
+
+    team_a = teams_nested[team_a_idx]
+    team_b = teams_nested[team_b_idx]
 
     match_duration = session.match_duration_minutes or 10
 
@@ -336,8 +385,12 @@ async def start_matches(
         match_number=1,
         team_a_users=json.dumps([p["user_id"] for p in team_a]),
         team_b_users=json.dumps([p["user_id"] for p in team_b]),
-        team_a_name=team_names[0] if team_names else "Team 1",
-        team_b_name=team_names[1] if len(team_names) > 1 else "Team 2",
+        team_a_name=team_names[team_a_idx] if team_names else "Team 1",
+        team_b_name=(
+            team_names[team_b_idx]
+            if team_names and len(team_names) > team_b_idx
+            else "Team 2"
+        ),
         score_a=0,
         score_b=0,
         status="pending",
@@ -637,6 +690,7 @@ async def start_timer(
         "seconds_remaining": match.timer_total_seconds,
         "status": "active",
         "is_half_time": False,
+        "ends_at": _timer_ends_at_iso(match),
     })
 
     session = await db.get(GameSession, session_id)
@@ -682,6 +736,7 @@ async def pause_timer(
         "match_id": match.id,
         "seconds_remaining": remaining,
         "is_half_time": _is_half_time(match),
+        "ends_at": None,
     })
 
     session = await db.get(GameSession, session_id)
@@ -729,6 +784,7 @@ async def resume_timer(
         "match_id": match.id,
         "seconds_remaining": remaining,
         "is_half_time": _is_half_time(match),
+        "ends_at": _timer_ends_at_iso(match),
     })
 
     session = await db.get(GameSession, session_id)
