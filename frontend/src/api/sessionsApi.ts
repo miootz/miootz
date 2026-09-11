@@ -1,12 +1,34 @@
 import { apiBase, apiFetch, parseApiError } from "./client";
 
-/** Same-origin URL for session roster/detail SSE (join, leave, admin moves, team reshuffle). */
-export function sessionDataEventsUrl(sessionId: number): string {
-  return `${apiBase()}/sessions/${sessionId}/data/events`;
+/**
+ * Same-origin URL for session roster/detail SSE (join, leave, admin moves,
+ * team reshuffle).
+ *
+ * EventSource cannot set Authorization headers, so the access token travels
+ * as `?access_token=` — the backend accepts query tokens ONLY on the SSE
+ * paths (`/data/events`, `/chat/events`). Trade-off: the token can appear
+ * in proxy/server access logs; acceptable on this LAN deployment, revisit if
+ * the app becomes internet-facing (then switch to fetch-streaming or
+ * short-lived SSE tickets).
+ */
+export function sessionDataEventsUrl(
+  sessionId: number,
+  accessToken: string | undefined,
+): string {
+  const base = `${apiBase()}/sessions/${sessionId}/data/events`;
+  return accessToken
+    ? `${base}?access_token=${encodeURIComponent(accessToken)}`
+    : base;
 }
 
-export function sessionChatEventsUrl(sessionId: string | number): string {
-  return `${apiBase()}/sessions/${sessionId}/chat/events`;
+export function sessionChatEventsUrl(
+  sessionId: string | number,
+  accessToken: string | undefined,
+): string {
+  const base = `${apiBase()}/sessions/${sessionId}/chat/events`;
+  return accessToken
+    ? `${base}?access_token=${encodeURIComponent(accessToken)}`
+    : base;
 }
 
 export interface GameTemplateInfo {
@@ -129,8 +151,8 @@ export interface PlusOneClaimCheck {
   last_name: string;
   self_assessed_skill: number;
   session_id: number;
-  inviter_username: string;
-  guest_username: string;
+  inviter_display_name: string;
+  guest_display_name: string;
 }
 
 export interface TeamsResponse {
@@ -313,19 +335,14 @@ export async function checkPlusOneClaim(
   return r.json();
 }
 
-export async function claimPlusOne(
-  claimToken: string,
-  body: { username: string },
-): Promise<{
+export async function claimPlusOne(claimToken: string): Promise<{
   status: string;
   user_id: number;
-  username: string;
-  full_name: string;
+  display_name: string;
   self_assessed_skill: number;
 }> {
   const r = await apiFetch(`/sessions/plus-one/${claimToken}/claim`, {
     method: "POST",
-    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();

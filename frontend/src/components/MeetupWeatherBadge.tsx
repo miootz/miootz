@@ -1,218 +1,221 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from "react";
 import {
-  Cloud,
-  CloudDrizzle,
-  CloudFog,
-  CloudRain,
-  CloudSnow,
-  CloudLightning,
-  RefreshCw,
-  Sun,
-} from 'lucide-react';
-import { apiFetch } from '../api/client';
+    Cloud,
+    CloudDrizzle,
+    CloudFog,
+    CloudRain,
+    CloudSnow,
+    CloudLightning,
+    RefreshCw,
+    Sun,
+} from "lucide-react";
+import { apiFetch } from "../api/client";
 
 // ── WMO weather code → icon + label ─────────────────────────
 
 function codeToIcon(code: number): { Icon: typeof Sun; label: string } {
-  if (code === 0) return { Icon: Sun, label: 'Clear' };
-  if (code <= 1) return { Icon: Sun, label: 'Mainly clear' };
-  if (code <= 2) return { Icon: Cloud, label: 'Partly cloudy' };
-  if (code <= 3) return { Icon: Cloud, label: 'Overcast' };
-  if (code <= 48) return { Icon: CloudFog, label: 'Fog' };
-  if (code <= 57) return { Icon: CloudDrizzle, label: 'Drizzle' };
-  if (code <= 67) return { Icon: CloudRain, label: 'Rain' };
-  if (code <= 77) return { Icon: CloudSnow, label: 'Snow' };
-  if (code <= 82) return { Icon: CloudRain, label: 'Showers' };
-  if (code <= 86) return { Icon: CloudSnow, label: 'Snow showers' };
-  if (code >= 95) return { Icon: CloudLightning, label: 'Thunderstorm' };
-  return { Icon: CloudRain, label: 'Rain' };
+    if (code === 0) return { Icon: Sun, label: "Clear" };
+    if (code <= 1) return { Icon: Sun, label: "Mainly clear" };
+    if (code <= 2) return { Icon: Cloud, label: "Partly cloudy" };
+    if (code <= 3) return { Icon: Cloud, label: "Overcast" };
+    if (code <= 48) return { Icon: CloudFog, label: "Fog" };
+    if (code <= 57) return { Icon: CloudDrizzle, label: "Drizzle" };
+    if (code <= 67) return { Icon: CloudRain, label: "Rain" };
+    if (code <= 77) return { Icon: CloudSnow, label: "Snow" };
+    if (code <= 82) return { Icon: CloudRain, label: "Showers" };
+    if (code <= 86) return { Icon: CloudSnow, label: "Snow showers" };
+    if (code >= 95) return { Icon: CloudLightning, label: "Thunderstorm" };
+    return { Icon: CloudRain, label: "Rain" };
 }
 
 // ── Color for temperature ────────────────────────────────────
 
 function tempColor(c: number): string {
-  if (c <= 0) return 'text-blue-500 dark:text-blue-400';
-  if (c <= 10) return 'text-blue-600 dark:text-blue-400';
-  if (c <= 20) return 'text-gray-700 dark:text-gray-300';
-  if (c <= 30) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+    if (c <= 0) return "text-blue-500 dark:text-blue-400";
+    if (c <= 10) return "text-blue-600 dark:text-blue-400";
+    if (c <= 20) return "text-gray-700 dark:text-gray-300";
+    if (c <= 30) return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
 }
 
 // ── Types ────────────────────────────────────────────────────
 
 interface WeatherData {
-  temperature_c: number;
-  weather_code: number | null;
-  label: string | null;
+    temperature_c: number;
+    weather_code: number | null;
+    label: string | null;
 }
 
 interface WeatherResponse {
-  forecast?: WeatherData & { cached_at: string };
-  recorded?: WeatherData & { recorded_at: string };
-  can_refresh: boolean;
+    forecast?: WeatherData & { cached_at: string };
+    recorded?: WeatherData & { recorded_at: string };
+    can_refresh: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────
 
 interface MeetupWeatherBadgeProps {
-  sessionId: number;
-  /** @deprecated pass sessionId instead */
-  latitude?: number;
-  /** @deprecated pass sessionId instead */
-  longitude?: number;
-  /** @deprecated pass sessionId instead */
-  startTime?: string;
+    sessionId: number;
+    /** @deprecated pass sessionId instead */
+    latitude?: number;
+    /** @deprecated pass sessionId instead */
+    longitude?: number;
+    /** @deprecated pass sessionId instead */
+    startTime?: string;
 }
 
-export function MeetupWeatherBadge({
-  sessionId,
-}: MeetupWeatherBadgeProps) {
-  const [data, setData] = useState<WeatherResponse | null>(null);
-  const [_loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [err, setErr] = useState(false);
+export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
+    const [data, setData] = useState<WeatherResponse | null>(null);
+    const [_loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [err, setErr] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await apiFetch(`/sessions/${sessionId}/weather`);
-      if (!r.ok) {
-        if (r.status === 404) return; // session without coords
-        setErr(true);
-        return;
-      }
-      const json: WeatherResponse = await r.json();
-      setData(json);
-      setErr(false);
-      // If no forecast/recorded data but refresh is allowed, fetch it now.
-      if (
-        json.can_refresh &&
-        !json.forecast &&
-        !json.recorded
-      ) {
-        void (async () => {
-          try {
-            const refreshR = await apiFetch(`/sessions/${sessionId}/weather/refresh`, {
-              method: 'POST',
-            });
-            if (refreshR.ok) {
-              const raw = await refreshR.json();
-              setData({
-                forecast: {
-                  temperature_c: raw.temperature_c,
-                  weather_code: raw.weather_code ?? null,
-                  label: raw.label ?? null,
-                  cached_at: new Date().toISOString(),
-                },
-                can_refresh: true,
-              });
+    const load = useCallback(async () => {
+        try {
+            const r = await apiFetch(`/sessions/${sessionId}/weather`);
+            if (!r.ok) {
+                if (r.status === 404) return; // session without coords
+                setErr(true);
+                return;
             }
-          } catch {
-            /* ignore refresh failure */
-          } finally {
+            const json: WeatherResponse = await r.json();
+            setData(json);
+            setErr(false);
+            // If no forecast/recorded data but refresh is allowed, fetch it now.
+            if (json.can_refresh && !json.forecast && !json.recorded) {
+                void (async () => {
+                    try {
+                        const refreshR = await apiFetch(
+                            `/sessions/${sessionId}/weather/refresh`,
+                            {
+                                method: "POST",
+                            },
+                        );
+                        if (refreshR.ok) {
+                            const raw = await refreshR.json();
+                            setData({
+                                forecast: {
+                                    temperature_c: raw.temperature_c,
+                                    weather_code: raw.weather_code ?? null,
+                                    label: raw.label ?? null,
+                                    cached_at: new Date().toISOString(),
+                                },
+                                can_refresh: true,
+                            });
+                        }
+                    } catch {
+                        /* ignore refresh failure */
+                    } finally {
+                        setLoading(false);
+                    }
+                })();
+                return; // setLoading(false) happens in the refresh finally block
+            }
+        } catch {
+            setErr(true);
+        } finally {
             setLoading(false);
-          }
-        })();
-        return; // setLoading(false) happens in the refresh finally block
-      }
-    } catch {
-      setErr(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId]);
+        }
+    }, [sessionId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const r = await apiFetch(`/sessions/${sessionId}/weather/refresh`, {
-        method: 'POST',
-      });
-      if (r.ok) {
+    useEffect(() => {
         void load();
-      }
-    } finally {
-      setRefreshing(false);
-    }
-  };
+    }, [load]);
 
-  if (err || !data) return null;
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            const r = await apiFetch(`/sessions/${sessionId}/weather/refresh`, {
+                method: "POST",
+            });
+            if (r.ok) {
+                void load();
+            }
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
-  // Determine which data to show: recorded > forecast > nothing
-  const active = data.recorded ?? data.forecast;
-  if (!active) return null;
+    if (err || !data) return null;
 
-  const isRecorded = !!data.recorded;
-  const { Icon, label } = active.weather_code != null
-    ? codeToIcon(active.weather_code ?? 0)
-    : { Icon: Cloud, label: 'Unknown' };
+    // Determine which data to show: recorded > forecast > nothing
+    const active = data.recorded ?? data.forecast;
+    if (!active) return null;
 
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 group">
-      <Icon className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden />
-      <span className={tempColor(active.temperature_c)}>
-        {active.temperature_c}°C
-      </span>
-      <span className="hidden sm:inline text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      {isRecorded ? (
-        <span className="text-[10px] text-gray-400 dark:text-gray-500">
-          (actual)
+    const isRecorded = !!data.recorded;
+    const { Icon, label } =
+        active.weather_code != null
+            ? codeToIcon(active.weather_code ?? 0)
+            : { Icon: Cloud, label: "Unknown" };
+
+    return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 group">
+            <Icon
+                className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400"
+                aria-hidden
+            />
+            <span className={tempColor(active.temperature_c)}>
+                {active.temperature_c}°C
+            </span>
+            <span className="hidden sm:inline text-gray-500 dark:text-gray-400">
+                {label}
+            </span>
+            {isRecorded ? (
+                <span className="text-2xs text-gray-500 dark:text-gray-400">
+                    (actual)
+                </span>
+            ) : data.can_refresh ? (
+                <span className="flex items-center gap-0.5">
+                    <span className="text-2xs text-gray-500 dark:text-gray-400">
+                        (forecast)
+                    </span>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            void handleRefresh();
+                        }}
+                        disabled={refreshing}
+                        className="p-0.5 rounded text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
+                        aria-label="Refresh weather forecast"
+                        title="Refresh forecast"
+                    >
+                        <RefreshCw
+                            className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
+                        />
+                    </button>
+                </span>
+            ) : (
+                <span className="text-2xs text-gray-500 dark:text-gray-400">
+                    (forecast)
+                </span>
+            )}
         </span>
-      ) : data.can_refresh ? (
-        <span className="flex items-center gap-0.5">
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">
-            (forecast)
-          </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleRefresh();
-            }}
-            disabled={refreshing}
-            className="p-0.5 rounded text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
-            aria-label="Refresh weather forecast"
-            title="Refresh forecast"
-          >
-            <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        </span>
-      ) : (
-        <span className="text-[10px] text-gray-400 dark:text-gray-500">
-          (forecast)
-        </span>
-      )}
-    </span>
-  );
+    );
 }
 
 // ── Standalone weather display for history (recorded only) ───
 
 export function RecordedWeatherBadge({
-  temperature_c,
-  weather_code,
-  label,
+    temperature_c,
+    weather_code,
+    label,
 }: {
-  temperature_c: number;
-  weather_code: number | null;
-  label: string | null;
+    temperature_c: number;
+    weather_code: number | null;
+    label: string | null;
 }) {
-  const { Icon } = weather_code != null
-    ? codeToIcon(weather_code ?? 0)
-    : { Icon: Cloud };
+    const { Icon } =
+        weather_code != null ? codeToIcon(weather_code ?? 0) : { Icon: Cloud };
 
-  return (
-    <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden />
-      <span className={tempColor(temperature_c)}>
-        {temperature_c}°C
-      </span>
-      {label && <span className="hidden sm:inline">{label}</span>}
-    </span>
-  );
+    return (
+        <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+            <Icon
+                className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+                aria-hidden
+            />
+            <span className={tempColor(temperature_c)}>{temperature_c}°C</span>
+            {label && <span className="hidden sm:inline">{label}</span>}
+        </span>
+    );
 }

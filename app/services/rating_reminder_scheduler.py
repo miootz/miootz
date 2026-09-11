@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import timedelta, UTC
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.triggers.date import DateTrigger
@@ -37,13 +36,12 @@ def unregister_rating_reminder(session_id: int) -> None:
 
 def _compute_end_time(session: GameSession) -> str | None:
     """Compute expected end time as ISO string (UTC-aware) or None."""
-    from datetime import datetime, timezone
 
     duration = session.duration_minutes or _DEFAULT_DURATION_MINUTES
     start = session.start_time
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    end = start.astimezone(timezone.utc) + timedelta(minutes=duration)
+        start = start.replace(tzinfo=UTC)
+    end = start.astimezone(UTC) + timedelta(minutes=duration)
     return end.isoformat()
 
 
@@ -63,7 +61,7 @@ def register_rating_reminder(session: GameSession) -> None:
 
     sched.add_job(
         send_rating_reminder_for_session,
-        DateTrigger(run_date=end_time, timezone= settings.SCHEDULER_TIMEZONE),
+        DateTrigger(run_date=end_time, timezone=settings.SCHEDULER_TIMEZONE),
         id=job_id,
         args=[session.id],
         replace_existing=True,

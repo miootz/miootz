@@ -15,18 +15,29 @@ _jwks_cache: dict[str, Any] | None = None
 _jwks_cache_ttl: float = 0
 _JWKS_TTL_SECONDS = 3600  # 1 hour
 _JWKS_REQUEST_TIMEOUT = 3  # seconds — keep short so /me responds quickly
+#: Minimum seconds between forced (off-TTL) JWKS refreshes triggered by an
+#: unknown `kid` — bounds abuse from garbage tokens with bogus kid values.
+_JWKS_FORCED_MIN_INTERVAL = 60
+_last_forced_fetch: float = 0.0
+#: Clock skew tolerated for exp/nbf claims.
+_CLOCK_LEEWAY_SECONDS = 30
 
 
-async def _fetch_jwks() -> dict[str, Any] | None:
+async def _fetch_jwks(force: bool = False) -> dict[str, Any] | None:
     """Fetch JWKS from Pocket ID.
 
     Uses the internal URL (pocket-id:1411) so this works from inside Docker.
+    ``force=True`` bypasses the TTL once per ``_JWKS_FORCED_MIN_INTERVAL``
+    (used when a token's ``kid`` is missing from the cached keyset, e.g. right
+    after Pocket ID rotates keys).
     """
-    global _jwks_cache, _jwks_cache_ttl
+    global _jwks_cache, _jwks_cache_ttl, _last_forced_fetch
 
     now = time.monotonic()
     if _jwks_cache is not None and now < _jwks_cache_ttl:
-        return _jwks_cache
+        if not force or (now - _last_forced_fetch) < _JWKS_FORCED_MIN_INTERVAL:
+            return _jwks_cache
+        _last_forced_fetch = now  # off-TTL refresh attempt
 
     base_url = settings.POCKET_ID_INTERNAL_URL.rstrip("/")
     oidc_url = f"{base_url}/.well-known/openid-configuration"
@@ -46,7 +57,9 @@ async def _fetch_jwks() -> dict[str, Any] | None:
         return None
 
     # The JWKS URI from the OIDC doc is the public URL; rewrite to internal.
-    jwks_path = jwks_uri.split("//", 1)[1].split("/", 1)[1] if "//" in jwks_uri else jwks_uri
+    jwks_path = (
+        jwks_uri.split("//", 1)[1].split("/", 1)[1] if "//" in jwks_uri else jwks_uri
+    )
     jwks_uri = f"{base_url}/{jwks_path}"
 
     try:
@@ -64,21 +77,25 @@ async def _fetch_jwks() -> dict[str, Any] | None:
 
 
 def _find_key(jwks: dict[str, Any], kid: str | None) -> dict[str, Any] | None:
-    """Find a JWK by kid (key ID)."""
-    keys = jwks.get("keys", [])
-    if kid:
-        for k in keys:
-            if k.get("kid") == kid:
-                return k
-    # Fallback: return first key if no kid match
-    if keys:
-        return keys[0]
+    """Find a JWK by exact kid match.
+
+    No fallback to the first key: accepting an arbitrary key lets any token
+    whose kid simply isn't present sail through with the wrong public key
+    (it will fail signature check, but silently mismatching also masks key
+    rotation problems — reject explicitly instead).
+    """
+    if not kid:
+        return None
+    for k in jwks.get("keys", []):
+        if k.get("kid") == kid:
+            return k
     return None
 
 
 def _base64url_decode(s: str) -> bytes:
     """Decode base64url string to bytes."""
     import base64
+
     # Add padding
     rem = len(s) % 4
     if rem:
@@ -90,6 +107,7 @@ def _decode_jwt_payload(payload_b64: str) -> dict[str, Any] | None:
     """Decode the JWT payload (middle segment)."""
     try:
         import json
+
         decoded = _base64url_decode(payload_b64)
         return json.loads(decoded)
     except Exception as e:
@@ -106,10 +124,6 @@ def _validate_rs256_signature(
     try:
         from cryptography.hazmat.primitives.asymmetric import rsa, padding
         from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.serialization import (
-            load_der_public_key,
-        )
-        import base64
 
         # Decode signature
         sig = _base64url_decode(signature_b64)
@@ -137,13 +151,65 @@ def _validate_rs256_signature(
         return False
 
 
+def _validate_claims(claims: dict[str, Any]) -> bool:
+    """Validate iss/aud/exp/nbf against configured expectations.
+
+    Without these checks any token signed by the same Pocket ID key for a
+    *different* client would be accepted as a miootz session.
+    Skipped (with a warning) when the corresponding setting is empty —
+    preserves dev flexibility but production must set both.
+    """
+    now_ts = time.time()
+
+    exp = claims.get("exp")
+    try:
+        if exp is None or now_ts > float(exp) + _CLOCK_LEEWAY_SECONDS:
+            logger.warning("JWT missing/expired exp (exp=%s, now=%s)", exp, now_ts)
+            return False
+    except TypeError, ValueError:
+        logger.warning("JWT exp not numeric (exp=%r)", exp)
+        return False
+
+    nbf = claims.get("nbf")
+    if nbf is not None:
+        try:
+            if now_ts < float(nbf) - _CLOCK_LEEWAY_SECONDS:
+                logger.warning("JWT not yet valid (nbf=%s, now=%s)", nbf, now_ts)
+                return False
+        except TypeError, ValueError:
+            logger.warning("JWT nbf not numeric (nbf=%r)", nbf)
+            return False
+
+    expected_iss = settings.POCKET_ID_OIDC_ISSUER.rstrip("/")
+    if expected_iss:
+        actual_iss = str(claims.get("iss", "")).rstrip("/")
+        if actual_iss != expected_iss:
+            logger.warning(
+                "JWT iss mismatch (got=%r, want=%r)", actual_iss, expected_iss
+            )
+            return False
+    else:
+        logger.warning("POCKET_ID_OIDC_ISSUER not set — skipping iss validation")
+
+    expected_aud = settings.POCKET_ID_OIDC_CLIENT_ID
+    if expected_aud:
+        aud = claims.get("aud")
+        aud_list = [aud] if isinstance(aud, str) else list(aud or [])
+        if expected_aud not in aud_list:
+            logger.warning("JWT aud mismatch (got=%r, want=%r)", aud, expected_aud)
+            return False
+    else:
+        logger.warning("POCKET_ID_OIDC_CLIENT_ID not set — skipping aud validation")
+
+    return True
+
+
 async def validate_pocket_id_token(access_token: str) -> dict[str, Any] | None:
     """
     Validate a Pocket ID access_token JWT.
 
     Returns the decoded claims dict if valid, None otherwise.
     """
-    import base64
 
     parts = access_token.split(".")
     if len(parts) != 3:
@@ -155,6 +221,7 @@ async def validate_pocket_id_token(access_token: str) -> dict[str, Any] | None:
     # Decode header to get kid
     try:
         import json
+
         header_decoded = _base64url_decode(header_b64)
         header = json.loads(header_decoded)
     except Exception as e:
@@ -163,32 +230,39 @@ async def validate_pocket_id_token(access_token: str) -> dict[str, Any] | None:
 
     kid = header.get("kid")
 
-    # Fetch JWKS
-    jwks = await _fetch_jwks()
-    if not jwks:
+    # Reject tokens that don't declare RS256 before touching the network —
+    # explicit defense-in-depth against alg confusion (we only ever verify
+    # RS256 signatures below, but failing fast keeps the path obvious).
+    if header.get("alg") != "RS256":
+        logger.warning("JWT alg not RS256 (alg=%r)", header.get("alg"))
         return None
 
-    key = _find_key(jwks, kid)
+    # Fetch JWKS
+    jwks = await _fetch_jwks()
+    key = _find_key(jwks, kid) if jwks else None
+    if key is None:
+        # kid unknown (and we hold a valid RSA key set) — could be a key
+        # rotation: force one off-TTL refresh before rejecting.
+        if jwks and jwks.get("keys"):
+            refreshed = await _fetch_jwks(force=True)
+            if refreshed:
+                key = _find_key(refreshed, kid)
     if not key:
         logger.warning("No matching JWK found (kid=%s)", kid)
         return None
 
     # Validate signature
-    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+    signing_input = f"{header_b64}.{payload_b64}".encode()
     if not _validate_rs256_signature(signing_input, signature_b64, key):
         logger.warning("JWT signature validation failed")
         return None
 
-    # Decode and validate payload
+    # Decode and validate payload (exp/nbf/iss/aud)
     claims = _decode_jwt_payload(payload_b64)
     if not claims:
         return None
 
-    # Validate exp
-    now_ts = time.time()
-    exp = claims.get("exp")
-    if exp and now_ts > exp:
-        logger.warning("JWT expired (exp=%s, now=%s)", exp, now_ts)
+    if not _validate_claims(claims):
         return None
 
     return claims

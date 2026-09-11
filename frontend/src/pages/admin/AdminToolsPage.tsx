@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Download, Loader2, Play } from 'lucide-react';
-import { format } from 'date-fns';
-import { adminRunRecurringNow } from '../../api/adminApi';
-import { fetchSessions } from '../../api/sessionsApi';
-import { parseSessionStart } from '../../utils/datetime';
-import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
-import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { useToast } from '../../context/ToastContext';
-import { appendJobHistory, readJobHistory, type JobHistoryEntry } from '../../utils/adminPrefs';
+import { useEffect, useState } from "react";
+import { Download, Loader2, Play } from "lucide-react";
+import { format } from "date-fns";
+import { adminRunRecurringNow } from "../../api/adminApi";
+import { fetchSessions } from "../../api/sessionsApi";
+import { parseSessionStart } from "../../utils/datetime";
+import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
+import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
+import { useToast } from "../../context/ToastContext";
+import {
+  appendJobHistory,
+  readJobHistory,
+  type JobHistoryEntry,
+} from "../../utils/adminPrefs";
 
 export function AdminToolsPage() {
   const { showToast } = useToast();
@@ -29,14 +33,14 @@ export function AdminToolsPage() {
       const res = await adminRunRecurringNow();
       const msg = `Checked ${res.templates_checked} template(s); created ${res.sessions_created} new session(s).`;
       setMessage(msg);
-      showToast(msg, 'success');
+      showToast(msg, "success");
       appendJobHistory({
-        label: 'Run recurring jobs now',
+        label: "Run recurring jobs now",
         detail: `${res.templates_checked} templates · ${res.sessions_created} session(s) created`,
       });
       setHistory(readJobHistory());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Job failed');
+      setError(e instanceof Error ? e.message : "Job failed");
     } finally {
       setLoading(false);
     }
@@ -48,17 +52,17 @@ export function AdminToolsPage() {
     try {
       const { items: sessions } = await fetchSessions({ limit: 500 });
       const headers = [
-        'id',
-        'start_time',
-        'location',
-        'fee',
-        'min_players',
-        'max_players',
-        'confirmed_count',
-        'waitlist_mode',
+        "id",
+        "start_time",
+        "location",
+        "fee",
+        "min_players",
+        "max_players",
+        "confirmed_count",
+        "waitlist_mode",
       ];
       const lines = [
-        headers.join(','),
+        headers.join(","),
         ...sessions.map((s) =>
           [
             s.id,
@@ -69,21 +73,21 @@ export function AdminToolsPage() {
             s.max_players,
             s.confirmed_count ?? 0,
             JSON.stringify(s.waitlist_mode),
-          ].join(',')
+          ].join(","),
         ),
       ];
-      const blob = new Blob([lines.join('\n')], {
-        type: 'text/csv;charset=utf-8',
+      const blob = new Blob([lines.join("\n")], {
+        type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `miootz-sessions-${format(new Date(), 'yyyy-MM-dd-HHmm')}.csv`;
+      a.download = `miootz-sessions-${format(new Date(), "yyyy-MM-dd-HHmm")}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('CSV downloaded.', 'success');
+      showToast("CSV downloaded.", "success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed');
+      setError(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExporting(false);
     }
@@ -94,7 +98,7 @@ export function AdminToolsPage() {
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
-            items={[{ label: 'Admin', to: '/admin' }, { label: 'Tools' }]}
+            items={[{ label: "Admin", to: "/admin" }, { label: "Tools" }]}
           />
         }
         title="Tools"
@@ -106,9 +110,9 @@ export function AdminToolsPage() {
           Recurring sessions
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Runs the same logic as each template’s weekly job: create the next meetup if
-          missing, then send push notifications with join links. Use after downtime or
-          to test your configured announce times.
+          Runs the same logic as each template’s weekly job: create the next
+          meetup if missing, then send push notifications with join links. Use
+          after downtime or to test your configured announce times.
         </p>
 
         {error && (
@@ -156,7 +160,11 @@ export function AdminToolsPage() {
           disabled={exporting}
           className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl border border-violet-300 dark:border-violet-700 text-violet-900 dark:text-violet-100 font-medium hover:bg-violet-50 dark:hover:bg-violet-950/40 disabled:opacity-50 transition-colors"
         >
-          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {exporting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
           Export sessions (CSV)
         </button>
       </div>
@@ -166,7 +174,9 @@ export function AdminToolsPage() {
           Job history
         </h2>
         {history.length === 0 ? (
-          <p className="text-sm text-gray-500">No manual runs recorded in this browser yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No manual runs recorded in this browser yet.
+          </p>
         ) : (
           <ul className="space-y-2 text-sm border border-gray-200 dark:border-gray-800 rounded-xl divide-y divide-gray-200 dark:divide-gray-800 overflow-hidden">
             {history.map((h) => (
@@ -174,11 +184,15 @@ export function AdminToolsPage() {
                 key={h.id}
                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-4 py-3 bg-gray-50/50 dark:bg-gray-900/50"
               >
-                <span className="font-medium text-gray-900 dark:text-gray-100">{h.label}</span>
-                <span className="text-gray-500 dark:text-gray-400 tabular-nums">
-                  {format(new Date(h.at), 'd MMM yyyy, HH:mm:ss')}
+                <span className="font-medium text-gray-900 dark:text-gray-100">
+                  {h.label}
                 </span>
-                <span className="text-gray-600 dark:text-gray-400 sm:col-span-2">{h.detail}</span>
+                <span className="text-gray-500 dark:text-gray-400 tabular-nums">
+                  {format(new Date(h.at), "d MMM yyyy, HH:mm:ss")}
+                </span>
+                <span className="text-gray-600 dark:text-gray-400 sm:col-span-2">
+                  {h.detail}
+                </span>
               </li>
             ))}
           </ul>
@@ -186,8 +200,8 @@ export function AdminToolsPage() {
       </section>
 
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Player skill recalculation and invite cleanup run on the server schedule; ask a developer to
-        expose them here if needed.
+        Player skill recalculation and invite cleanup run on the server
+        schedule; ask a developer to expose them here if needed.
       </p>
     </div>
   );

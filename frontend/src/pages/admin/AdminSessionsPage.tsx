@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { format, formatDistanceToNow } from 'date-fns';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { format, formatDistanceToNow } from "date-fns";
 import {
   Calendar,
   Loader2,
@@ -10,19 +10,19 @@ import {
   Search,
   Trash2,
   Users,
-} from 'lucide-react';
-import { fetchSessions, type SessionListItem } from '../../api/sessionsApi';
-import { parseSessionStart } from '../../utils/datetime';
-import { adminDeleteSession } from '../../api/adminApi';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
-import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { useToast } from '../../context/ToastContext';
-import { hapticLight } from '../../utils/haptics';
+} from "lucide-react";
+import { fetchSessions, type SessionListItem } from "../../api/sessionsApi";
+import { parseSessionStart } from "../../utils/datetime";
+import { adminDeleteSession } from "../../api/adminApi";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
+import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
+import { useToast } from "../../context/ToastContext";
+import { hapticLight } from "../../utils/haptics";
 
 const PAGE_SIZE = 50;
 
-type SessionFilter = 'all' | 'upcoming' | 'past' | 'weekly' | 'next7';
+type SessionFilter = "all" | "upcoming" | "past" | "weekly" | "next7";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -62,11 +62,7 @@ function SessionRowSkeleton() {
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   const colour =
-    pct >= 90
-      ? 'bg-emerald-500'
-      : pct >= 60
-        ? 'bg-sky-500'
-        : 'bg-amber-500';
+    pct >= 90 ? "bg-emerald-500" : pct >= 60 ? "bg-sky-500" : "bg-amber-500";
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
@@ -75,7 +71,7 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 shrink-0 leading-none">
+      <span className="text-2xs tabular-nums text-gray-500 dark:text-gray-400 shrink-0 leading-none">
         {value}/{max}
       </span>
     </div>
@@ -92,9 +88,9 @@ export function AdminSessionsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const debouncedQuery = useDebounced(query, 300);
-  const [filter, setFilter] = useState<SessionFilter>('all');
+  const [filter, setFilter] = useState<SessionFilter>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(25);
 
@@ -111,12 +107,12 @@ export function AdminSessionsPage() {
         [...list].sort(
           (a, b) =>
             parseSessionStart(a.start_time).getTime() -
-            parseSessionStart(b.start_time).getTime()
-        )
+            parseSessionStart(b.start_time).getTime(),
+        ),
       );
       setHasMore(res.offset + res.items.length < res.total);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load sessions');
+      setError(e instanceof Error ? e.message : "Failed to load sessions");
     } finally {
       setLoading(false);
     }
@@ -142,13 +138,13 @@ export function AdminSessionsPage() {
         merged.sort(
           (a, b) =>
             parseSessionStart(a.start_time).getTime() -
-            parseSessionStart(b.start_time).getTime()
+            parseSessionStart(b.start_time).getTime(),
         );
         return merged;
       });
       setHasMore(next.offset + next.items.length < next.total);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load more');
+      setError(e instanceof Error ? e.message : "Failed to load more");
     } finally {
       setLoadingMore(false);
     }
@@ -162,10 +158,10 @@ export function AdminSessionsPage() {
       const upcoming = start >= now;
       const weekly = s.game_template_id != null;
       const inNext7 = start >= now && start <= now + weekMs;
-      if (filter === 'upcoming' && !upcoming) return false;
-      if (filter === 'past' && upcoming) return false;
-      if (filter === 'weekly' && !weekly) return false;
-      if (filter === 'next7' && !inNext7) return false;
+      if (filter === "upcoming" && !upcoming) return false;
+      if (filter === "past" && upcoming) return false;
+      if (filter === "weekly" && !weekly) return false;
+      if (filter === "next7" && !inNext7) return false;
       return true;
     });
   }, [sessions, filter]);
@@ -179,10 +175,10 @@ export function AdminSessionsPage() {
     try {
       await adminDeleteSession(id);
       hapticLight();
-      showToast('Session deleted.', 'success');
+      showToast("Session deleted.", "success");
       await reloadFirstPage();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Delete failed', 'error');
+      showToast(e instanceof Error ? e.message : "Delete failed", "error");
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
@@ -191,38 +187,41 @@ export function AdminSessionsPage() {
 
   /* ── Filter chips data ──────────────────────────────── */
 
-  const filters: { key: SessionFilter; label: string; count?: number }[] = useMemo(() => {
-    const now = Date.now();
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    return [
-      { key: 'all' as const, label: 'All' },
-      {
-        key: 'upcoming' as const,
-        label: 'Upcoming',
-        count: sessions.filter((s) => parseSessionStart(s.start_time).getTime() >= now).length,
-      },
-      {
-        key: 'past' as const,
-        label: 'Past',
-        count: sessions.filter((s) => parseSessionStart(s.start_time).getTime() < now).length,
-      },
-      {
-        key: 'next7' as const,
-        label: 'Next 7d',
-        count: sessions.filter(
-          (s) => {
+  const filters: { key: SessionFilter; label: string; count?: number }[] =
+    useMemo(() => {
+      const now = Date.now();
+      const weekMs = 7 * 24 * 60 * 60 * 1000;
+      return [
+        { key: "all" as const, label: "All" },
+        {
+          key: "upcoming" as const,
+          label: "Upcoming",
+          count: sessions.filter(
+            (s) => parseSessionStart(s.start_time).getTime() >= now,
+          ).length,
+        },
+        {
+          key: "past" as const,
+          label: "Past",
+          count: sessions.filter(
+            (s) => parseSessionStart(s.start_time).getTime() < now,
+          ).length,
+        },
+        {
+          key: "next7" as const,
+          label: "Next 7d",
+          count: sessions.filter((s) => {
             const t = parseSessionStart(s.start_time).getTime();
             return t >= now && t <= now + weekMs;
-          }
-        ).length,
-      },
-      {
-        key: 'weekly' as const,
-        label: 'Weekly',
-        count: sessions.filter((s) => s.game_template_id != null).length,
-      },
-    ];
-  }, [sessions]);
+          }).length,
+        },
+        {
+          key: "weekly" as const,
+          label: "Weekly",
+          count: sessions.filter((s) => s.game_template_id != null).length,
+        },
+      ];
+    }, [sessions]);
 
   /* ── Render ─────────────────────────────────────────── */
 
@@ -231,7 +230,7 @@ export function AdminSessionsPage() {
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
-            items={[{ label: 'Admin', to: '/admin' }, { label: 'Sessions' }]}
+            items={[{ label: "Admin", to: "/admin" }, { label: "Sessions" }]}
           />
         }
         title="Sessions"
@@ -283,8 +282,8 @@ export function AdminSessionsPage() {
                 onClick={() => setFilter(key)}
                 className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   filter === key
-                    ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
+                    ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                 }`}
               >
                 {label}
@@ -292,8 +291,8 @@ export function AdminSessionsPage() {
                   <span
                     className={
                       filter === key
-                        ? 'text-violet-500 dark:text-violet-400'
-                        : 'text-gray-400 dark:text-gray-500'
+                        ? "text-violet-500 dark:text-violet-400"
+                        : "text-gray-500 dark:text-gray-400"
                     }
                   >
                     {count}
@@ -321,7 +320,11 @@ export function AdminSessionsPage() {
       {/* ── Session list ──────────────────────────────── */}
 
       {loading ? (
-        <ul className="space-y-2" aria-busy="true" aria-label="Loading sessions">
+        <ul
+          className="space-y-2"
+          aria-busy="true"
+          aria-label="Loading sessions"
+        >
           <SessionRowSkeleton />
           <SessionRowSkeleton />
           <SessionRowSkeleton />
@@ -334,7 +337,7 @@ export function AdminSessionsPage() {
           </p>
           <Link
             to="/admin/sessions/new"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 active:scale-[0.98]"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
             Create session
@@ -374,22 +377,22 @@ export function AdminSessionsPage() {
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
                             upcoming
-                              ? 'bg-emerald-500 dark:bg-emerald-400'
-                              : 'bg-gray-300 dark:bg-gray-600'
+                              ? "bg-emerald-500 dark:bg-emerald-400"
+                              : "bg-gray-300 dark:bg-gray-600"
                           }`}
                         />
                         <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {format(start, 'EEE, d MMM')}
+                          {format(start, "EEE, d MMM")}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                          {format(start, 'HH:mm')}
+                          {format(start, "HH:mm")}
                         </span>
                         {countdown ? (
                           <span className="text-xs text-emerald-600 dark:text-emerald-400 ml-auto shrink-0">
                             {countdown}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto shrink-0">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto shrink-0">
                             ended
                           </span>
                         )}
@@ -405,15 +408,15 @@ export function AdminSessionsPage() {
 
                       {/* Metadata chips */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:text-gray-400">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs font-medium text-gray-600 dark:text-gray-400">
                           <Users className="w-3 h-3" />
                           {s.min_players}–{s.max_players}
                         </span>
-                        <span className="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] text-gray-500 dark:text-gray-400 capitalize">
-                          {s.waitlist_mode.replace('_', ' ')}
+                        <span className="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs text-gray-500 dark:text-gray-400 capitalize">
+                          {s.waitlist_mode.replace("_", " ")}
                         </span>
                         {s.game_template_id != null && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 text-2xs font-medium text-violet-700 dark:text-violet-300">
                             <Repeat className="w-3 h-3" />
                             Weekly
                           </span>
@@ -452,9 +455,9 @@ export function AdminSessionsPage() {
           </ul>
 
           {filtered.length > pageSize ? (
-            <p className="text-center text-xs text-gray-500 mt-3">
-              Showing {Math.min(pageSize, filtered.length)} of {filtered.length} matching (adjust
-              &quot;rows&quot;).
+            <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-3">
+              Showing {Math.min(pageSize, filtered.length)} of {filtered.length}{" "}
+              matching (adjust &quot;rows&quot;).
             </p>
           ) : null}
 
@@ -466,7 +469,9 @@ export function AdminSessionsPage() {
                 disabled={loadingMore}
                 className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
               >
-                {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {loadingMore ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Load more
               </button>
             </div>

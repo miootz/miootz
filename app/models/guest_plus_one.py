@@ -14,6 +14,7 @@ from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
     from app.models.session import GameSession
@@ -26,18 +27,16 @@ class GuestPlusOne(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     #: Session the guest is attending.
-    session_id: Mapped[int] = mapped_column(
-        ForeignKey("game_sessions.id"), index=True
-    )
-    session: Mapped["GameSession"] = relationship("GameSession")
+    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
+    session: Mapped[GameSession] = relationship("GameSession")
 
     #: User who invited the guest.
     inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    inviter: Mapped["User"] = relationship("User", foreign_keys=[inviter_id])
+    inviter: Mapped[User] = relationship("User", foreign_keys=[inviter_id])
 
     #: Placeholder User created for the guest (before claim).
     guest_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    guest_user: Mapped["User"] = relationship(
+    guest_user: Mapped[User] = relationship(
         "User", foreign_keys=[guest_user_id], backref="guest_plus_one"
     )
 
@@ -45,7 +44,7 @@ class GuestPlusOne(Base):
     first_name: Mapped[str] = mapped_column(String)
     last_name: Mapped[str] = mapped_column(String)
 
-    #: Guest's self-assessed skill (1-10, provided by inviter).
+    #: Guest's self-assessed skill (1–5, provided by inviter).
     self_assessed_skill: Mapped[int] = mapped_column(Integer)
 
     #: Unique claim token (shared via link/SMS).
@@ -59,11 +58,9 @@ class GuestPlusOne(Base):
     claimed_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
-    claimed_by_user: Mapped["User | None"] = relationship(
+    claimed_by_user: Mapped[User | None] = relationship(
         "User", foreign_keys=[claimed_by_user_id]
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

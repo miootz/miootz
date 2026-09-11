@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ExternalLink, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  LogOut,
+  Monitor,
+  Moon,
+  Sun,
+  User,
+} from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import { useTheme } from "../theme/ThemeProvider";
 import type { ThemePreference } from "../theme/themeStorage";
@@ -19,7 +27,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { StarRating } from "../components/StarRating";
-import { SKILL_SCALE_BLURB } from '../components/OnboardingCard';
+import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import {
   pushSupported,
@@ -172,7 +180,9 @@ export function ProfilePage() {
   // Profile field state
   const [selfAssessed, setSelfAssessed] = useState<number | "">("");
   const [primarySpecialty, setPrimarySpecialty] = useState<Specialty | "">("");
-  const [secondarySpecialty, setSecondarySpecialty] = useState<Specialty | "">("");
+  const [secondarySpecialty, setSecondarySpecialty] = useState<Specialty | "">(
+    "",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -349,8 +359,12 @@ export function ProfilePage() {
         try {
           await patchMyProfile({ self_assessed_skill: v });
           setSkillSaved(true);
-          if (skillSavedTimerRef.current) clearTimeout(skillSavedTimerRef.current);
-          skillSavedTimerRef.current = setTimeout(() => setSkillSaved(false), 1500);
+          if (skillSavedTimerRef.current)
+            clearTimeout(skillSavedTimerRef.current);
+          skillSavedTimerRef.current = setTimeout(
+            () => setSkillSaved(false),
+            1500,
+          );
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Save failed";
           setError(msg);
@@ -393,9 +407,11 @@ export function ProfilePage() {
               size="md"
             />
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold truncate">{displayName}</h1>
+              <h1 className="text-xl font-bold text-white truncate">
+                {displayName}
+              </h1>
               <p className="text-sm text-violet-100 truncate">
-                {u.pocket_id_sub ?? ''}
+                {u.pocket_id_sub ?? ""}
               </p>
             </div>
             <a
@@ -446,10 +462,22 @@ export function ProfilePage() {
                 Your stats
               </h2>
               <div className="grid grid-cols-2 gap-3">
-                <StatCard label="Sessions played" value={String(stats.games_played)} />
-                <StatCard label="This season" value={String(stats.season_games)} />
-                <StatCard label="Avg. rating" value={stats.average_rating.toFixed(1)} />
-                <StatCard label="Ratings received" value={String(stats.total_ratings)} />
+                <StatCard
+                  label="Sessions played"
+                  value={String(stats.games_played)}
+                />
+                <StatCard
+                  label="This season"
+                  value={String(stats.season_games)}
+                />
+                <StatCard
+                  label="Avg. rating"
+                  value={stats.average_rating.toFixed(1)}
+                />
+                <StatCard
+                  label="Ratings received"
+                  value={String(stats.total_ratings)}
+                />
               </div>
             </div>
           )}
@@ -464,7 +492,7 @@ export function ProfilePage() {
                   Skill comparison
                 </h2>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                     <span>Self-assessed</span>
                     <span className="font-medium text-gray-800 dark:text-gray-200">
                       {selfSkill}/5
@@ -476,7 +504,7 @@ export function ProfilePage() {
                       style={{ width: `${(selfSkill / 5) * 100}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                     <span>Calculated (peers)</span>
                     <span className="font-medium text-gray-800 dark:text-gray-200">
                       {calcSkill.toFixed(1)}/5
@@ -501,14 +529,14 @@ export function ProfilePage() {
             </h2>
 
             <label className="block space-y-1.5">
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 Self-assessed skill (1–5)
               </span>
               <StarRating
                 value={selfAssessed === "" ? 0 : selfAssessed}
                 onChange={onSkillChange}
               />
-              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+              <span className="text-2xs text-gray-500 dark:text-gray-400">
                 {SKILL_SCALE_BLURB}
               </span>
               {skillSaved && (
@@ -523,7 +551,9 @@ export function ProfilePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <span className="text-xs text-gray-500">Primary position</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Primary position
+                </span>
                 <select
                   value={primarySpecialty}
                   disabled={saving}
@@ -549,7 +579,9 @@ export function ProfilePage() {
               </div>
 
               <div className="space-y-1">
-                <span className="text-xs text-gray-500">Secondary position</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Secondary position
+                </span>
                 <select
                   value={secondarySpecialty}
                   disabled={saving}
@@ -585,8 +617,16 @@ export function ProfilePage() {
           <div className="grid grid-cols-3 gap-2">
             {(
               [
-                { value: "system" as ThemePreference, label: "System", Icon: Monitor },
-                { value: "light" as ThemePreference, label: "Light", Icon: Sun },
+                {
+                  value: "system" as ThemePreference,
+                  label: "System",
+                  Icon: Monitor,
+                },
+                {
+                  value: "light" as ThemePreference,
+                  label: "Light",
+                  Icon: Sun,
+                },
                 { value: "dark" as ThemePreference, label: "Dark", Icon: Moon },
               ] as const
             ).map(({ value, label, Icon }) => (
@@ -622,7 +662,9 @@ export function ProfilePage() {
                 Registered devices
               </span>
               {devicesLoading ? (
-                <p className="text-sm text-gray-500">Loading…</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Loading…
+                </p>
               ) : pushDevices.length === 0 ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   No devices registered yet.
@@ -655,7 +697,9 @@ export function ProfilePage() {
                             {host}
                           </p>
                           {date && (
-                            <p className="text-xs text-gray-500">{date}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {date}
+                            </p>
                           )}
                         </div>
                         <button
@@ -714,86 +758,90 @@ export function ProfilePage() {
                       }
                     })();
                   }}
-                  className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
                 >
                   {pushBusy ? "Registering…" : "Register this device"}
                 </button>
               )}
               {pushOn && pushDevices.length === 0 && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   This device is registered but not yet visible. Try refreshing.
                 </p>
-              )}
-            </div>
-
-            {/* Notification type toggles */}
-            <div className="space-y-2">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                Notification types
-              </span>
-              {notifPrefsLoading ? (
-                <p className="text-sm text-gray-500">Loading…</p>
-              ) : notifPrefs.length === 0 ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Could not load preferences.
-                </p>
-              ) : (
-                <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-                  {notifPrefs.map((row) => (
-                    <li
-                      key={row.category}
-                      className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-sm text-gray-900 dark:text-gray-100">
-                          {NOTIF_CATEGORY_META[row.category].display_name}
-                        </span>
-                        <p className="text-xs text-gray-500 truncate">
-                          {NOTIF_CATEGORY_META[row.category].description}
-                        </p>
-                      </div>
-                      <ToggleSwitch
-                        enabled={row.enabled}
-                        disabled={notifToggleBusy === row.category}
-                        onChange={() => {
-                          const next = !row.enabled;
-                          setNotifToggleBusy(row.category);
-                          setNotifPrefs((prev) =>
-                            prev.map((p) =>
-                              p.category === row.category
-                                ? { ...p, enabled: next }
-                                : p,
-                            ),
-                          );
-                          void patchNotificationPreference(row.category, next)
-                            .catch(() => {
-                              setNotifPrefs((prev) =>
-                                prev.map((p) =>
-                                  p.category === row.category
-                                    ? { ...p, enabled: row.enabled }
-                                    : p,
-                                ),
-                              );
-                              showToast(
-                                "Could not update preference.",
-                                "error",
-                              );
-                            })
-                            .finally(() => setNotifToggleBusy(null));
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           </CollapsibleSection>
         )}
 
-        {!import.meta.env.PROD && (
+        <CollapsibleSection title="Notification preferences">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            Choose which updates you receive on your registered devices.
+          </p>
+          {/* Notification type toggles */}
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+              Notification types
+            </span>
+            {notifPrefsLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Loading…
+              </p>
+            ) : notifPrefs.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Could not load preferences.
+              </p>
+            ) : (
+              <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+                {notifPrefs.map((row) => (
+                  <li
+                    key={row.category}
+                    className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-sm text-gray-900 dark:text-gray-100">
+                        {NOTIF_CATEGORY_META[row.category].display_name}
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {NOTIF_CATEGORY_META[row.category].description}
+                      </p>
+                    </div>
+                    <ToggleSwitch
+                      enabled={row.enabled}
+                      disabled={notifToggleBusy === row.category}
+                      onChange={() => {
+                        const next = !row.enabled;
+                        setNotifToggleBusy(row.category);
+                        setNotifPrefs((prev) =>
+                          prev.map((p) =>
+                            p.category === row.category
+                              ? { ...p, enabled: next }
+                              : p,
+                          ),
+                        );
+                        void patchNotificationPreference(row.category, next)
+                          .catch(() => {
+                            setNotifPrefs((prev) =>
+                              prev.map((p) =>
+                                p.category === row.category
+                                  ? { ...p, enabled: row.enabled }
+                                  : p,
+                              ),
+                            );
+                            showToast("Could not update preference.", "error");
+                          })
+                          .finally(() => setNotifToggleBusy(null));
+                      }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </CollapsibleSection>
+
+        {!pushEnabled && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Push notifications are available in the production build (HTTPS +
-            service worker).
+            This browser session cannot receive push notifications. Your
+            preferences still apply to registered devices.
           </p>
         )}
 
@@ -803,7 +851,7 @@ export function ProfilePage() {
             list for that recurring meetup.
           </p>
           {templateSubsLoading ? (
-            <p className="text-sm text-gray-500">Loading…</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
           ) : templateSubs.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">
               No active weekly templates yet.
@@ -864,19 +912,19 @@ export function ProfilePage() {
           <CollapsibleSection title="Debug info">
             <dl className="grid gap-2 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Admin</dt>
+                <dt className="text-gray-500 dark:text-gray-400">Admin</dt>
                 <dd className="text-right">
                   {me.is_admin ? (
                     <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                       Yes
                     </span>
                   ) : (
-                    <span className="text-gray-500">No</span>
+                    <span className="text-gray-500 dark:text-gray-400">No</span>
                   )}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Groups</dt>
+                <dt className="text-gray-500 dark:text-gray-400">Groups</dt>
                 <dd className="text-right">
                   <div className="flex flex-wrap gap-1.5 justify-end">
                     {me.auth_groups.map((g) => (

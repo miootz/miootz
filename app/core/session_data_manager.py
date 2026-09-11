@@ -1,12 +1,11 @@
 """SSE fan-out for session roster/detail changes (distinct from chat SSE)."""
 
 import asyncio
-from typing import Dict, Set
 
 
 class SessionDataEventManager:
     def __init__(self) -> None:
-        self.sessions: Dict[int, Set[asyncio.Queue]] = {}
+        self.sessions: dict[int, set[asyncio.Queue]] = {}
 
     async def subscribe(self, session_id: int) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()

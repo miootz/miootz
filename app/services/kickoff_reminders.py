@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ async def scan_and_send_kickoff_reminders(db: AsyncSession) -> int:
     Sessions whose start_time falls in [now+59m, now+61m] (UTC) and that have not
     yet received the kickoff reminder get one Web Push to all non-cancelled attendees.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     lo = (now + timedelta(minutes=59)).replace(tzinfo=None)
     hi = (now + timedelta(minutes=61)).replace(tzinfo=None)
 
@@ -38,9 +38,7 @@ async def scan_and_send_kickoff_reminders(db: AsyncSession) -> int:
     for session in sessions:
         try:
             await notify_kickoff_reminder_for_session(db, session)
-            session.kickoff_reminder_sent_at = datetime.now(timezone.utc).replace(
-                tzinfo=None
-            )
+            session.kickoff_reminder_sent_at = datetime.now(UTC).replace(tzinfo=None)
             sent += 1
             logger.info(
                 "Kickoff reminder sent for session_id=%s start=%s",

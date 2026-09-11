@@ -19,7 +19,9 @@ async def create_admin_user(username: str) -> None:
 
     async with async_session() as db:
         # Check if user already exists
-        result = await db.execute(select(User).where(User.username == username))
+        result = await db.execute(
+            select(User).where(User.sso_preferred_username == username)
+        )
         existing = result.scalar_one_or_none()
         if existing:
             existing.is_admin = True
@@ -27,11 +29,17 @@ async def create_admin_user(username: str) -> None:
             print(f"User '{username}' updated to admin.")
             return
 
-        new_admin = User(username=username, is_admin=True)
+        new_admin = User(
+            sso_preferred_username=username,
+            sso_display_name=username,
+            is_admin=True,
+        )
         db.add(new_admin)
         await db.commit()
         print(f"Admin user '{username}' created (DB only).")
-        print("Create the matching Pocket ID account via /login/setup and link by username.")
+        print(
+            "Create the matching Pocket ID account via /login/setup and link by username."
+        )
 
 
 def main():

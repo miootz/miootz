@@ -49,10 +49,10 @@ class GameTemplate(Base):
     #: Default match duration in minutes for live team-vs-team matches.
     match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    sessions: Mapped[list["GameSession"]] = relationship(
+    sessions: Mapped[list[GameSession]] = relationship(
         "GameSession", back_populates="game_template"
     )
-    subscriptions: Mapped[list["GameTemplateSubscription"]] = relationship(
+    subscriptions: Mapped[list[GameTemplateSubscription]] = relationship(
         "GameTemplateSubscription",
         back_populates="game_template",
         cascade="all, delete-orphan",

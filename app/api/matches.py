@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import require_admin
 from app.core.database import get_db
+from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.session_data_manager import session_data_manager
 from app.models.match import SessionMatch
 from app.models.session import Attendance, GameSession
@@ -23,7 +23,7 @@ from app.services.manual_teams import (
     get_team_names,
     resolve_session_teams_nested,
 )
-from app.services.session_revision import notify_session_data_changed
+from app.services.session_revision import bump_and_notify
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ def _compute_timer_remaining(match: SessionMatch) -> int:
     if match.status in ("completed",):
         return 0
 
-    started = match.timer_started_at.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
+    started = match.timer_started_at.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
     elapsed = (now - started).total_seconds()
 
     # Subtract pause intervals
@@ -89,33 +89,26 @@ def _compute_timer_remaining(match: SessionMatch) -> int:
     if match.timer_pause_intervals:
         try:
             pause_intervals = json.loads(match.timer_pause_intervals)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
 
     for interval in pause_intervals:
         paused_at = interval.get("paused_at")
         resumed_at = interval.get("resumed_at")
         if paused_at:
-            pa = datetime.fromisoformat(paused_at).replace(tzinfo=timezone.utc)
+            pa = datetime.fromisoformat(paused_at).replace(tzinfo=UTC)
             if resumed_at:
-                ra = datetime.fromisoformat(resumed_at).replace(tzinfo=timezone.utc)
+                ra = datetime.fromisoformat(resumed_at).replace(tzinfo=UTC)
                 elapsed -= (ra - pa).total_seconds()
             else:
                 # Currently paused — pause until now
                 elapsed -= (now - pa).total_seconds()
 
-    remaining = match.timer_total_seconds - int(elapsed)
+    try:
+        remaining = int(match.timer_total_seconds or 0) - int(elapsed)
+    except TypeError, ValueError, OverflowError:
+        return 0
     return max(remaining, 0)
-
-
-def _is_half_time(match: SessionMatch) -> bool:
-    """True when timer has crossed the 50% threshold (first half just ended)."""
-    if match.timer_started_at is None:
-        return False
-    remaining = _compute_timer_remaining(match)
-    ratio = remaining / match.timer_total_seconds if match.timer_total_seconds > 0 else 1
-    # Half-time window: between 55% and 45% of total time (just crossed 50%)
-    return ratio <= 0.55 and ratio >= 0.45
 
 
 def _timer_ends_at_iso(match: SessionMatch) -> str | None:
@@ -132,42 +125,43 @@ def _timer_ends_at_iso(match: SessionMatch) -> str | None:
             if match.timer_pause_intervals
             else []
         )
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         intervals = []
-    ends = match.timer_started_at.replace(tzinfo=timezone.utc) + timedelta(
+    ends = match.timer_started_at.replace(tzinfo=UTC) + timedelta(
         seconds=match.timer_total_seconds
     )
     for interval in intervals:
         paused_at = interval.get("paused_at")
         resumed_at = interval.get("resumed_at")
         if paused_at and resumed_at:
-            pa = datetime.fromisoformat(paused_at).replace(tzinfo=timezone.utc)
-            ra = datetime.fromisoformat(resumed_at).replace(tzinfo=timezone.utc)
+            pa = datetime.fromisoformat(paused_at).replace(tzinfo=UTC)
+            ra = datetime.fromisoformat(resumed_at).replace(tzinfo=UTC)
             ends -= ra - pa
     return ends.isoformat()
 
 
-async def _check_timer_expiry(
-    match: SessionMatch, db: AsyncSession  # pylint: disable=unused-argument
-) -> bool:
+async def _check_timer_expiry(match: SessionMatch, db: AsyncSession) -> bool:
     """If timer has expired, auto-transition to 'time_up' and broadcast.
-    Returns True if the match was transitioned."""
+    Returns True if the match was transitioned.
+
+    IMPORTANT: persists the transition with an explicit commit — the shared
+    ``get_db`` dependency never commits, so a bare flush would roll back and
+    the match would reappear as 'active' (timer reset) on the next poll."""
     if match.status != "active":
         return False
     remaining = _compute_timer_remaining(match)
     if remaining <= 0:
         match.status = "time_up"
         match.timer_seconds_remaining = 0
-        await db.flush()
-        await _broadcast_match_event(match.session_id, {
-            "type": "match_timer_expired",
-            "match_id": match.id,
-            "seconds_remaining": 0,
-            "status": "time_up",
-        })
-        session = await db.get(GameSession, match.session_id)
-        await notify_session_data_changed(
-            match.session_id, (session.content_revision or 0) + 1  # type: ignore[attr-defined]
+        await bump_and_notify(db, match.session_id)
+        await _broadcast_match_event(
+            match.session_id,
+            {
+                "type": "match_timer_expired",
+                "match_id": match.id,
+                "seconds_remaining": 0,
+                "status": "time_up",
+            },
         )
         return True
     return False
@@ -175,8 +169,8 @@ async def _check_timer_expiry(
 
 def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
     """Serialize a SessionMatch with user details."""
-    team_a_users: list[int] = json.loads(match.team_a_users)
-    team_b_users: list[int] = json.loads(match.team_b_users)
+    team_a_users: list[int] = _loads_int_list(match.team_a_users)
+    team_b_users: list[int] = _loads_int_list(match.team_b_users)
 
     def _user_list(ids: list[int]) -> list[dict]:
         result = []
@@ -185,7 +179,9 @@ def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
             if u:
                 result.append(u)
             else:
-                result.append({"id": uid, "display_name": f"User {uid}", "avatar_url": None})
+                result.append(
+                    {"id": uid, "display_name": f"User {uid}", "avatar_url": None}
+                )
         return result
 
     out = {
@@ -205,9 +201,9 @@ def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
         "status": match.status,
         "timer_total_seconds": match.timer_total_seconds,
         "timer_seconds_remaining": _compute_timer_remaining(match),
-        "timer_paused": match.timer_pause_intervals is not None and _is_currently_paused(match),
+        "timer_paused": match.timer_pause_intervals is not None
+        and _is_currently_paused(match),
         "timer_ends_at": _timer_ends_at_iso(match),
-        "is_half_time": _is_half_time(match) if match.status == "active" else False,
         "created_at": match.created_at.isoformat() if match.created_at else None,
         "completed_at": match.completed_at.isoformat() if match.completed_at else None,
     }
@@ -222,7 +218,7 @@ def _is_currently_paused(match: SessionMatch) -> bool:
         intervals = json.loads(match.timer_pause_intervals)
         if intervals:
             return intervals[-1].get("resumed_at") is None
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         pass
     return False
 
@@ -270,6 +266,10 @@ async def list_session_matches(
         .order_by(SessionMatch.match_number.asc())
     )
     matches = result.scalars().all()
+
+    # Sweep expired timers so polling clients (no SSE) never see a frozen clock.
+    for m in matches:
+        await _check_timer_expiry(m, db)
 
     users_by_id = await _load_users_for_session(db, session_id)
     return {
@@ -402,12 +402,15 @@ async def start_matches(
     await db.refresh(match)
 
     # Notify
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
-    await _broadcast_match_event(session_id, {
-        "type": "match_created",
-        "match_id": match.id,
-        "match_number": 1,
-    })
+    await bump_and_notify(db, session_id)
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_created",
+            "match_id": match.id,
+            "match_number": 1,
+        },
+    )
 
     users_by_id = await _load_users_for_session(db, session_id)
     return {"status": "started", "match": _match_json(match, users_by_id)}
@@ -487,18 +490,28 @@ async def create_new_pending_match(
             raise HTTPException(status_code=400, detail="Teams must be different.")
         team_a = teams_nested[body.team_a_idx]
         team_b = teams_nested[body.team_b_idx]
-        team_a_name = (team_names[body.team_a_idx] if team_names and body.team_a_idx < len(team_names)
-                       else f"Team {body.team_a_idx + 1}")
-        team_b_name = (team_names[body.team_b_idx] if team_names and body.team_b_idx < len(team_names)
-                       else f"Team {body.team_b_idx + 1}")
+        team_a_name = (
+            team_names[body.team_a_idx]
+            if team_names and body.team_a_idx < len(team_names)
+            else f"Team {body.team_a_idx + 1}"
+        )
+        team_b_name = (
+            team_names[body.team_b_idx]
+            if team_names and body.team_b_idx < len(team_names)
+            else f"Team {body.team_b_idx + 1}"
+        )
+        team_a_users_list = [p["user_id"] for p in team_a]
+        team_b_users_list = [p["user_id"] for p in team_b]
     else:
         # Auto-pick: last match winner vs next available team
-        winner_users: list[int] = json.loads(
-            last_match.team_a_users if last_match.score_a > last_match.score_b
+        winner_users: list[int] = _loads_int_list(
+            last_match.team_a_users
+            if last_match.score_a > last_match.score_b
             else last_match.team_b_users
         )
         winner_name = (
-            last_match.team_a_name if last_match.score_a > last_match.score_b
+            last_match.team_a_name
+            if last_match.score_a > last_match.score_b
             else last_match.team_b_name
         )
 
@@ -512,20 +525,26 @@ async def create_new_pending_match(
 
         used_team_indices: set[int] = set()
         for m in played_matches:
-            ma_users = set(json.loads(m.team_a_users))
-            mb_users = set(json.loads(m.team_b_users))
+            ma_users = set(_loads_int_list(m.team_a_users))
+            mb_users = set(_loads_int_list(m.team_b_users))
             for idx, team in enumerate(teams_nested):
                 team_user_ids = set(p["user_id"] for p in team)
                 if team_user_ids == ma_users or team_user_ids == mb_users:
                     used_team_indices.add(idx)
 
         import random as _random
-        unplayed_indices = [idx for idx in range(len(teams_nested)) if idx not in used_team_indices]
+
+        unplayed_indices = [
+            idx for idx in range(len(teams_nested)) if idx not in used_team_indices
+        ]
         if unplayed_indices:
             next_team_idx = unplayed_indices[0]
         else:
-            available = [idx for idx in range(len(teams_nested))
-                         if set(p["user_id"] for p in teams_nested[idx]) != set(winner_users)]
+            available = [
+                idx
+                for idx in range(len(teams_nested))
+                if set(p["user_id"] for p in teams_nested[idx]) != set(winner_users)
+            ]
             if not available:
                 raise HTTPException(
                     status_code=400,
@@ -536,16 +555,14 @@ async def create_new_pending_match(
         team_a_users_list = winner_users  # already a list of ints
         team_b = teams_nested[next_team_idx]
         team_a_name = winner_name
-        team_b_name = (team_names[next_team_idx] if team_names and next_team_idx < len(team_names)
-                       else f"Team {next_team_idx + 1}")
+        team_b_name = (
+            team_names[next_team_idx]
+            if team_names and next_team_idx < len(team_names)
+            else f"Team {next_team_idx + 1}"
+        )
         team_b_users_list = [p["user_id"] for p in team_b]
 
     match_duration = session.match_duration_minutes or 10
-
-    # Build user lists for the new match
-    if body.team_a_idx is not None:
-        team_a_users_list = [p["user_id"] for p in team_a]
-        team_b_users_list = [p["user_id"] for p in team_b]
 
     new_match = SessionMatch(
         session_id=session_id,
@@ -563,7 +580,7 @@ async def create_new_pending_match(
     await db.commit()
     await db.refresh(new_match)
 
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     users_by_id = await _load_users_for_session(db, session_id)
     return {"status": "created", "match": _match_json(new_match, users_by_id)}
@@ -582,7 +599,7 @@ async def delete_match(
         raise HTTPException(status_code=404, detail="Match not found")
     await db.delete(match)
     await db.commit()
-    await notify_session_data_changed(session_id, (session_id or 0) + 1)
+    await bump_and_notify(db, session_id)
 
 
 @router.post("/{session_id}/matches/create", status_code=201)
@@ -626,15 +643,15 @@ async def create_match(
         status="completed",
         timer_total_seconds=0,
         timer_seconds_remaining=None,
-        completed_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(UTC),
     )
     db.add(match)
     await db.commit()
     await db.refresh(match)
 
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
-    users_by_id: dict[int, User] = {}
+    users_by_id: dict[int, dict] = {}
     return {"status": "created", "match": _match_json(match, users_by_id)}
 
 
@@ -661,7 +678,7 @@ async def swap_match_teams(
     await db.commit()
     await db.refresh(match)
 
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
     users_by_id = await _load_users_for_session(db, session_id)
     return _match_json(match, users_by_id)
 
@@ -678,23 +695,24 @@ async def start_timer(
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
 
-    match.timer_started_at = datetime.now(timezone.utc)
+    match.timer_started_at = datetime.now(UTC)
     match.timer_seconds_remaining = match.timer_total_seconds
     match.timer_pause_intervals = "[]"
     match.status = "active"
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_timer_started",
-        "match_id": match.id,
-        "seconds_remaining": match.timer_total_seconds,
-        "status": "active",
-        "is_half_time": False,
-        "ends_at": _timer_ends_at_iso(match),
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_timer_started",
+            "match_id": match.id,
+            "seconds_remaining": match.timer_total_seconds,
+            "status": "active",
+            "ends_at": _timer_ends_at_iso(match),
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     return {
         "status": "started",
@@ -716,14 +734,14 @@ async def pause_timer(
     if match.status not in ("active",):
         raise HTTPException(status_code=409, detail="Timer is not running.")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     remaining = _compute_timer_remaining(match)
 
     intervals: list[dict] = []
     if match.timer_pause_intervals:
         try:
             intervals = json.loads(match.timer_pause_intervals)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
     intervals.append({"paused_at": now.isoformat(), "resumed_at": None})
     match.timer_pause_intervals = json.dumps(intervals)
@@ -731,16 +749,17 @@ async def pause_timer(
 
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_timer_paused",
-        "match_id": match.id,
-        "seconds_remaining": remaining,
-        "is_half_time": _is_half_time(match),
-        "ends_at": None,
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_timer_paused",
+            "match_id": match.id,
+            "seconds_remaining": remaining,
+            "ends_at": None,
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     return {
         "status": "paused",
@@ -764,13 +783,13 @@ async def resume_timer(
     if match.timer_pause_intervals:
         try:
             intervals = json.loads(match.timer_pause_intervals)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
 
     if not intervals or intervals[-1].get("resumed_at") is not None:
         raise HTTPException(status_code=409, detail="Timer is not paused.")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     intervals[-1]["resumed_at"] = now.isoformat()
     match.timer_pause_intervals = json.dumps(intervals)
 
@@ -779,16 +798,17 @@ async def resume_timer(
 
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_timer_resumed",
-        "match_id": match.id,
-        "seconds_remaining": remaining,
-        "is_half_time": _is_half_time(match),
-        "ends_at": _timer_ends_at_iso(match),
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_timer_resumed",
+            "match_id": match.id,
+            "seconds_remaining": remaining,
+            "ends_at": _timer_ends_at_iso(match),
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     return {
         "status": "resumed",
@@ -808,7 +828,9 @@ async def reset_timer(
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active", "time_up"):
-        raise HTTPException(status_code=409, detail="Can only reset an active or time_up match.")
+        raise HTTPException(
+            status_code=409, detail="Can only reset an active or time_up match."
+        )
 
     match.timer_started_at = None
     match.timer_seconds_remaining = None
@@ -818,13 +840,15 @@ async def reset_timer(
     match.status = "pending"
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_reset",
-        "match_id": match.id,
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_reset",
+            "match_id": match.id,
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     users_by_id = await _load_users_for_session(db, session_id)
     return _match_json(match, users_by_id)
@@ -843,7 +867,9 @@ async def increment_score(
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active", "time_up"):
-        raise HTTPException(status_code=409, detail="Can only score during an active match.")
+        raise HTTPException(
+            status_code=409, detail="Can only score during an active match."
+        )
 
     if body.team == "a":
         match.score_a = max(0, match.score_a + body.delta)
@@ -851,16 +877,18 @@ async def increment_score(
         match.score_b = max(0, match.score_b + body.delta)
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_score_updated",
-        "match_id": match.id,
-        "team": body.team,
-        "score_a": match.score_a,
-        "score_b": match.score_b,
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_score_updated",
+            "match_id": match.id,
+            "team": body.team,
+            "score_a": match.score_a,
+            "score_b": match.score_b,
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     return {
         "score_a": match.score_a,
@@ -884,15 +912,17 @@ async def set_score(
     match.score_b = body.score_b
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_score_updated",
-        "match_id": match.id,
-        "score_a": match.score_a,
-        "score_b": match.score_b,
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_score_updated",
+            "match_id": match.id,
+            "score_a": match.score_a,
+            "score_b": match.score_b,
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     return {
         "score_a": match.score_a,
@@ -930,12 +960,12 @@ async def end_match(
         winner_team = body.winner_team
 
     # Complete current match
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     match.status = "completed"
     match.completed_at = now
     await db.flush()
 
-    winner_users: list[int] = json.loads(
+    winner_users: list[int] = _loads_int_list(
         match.team_a_users if winner_team == "a" else match.team_b_users
     )
     winner_name = match.team_a_name if winner_team == "a" else match.team_b_name
@@ -979,8 +1009,8 @@ async def end_match(
     # Track which team indices have entered
     used_team_indices: set[int] = set()
     for m in played_matches:
-        ma_users = set(json.loads(m.team_a_users))
-        mb_users = set(json.loads(m.team_b_users))
+        ma_users = set(_loads_int_list(m.team_a_users))
+        mb_users = set(_loads_int_list(m.team_b_users))
         for idx, team in enumerate(teams):
             team_user_ids = set(p["user_id"] for p in team)
             if team_user_ids == ma_users or team_user_ids == mb_users:
@@ -995,16 +1025,8 @@ async def end_match(
             next_team_idx = idx
             break
 
-    # Build winner team info from current teams (match winner users may differ from original teams)
-    winner_team_info = None
-    for team in teams:
-        team_user_ids = set(p["user_id"] for p in team)
-        if team_user_ids == set(winner_users):
-            winner_team_info = team
-            break
-
     next_match_data: dict | None = None
-    if next_team is not None:
+    if next_team is not None and next_team_idx is not None:
         used_team_indices.add(next_team_idx)
         next_team_name = (
             team_names[next_team_idx]
@@ -1030,16 +1052,18 @@ async def end_match(
 
     await db.commit()
 
-    await _broadcast_match_event(session_id, {
-        "type": "match_ended",
-        "match_id": match.id,
-        "match_number": match.match_number,
-        "winner_team": winner_team,
-        "winner_name": winner_name,
-    })
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "match_ended",
+            "match_id": match.id,
+            "match_number": match.match_number,
+            "winner_team": winner_team,
+            "winner_name": winner_name,
+        },
+    )
 
-    session = await db.get(GameSession, session_id)
-    await notify_session_data_changed(session_id, (session.content_revision or 0) + 1)  # type: ignore[attr-defined]
+    await bump_and_notify(db, session_id)
 
     users_by_id = await _load_users_for_session(db, session_id)
     result: dict = {

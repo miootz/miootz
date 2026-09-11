@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +21,7 @@ from app.services.rating_windows import (
     utc_now,
 )
 from app.services.skill_service import update_user_calculated_skill
+from app.core.timeutil import utcnow
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -95,7 +94,7 @@ async def upsert_rating(
     existing = result.scalar_one_or_none()
     if existing:
         existing.score = rating_data.score
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = utcnow()
         await db.commit()
         await db.refresh(existing)
         await update_user_calculated_skill(db, user_id=rating_data.ratee_id)

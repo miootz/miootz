@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+
 # ── Test environment setup ─────────────────────────────────────────────────
 _root = Path(__file__).resolve().parents[2]
 
@@ -14,7 +15,6 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_db_path}"
 # Avoid background scheduler threads during pytest unless explicitly enabled.
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
-os.environ.setdefault("UPLOAD_DIR", str(_root / "data" / "uploads"))
 
 
 # ── Pocket ID JWT mock ─────────────────────────────────────────────────────
@@ -198,10 +198,7 @@ async def _default_mock_get_user_by_id(user_id: str) -> dict | None:
                 "id": user_id,
                 "pocket_id_sub": entry.get("sub", ""),
                 "displayName": entry.get("name"),
-                "userGroups": [
-                    {"id": f"{g}-group-id", "name": g}
-                    for g in groups
-                ],
+                "userGroups": [{"id": f"{g}-group-id", "name": g} for g in groups],
             }
     return None
 
@@ -216,3 +213,17 @@ def pytest_configure(config):
 
     app.services.pocket_id_jwt.validate_pocket_id_token = _default_mock_validate
     app.services.pocket_id_client.get_user_by_id = _default_mock_get_user_by_id
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Tests share one process and one in-memory limiter — clear counters.
+
+    Without this, earlier tests hammering rate-limited endpoints would make
+    later unrelated tests fail with 429.
+    """
+    from app.api.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()

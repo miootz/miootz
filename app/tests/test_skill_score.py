@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
@@ -24,7 +24,9 @@ async def test_skill_score_calculation_logic():
             sso_display_name="tester",
             self_assessed_skill=3,
         )
-        player = User(pocket_id_sub="test-p1", sso_display_name="p1", self_assessed_skill=3)
+        player = User(
+            pocket_id_sub="test-p1", sso_display_name="p1", self_assessed_skill=3
+        )
         rater1 = User(pocket_id_sub="test-r1", sso_display_name="r1")
         db.add_all([auth_user, player, rater1])
         await db.commit()
@@ -33,7 +35,7 @@ async def test_skill_score_calculation_logic():
         await db.refresh(rater1)
 
         session1 = GameSession(
-            start_time=datetime.now(timezone.utc) - timedelta(hours=48),
+            start_time=datetime.now(UTC) - timedelta(hours=48),
             location="Park 1",
             max_players=10,
         )
@@ -64,4 +66,6 @@ async def test_skill_score_calculation_logic():
     async with async_session() as db:
         player_row = await db.get(User, player_id)
         assert player_row is not None
-        assert player_row.calculated_skill is not None, f"calculated_skill was None (self_assessed={player_row.self_assessed_skill})"
+        assert player_row.calculated_skill is not None, (
+            f"calculated_skill was None (self_assessed={player_row.self_assessed_skill})"
+        )

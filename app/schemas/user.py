@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,6 +7,7 @@ SPECIALTY_OPTIONS = Literal["ATT", "MID", "DEF", "GK"]
 
 class UserMe(BaseModel):
     """User identity + app-specific profile data."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -24,6 +25,7 @@ class UserMe(BaseModel):
 
 class UserProfileUpdate(BaseModel):
     """User-editable profile fields (identity is managed by Pocket ID)."""
-    self_assessed_skill: Optional[int] = Field(None, ge=1, le=5)
-    primary_specialty: Optional[SPECIALTY_OPTIONS] = None
-    secondary_specialty: Optional[SPECIALTY_OPTIONS] = None
+
+    self_assessed_skill: int | None = Field(None, ge=1, le=5)
+    primary_specialty: SPECIALTY_OPTIONS | None = None
+    secondary_specialty: SPECIALTY_OPTIONS | None = None

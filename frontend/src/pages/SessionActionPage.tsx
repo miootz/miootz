@@ -39,10 +39,13 @@ export function SessionActionPage() {
     setStatus("acting");
     try {
       if (action === "join") {
-        await joinSession(sessionId);
+        const attendance = await joinSession(sessionId);
         setStatus("done");
-        setMessage("You've joined the session!");
-        showToast("Joined session", "success");
+        const joinedMessage = attendance.status === "waitlisted"
+          ? "You're on the waitlist."
+          : "You've joined the session!";
+        setMessage(joinedMessage);
+        showToast(joinedMessage, "success");
       } else if (action === "cancel") {
         await leaveSession(sessionId);
         setStatus("done");
@@ -60,6 +63,12 @@ export function SessionActionPage() {
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Action failed";
+      // Reopening an invitation should lead to the existing signup.
+      if (action === "join" && errMsg === "Already joined session") {
+        setStatus("done");
+        setMessage("You're already signed up. Opening the meetup…");
+        return;
+      }
       setStatus("error");
       setMessage(errMsg);
       showToast(errMsg, "error");

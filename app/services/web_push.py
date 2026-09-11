@@ -31,12 +31,14 @@ def _payload(
         title   - label shown on the button
         url     - deep-link URL the PWA opens when the button is tapped
     """
-    return json.dumps({
-        "title": title,
-        "body": body,
-        "url": url,
-        "actions": actions or [],
-    })
+    return json.dumps(
+        {
+            "title": title,
+            "body": body,
+            "url": url,
+            "actions": actions or [],
+        }
+    )
 
 
 def _action(
@@ -115,10 +117,16 @@ async def _get_user_subs_with_filter(
         if not wants:
             continue
         subs = (
-            await db.execute(
-                select(WebPushSubscription).where(WebPushSubscription.user_id == uid)
+            (
+                await db.execute(
+                    select(WebPushSubscription).where(
+                        WebPushSubscription.user_id == uid
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if subs:
             result[uid] = list(subs)
     return result
@@ -140,10 +148,16 @@ async def _send_push_to_users(
         uid_to_subs: dict[int, list[WebPushSubscription]] = {}
         for uid in user_ids:
             subs = (
-                await db.execute(
-                    select(WebPushSubscription).where(WebPushSubscription.user_id == uid)
+                (
+                    await db.execute(
+                        select(WebPushSubscription).where(
+                            WebPushSubscription.user_id == uid
+                        )
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if subs:
                 uid_to_subs[uid] = list(subs)
 
@@ -177,7 +191,7 @@ async def notify_new_session_invites(
     session: GameSession,
     recipients: list[User],
 ) -> None:
-    """Push all given users a new-session announcement with Join / Ignore actions."""
+    """Announce sign-ups; tapping the notification or Join opens the join flow."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
 
@@ -190,7 +204,7 @@ async def notify_new_session_invites(
     data = _payload(
         title="Miootz: new session",
         body=f"{loc} — {summary}",
-        url=f"/sessions/{session.id}",
+        url=f"/session-action?sid={session.id}&act=join",
         actions=[
             _action("join", "Join", session),
             _action("ignore", "Ignore", session),

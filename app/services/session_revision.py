@@ -15,6 +15,18 @@ async def bump_session_revision(db: AsyncSession, session_id: int) -> int | None
     return s.content_revision
 
 
+async def bump_and_notify(db: AsyncSession, session_id: int) -> None:
+    """Persist a content_revision bump and broadcast it over SSE.
+
+    Always use this (instead of computing ``revision + 1`` locally) so the
+    DB counter and the broadcast values never diverge.
+    """
+    rev = await bump_session_revision(db, session_id)
+    await db.commit()
+    if rev is not None:
+        await notify_session_data_changed(session_id, rev)
+
+
 async def notify_session_data_changed(session_id: int, revision: int) -> None:
     await session_data_manager.broadcast(
         session_id,

@@ -1,6 +1,7 @@
 """HTTP client for Pocket ID admin API (API key auth)."""
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -8,6 +9,11 @@ import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Short-TTL cache for get_user_by_id: a single request may look up the same
+# sub several times (invite linking + JIT provisioning + background sync).
+_USER_CACHE_TTL_SECONDS = 60.0
+_user_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
 def _headers() -> dict[str, str]:
@@ -22,7 +28,9 @@ def _headers() -> dict[str, str]:
         or ""
     )
     if not key:
-        logger.warning("POCKET_ID_STATIC_API_KEY / POCKET_ID_API_KEY not set — admin API calls will fail")
+        logger.warning(
+            "POCKET_ID_STATIC_API_KEY / POCKET_ID_API_KEY not set — admin API calls will fail"
+        )
     return {
         "X-API-Key": key,
         "Content-Type": "application/json",
@@ -99,7 +107,23 @@ async def get_user_by_id(user_id: str) -> dict[str, Any] | None:
     Fetch a user from Pocket ID by their user ID (UUID).
 
     Returns the user dict (with username, displayName, userGroups, etc.) or None.
+    Results are cached for ~60s to dedupe repeated lookups within/between
+    requests (group changes propagate within a minute).
     """
+    now = time.monotonic()
+    cached = _user_cache.get(user_id)
+    if cached is not None and now - cached[0] < _USER_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    result = await _fetch_user_by_id(user_id)
+    if len(_user_cache) > 500:
+        _user_cache.clear()
+    _user_cache[user_id] = (now, result)
+    return result
+
+
+async def _fetch_user_by_id(user_id: str) -> dict[str, Any] | None:
+    """Uncached fetch against the Pocket ID admin API."""
     url = f"{_base_url()}/api/users/{user_id}"
     try:
         async with httpx.AsyncClient(timeout=10) as client:

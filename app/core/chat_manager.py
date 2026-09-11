@@ -1,11 +1,10 @@
 import asyncio
-from typing import Dict, Set
 
 
 class ChatManager:
     def __init__(self):
         # Maps session_id to a set of active queues
-        self.sessions: Dict[int, Set[asyncio.Queue]] = {}
+        self.sessions: dict[int, set[asyncio.Queue]] = {}
 
     async def subscribe(self, session_id: int) -> asyncio.Queue:
         queue = asyncio.Queue()

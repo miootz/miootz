@@ -1,13 +1,13 @@
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Miootz API"
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/miootz.db"
-    SECRET_KEY: str
-    UPLOAD_DIR: str = "./data/uploads"
-    MAX_AVATAR_BYTES: int = 2 * 1024 * 1024
+    # Required at runtime (loaded from .env / env by pydantic-settings).
+    # Enforced fail-fast in the app lifespan so misconfigured deploys refuse
+    # to start rather than signing magic links with an empty secret.
+    SECRET_KEY: str = ""
 
     # Optional: restrict Host header (comma-separated). Empty = disabled.
     TRUSTED_HOSTS: str = ""

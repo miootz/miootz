@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, Integer, JSON, String
+from sqlalchemy import DateTime, Float, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -18,13 +19,17 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     #: Pocket ID user UUID (sub claim from JWT) — primary identity FK.
     #: Nullable for unclaimed plus-one guest placeholders.
-    pocket_id_sub: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    pocket_id_sub: Mapped[str | None] = mapped_column(
+        String, unique=True, nullable=True, index=True
+    )
     #: Cached display name from Pocket ID (synced on JIT + background refresh)
     sso_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     #: Cached preferredUsername/username from Pocket ID (synced on JIT + background refresh)
     sso_preferred_username: Mapped[str | None] = mapped_column(String, nullable=True)
     #: Cached group names from Pocket ID, e.g. ["admins", "members"] (synced on auth)
     sso_groups: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    #: When SSO data was last refreshed from Pocket ID (throttles background sync)
+    sso_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # ── App-specific fields (game data only) ──────────────────────────
     self_assessed_skill: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -39,6 +44,7 @@ class User(Base):
     def avatar_url(self) -> str | None:
         """Pocket ID profile-picture URL (computed from pocket_id_sub)."""
         from app.services.avatar_url import get_avatar_url
+
         return get_avatar_url(self.pocket_id_sub)
 
     @property
@@ -52,12 +58,12 @@ class User(Base):
             return self.pocket_id_sub[:8]
         return f"user-{self.id}"
 
-    game_template_subscriptions: Mapped[list["GameTemplateSubscription"]] = relationship(
+    game_template_subscriptions: Mapped[list[GameTemplateSubscription]] = relationship(
         "GameTemplateSubscription",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    notification_preferences: Mapped[list["UserNotificationPreference"]] = relationship(
+    notification_preferences: Mapped[list[UserNotificationPreference]] = relationship(
         "UserNotificationPreference",
         cascade="all, delete-orphan",
     )

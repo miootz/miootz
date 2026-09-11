@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Any
 
 
 class MatchmakingService:
@@ -7,8 +7,8 @@ class MatchmakingService:
     """
 
     def balance_teams(
-        self, players: List[Dict[str, Any]], team_size: int
-    ) -> List[List[Dict[str, Any]]]:
+        self, players: list[dict[str, Any]], team_size: int
+    ) -> list[list[dict[str, Any]]]:
         """
         Distributes players to minimize variance in average team skill.
 
@@ -35,7 +35,7 @@ class MatchmakingService:
         if num_teams == 0:
             return []
 
-        teams: List[List[Dict[str, Any]]] = [[] for _ in range(num_teams)]
+        teams: list[list[dict[str, Any]]] = [[] for _ in range(num_teams)]
 
         # Distribute players using a snake/zigzag pattern to ensure
         # high and low skills are balanced.

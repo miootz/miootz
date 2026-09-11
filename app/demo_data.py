@@ -1,0 +1,166 @@
+"""Repeatable, fictional showcase fixtures. Seed only an empty, disposable database."""
+from datetime import datetime, timedelta
+import json
+import random
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.chat import ChatMessage
+from app.models.game_template import GameTemplate
+from app.models.game_template_subscription import GameTemplateSubscription
+from app.models.guest_plus_one import GuestPlusOne
+from app.models.match import SessionMatch
+from app.models.rating import Rating
+from app.models.session import Attendance, GameSession
+from app.models.user import User
+from app.models.user_notification_preference import UserNotificationPreference
+from app.services.team_assignment import assign_teams_snake
+from app.services.skill_service import update_user_calculated_skill
+
+SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live')
+ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
+NAMES = (
+    'Demo Player 01', 'Demo Player 02', 'Demo Player 03', 'Demo Player 04', 'Demo Player 05',
+    'Demo Player 06', 'Demo Player 07', 'Demo Player 08', 'Demo Player 09', 'Demo Player 10',
+    'Demo Player 11', 'Demo Player 12', 'Demo Player 13', 'Demo Player 14', 'Demo Player 15',
+    'Demo Player 16', 'Demo Player 17', 'Demo Player 18', 'Demo Player 19', 'Demo Player 20',
+)
+POSITIONS = ('MID', 'MID', 'ATT', 'MID', 'DEF', 'DEF', 'ATT', 'GK', 'ATT', 'MID',
+             'ATT', 'GK', 'DEF', 'MID', 'ATT', 'MID', 'ATT', 'ATT', 'ATT', 'ATT')
+TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
+
+
+async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dict:
+    if scenario not in SCENARIOS:
+        raise ValueError(f'Unknown demo scenario: {scenario}')
+    if anchor.tzinfo is not None:
+        raise ValueError('Use a naive UTC anchor')
+    for model in (User, GameSession, GameTemplate):
+        if await db.scalar(select(func.count()).select_from(model)):
+            raise ValueError('Demo fixtures require an empty database; existing data is never reset')
+
+    members = [User(
+        id=i, pocket_id_sub=f'showcase-{i}', sso_display_name=name,
+        sso_preferred_username=name.lower().replace(' ', '.'),
+        sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
+        self_assessed_skill=2 + i % 4, primary_specialty=POSITIONS[i - 1],
+    ) for i, name in enumerate(NAMES, 1)]
+    members[19].self_assessed_skill = None
+    placeholder = User(id=21, pocket_id_sub='showcase-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], self_assessed_skill=3)
+    unlinked = User(id=22, sso_display_name='Demo Player 21')
+    db.add_all([*members, placeholder, unlinked])
+    await db.flush()
+
+    local_anchor = anchor.replace(tzinfo=ZoneInfo('UTC')).astimezone(ZoneInfo('UTC'))
+    days_until_friday = (4 - local_anchor.weekday()) % 7 or 7
+    local = (local_anchor + timedelta(days=days_until_monday)).replace(hour=19, minute=30, second=0, microsecond=0)
+    kickoff = local.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+    template = GameTemplate(
+        id=1, name='Demo football', timezone='UTC', weekday=4,
+        hour=local.hour, minute=30, announce_timezone='UTC',
+        announce_weekday=3, announce_hour=10, announce_minute=0,
+        location='Riverside Sports Ground · Pitch 2', fee=5, min_players=10, max_players=15,
+        latitude=44.4268, longitude=26.1025, waitlist_mode='auto_promote',
+        team_assignment_mode='balanced', match_duration_minutes=10, is_active=True,
+    )
+    db.add(template)
+    await db.flush()
+
+    def session(sid: int, start: datetime) -> GameSession:
+        return GameSession(
+            id=sid, game_template_id=1, start_time=start, location=template.location,
+            fee=5, min_players=10, max_players=15, latitude=template.latitude, longitude=template.longitude,
+            waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
+            team_assignment_mode='random' if scenario == 'random' and sid == 1 else 'balanced',
+            duration_minutes=120, match_duration_minutes=10, max_teams=3,
+            team_names_json=json.dumps(TEAM_NAMES),
+        )
+
+    upcoming = session(1, kickoff)
+    upcoming.weather_forecast_temp_c = 22
+    upcoming.weather_forecast_code = 1
+    upcoming.weather_forecast_label = 'Mainly clear'
+    upcoming.weather_forecast_fetched_at = anchor
+    db.add(upcoming)
+    full = scenario in ('full', 'broadcast')
+    confirmed = list(range(1, 15 if full else 12)) + [21]
+    waitlisted = [16, 17, 18] if full else []
+    for index, uid in enumerate(confirmed + waitlisted):
+        db.add(Attendance(session_id=1, user_id=uid,
+                          status='confirmed' if uid in confirmed else 'waitlisted',
+                          joined_at=anchor - timedelta(hours=24) + timedelta(minutes=index)))
+    db.add(Attendance(session_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
+    db.add(GuestPlusOne(
+        session_id=1, inviter_id=2, guest_user_id=21, first_name='Marco', last_name='van Basten',
+        self_assessed_skill=3, claim_token='showcase-guest-reservation', status='pending', created_at=anchor,
+    ))
+    db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))
+    db.add(GameTemplateSubscription(user_id=19, game_template_id=1, notifications_enabled=False))
+
+    # Recent ratings stay open until the upcoming kickoff; older weeks are locked.
+    for sid, start in [(2, anchor - timedelta(hours=4)), (3, anchor - timedelta(days=7)), (4, anchor - timedelta(days=14))]:
+        past = session(sid, start)
+        past.weather_actual_temp_c = 19 + sid
+        past.weather_actual_code = 2
+        past.weather_actual_label = 'Partly cloudy'
+        past.weather_actual_recorded_at = start + timedelta(hours=2)
+        db.add(past)
+        for uid in range(1, 16):
+            db.add(Attendance(session_id=sid, user_id=uid, status='confirmed', joined_at=start - timedelta(days=1)))
+        teams = [list(range(1, 6)), list(range(6, 11)), list(range(11, 16))]
+        past.manual_teams_json = json.dumps(teams)
+        for index, (a, b) in enumerate([(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)], 1):
+            db.add(SessionMatch(
+                session_id=sid, match_number=index, team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
+                team_a_name=TEAM_NAMES[a], team_b_name=TEAM_NAMES[b],
+                score_a=1 + index % 3, score_b=index % 2, status='completed',
+                timer_total_seconds=600, timer_seconds_remaining=0,
+                created_at=start + timedelta(minutes=10 * (index - 1)), completed_at=start + timedelta(minutes=10 * index),
+            ))
+        for rater in range(1, 16):
+            if sid == 2 and rater == 2:
+                continue  # Member has an editable rating task to demonstrate.
+            for ratee in range(1, 16):
+                if rater != ratee:
+                    db.add(Rating(session_id=sid, rater_id=rater, ratee_id=ratee,
+                                  score=3 + (rater + ratee + sid) % 3,
+                                  created_at=start + timedelta(hours=2), updated_at=start + timedelta(hours=2)))
+
+    for uid, message, minutes in [
+        (1, 'Pitch 2 is booked. Please arrive ten minutes before kickoff.', 32),
+        (2, 'I will bring the bibs. Looking forward to it!', 26),
+        (3, 'I have the ball and a pump.', 19),
+        (4, 'See you there! The entrance is beside the café.', 12),
+    ]:
+        db.add(ChatMessage(session_id=1, user_id=uid, message=message, created_at=anchor - timedelta(minutes=minutes)))
+    db.add(ChatMessage(session_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
+    await db.flush()
+    for member in members[:15]:
+        await update_user_calculated_skill(db, member.id, commit=False)
+
+    players = [{'id': u.id, 'skill': u.calculated_skill or u.self_assessed_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
+    if scenario == 'random':
+        order = confirmed[:]
+        random.Random(2026).shuffle(order)
+        teams = [order[i::3] for i in range(3)]
+    else:
+        teams = [[p['id'] for p in team] for team in assign_teams_snake(players, max_teams=3)]
+    upcoming.manual_teams_json = json.dumps(teams)
+    if scenario == 'live':
+        # A rehearsal started ahead of kickoff; paused so the initial capture is repeatable.
+        paused = anchor - timedelta(seconds=10)
+        db.add(SessionMatch(
+            session_id=1, match_number=1, team_a_users=json.dumps(teams[0]), team_b_users=json.dumps(teams[1]),
+            team_a_name=TEAM_NAMES[0], team_b_name=TEAM_NAMES[1], score_a=2, score_b=1, status='active',
+            timer_total_seconds=600, timer_seconds_remaining=402,
+            timer_started_at=paused - timedelta(seconds=198),
+            timer_pause_intervals=json.dumps([{'paused_at': paused.isoformat(), 'resumed_at': None}]),
+            created_at=paused - timedelta(seconds=198),
+        ))
+    await db.commit()
+    return {'scenario': scenario, 'anchor_utc': anchor.isoformat(), 'actors': ACTORS,
+            'upcoming_session_id': 1, 'ratings_session_id': 2,
+            'guest_claim_path': '/plus-one/showcase-guest-reservation',
+            'confirmed': len(confirmed), 'waitlisted': len(waitlisted)}

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, UTC
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
 from app.models.game_template import GameTemplate
@@ -32,18 +31,12 @@ def utc_start_matches_rule(
     except ZoneInfoNotFoundError:
         return False
     if start_utc.tzinfo is None:
-        start_utc = start_utc.replace(tzinfo=timezone.utc)
+        start_utc = start_utc.replace(tzinfo=UTC)
     local = start_utc.astimezone(z)
-    return (
-        local.weekday() == weekday
-        and local.hour == hour
-        and local.minute == minute
-    )
+    return local.weekday() == weekday and local.hour == hour and local.minute == minute
 
 
-def next_occurrence_utc(
-    template: GameTemplate, after_utc: datetime
-) -> datetime | None:
+def next_occurrence_utc(template: GameTemplate, after_utc: datetime) -> datetime | None:
     """First session start at or after `after_utc` (UTC) matching the template kickoff wall time."""
     try:
         z = ZoneInfo(template.timezone)
@@ -54,7 +47,7 @@ def next_occurrence_utc(
         return None
 
     if after_utc.tzinfo is None:
-        after_utc = after_utc.replace(tzinfo=timezone.utc)
+        after_utc = after_utc.replace(tzinfo=UTC)
     loc = after_utc.astimezone(z)
     loc_date = loc.date()
 
@@ -64,7 +57,7 @@ def next_occurrence_utc(
             continue
         cand = datetime.combine(d, time(template.hour, template.minute), tzinfo=z)
         if cand > loc:
-            return cand.astimezone(timezone.utc)
+            return cand.astimezone(UTC)
 
     return None
 
@@ -81,7 +74,7 @@ def next_announce_occurrence_utc(
         return None
 
     if after_utc.tzinfo is None:
-        after_utc = after_utc.replace(tzinfo=timezone.utc)
+        after_utc = after_utc.replace(tzinfo=UTC)
     loc = after_utc.astimezone(z)
     loc_date = loc.date()
 
@@ -95,7 +88,7 @@ def next_announce_occurrence_utc(
             tzinfo=z,
         )
         if cand > loc:
-            return cand.astimezone(timezone.utc)
+            return cand.astimezone(UTC)
 
     return None
 
@@ -103,7 +96,7 @@ def next_announce_occurrence_utc(
 async def materialize_next_session_and_notify(template_id: int) -> bool:
     """
     If the next weekly kickoff slot has no session row yet, create it (details from the template)
-    and email users who subscribe to this template. Idempotent for that kickoff instant.
+    and notify users who subscribe to this template. Idempotent for that kickoff instant.
     Returns True if a new session row was created.
     """
     async with async_session() as db:
@@ -111,7 +104,7 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
         if not template or not template.is_active:
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         t = next_occurrence_utc(template, now - timedelta(seconds=1))
         if t is None:
             return False
@@ -142,9 +135,10 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             match_duration_minutes=getattr(template, "match_duration_minutes", None)
             or 10,
         )
-        # Auto-generate team names (default 3 teams for max_players=15)
+        # Team count follows the max_players heuristic (see migrations backfill).
         from app.services.manual_teams import ensure_team_names
-        ensure_team_names(session, 3)
+
+        ensure_team_names(session, 3 if (session.max_players or 15) >= 13 else 2)
         db.add(session)
         await db.commit()
         await db.refresh(session)

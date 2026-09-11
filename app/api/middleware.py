@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from app.core.config import settings
-from app.core.database import async_session, engine
+from app.core.database import async_session
+from app.core.timeutil import utcnow
 from app.models.invite import InviteToken
 from app.models.user import User
-from app.services.pocket_id_jwt import validate_pocket_id_token, extract_user_claims
+from app.services.pocket_id_jwt import validate_pocket_id_token
 from app.services.pocket_id_client import get_user_by_id
 
 logger = logging.getLogger(__name__)
@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 async def _sync_sso_data(user: User, pocket_id_sub: str) -> None:
     """Sync SSO data from Pocket ID admin API into the local DB.
 
-    Called synchronously on JIT provisioning and as a background refresh
-    on subsequent auth.
+    Called synchronously on JIT provisioning and as a throttled background
+    refresh on subsequent auth.
     """
     try:
         async with async_session() as db:
@@ -31,47 +31,66 @@ async def _sync_sso_data(user: User, pocket_id_sub: str) -> None:
                 return
             user_groups = sso_user.get("userGroups", [])
             group_names = [
-                g.get("name")
+                g["name"]
                 for g in user_groups
-                if isinstance(g, dict)
+                if isinstance(g, dict) and isinstance(g.get("name"), str)
             ]
             display_name = sso_user.get("displayName")
-            preferred_username = sso_user.get("preferredUsername") or sso_user.get("username")
+            preferred_username = sso_user.get("preferredUsername") or sso_user.get(
+                "username"
+            )
             # Re-fetch the user row to avoid stale-state writes
             fresh = await db.get(User, user.id)
             if fresh is None:
                 return
-            if (
+            changed = (
                 fresh.sso_display_name != display_name
                 or fresh.sso_preferred_username != preferred_username
                 or fresh.sso_groups != group_names
-            ):
+            )
+            if changed:
                 fresh.sso_display_name = display_name
                 fresh.sso_preferred_username = preferred_username
                 fresh.sso_groups = group_names
-                await db.commit()
+            # Always stamp the sync time so the throttle clock advances even
+            # when nothing changed (prevents retry storms on quiet accounts).
+            fresh.sso_synced_at = utcnow()
+            await db.commit()
     except Exception:
         logger.exception("SSO sync failed for sub=%s", pocket_id_sub)
 
 
+#: Strong references to in-flight background SSO sync tasks so they are not
+#: garbage-collected mid-flight (asyncio only keeps weak refs to tasks).
+_pending_sso_syncs: set[asyncio.Task] = set()
+
+#: Minimum interval between Pocket ID admin-API refreshes per user.
+_SSO_SYNC_INTERVAL_SECONDS = 6 * 3600
+
+
 def _background_sync_sso(user: User, pocket_id_sub: str) -> None:
-    """Fire-and-forget background SSO refresh (for existing users)."""
-    asyncio.create_task(_sync_sso_data(user, pocket_id_sub))
+    """Fire-and-forget throttled background SSO refresh (for existing users)."""
+    last = user.sso_synced_at
+    if last is not None:
+        try:
+            if (utcnow() - last).total_seconds() < _SSO_SYNC_INTERVAL_SECONDS:
+                return
+        except TypeError:
+            pass  # unexpected tz-aware legacy value — refresh instead of stalling
+    task = asyncio.create_task(_sync_sso_data(user, pocket_id_sub))
+    _pending_sso_syncs.add(task)
+    task.add_done_callback(_pending_sso_syncs.discard)
 
 
 async def _resolve_user_by_pocket_id_sub(
     db: AsyncSession, pocket_id_sub: str
 ) -> User | None:
     """Look up user by Pocket ID sub claim."""
-    result = await db.execute(
-        select(User).where(User.pocket_id_sub == pocket_id_sub)
-    )
+    result = await db.execute(select(User).where(User.pocket_id_sub == pocket_id_sub))
     return result.scalar_one_or_none()
 
 
-async def _link_existing_user_via_invite(
-    db: AsyncSession, claims: dict
-) -> User | None:
+async def _link_existing_user_via_invite(db: AsyncSession, claims: dict) -> User | None:
     """Try to link a Pocket ID account to an existing miootz user via invite token.
 
     Checks the JWT for a signup_token claim, then falls back to querying
@@ -88,9 +107,14 @@ async def _link_existing_user_via_invite(
         try:
             sso_user = await get_user_by_id(pocket_id_sub)
             if sso_user:
-                signup_token = sso_user.get("signupToken") or sso_user.get("signup_token")
+                signup_token = sso_user.get("signupToken") or sso_user.get(
+                    "signup_token"
+                )
         except Exception:
-            logger.debug("Could not fetch Pocket ID user for invite linking (sub=%r)", pocket_id_sub)
+            logger.debug(
+                "Could not fetch Pocket ID user for invite linking (sub=%r)",
+                pocket_id_sub,
+            )
 
     if not signup_token:
         return None
@@ -117,11 +141,13 @@ async def _link_existing_user_via_invite(
         if sso_user:
             user_groups = sso_user.get("userGroups", [])
             groups = [
-                g.get("name")
+                g["name"]
                 for g in user_groups
-                if isinstance(g, dict)
+                if isinstance(g, dict) and isinstance(g.get("name"), str)
             ]
-            existing_user.sso_display_name = sso_user.get("displayName") or existing_user.sso_display_name
+            existing_user.sso_display_name = (
+                sso_user.get("displayName") or existing_user.sso_display_name
+            )
             existing_user.sso_preferred_username = (
                 sso_user.get("preferredUsername")
                 or sso_user.get("username")
@@ -129,7 +155,9 @@ async def _link_existing_user_via_invite(
             )
             existing_user.sso_groups = groups if groups else None
     except Exception:
-        logger.exception("SSO sync failed during invite linking for sub=%s", pocket_id_sub)
+        logger.exception(
+            "SSO sync failed during invite linking for sub=%s", pocket_id_sub
+        )
 
     logger.info(
         "Linked existing user (id=%d) to Pocket ID (sub=%r) via invite token %r",
@@ -157,12 +185,14 @@ async def _jit_provision_user(db: AsyncSession, claims: dict) -> User:
     if sso_user is not None:
         user_groups = sso_user.get("userGroups", [])
         groups = [
-            g.get("name")
+            g["name"]
             for g in user_groups
-            if isinstance(g, dict)
+            if isinstance(g, dict) and isinstance(g.get("name"), str)
         ]
         display_name = sso_user.get("displayName")
-        preferred_username = sso_user.get("preferredUsername") or sso_user.get("username")
+        preferred_username = sso_user.get("preferredUsername") or sso_user.get(
+            "username"
+        )
 
     # Gate: user must belong to at least one group
     if not groups:
@@ -219,13 +249,33 @@ async def _resolve_or_create_user(db: AsyncSession, claims: dict) -> User:
     return await _jit_provision_user(db, claims)
 
 
+#: Routes reachable without any authentication. Everything else is denied by
+#: default (401) unless a valid Pocket ID token resolves a user. Keep this
+#: list minimal — the plus-one routes carry their own capability tokens.
+#: (The old signed magic-link API was removed entirely: nothing issued the
+#: irrevocable tokens anymore and push links now go through authed SPA routes.)
+_PUBLIC_EXACT_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
+_PUBLIC_PATH_PREFIXES = (
+    "/sessions/plus-one/",  # guest claim preview — claim_token is the capability
+)
+
+#: SSE endpoints: EventSource cannot send Authorization headers, so the access
+#: token is accepted from the `access_token` query param *only* on these paths.
+_SSE_TOKEN_QUERY_SUFFIXES = ("/data/events", "/chat/events")
+
+
 class PocketIdAuthMiddleware(BaseHTTPMiddleware):
     """
-    Authenticate requests using Pocket ID OIDC JWT tokens.
+    Authenticate requests using Pocket ID OIDC JWT tokens (default-deny).
 
     The frontend authenticates with Pocket ID and receives an access token.
-    The frontend sends this token to the backend in the Authorization header.
-    This middleware validates the JWT token using Pocket ID's JWKS endpoint.
+    The frontend sends this token to the backend in the Authorization header
+    (or as `?access_token=` on SSE endpoints, where EventSource cannot set
+    headers). The token is validated against Pocket ID's JWKS endpoint.
+
+    Requests without a valid token receive 401 unless the path is in the
+    public allowlist below. Endpoints may still perform their own
+    authorization checks (ownership, admin) on top of `request.state.user`.
 
     On first auth, the user is resolved by:
     1. Looking up by pocket_id_sub (existing linked user).
@@ -238,23 +288,29 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
         request.state.is_admin = False
         request.state.auth_groups = []
 
-        # Public routes that don't require authentication
-        public_paths = {"/health", "/docs", "/openapi.json", "/redoc"}
-        if request.url.path in public_paths:
-            return await call_next(request)
+        path = request.url.path
+        is_public = path in _PUBLIC_EXACT_PATHS or path.startswith(
+            _PUBLIC_PATH_PREFIXES
+        )
 
-        # Extract the Authorization header
+        # Extract the token: Authorization header first; `access_token` query
+        # param is honored only on the two SSE paths (never elsewhere, so
+        # tokens don't leak into logs for regular API calls).
+        token = ""
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return await call_next(request)
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[-1].strip()
+        elif path.endswith(_SSE_TOKEN_QUERY_SUFFIXES):
+            token = request.query_params.get("access_token", "").strip()
 
-        token = auth_header.split(" ", 1)[-1].strip()
-        if not token:
-            return await call_next(request)
+        claims = await validate_pocket_id_token(token) if token else None
 
-        claims = await validate_pocket_id_token(token)
         if claims is None:
-            return await call_next(request)
+            if is_public:
+                return await call_next(request)
+            return JSONResponse(
+                status_code=401, content={"detail": "Not authenticated"}
+            )
 
         async with async_session() as db:
             try:
@@ -269,7 +325,7 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": str(e)},
                 )
 
-            if user:
+            if user is not None:
                 request.state.user = user
 
                 # Use cached SSO data from DB (always available, never blocks)
@@ -282,5 +338,10 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
                 # Background sync: try to refresh SSO data from Pocket ID.
                 # Fire-and-forget — never blocks the request.
                 _background_sync_sso(user, claims.get("sub", ""))
+
+        if request.state.user is None and not is_public:
+            return JSONResponse(
+                status_code=401, content={"detail": "Not authenticated"}
+            )
 
         return await call_next(request)

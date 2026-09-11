@@ -11,7 +11,7 @@
 - **Frontend**: React + TypeScript + Vite located in `frontend/`.
   - Auth: OIDC authorization code flow with Pocket ID (PKCE S256).
   - OIDC client: `frontend/src/auth/pocketIdOidc.ts`.
-  - Tokens stored in memory (React AuthContext state) + sessionStorage for persistence across reloads.
+  - Tokens stored in memory (React AuthContext state); access/refresh tokens persisted in `localStorage` (`miootz_tokens`) for survival across reloads/restarts. PKCE verifier + OIDC state use `sessionStorage`. Trade-off: `localStorage` tokens are readable by any XSS — acceptable for this internal app, revisit if threat model changes.
   - All API requests include `Authorization: Bearer <accessToken>` via `apiFetch()` / `useApiFetch()`.
 - **Infrastructure**: Dockerized setup with Traefik and Pocket ID (passkey-only OIDC).
   - No forward-auth proxy — Pocket ID handles authentication directly.
@@ -43,13 +43,13 @@
 - **Production (Docker + Traefik)**: No forward-auth middleware. Pocket ID handles auth at `auth.miootz.local`. API validates Pocket ID JWT tokens.
 - **Local `uvicorn`**: Frontend OIDC flow works with Pocket ID running in Docker. Vite proxies `/api` to `localhost:8000`.
 - **CORS / Host**: Optional `CORS_ORIGINS` and `TRUSTED_HOSTS` (comma-separated) in `.env` for browser clients and Host validation.
-- **Data Storage**: SQLite databases and uploads are stored in the `data/` directory.
+- **Data Storage**: SQLite databases are stored in the `data/` directory. Avatars are proxied from Pocket ID (no local avatar uploads since the crop pipeline was removed).
 - **Settings**: `app/core/config.py` uses `extra='ignore'` to tolerate stale env vars in `.env`.
 
 ## Key Files
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `app/api/middleware.py` | `PocketIdAuthMiddleware` — JWT validation, user resolution, JIT provisioning |
 | `app/services/pocket_id_jwt.py` | RS256 JWT validation, JWKS fetch + caching |
 | `app/services/pocket_id_client.py` | Pocket ID admin API client (signup tokens) |

@@ -1,3 +1,4 @@
+import { parseSessionStart } from "../utils/datetime";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock, Loader2, MapPin, MessageSquare, Trophy } from "lucide-react";
 import type { User } from "../types";
@@ -82,20 +83,20 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
       usernameColor: m.username_color,
       avatarUrl: m.avatar_url,
       text: m.message,
-      time: new Date(m.created_at),
+      time: parseSessionStart(m.created_at),
     })),
     me?.user?.id ?? null,
   );
 
   return (
     <section>
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
         <MessageSquare className="h-4 w-4" aria-hidden />
         Chat history
-        <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-auto">
+        <span className="text-2xs font-normal text-gray-500 dark:text-gray-400 ml-auto">
           {messages.length} message{messages.length !== 1 ? "s" : ""}
         </span>
-      </h3>
+      </h2>
       <div className="space-y-4">
         {grouped.map((group) => {
           const firstMsg = group.messages[0];
@@ -114,7 +115,7 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
                   >
                     {group.username}
                   </span>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                  <span className="text-2xs text-gray-500 dark:text-gray-400">
                     {formatDateHeader(firstMsg.time)}
                   </span>
                 </div>
@@ -129,7 +130,7 @@ function ChatHistorySection({ sessionId }: { sessionId: number }) {
                   }`}
                 >
                   <p className="break-words whitespace-pre-wrap">{msg.text}</p>
-                  <span className="block text-[10px] opacity-50 mt-0.5 text-right">
+                  <span className="block text-2xs opacity-50 mt-0.5 text-right">
                     {formatCompactTime(msg.time)}
                   </span>
                 </div>
@@ -306,23 +307,23 @@ export function SessionDetailPanel({
 
       {/* ── Teams on pitch ─────────────────────────────── */}
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
           Teams
           {canRate && (
-            <span className="text-[11px] font-normal text-violet-600 dark:text-violet-400 ml-auto">
+            <span className="text-2xs font-normal text-violet-600 dark:text-violet-400 ml-auto">
               Rate players below
             </span>
           )}
           {viewerAttended && ratingsLocked && (
-            <span className="text-[11px] font-normal text-gray-500 dark:text-gray-400 ml-auto">
+            <span className="text-2xs font-normal text-gray-500 dark:text-gray-400 ml-auto">
               Ratings final
             </span>
           )}
-        </h3>
+        </h2>
 
         {teamsLoading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading teams…
           </div>
@@ -357,10 +358,10 @@ export function SessionDetailPanel({
 
       {/* ── Match results ──────────────────────────────── */}
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
           Match results
-        </h3>
+        </h2>
         <MatchHistoryList sessionId={sessionId} />
       </section>
 

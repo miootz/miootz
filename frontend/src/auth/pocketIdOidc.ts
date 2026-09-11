@@ -11,23 +11,25 @@ const OIDC_ISSUER =
   (import.meta.env.VITE_POCKET_ID_ISSUER as string | undefined) ??
   (() => {
     const { protocol, hostname, port } = window.location;
-    if (hostname.startsWith('app.')) {
+    if (hostname.startsWith("app.")) {
       const host = `auth.${hostname.slice(4)}`;
-      const p = port ? `:${port}` : '';
+      const p = port ? `:${port}` : "";
       return `${protocol}//${host}${p}`;
     }
-    return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+    return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
   })();
 
 const OIDC_CLIENT_ID =
-  (import.meta.env.VITE_POCKET_ID_CLIENT_ID as string | undefined) ?? 'miootz-app';
+  (import.meta.env.VITE_POCKET_ID_CLIENT_ID as string | undefined) ??
+  "miootz-app";
 
-const OIDC_CLIENT_SECRET =
-  (import.meta.env.VITE_POCKET_ID_CLIENT_SECRET as string | undefined) ?? '';
+// Public OIDC client by design: a secret embedded in a browser bundle is not
+// a secret. Confidentiality comes from PKCE S256 (see authorize()/exchangeCode()).
+// The client must be registered in Pocket ID WITHOUT a secret requirement.
 
 const REDIRECT_URI = `${window.location.origin}/auth/callback`;
 
-const OIDC_SCOPE = 'openid email profile groups';
+const OIDC_SCOPE = "openid email profile groups";
 
 // ── Cached OIDC discovery ──────────────────────────────────────────────────
 interface OidcEndpoints {
@@ -51,7 +53,7 @@ function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
 
 export async function discoverEndpoints(): Promise<OidcEndpoints> {
   if (_endpoints) return _endpoints;
-  const issuer = OIDC_ISSUER.replace(/\/+$/, '');
+  const issuer = OIDC_ISSUER.replace(/\/+$/, "");
   const url = `${issuer}/.well-known/openid-configuration`;
   const r = await fetchWithTimeout(url).catch(() => {
     throw new Error(
@@ -61,34 +63,68 @@ export async function discoverEndpoints(): Promise<OidcEndpoints> {
   if (!r.ok) throw new Error(`OIDC discovery failed: ${r.status} ${url}`);
   const data = (await r.json()) as Record<string, unknown>;
   _endpoints = {
-    authorization_endpoint: String(data.authorization_endpoint),
-    token_endpoint: String(data.token_endpoint),
-    jwks_uri: String(data.jwks_uri),
-    end_session_endpoint: String(data.end_session_endpoint ?? ''),
+    authorization_endpoint: _assertIssuerOrigin(
+      String(data.authorization_endpoint),
+      "authorization_endpoint",
+    ),
+    token_endpoint: _assertIssuerOrigin(
+      String(data.token_endpoint),
+      "token_endpoint",
+    ),
+    jwks_uri: _assertIssuerOrigin(String(data.jwks_uri), "jwks_uri"),
+    end_session_endpoint: _assertIssuerOrigin(
+      String(data.end_session_endpoint ?? ""),
+      "end_session_endpoint",
+    ),
   };
   return _endpoints;
+}
+
+/**
+ * Allowlist check: a URL is only usable when its origin (scheme + host +
+ * port) equals the configured issuer's origin. Every value that reaches
+ * `window.location.href` or a token/jwks fetch in this module passes through
+ * here, so a compromised or misconfigured discovery document cannot steer
+ * the browser to a foreign host.
+ */
+function _assertIssuerOrigin(raw: string, name: string): string {
+  if (!raw) return "";
+  let endpointUrl: URL;
+  let issuerUrl: URL;
+  try {
+    endpointUrl = new URL(raw);
+    issuerUrl = new URL(`${OIDC_ISSUER.replace(/\/+$/, "")}/`);
+  } catch {
+    throw new Error(`OIDC: ${name} is not a valid URL: ${raw}`);
+  }
+  if (endpointUrl.origin !== issuerUrl.origin) {
+    throw new Error(
+      `OIDC: ${name} origin ${endpointUrl.origin} does not match issuer origin ${issuerUrl.origin}`,
+    );
+  }
+  return raw;
 }
 
 // ── PKCE helpers ───────────────────────────────────────────────────────────
 export function generateCodeVerifier(): string {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
-  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function computeCodeChallenge(verifier: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(verifier);
-  const hash = await crypto.subtle.digest('SHA-256', data);
+  const hash = await crypto.subtle.digest("SHA-256", data);
   return base64UrlEncode(new Uint8Array(hash));
 }
 
 function base64UrlEncode(buffer: Uint8Array): string {
-  const binary = Array.from(buffer, (b) => String.fromCharCode(b)).join('');
+  const binary = Array.from(buffer, (b) => String.fromCharCode(b)).join("");
   return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 // ── Token types ────────────────────────────────────────────────────────────
@@ -100,8 +136,8 @@ export interface OidcTokens {
 }
 
 // ── Authorize (redirect to Pocket ID) ──────────────────────────────────────
-const _CODE_VERIFIER_KEY = 'miootz_pkce_verifier';
-const _OIDC_STATE_KEY = 'miootz_oidc_state';
+const _CODE_VERIFIER_KEY = "miootz_pkce_verifier";
+const _OIDC_STATE_KEY = "miootz_oidc_state";
 
 export async function authorize(returnTo?: string): Promise<void> {
   const endpoints = await discoverEndpoints();
@@ -113,49 +149,57 @@ export async function authorize(returnTo?: string): Promise<void> {
   sessionStorage.setItem(_OIDC_STATE_KEY, state);
 
   const params = new URLSearchParams({
-    response_type: 'code',
+    response_type: "code",
     client_id: OIDC_CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     scope: OIDC_SCOPE,
     code_challenge: challenge,
-    code_challenge_method: 'S256',
+    code_challenge_method: "S256",
     state,
   });
 
   if (returnTo) {
-    params.set('login_hint', returnTo);
+    params.set("login_hint", returnTo);
   }
 
-  const url = `${endpoints.authorization_endpoint}?${params}`;
+  // Allowlisted: full redirect URL re-validated against the issuer origin
+  // (params are internally generated PKCE values, never user input).
+  const url = _assertIssuerOrigin(
+    `${endpoints.authorization_endpoint}?${params}`,
+    "authorize redirect",
+  );
+  // False positive: `url` is origin-equal to the configured OIDC issuer
+  // via _assertIssuerOrigin above.
+  // pi-lens-ignore: no-open-redirect, ts-open-redirect
   window.location.href = url;
 }
 
 // ── Handle callback (exchange code for tokens) ─────────────────────────────
 export async function handleCallback(): Promise<OidcTokens> {
   const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const state = params.get('state');
-  const error = params.get('error');
+  const code = params.get("code");
+  const state = params.get("state");
+  const error = params.get("error");
 
   if (error) {
     throw new Error(
-      `OIDC error: ${error}${params.get('error_description') ? ` — ${params.get('error_description')}` : ''}`,
+      `OIDC error: ${error}${params.get("error_description") ? ` — ${params.get("error_description")}` : ""}`,
     );
   }
 
   if (!code) {
-    throw new Error('No authorization code in callback');
+    throw new Error("No authorization code in callback");
   }
 
   // Verify state
   const expectedState = sessionStorage.getItem(_OIDC_STATE_KEY);
   if (state !== expectedState) {
-    throw new Error('OIDC state mismatch');
+    throw new Error("OIDC state mismatch");
   }
 
   const verifier = sessionStorage.getItem(_CODE_VERIFIER_KEY);
   if (!verifier) {
-    throw new Error('No PKCE verifier found');
+    throw new Error("No PKCE verifier found");
   }
 
   // Clean up
@@ -165,17 +209,16 @@ export async function handleCallback(): Promise<OidcTokens> {
   // Exchange code for tokens
   const endpoints = await discoverEndpoints();
   const body = new URLSearchParams({
-    grant_type: 'authorization_code',
+    grant_type: "authorization_code",
     code,
     redirect_uri: REDIRECT_URI,
     client_id: OIDC_CLIENT_ID,
     code_verifier: verifier,
-    ...(OIDC_CLIENT_SECRET ? { client_secret: OIDC_CLIENT_SECRET } : {}),
   });
 
   const r = await fetchWithTimeout(endpoints.token_endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
 
@@ -203,15 +246,14 @@ export async function handleCallback(): Promise<OidcTokens> {
 export async function refreshTokens(refreshToken: string): Promise<OidcTokens> {
   const endpoints = await discoverEndpoints();
   const body = new URLSearchParams({
-    grant_type: 'refresh_token',
+    grant_type: "refresh_token",
     refresh_token: refreshToken,
     client_id: OIDC_CLIENT_ID,
-    ...(OIDC_CLIENT_SECRET ? { client_secret: OIDC_CLIENT_SECRET } : {}),
   });
 
   const r = await fetchWithTimeout(endpoints.token_endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
 
@@ -244,23 +286,36 @@ export async function logout(): Promise<void> {
       client_id: OIDC_CLIENT_ID,
       post_logout_redirect_uri: `${window.location.origin}/`,
     });
-    const idToken = localStorage.getItem('miootz_id_token');
+    const idToken = localStorage.getItem("miootz_id_token");
     if (idToken) {
-      params.set('id_token_hint', idToken);
+      params.set("id_token_hint", idToken);
     }
-    window.location.href = `${endpoints.end_session_endpoint}?${params}`;
+    // Allowlisted: full redirect URL re-validated against the issuer origin —
+    // no user-controlled input reaches this sink.
+    // pi-lens-ignore: no-open-redirect, ts-open-redirect
+    window.location.href = _assertIssuerOrigin(
+      `${endpoints.end_session_endpoint}?${params}`,
+      "logout redirect",
+    );
     return;
   }
-  // Fallback: just redirect to Pocket ID home
-  window.location.href = OIDC_ISSUER.replace(/\/+$/, '');
+  // Fallback: issuer constant (build-time env or same-host derivation),
+  // still passed through the origin allowlist for consistency.
+  // pi-lens-ignore: no-open-redirect, ts-open-redirect
+  window.location.href = _assertIssuerOrigin(
+    OIDC_ISSUER.replace(/\/+$/, ""),
+    "issuer home redirect",
+  );
 }
 
 // ── Decode ID token (for display name, etc.) ───────────────────────────────
 export function decodeIdToken(idToken: string): Record<string, unknown> {
   try {
-    const parts = idToken.split('.');
+    const parts = idToken.split(".");
     if (parts.length !== 3) return {};
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
+    );
     return payload;
   } catch {
     return {};
@@ -269,5 +324,5 @@ export function decodeIdToken(idToken: string): Record<string, unknown> {
 
 // ── Get Pocket ID base URL ─────────────────────────────────────────────────
 export function getPocketIdUrl(): string {
-  return OIDC_ISSUER.replace(/\/+$/, '');
+  return OIDC_ISSUER.replace(/\/+$/, "");
 }

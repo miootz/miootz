@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useToast } from '../context/ToastContext';
-import { format, parseISO } from 'date-fns';
-import { MeetupDetails } from './MeetupDetails';
-import type { Session, User, Team } from '../types';
-import { rebalanceTeams } from '../services/teamService';
+import { useState, useEffect, useCallback } from "react";
+import { useToast } from "../context/ToastContext";
+import { format, parseISO } from "date-fns";
+import { MeetupDetails } from "./MeetupDetails";
+import type { Session, User, Team } from "../types";
+import { rebalanceTeams } from "../services/teamService";
 import {
   fetchSessions,
   fetchSessionDetail,
@@ -11,16 +11,19 @@ import {
   patchSessionTeams,
   sessionDataEventsUrl,
   type SessionDetail,
-} from '../api/sessionsApi';
-import { mediaUrl } from '../api/meApi';
-import { clearSessionChatCache } from '../stores/sessionChatCache';
-import { recordSessionView } from '../offline/engagement';
-import { loadSessionSnapshot, saveSessionSnapshot } from '../offline/sessionSnapshot';
-import { parseSessionStart } from '../utils/datetime';
-import { useMemberShell } from '../context/MemberShellContext';
-import { MeetupDetailsSkeleton } from '../components/MeetupDetailsSkeleton';
-import { OnboardingCard } from '../components/OnboardingCard';
-import { useAuth } from '../auth/useAuth';
+} from "../api/sessionsApi";
+import { mediaUrl } from "../api/meApi";
+import { clearSessionChatCache } from "../stores/sessionChatCache";
+import { recordSessionView } from "../offline/engagement";
+import {
+  loadSessionSnapshot,
+  saveSessionSnapshot,
+} from "../offline/sessionSnapshot";
+import { parseSessionStart } from "../utils/datetime";
+import { useMemberShell } from "../context/MemberShellContext";
+import { MeetupDetailsSkeleton } from "../components/MeetupDetailsSkeleton";
+import { OnboardingCard } from "../components/OnboardingCard";
+import { useAuth } from "../auth/useAuth";
 
 function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
   const start = detail.start_time;
@@ -29,17 +32,14 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
       ? start.slice(0, 10)
       : parseSessionStart(start).toISOString().slice(0, 10);
   const attendance: User[] = detail.attendees
-    .filter(
-      (a: SessionDetail['attendees'][number]) => a.status !== 'cancelled'
-    )
-    .map((a: SessionDetail['attendees'][number]) => ({
+    .filter((a: SessionDetail["attendees"][number]) => a.status !== "cancelled")
+    .map((a: SessionDetail["attendees"][number]) => ({
       id: String(a.user_id),
       name: a.display_name,
       skillScore: Math.round(a.skill),
       isLocked: false,
       avatarUrl: mediaUrl(a.avatar_url ?? undefined),
-      attendanceStatus:
-        a.status === 'waitlisted' ? 'waitlisted' : 'confirmed',
+      attendanceStatus: a.status === "waitlisted" ? "waitlisted" : "confirmed",
       isPlusOne: a.is_plus_one ?? false,
       primarySpecialty: a.primary_specialty ?? null,
       secondarySpecialty: a.secondary_specialty ?? null,
@@ -58,18 +58,18 @@ function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
     minPlayers: detail.min_players,
     maxPlayers: detail.max_players,
     myAttendance:
-      ma === 'confirmed' || ma === 'waitlisted' || ma === 'cancelled'
+      ma === "confirmed" || ma === "waitlisted" || ma === "cancelled"
         ? ma
         : null,
     teamAssignmentMode:
-      detail.team_assignment_mode === 'random' ? 'random' : 'balanced',
+      detail.team_assignment_mode === "random" ? "random" : "balanced",
     myWaitlistPosition: detail.my_waitlist_position ?? null,
   };
 }
 
 export function PlayerApp() {
   const { setHeader } = useMemberShell();
-  const { me } = useAuth();
+  const { me, tokens } = useAuth();
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -83,7 +83,7 @@ export function PlayerApp() {
   const [sseReconnectKey, setSseReconnectKey] = useState(0);
   const [nextAnnounceAt, setNextAnnounceAt] = useState<string | null>(null);
   const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
-    null
+    null,
   );
 
   const loadSession = useCallback(async (sessionId: number) => {
@@ -93,7 +93,7 @@ export function PlayerApp() {
     ]);
     const t = teamsRes.teams.map((x) => ({
       id: x.id,
-      name: x.name ?? `Team ${x.id.replace('t', '')}`,
+      name: x.name ?? `Team ${x.id.replace("t", "")}`,
       players: x.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -117,8 +117,8 @@ export function PlayerApp() {
     setError(null);
     try {
       const upcomingRes = await fetchSessions({
-        status: 'upcoming',
-        order: 'asc',
+        status: "upcoming",
+        order: "asc",
         limit: 50,
       });
       const upcoming = upcomingRes.items;
@@ -129,17 +129,16 @@ export function PlayerApp() {
         setOfflineDataUpdatedAt(null);
         setNextAnnounceAt(null);
         const anyRes = await fetchSessions({
-          status: 'all',
-          order: 'desc',
+          status: "all",
+          order: "desc",
           limit: 5,
         });
         if (anyRes.total === 0) {
-          setError('No sessions yet. Create one in Admin.');
+          setError("No sessions yet. Create one in Admin.");
         } else {
           setNextAnnounceAt(
-            anyRes.items.find(
-              (s) => s.game_template?.next_announce_at
-            )?.game_template?.next_announce_at ?? null
+            anyRes.items.find((s) => s.game_template?.next_announce_at)
+              ?.game_template?.next_announce_at ?? null,
           );
           setError(null);
         }
@@ -148,8 +147,7 @@ export function PlayerApp() {
       await loadSession(upcoming[0].id);
       recordSessionView();
     } catch (e) {
-      const offline =
-        typeof navigator !== 'undefined' && !navigator.onLine;
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (offline) {
         const snap = await loadSessionSnapshot();
         if (snap) {
@@ -158,10 +156,10 @@ export function PlayerApp() {
           setOfflineDataUpdatedAt(new Date(snap.updatedAt));
           setError(null);
         } else {
-          setError(e instanceof Error ? e.message : 'Failed to load');
+          setError(e instanceof Error ? e.message : "Failed to load");
         }
       } else {
-        setError(e instanceof Error ? e.message : 'Failed to load');
+        setError(e instanceof Error ? e.message : "Failed to load");
       }
     } finally {
       setLoading(false);
@@ -177,22 +175,28 @@ export function PlayerApp() {
       setRosterChannelLive(false);
       return;
     }
-    const url = sessionDataEventsUrl(activeSessionNumericId);
+    const url = sessionDataEventsUrl(
+      activeSessionNumericId,
+      tokens?.accessToken,
+    );
     const es = new EventSource(url);
     es.onopen = () => setRosterChannelLive(true);
     es.onmessage = (ev) => {
-      const data = JSON.parse(ev.data) as {
-        type: string;
-        session_id?: number;
-      };
+      let data: { type: string; session_id?: number };
+      try {
+        data = JSON.parse(ev.data);
+      } catch {
+        console.error("SSE: ignoring malformed message");
+        return;
+      }
       if (
-        data.type === 'session_updated' &&
+        data.type === "session_updated" &&
         data.session_id === activeSessionNumericId
       ) {
         void loadSession(activeSessionNumericId);
       }
       if (
-        data.type === 'session_deleted' &&
+        data.type === "session_deleted" &&
         data.session_id === activeSessionNumericId
       ) {
         void clearSessionChatCache().then(() => loadInitialData());
@@ -208,15 +212,21 @@ export function PlayerApp() {
       es.close();
       setSseReconnectKey((k) => k + 1); // force this effect to re-run
     };
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
     return () => {
       es.close();
-      window.removeEventListener('offline', goOffline);
-      window.removeEventListener('online', goOnline);
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
       setRosterChannelLive(false);
     };
-  }, [activeSessionNumericId, loadSession, loadInitialData, sseReconnectKey]);
+  }, [
+    activeSessionNumericId,
+    loadSession,
+    loadInitialData,
+    sseReconnectKey,
+    tokens?.accessToken,
+  ]);
 
   useEffect(() => {
     if (loading || !session) {
@@ -228,13 +238,13 @@ export function PlayerApp() {
       const k = parseSessionStart(session.startTime);
       line1 = Number.isNaN(k.getTime())
         ? session.date
-        : format(k, 'EEE d MMM · HH:mm');
+        : format(k, "EEE d MMM · HH:mm");
     } else {
       try {
         const d = parseISO(session.date);
         line1 = Number.isNaN(d.getTime())
           ? session.date
-          : format(d, 'EEE d MMM');
+          : format(d, "EEE d MMM");
       } catch {
         line1 = session.date;
       }
@@ -252,7 +262,7 @@ export function PlayerApp() {
   const handleToggleLock = (userId: string) => {
     if (!session) return;
     const newAttendance = session.attendance.map((u) =>
-      u.id === userId ? { ...u, isLocked: !u.isLocked } : u
+      u.id === userId ? { ...u, isLocked: !u.isLocked } : u,
     );
     const newTeams = rebalanceTeams({
       attendance: newAttendance,
@@ -291,18 +301,13 @@ export function PlayerApp() {
         await patchSessionTeams(activeSessionNumericId, payload);
       } catch (e) {
         showToast(
-          e instanceof Error ? e.message : 'Could not save team lineup',
-          'error'
+          e instanceof Error ? e.message : "Could not save team lineup",
+          "error",
         );
         void loadSession(activeSessionNumericId);
       }
     },
-    [
-      session,
-      activeSessionNumericId,
-      loadSession,
-      showToast,
-    ]
+    [session, activeSessionNumericId, loadSession, showToast],
   );
 
   return (
@@ -316,35 +321,35 @@ export function PlayerApp() {
       {!loading && !session && !error && (
         <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
           {me?.is_admin
-            ? 'No upcoming meetup. Create one in Admin.'
+            ? "No upcoming meetup. Create one in Admin."
             : nextAnnounceAt
               ? `Next meetup coming soon — signups open ${format(
                   new Date(nextAnnounceAt),
-                  'EEEE, HH:mm'
+                  "EEEE, HH:mm",
                 )}`
-              : 'No upcoming meetup. Past sessions are in History.'}
+              : "No upcoming meetup. Past sessions are in History."}
         </p>
       )}
       {!loading && session && (
         <>
           <div className="mx-auto max-w-6xl px-4 pt-4">
-            <OnboardingCard userId={me?.user.pocket_id_sub ?? 'anon'} />
+            <OnboardingCard userId={me?.user.pocket_id_sub ?? "anon"} />
           </div>
           <MeetupDetails
-          session={session}
-          onToggleLock={handleToggleLock}
-          onMovePlayer={handleMovePlayer}
-          canDragTeams={Boolean(me?.is_admin)}
-          rosterChannelLive={rosterChannelLive}
-          lastRosterSync={lastRosterSync}
-          offlineDataUpdatedAt={offlineDataUpdatedAt}
-          onRosterUpdated={() =>
-            activeSessionNumericId != null &&
-            void loadSession(activeSessionNumericId)
-          }
-        />
-          </>
-        )}
+            session={session}
+            onToggleLock={handleToggleLock}
+            onMovePlayer={handleMovePlayer}
+            canDragTeams={Boolean(me?.is_admin)}
+            rosterChannelLive={rosterChannelLive}
+            lastRosterSync={lastRosterSync}
+            offlineDataUpdatedAt={offlineDataUpdatedAt}
+            onRosterUpdated={() =>
+              activeSessionNumericId != null &&
+              void loadSession(activeSessionNumericId)
+            }
+          />
+        </>
+      )}
     </>
   );
 }

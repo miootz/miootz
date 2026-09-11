@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rating import Rating
@@ -14,13 +14,13 @@ _RECENT_ATTENDANCE_CUTOFF = 4
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _to_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 async def _get_locked_session_ids(db: AsyncSession, limit: int = 20) -> list[int]:
@@ -47,9 +47,7 @@ async def _get_locked_session_ids(db: AsyncSession, limit: int = 20) -> list[int
         else:
             lock_map[st] = aware + timedelta(hours=48)
 
-    locked_starts = [
-        st for st, lock in lock_map.items() if now >= lock
-    ][:limit]
+    locked_starts = [st for st, lock in lock_map.items() if now >= lock][:limit]
 
     if not locked_starts:
         return []
@@ -71,8 +69,7 @@ async def get_consecutive_miss_streak(db: AsyncSession, user_id: int) -> int:
         return 0
 
     result = await db.execute(
-        select(Attendance.session_id)
-        .where(
+        select(Attendance.session_id).where(
             Attendance.user_id == user_id,
             Attendance.status == "confirmed",
             Attendance.session_id.in_(locked_ids),
@@ -110,8 +107,7 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
 
     # Fetch all ratings for this user
     result = await db.execute(
-        select(Rating.session_id, Rating.score)
-        .where(Rating.ratee_id == user_id)
+        select(Rating.session_id, Rating.score).where(Rating.ratee_id == user_id)
     )
     ratings = result.fetchall()
     if not ratings:
@@ -120,11 +116,7 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
     weighted_sum = 0.0
     total_weight = 0.0
     for session_id, score in ratings:
-        weight = (
-            _WEIGHT_RECENT
-            if session_id in recent_session_ids
-            else _WEIGHT_OLD
-        )
+        weight = _WEIGHT_RECENT if session_id in recent_session_ids else _WEIGHT_OLD
         weighted_sum += score * weight
         total_weight += weight
 
@@ -133,7 +125,9 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
     return weighted_sum / total_weight
 
 
-async def update_user_calculated_skill(db: AsyncSession, user_id: int) -> None:
+async def update_user_calculated_skill(
+    db: AsyncSession, user_id: int, *, commit: bool = True
+) -> None:
     """
     Recalculates the 'calculated_skill' for a user based on:
     (self_assessed_skill * 0.4 + weighted_avg_peer_rating * 0.6) - miss_decay
@@ -154,20 +148,30 @@ async def update_user_calculated_skill(db: AsyncSession, user_id: int) -> None:
     if avg_peer is None:
         if user.self_assessed_skill is not None:
             user.calculated_skill = user.self_assessed_skill
-            await db.commit()
+            if commit:
+                await db.commit()
+            else:
+                await db.flush()
         return
 
     W_SELF = 0.4
     W_PEER = 0.6
     self_val = user.self_assessed_skill if user.self_assessed_skill is not None else 0
-    base_skill = (self_val * W_SELF) + (float(avg_peer) * W_PEER)
+    try:
+        peer_val = float(avg_peer)
+    except TypeError, ValueError:
+        peer_val = 0.0
+    base_skill = (self_val * W_SELF) + (peer_val * W_PEER)
 
     # Miss decay
     streak = await get_consecutive_miss_streak(db, user_id)
     decay = min(_MAX_MISS_DECAY, max(0, streak - 1) * 0.1)
     new_skill = base_skill - decay
     user.calculated_skill = round(max(0, new_skill), 1)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
 
 async def recalculate_skills_for_attendance_change(

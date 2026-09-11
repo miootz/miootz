@@ -1,9 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.user import User
+from app.core.timeutil import utcnow
+
+if TYPE_CHECKING:
+    from app.models.session import GameSession
 
 
 class Rating(Base):
@@ -22,11 +27,9 @@ class Rating(Base):
     rater_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     ratee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     score: Mapped[int] = mapped_column(Integer)  # 1-5
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    session: Mapped["GameSession"] = relationship(
-        "GameSession", back_populates="ratings"
-    )
-    rater: Mapped["User"] = relationship("User", foreign_keys=[rater_id])
-    ratee: Mapped["User"] = relationship("User", foreign_keys=[ratee_id])
+    session: Mapped[GameSession] = relationship("GameSession", back_populates="ratings")
+    rater: Mapped[User] = relationship("User", foreign_keys=[rater_id])
+    ratee: Mapped[User] = relationship("User", foreign_keys=[ratee_id])

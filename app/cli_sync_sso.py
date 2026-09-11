@@ -14,9 +14,7 @@ from app.services.pocket_id_client import get_user_by_id
 async def sync_sso_data(dry_run: bool = False) -> None:
     """Fetch all users and update sso_display_name + sso_preferred_username from Pocket ID."""
     async with async_session() as db:
-        result = await db.execute(
-            select(User).where(User.pocket_id_sub.isnot(None))
-        )
+        result = await db.execute(select(User).where(User.pocket_id_sub.isnot(None)))
         users = result.scalars().all()
         if not users:
             print("No users with pocket_id_sub found.")
@@ -29,10 +27,14 @@ async def sync_sso_data(dry_run: bool = False) -> None:
         errors = 0
 
         for user in users:
+            if not user.pocket_id_sub:
+                continue
             try:
                 sso = await get_user_by_id(user.pocket_id_sub)
                 if sso is None:
-                    print(f"  [{user.id}] {user.pocket_id_sub}: not found in Pocket ID, skipping")
+                    print(
+                        f"  [{user.id}] {user.pocket_id_sub}: not found in Pocket ID, skipping"
+                    )
                     skipped += 1
                     continue
 
@@ -66,7 +68,9 @@ async def sync_sso_data(dry_run: bool = False) -> None:
                         f"display_name={display_name!r}, username={preferred_username!r}"
                     )
             except Exception as e:
-                print(f"  [{user.id}] {user.pocket_id_sub}: error - {e}", file=sys.stderr)
+                print(
+                    f"  [{user.id}] {user.pocket_id_sub}: error - {e}", file=sys.stderr
+                )
                 errors += 1
 
         if not dry_run and updated > 0:

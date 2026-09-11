@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, UTC
 from time import monotonic
 from typing import Any
 
@@ -57,17 +57,34 @@ WMO_LABELS: dict[int, str] = {
 
 # Higher = more severe (used to pick dominant condition)
 _WMO_SEVERITY: dict[int, int] = {
-    0: 0, 1: 5, 2: 10, 3: 15,
-    45: 30, 48: 35,
-    51: 40, 53: 45, 55: 50,
-    56: 60, 57: 65,
-    61: 55, 63: 60, 65: 65,
-    66: 70, 67: 75,
-    71: 60, 73: 65, 75: 70,
+    0: 0,
+    1: 5,
+    2: 10,
+    3: 15,
+    45: 30,
+    48: 35,
+    51: 40,
+    53: 45,
+    55: 50,
+    56: 60,
+    57: 65,
+    61: 55,
+    63: 60,
+    65: 65,
+    66: 70,
+    67: 75,
+    71: 60,
+    73: 65,
+    75: 70,
     77: 75,
-    80: 65, 81: 70, 82: 75,
-    85: 75, 86: 80,
-    95: 90, 96: 95, 99: 100,
+    80: 65,
+    81: 70,
+    82: 75,
+    85: 75,
+    86: 80,
+    95: 90,
+    96: 95,
+    99: 100,
 }
 
 
@@ -100,6 +117,7 @@ def _weather_category(code: int) -> str:
 
 # ── Async token-bucket rate limiter ───────────────────────────────
 
+
 class _RateLimiter:
     """Per-process async token bucket.
 
@@ -108,9 +126,9 @@ class _RateLimiter:
     """
 
     def __init__(self, rate: float = 1.0, burst: int = 3) -> None:
-        self._rate = rate          # tokens per second
-        self._burst = burst        # max tokens
-        self._tokens = float(burst)
+        self._rate = rate  # tokens per second
+        self._burst = burst  # max tokens
+        self._tokens: float = burst * 1.0
         self._last = monotonic()
         self._lock = asyncio.Lock()
 
@@ -125,10 +143,11 @@ class _RateLimiter:
                 wait = (1.0 - self._tokens) / self._rate
                 # Release the lock while sleeping so other callers can
                 # inspect the bucket (they'll also wait if needed).
-                loop = asyncio.get_running_loop()
+
                 # Schedule a refill callback
                 async def _delay() -> None:
                     await asyncio.sleep(wait)
+
                 await _delay()
 
 
@@ -137,12 +156,13 @@ _open_meteo_limiter = _RateLimiter()
 
 # ── Forecast (hourly apparent temperature + weather code) ─────────
 
+
 async def fetch_forecast(
     latitude: float,
     longitude: float,
     start_time: datetime,
     end_time: datetime,
-    timezone: str = "auto",
+    tz: str = "auto",
 ) -> dict[str, Any] | None:
     """Fetch hourly apparent temperature & weather code for a time window.
 
@@ -153,9 +173,9 @@ async def fetch_forecast(
 
     # Convert to ISO start_hour / end_hour in the target timezone.
     if start_time.tzinfo is None:
-        start_time = start_time.replace(tzinfo=timezone.utc)
+        start_time = start_time.replace(tzinfo=UTC)
     if end_time.tzinfo is None:
-        end_time = end_time.replace(tzinfo=timezone.utc)
+        end_time = end_time.replace(tzinfo=UTC)
 
     start_hour = start_time.strftime("%Y-%m-%dT%H:%M")
     end_hour = end_time.strftime("%Y-%m-%dT%H:%M")
@@ -165,7 +185,7 @@ async def fetch_forecast(
         "latitude": latitude,
         "longitude": longitude,
         "hourly": "apparent_temperature,weather_code",
-        "timezone": timezone,
+        "timezone": tz,
         "start_hour": start_hour,
         "end_hour": end_hour,
     }
@@ -213,10 +233,11 @@ async def fetch_forecast(
 
 # ── Current conditions (fallback) ─────────────────────────────────
 
+
 async def fetch_current(
     latitude: float,
     longitude: float,
-    timezone: str = "auto",
+    tz: str = "auto",
 ) -> dict[str, Any] | None:
     """Fetch current conditions from Open-Meteo.
 
@@ -229,7 +250,7 @@ async def fetch_current(
         "latitude": latitude,
         "longitude": longitude,
         "current_weather": "true",
-        "timezone": timezone,
+        "timezone": tz,
     }
     try:
         async with httpx.AsyncClient(timeout=5) as client:

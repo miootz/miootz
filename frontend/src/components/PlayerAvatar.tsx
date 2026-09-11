@@ -2,25 +2,25 @@ import {
   initialsFromName,
   playerAvatarColor,
   skillBadgeClasses,
-} from '../utils/playerDisplay';
+} from "../utils/playerDisplay";
 
-type Size = 'sm' | 'md' | 'lg';
+type Size = "sm" | "md" | "lg";
 
 const faceSize: Record<Size, string> = {
-  sm: 'w-8 h-8 text-xs',
-  md: 'w-10 h-10 text-xs',
-  lg: 'w-12 h-12 text-sm',
+  sm: "w-8 h-8 text-xs",
+  md: "w-10 h-10 text-xs",
+  lg: "w-12 h-12 text-sm",
 };
 
 const badgeSize: Record<Size, string> = {
-  sm: 'text-[10px] px-1.5 py-0',
-  md: 'text-xs px-2 py-0.5',
-  lg: 'text-sm px-2.5 py-0.5',
+  sm: "text-2xs px-1.5 py-0",
+  md: "text-xs px-2 py-0.5",
+  lg: "text-sm px-2.5 py-0.5",
 };
 
 export function SkillBadge({
   score,
-  size = 'md',
+  size = "md",
 }: {
   score: number;
   size?: Size;
@@ -38,7 +38,7 @@ export function SkillBadge({
 export function PlayerAvatarFace({
   name,
   avatarUrl,
-  size = 'md',
+  size = "md",
   isPlusOne,
 }: {
   name: string;

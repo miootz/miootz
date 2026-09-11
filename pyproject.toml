@@ -18,10 +18,27 @@ dependencies = [
     "apscheduler>=3.10.0",
     "aiosmtplib>=5.1.0",
     "pywebpush>=2.3.0",
-    "pillow>=10.0.0",
     "py-vapid>=1.9.4",
+    "slowapi>=0.1.10",
 ]
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+# F=pyflakes, E9=syntax/pycodestyle errors, B=bugbear, UP=pyupgrade
+select = ["F", "E9", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI idiom: Depends()/Query() as parameter defaults (B008 flags these).
+"app/api/*.py" = ["B008"]
+"app/tests/*.py" = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.6",
+]

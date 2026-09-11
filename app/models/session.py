@@ -3,16 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.user import User
 from app.models.chat import ChatMessage
+from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
     from app.models.game_template import GameTemplate
     from app.models.match import SessionMatch
+    from app.models.rating import Rating
 
 
 class GameSession(Base):
@@ -28,9 +30,7 @@ class GameSession(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     # broadcast: notify all waitlisted when a spot opens; first magic-link confirm wins
     # auto_promote: promote first in waitlist immediately when a confirmed spot opens
-    waitlist_mode: Mapped[str] = mapped_column(
-        String, default="auto_promote"
-    )
+    waitlist_mode: Mapped[str] = mapped_column(String, default="auto_promote")
     #: balanced = skill snake draft; random = shuffled snake (same team sizes)
     team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
     #: JSON list of lists of user ids per team (admin lineups); None = use algorithm on read.
@@ -63,7 +63,9 @@ class GameSession(Base):
     #: Human-readable label for the forecast (e.g. "Partly cloudy").
     weather_forecast_label: Mapped[str | None] = mapped_column(String, nullable=True)
     #: When the forecast was last fetched.
-    weather_forecast_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    weather_forecast_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     #: Actual temperature recorded at session end (°C).
     weather_actual_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: WMO weather code for actual conditions.
@@ -71,7 +73,9 @@ class GameSession(Base):
     #: Human-readable label for actual conditions.
     weather_actual_label: Mapped[str | None] = mapped_column(String, nullable=True)
     #: When actual conditions were recorded.
-    weather_actual_recorded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    weather_actual_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
     #: Source template when this session was created from a recurring template (nullable for one-offs).
     game_template_id: Mapped[int | None] = mapped_column(
@@ -79,27 +83,27 @@ class GameSession(Base):
         nullable=True,
         index=True,
     )
-    game_template: Mapped["GameTemplate | None"] = relationship(
+    game_template: Mapped[GameTemplate | None] = relationship(
         "GameTemplate",
         back_populates="sessions",
     )
 
-    attendees: Mapped[list["Attendance"]] = relationship(
+    attendees: Mapped[list[Attendance]] = relationship(
         "Attendance", back_populates="session", cascade="all, delete-orphan"
     )
-    ratings: Mapped[list["Rating"]] = relationship(
+    ratings: Mapped[list[Rating]] = relationship(
         "Rating", back_populates="session", cascade="all, delete-orphan"
     )
-    messages: Mapped[list["ChatMessage"]] = relationship(
+    messages: Mapped[list[ChatMessage]] = relationship(
         "ChatMessage", back_populates="session", cascade="all, delete-orphan"
     )
-    scores: Mapped[list["MatchScore"]] = relationship(
+    scores: Mapped[list[MatchScore]] = relationship(
         "MatchScore", back_populates="session", cascade="all, delete-orphan"
     )
-    matches: Mapped[list["SessionMatch"]] = relationship(
+    matches: Mapped[list[SessionMatch]] = relationship(
         "SessionMatch", back_populates="session", cascade="all, delete-orphan"
     )
-    matches: Mapped[list["SessionMatch"]] = relationship(
+    matches: Mapped[list[SessionMatch]] = relationship(
         "SessionMatch", back_populates="session", cascade="all, delete-orphan"
     )
 
@@ -113,10 +117,8 @@ class MatchScore(Base):
     score: Mapped[int] = mapped_column(Integer)
     type: Mapped[str] = mapped_column(String)
 
-    session: Mapped["GameSession"] = relationship(
-        "GameSession", back_populates="scores"
-    )
-    player: Mapped["User"] = relationship("User")
+    session: Mapped[GameSession] = relationship("GameSession", back_populates="scores")
+    player: Mapped[User] = relationship("User")
 
 
 class Attendance(Base):
@@ -127,10 +129,10 @@ class Attendance(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     # confirmed | waitlisted | cancelled
     status: Mapped[str] = mapped_column(String, default="confirmed")
-    joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     previous_status: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    session: Mapped["GameSession"] = relationship(
+    session: Mapped[GameSession] = relationship(
         "GameSession", back_populates="attendees"
     )
-    user: Mapped["User"] = relationship("User")
+    user: Mapped[User] = relationship("User")

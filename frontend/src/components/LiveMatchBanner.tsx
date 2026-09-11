@@ -1,35 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  fetchSessionMatches,
-  type MatchSummary,
-} from '../api/matchesApi';
-import { sessionDataEventsUrl } from '../api/sessionsApi';
-import { useAuth } from '../auth/useAuth';
-import { Timer } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchSessionMatches, type MatchSummary } from "../api/matchesApi";
+import { sessionDataEventsUrl } from "../api/sessionsApi";
+import { useAuth } from "../auth/useAuth";
+import { Timer } from "lucide-react";
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function getTimerColor(seconds: number, total: number): string {
   const ratio = seconds / total;
-  if (ratio > 1 / 3) return 'text-emerald-600 dark:text-emerald-400';
-  if (ratio > 1 / 10) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+  if (ratio > 1 / 3) return "text-emerald-600 dark:text-emerald-400";
+  if (ratio > 1 / 10) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
 }
 
 function getTimerBg(seconds: number, total: number): string {
   const ratio = seconds / total;
-  if (ratio > 1 / 3) return 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800';
-  if (ratio > 1 / 10) return 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800';
-  return 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800';
+  if (ratio > 1 / 3)
+    return "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800";
+  if (ratio > 1 / 10)
+    return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800";
+  return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
 }
 
 export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
-  const { me } = useAuth();
-  const sid = typeof sessionId === 'string' ? parseInt(sessionId, 10) : sessionId;
+  const { me, tokens } = useAuth();
+  const sid =
+    typeof sessionId === "string" ? parseInt(sessionId, 10) : sessionId;
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -44,14 +44,17 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     try {
       const res = await fetchSessionMatches(sid);
       const active = res.matches.find(
-        (m) => m.status === 'active' || m.status === 'time_up' || m.status === 'pending'
+        (m) =>
+          m.status === "active" ||
+          m.status === "time_up" ||
+          m.status === "pending",
       );
       if (active) {
         setCurrentMatch(active);
         setTimerSeconds(active.timer_seconds_remaining);
         setIsPaused(active.timer_paused);
         setTimerEndsAt(
-          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null
+          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
         );
       } else {
         setCurrentMatch(null);
@@ -66,7 +69,9 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
   }, [sid]);
 
   useEffect(() => {
-    void (async () => { await loadMatch(); })();
+    void (async () => {
+      await loadMatch();
+    })();
   }, [loadMatch]);
 
   // Keep the half-time flash visible for 3 seconds
@@ -78,32 +83,36 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
 
   // SSE listener
   useEffect(() => {
-    const url = sessionDataEventsUrl(sid);
+    const url = sessionDataEventsUrl(sid, tokens?.accessToken);
     const es = new EventSource(url);
     esRef.current = es;
     es.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        if (data.type === 'match_timer_started') {
+        if (data.type === "match_timer_started") {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(false);
           prevRatioRef.current = null;
           setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
-        } else if (data.type === 'match_timer_paused') {
+        } else if (data.type === "match_timer_paused") {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(true);
           setTimerEndsAt(null);
-        } else if (data.type === 'match_timer_resumed') {
+        } else if (data.type === "match_timer_resumed") {
           setTimerSeconds(data.seconds_remaining ?? 0);
           setIsPaused(false);
           setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
-        } else if (data.type === 'match_timer_expired') {
+        } else if (data.type === "match_timer_expired") {
           setTimerSeconds(0);
           setIsPaused(false);
-        } else if (data.type === 'match_score_updated') {
+        } else if (data.type === "match_score_updated") {
           // Refresh match data on score change
           void loadMatch();
-        } else if (data.type === 'match_ended' || data.type === 'match_created' || data.type === 'match_reset') {
+        } else if (
+          data.type === "match_ended" ||
+          data.type === "match_created" ||
+          data.type === "match_reset"
+        ) {
           void loadMatch();
         }
       } catch {
@@ -117,12 +126,12 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
       es.close();
       esRef.current = null;
     };
-  }, [sid, loadMatch]);
+  }, [sid, loadMatch, tokens?.accessToken]);
 
   // Timer tick
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!currentMatch || isPaused || currentMatch.status !== 'active') {
+    if (!currentMatch || isPaused || currentMatch.status !== "active") {
       return;
     }
     intervalRef.current = setInterval(() => {
@@ -160,12 +169,15 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [currentMatch?.id, isPaused, currentMatch?.status, loadMatch, timerEndsAt]);
+  }, [currentMatch, isPaused, loadMatch, timerEndsAt]);
 
   if (!currentMatch) return null;
 
-  const isTimeUp = currentMatch.status === 'time_up';
-  const timerColor = getTimerColor(timerSeconds, currentMatch.timer_total_seconds);
+  const isTimeUp = currentMatch.status === "time_up";
+  const timerColor = getTimerColor(
+    timerSeconds,
+    currentMatch.timer_total_seconds,
+  );
   const timerBg = getTimerBg(timerSeconds, currentMatch.timer_total_seconds);
 
   return (
@@ -238,9 +250,9 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
           className={`text-2xl sm:text-3xl font-bold tabular-nums ${timerColor} transition-colors`}
           style={{
             animation:
-              currentMatch.status === 'active' && !isPaused
-                ? 'pulse 2s ease-in-out infinite'
-                : 'none',
+              currentMatch.status === "active" && !isPaused
+                ? "pulse 2s ease-in-out infinite"
+                : "none",
           }}
         >
           {formatTimer(timerSeconds)}

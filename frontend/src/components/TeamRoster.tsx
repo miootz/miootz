@@ -66,7 +66,7 @@ function PlayerRow({
                     {player.name}
                 </span>
                 {positions && (
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">
+                    <span className="text-2xs text-gray-500 dark:text-gray-400 shrink-0">
                         {positions}
                     </span>
                 )}
@@ -143,7 +143,12 @@ export function TeamRoster({
                     <PlayerRow
                         key={player.id}
                         player={player}
-                        ratingMode={ratingMode}
+                        ratingMode={
+                            ratingMode === "inline" &&
+                            !Object.hasOwn(ratingScores ?? {}, player.id)
+                                ? "none"
+                                : ratingMode
+                        }
                         currentRating={ratingScores?.[player.id] ?? null}
                         onRatingChange={
                             onRatingChange

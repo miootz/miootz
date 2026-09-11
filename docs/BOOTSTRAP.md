@@ -54,7 +54,7 @@ New signup tokens will auto-assign users to the `members` group. Admin status is
 In Pocket ID admin UI → **OIDC Clients**:
 
 | Setting | Value |
-|---------|-------|
+| --------- | ------- |
 | Client name | Miootz |
 | Client ID | `miootz-app` |
 | Is Public | **true** (PKCE required) |
@@ -110,8 +110,9 @@ docker compose up -d
 ```
 
 Services:
+
 - `app.miootz.local` → Frontend + API (via Traefik)
-- `api.miootz.local` → API directly
+- `api.miootz.local` → API directly (HTTPS only; plain `http://` gets a 301 redirect)
 - `auth.miootz.local` → Pocket ID
 
 ### 9. Create First Invite

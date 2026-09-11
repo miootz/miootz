@@ -200,7 +200,7 @@ export function AdminSessionRecurrenceForm({
             </div>
             <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
               At this clock time each week, the server adds the next meetup (if not
-              already there) and emails everyone with confirm/cancel links.
+              already there) and sends browser notifications to subscribed members.
             </p>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">

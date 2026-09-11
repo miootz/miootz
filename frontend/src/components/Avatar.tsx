@@ -1,23 +1,30 @@
-import { mediaUrl } from '../api/meApi';
+import { useState } from "react";
+import { mediaUrl } from "../api/meApi";
 
 export function Avatar({
   url,
   username,
-  size = 'sm',
+  size = "sm",
 }: {
   url?: string | null;
   username: string;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
 }) {
-  const sizeClasses =
-    size === 'md' ? 'w-9 h-9 text-sm' : 'w-7 h-7 text-xs';
+  const sizeClasses = size === "md" ? "w-9 h-9 text-sm" : "w-7 h-7 text-xs";
 
-  const resolved = mediaUrl(url ?? undefined);
+  // Pocket ID media URLs can 404 (deleted/never-uploaded avatars). Fall back
+  // to the initials tile when the image fails to load instead of showing a
+  // broken image icon.
+  const [failed, setFailed] = useState(false);
+
+  const resolved = failed ? undefined : mediaUrl(url ?? undefined);
   if (resolved) {
     return (
       <img
         src={resolved}
         alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
         className={`${sizeClasses} rounded-full object-cover flex-shrink-0 ring-1 ring-gray-200 dark:ring-gray-700`}
       />
     );
@@ -27,7 +34,7 @@ export function Avatar({
     .trim()
     .split(/\s+/)
     .map((w) => w[0])
-    .join('')
+    .join("")
     .toUpperCase()
     .slice(0, 2);
 

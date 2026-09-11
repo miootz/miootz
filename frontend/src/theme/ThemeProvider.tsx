@@ -6,14 +6,14 @@ import {
   useMemo,
   useState,
   type ReactNode,
-} from 'react';
+} from "react";
 import {
   applyThemeClass,
   readStoredTheme,
   resolveDark,
   writeStoredTheme,
   type ThemePreference,
-} from './themeStorage';
+} from "./themeStorage";
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -25,7 +25,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(() =>
-    readStoredTheme()
+    readStoredTheme(),
   );
 
   const setPreference = useCallback((p: ThemePreference) => {
@@ -39,11 +39,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [preference]);
 
   useEffect(() => {
-    if (preference !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => applyThemeClass('system');
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    if (preference !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyThemeClass("system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, [preference]);
 
   const resolvedDark = resolveDark(preference);
@@ -51,16 +51,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute(
-        'content',
-        resolvedDark ? '#111827' : '#9333ea'
-      );
+      meta.setAttribute("content", resolvedDark ? "#030712" : "#f9fafb");
     }
   }, [resolvedDark]);
 
   const value = useMemo(
     () => ({ preference, setPreference, resolvedDark }),
-    [preference, setPreference, resolvedDark]
+    [preference, setPreference, resolvedDark],
   );
 
   return (
@@ -71,7 +68,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    throw new Error('useTheme must be used within ThemeProvider');
+    throw new Error("useTheme must be used within ThemeProvider");
   }
   return ctx;
 }

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../auth/useAuth';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useToast } from "../context/ToastContext";
+import { useAuth } from "../auth/useAuth";
+import { parseSessionStart } from "../utils/datetime";
 import {
   fetchSessionMatches,
   startMatches,
@@ -16,9 +17,15 @@ import {
   setScores,
   deleteMatch,
   type MatchSummary,
-} from '../api/matchesApi';
-import { fetchSessionDetail, fetchSessionTeams, sessionDataEventsUrl, type SessionDetail, type TeamsResponse } from '../api/sessionsApi';
-import { ConfirmDialog } from '../components/ConfirmDialog';
+} from "../api/matchesApi";
+import {
+  fetchSessionDetail,
+  fetchSessionTeams,
+  sessionDataEventsUrl,
+  type SessionDetail,
+  type TeamsResponse,
+} from "../api/sessionsApi";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -31,20 +38,20 @@ import {
   Plus,
   RotateCcw,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(Math.max(0, seconds) / 60);
   const s = Math.max(0, seconds) % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function getTimerColor(seconds: number, total: number): string {
-  if (total <= 0) return 'text-gray-400';
+  if (total <= 0) return "text-gray-400";
   const ratio = seconds / total;
-  if (ratio > 1 / 3) return 'text-emerald-600 dark:text-emerald-400';
-  if (ratio > 1 / 10) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+  if (ratio > 1 / 3) return "text-emerald-600 dark:text-emerald-400";
+  if (ratio > 1 / 10) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
 }
 
 // ── Winner Picker Modal ──────────────────────────────────────────
@@ -55,7 +62,7 @@ function WinnerPickerModal({
   onCancel,
 }: {
   match: MatchSummary;
-  onPick: (winner: 'a' | 'b') => void;
+  onPick: (winner: "a" | "b") => void;
   onCancel: () => void;
 }) {
   return (
@@ -71,19 +78,20 @@ function WinnerPickerModal({
           Pick the winner
         </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-          Match {match.match_number} ended {match.score_a} — {match.score_b}. Who won?
+          Match {match.match_number} ended {match.score_a} — {match.score_b}.
+          Who won?
         </p>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => onPick('a')}
+            onClick={() => onPick("a")}
             className="py-4 rounded-xl bg-emerald-600 text-white font-bold text-lg hover:bg-emerald-700 active:scale-[0.98] transition-transform"
           >
             {match.team_a.name}
           </button>
           <button
             type="button"
-            onClick={() => onPick('b')}
+            onClick={() => onPick("b")}
             className="py-4 rounded-xl bg-blue-600 text-white font-bold text-lg hover:bg-blue-700 active:scale-[0.98] transition-transform"
           >
             {match.team_b.name}
@@ -103,18 +111,35 @@ function ManualMatchForm({
   existingTeamNames,
   initial,
 }: {
-  onSubmit: (body: { team_a_name: string; team_b_name: string; score_a: number; score_b: number }) => void;
+  onSubmit: (body: {
+    team_a_name: string;
+    team_b_name: string;
+    score_a: number;
+    score_b: number;
+  }) => void;
   onCancel: () => void;
   onDelete?: () => void;
   existingTeamNames: string[];
-  initial?: { team_a_name: string; team_b_name: string; score_a: number; score_b: number };
+  initial?: {
+    team_a_name: string;
+    team_b_name: string;
+    score_a: number;
+    score_b: number;
+  };
 }) {
-  const [teamA, setTeamA] = useState(initial?.team_a_name ?? existingTeamNames[0] ?? '');
-  const [teamB, setTeamB] = useState(initial?.team_b_name ?? existingTeamNames[1] ?? '');
+  const [teamA, setTeamA] = useState(
+    initial?.team_a_name ?? existingTeamNames[0] ?? "",
+  );
+  const [teamB, setTeamB] = useState(
+    initial?.team_b_name ?? existingTeamNames[1] ?? "",
+  );
   const [scoreA, setScoreA] = useState(initial?.score_a ?? 0);
   const [scoreB, setScoreB] = useState(initial?.score_b ?? 0);
 
-  const canSubmit = teamA.trim() && teamB.trim() && teamA.trim().toLowerCase() !== teamB.trim().toLowerCase();
+  const canSubmit =
+    teamA.trim() &&
+    teamB.trim() &&
+    teamA.trim().toLowerCase() !== teamB.trim().toLowerCase();
   const isEdit = !!initial;
 
   return (
@@ -125,11 +150,13 @@ function ManualMatchForm({
         ))}
       </datalist>
       <h3 className="text-base font-bold text-gray-900 dark:text-white">
-        {isEdit ? 'Edit match result' : 'Add match result'}
+        {isEdit ? "Edit match result" : "Add match result"}
       </h3>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team A</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Team A
+          </label>
           <input
             type="text"
             value={teamA}
@@ -137,12 +164,14 @@ function ManualMatchForm({
             placeholder="Team name"
             maxLength={60}
             disabled={isEdit}
-            list={isEdit ? undefined : 'miootz-team-names'}
+            list={isEdit ? undefined : "miootz-team-names"}
             className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
           />
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team B</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Team B
+          </label>
           <input
             type="text"
             value={teamB}
@@ -150,14 +179,16 @@ function ManualMatchForm({
             placeholder="Team name"
             maxLength={60}
             disabled={isEdit}
-            list={isEdit ? undefined : 'miootz-team-names'}
+            list={isEdit ? undefined : "miootz-team-names"}
             className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
           />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Score A</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Score A
+          </label>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -166,7 +197,9 @@ function ManualMatchForm({
             >
               −
             </button>
-            <span className="flex-1 text-center text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{scoreA}</span>
+            <span className="flex-1 text-center text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+              {scoreA}
+            </span>
             <button
               type="button"
               onClick={() => setScoreA((s) => s + 1)}
@@ -177,7 +210,9 @@ function ManualMatchForm({
           </div>
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Score B</label>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Score B
+          </label>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -186,7 +221,9 @@ function ManualMatchForm({
             >
               −
             </button>
-            <span className="flex-1 text-center text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{scoreB}</span>
+            <span className="flex-1 text-center text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+              {scoreB}
+            </span>
             <button
               type="button"
               onClick={() => setScoreB((s) => s + 1)}
@@ -216,7 +253,14 @@ function ManualMatchForm({
         </button>
         <button
           type="button"
-          onClick={() => onSubmit({ team_a_name: teamA.trim(), team_b_name: teamB.trim(), score_a: scoreA, score_b: scoreB })}
+          onClick={() =>
+            onSubmit({
+              team_a_name: teamA.trim(),
+              team_b_name: teamB.trim(),
+              score_a: scoreA,
+              score_b: scoreB,
+            })
+          }
           disabled={!canSubmit}
           className="flex-1 py-3 rounded-xl bg-violet-600 text-white font-semibold hover:bg-violet-700 disabled:opacity-40 active:scale-[0.98] transition-transform"
         >
@@ -230,7 +274,7 @@ function ManualMatchForm({
 // ── Final Standings ──────────────────────────────────────────────
 
 function FinalStandings({ matches }: { matches: MatchSummary[] }) {
-  const completed = matches.filter((m) => m.status === 'completed');
+  const completed = matches.filter((m) => m.status === "completed");
   if (completed.length === 0) return null;
 
   // Final (last) match result
@@ -240,19 +284,23 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
     <div className="space-y-6">
       <div className="text-center space-y-3 py-4">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40">
-          <CheckCircle2 className="h-9 w-9 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          <CheckCircle2
+            className="h-9 w-9 text-emerald-600 dark:text-emerald-400"
+            aria-hidden
+          />
         </div>
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">
             All matches complete
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {completed.length} match{completed.length !== 1 ? 'es' : ''} played
+            {completed.length} match{completed.length !== 1 ? "es" : ""} played
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 dark:bg-amber-950/30 px-4 py-1.5">
           <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-            Final match: {lastMatch.team_a.name} {lastMatch.score_a} – {lastMatch.score_b} {lastMatch.team_b.name}
+            Final match: {lastMatch.team_a.name} {lastMatch.score_a} –{" "}
+            {lastMatch.score_b} {lastMatch.team_b.name}
           </span>
         </div>
       </div>
@@ -277,8 +325,8 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
                 <span
                   className={`text-sm font-medium ${
                     winner === m.team_a.name
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-gray-600 dark:text-gray-400'
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-gray-600 dark:text-gray-400"
                   }`}
                 >
                   {m.team_a.name} {m.score_a}
@@ -287,8 +335,8 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
                 <span
                   className={`text-sm font-medium ${
                     winner === m.team_b.name
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-gray-600 dark:text-gray-400'
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-gray-600 dark:text-gray-400"
                   }`}
                 >
                   {m.score_b} {m.team_b.name}
@@ -307,7 +355,7 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
 export function RefereePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const { me } = useAuth();
+  const { me, tokens } = useAuth();
   const { showToast } = useToast();
   const sid = sessionId ? parseInt(sessionId, 10) : NaN;
 
@@ -319,51 +367,72 @@ export function RefereePage() {
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const prevRatioRef = useRef<number | null>(null);
   const [confirmAction, setConfirmAction] = useState<
-    | { kind: 'end' }
-    | { kind: 'reset' }
-    | { kind: 'delete'; matchId: number }
+    | { kind: "end" }
+    | { kind: "reset" }
+    | { kind: "delete"; matchId: number }
     | null
   >(null);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showWinnerPicker, setShowWinnerPicker] = useState(false);
-  const [pendingEndMatch, setPendingEndMatch] = useState<MatchSummary | null>(null);
+  const [pendingEndMatch, setPendingEndMatch] = useState<MatchSummary | null>(
+    null,
+  );
   const [showManualForm, setShowManualForm] = useState(false);
   const [editingMatch, setEditingMatch] = useState<MatchSummary | null>(null);
   const [halfTimeFlash, setHalfTimeFlash] = useState(false);
-  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
-  const [teamsData, setTeamsData] = useState<TeamsResponse['teams'] | null>(null);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(
+    null,
+  );
+  const [teamsData, setTeamsData] = useState<TeamsResponse["teams"] | null>(
+    null,
+  );
   const [selectingTeams, setSelectingTeams] = useState(false);
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Drives deadline re-evaluation without waiting for SSE (see effect below).
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
-  // ── Deadline: 15 min after scheduled session end ─────────────
+  // Deadline: 15 min after scheduled session end (computed from detail).
   const deadline = (() => {
     if (!sessionDetail?.start_time) return null;
-    const start = new Date(sessionDetail.start_time).getTime();
+    const start = parseSessionStart(sessionDetail.start_time).getTime();
     const durationMin = sessionDetail.duration_minutes ?? 120;
     const end = start + durationMin * 60_000;
     return end + 15 * 60_000; // 15 min grace
   })();
-  const isPastDeadline = deadline != null && Date.now() > deadline;
-  // canControl = !isPastDeadline; // used for deadline checks below
+  const isPastDeadline = deadline != null && nowMs > deadline;
+
+  // Re-render as the deadline passes even when no SSE events arrive, so the
+  // UI locks on time instead of staying open until the next event.
+  useEffect(() => {
+    if (deadline == null) return;
+    setNowMs(Date.now());
+    if (Date.now() > deadline) return;
+    const iv = setInterval(() => {
+      const n = Date.now();
+      setNowMs(n);
+      if (n > deadline) clearInterval(iv);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [deadline]);
 
   const loadMatches = useCallback(async () => {
     try {
       const res = await fetchSessionMatches(sid);
       setMatches(res.matches);
       const active = res.matches.find(
-        (m) => m.status === 'active' || m.status === 'time_up'
+        (m) => m.status === "active" || m.status === "time_up",
       );
-      const pending = res.matches.find((m) => m.status === 'pending');
+      const pending = res.matches.find((m) => m.status === "pending");
       if (active) {
         setCurrentMatch(active);
         setTimerSeconds(active.timer_seconds_remaining);
         setIsPaused(active.timer_paused);
         setTimerEndsAt(
-          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null
+          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
         );
       } else if (pending) {
         setCurrentMatch(pending);
@@ -375,7 +444,10 @@ export function RefereePage() {
         setIsPaused(false);
       }
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to load matches', 'error');
+      showToast(
+        e instanceof Error ? e.message : "Failed to load matches",
+        "error",
+      );
     } finally {
       setLoading(false);
     }
@@ -397,50 +469,48 @@ export function RefereePage() {
 
   // SSE
   useEffect(() => {
-    const url = sessionDataEventsUrl(sid);
+    const url = sessionDataEventsUrl(sid, tokens?.accessToken);
     const es = new EventSource(url);
     es.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
         switch (data.type) {
-          case 'match_timer_started':
+          case "match_timer_started":
             setTimerSeconds(data.seconds_remaining ?? 0);
             setIsPaused(false);
             setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
             break;
-          case 'match_timer_paused':
+          case "match_timer_paused":
             setTimerSeconds(data.seconds_remaining ?? 0);
             setIsPaused(true);
             setTimerEndsAt(null);
             break;
-          case 'match_timer_resumed':
+          case "match_timer_resumed":
             setTimerSeconds(data.seconds_remaining ?? 0);
             setIsPaused(false);
             setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
             break;
-          case 'match_timer_expired':
+          case "match_timer_expired":
             setTimerSeconds(0);
             setIsPaused(false);
             void loadMatches();
             setTimerEndsAt(null);
             break;
-          case 'match_score_updated':
-            if (currentMatch) {
-              setCurrentMatch((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      score_a: data.score_a ?? prev.score_a,
-                      score_b: data.score_b ?? prev.score_b,
-                    }
-                  : null
-              );
-            }
+          case "match_score_updated":
+            setCurrentMatch((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    score_a: data.score_a ?? prev.score_a,
+                    score_b: data.score_b ?? prev.score_b,
+                  }
+                : prev,
+            );
             void loadMatches();
             break;
-          case 'match_ended':
-          case 'match_created':
-          case 'match_reset':
+          case "match_ended":
+          case "match_created":
+          case "match_reset":
             void loadMatches();
             break;
         }
@@ -449,16 +519,18 @@ export function RefereePage() {
       }
     };
     return () => es.close();
-  }, [sid, currentMatch?.id, loadMatches]);
+  }, [sid, loadMatches, tokens?.accessToken]);
 
   // Timer tick
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!currentMatch || isPaused || currentMatch.status !== 'active') return;
+    if (!currentMatch || isPaused || currentMatch.status !== "active") return;
     intervalRef.current = setInterval(() => {
       if (timerEndsAt != null) {
         // Server-authoritative: derive remaining from the shared end timestamp
-        setTimerSeconds(Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000)));
+        setTimerSeconds(
+          Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000)),
+        );
       } else {
         setTimerSeconds((prev) => {
           if (prev <= 1) return 0;
@@ -469,11 +541,11 @@ export function RefereePage() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [currentMatch?.id, isPaused, currentMatch?.status, timerEndsAt]);
+  }, [currentMatch, isPaused, timerEndsAt]);
 
   // Half-time: one-shot flash when the timer crosses the 50% mark
   useEffect(() => {
-    if (!currentMatch || currentMatch.status !== 'active' || isPaused) {
+    if (!currentMatch || currentMatch.status !== "active" || isPaused) {
       prevRatioRef.current = null;
       return;
     }
@@ -497,10 +569,10 @@ export function RefereePage() {
   // Re-sync with the server when the tab comes back into view
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void loadMatches();
+      if (document.visibilityState === "visible") void loadMatches();
     };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [loadMatches]);
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
@@ -509,36 +581,37 @@ export function RefereePage() {
       await fn();
       await loadMatches();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Request failed', 'error');
+      showToast(e instanceof Error ? e.message : "Request failed", "error");
     } finally {
       setBusy(null);
     }
   };
 
-  const handleStartAll = async (
-    body?: { team_a_idx?: number; team_b_idx?: number }
-  ) => {
-    await run('Starting...', async () => {
+  const handleStartAll = async (body?: {
+    team_a_idx?: number;
+    team_b_idx?: number;
+  }) => {
+    await run("Starting...", async () => {
       const res = await startMatches(sid, body);
       showToast(
         `Matches started! ${res.match.team_a.name} vs ${res.match.team_b.name}`,
-        'success'
+        "success",
       );
     });
   };
 
   const handleStartTimer = async () => {
     if (!currentMatch) return;
-    await run('Starting timer...', async () => {
+    await run("Starting timer...", async () => {
       const res = await startTimer(sid, currentMatch.id);
       setTimerSeconds(res.seconds_remaining);
-      showToast('Timer started!', 'success');
+      showToast("Timer started!", "success");
     });
   };
 
   const handlePauseTimer = async () => {
     if (!currentMatch) return;
-    await run('Pausing...', async () => {
+    await run("Pausing...", async () => {
       const res = await pauseTimer(sid, currentMatch.id);
       setTimerSeconds(res.seconds_remaining);
     });
@@ -546,7 +619,7 @@ export function RefereePage() {
 
   const handleResumeTimer = async () => {
     if (!currentMatch) return;
-    await run('Resuming...', async () => {
+    await run("Resuming...", async () => {
       const res = await resumeTimer(sid, currentMatch.id);
       setTimerSeconds(res.seconds_remaining);
     });
@@ -554,13 +627,13 @@ export function RefereePage() {
 
   const handleReset = async () => {
     if (!currentMatch) return;
-    await run('Resetting...', async () => {
+    await run("Resetting...", async () => {
       await resetMatch(sid, currentMatch.id);
-      showToast('Match reset', 'success');
+      showToast("Match reset", "success");
     });
   };
 
-  const handleScore = async (team: 'a' | 'b', delta = 1) => {
+  const handleScore = async (team: "a" | "b", delta = 1) => {
     if (!currentMatch) return;
     setBusy(null); // Don't block rapid taps
     try {
@@ -570,13 +643,18 @@ export function RefereePage() {
         prev
           ? {
               ...prev,
-              score_a: team === 'a' ? prev.score_a + delta : prev.score_a,
-              score_b: team === 'b' ? prev.score_b + delta : prev.score_b,
+              score_a:
+                team === "a" ? Math.max(0, prev.score_a + delta) : prev.score_a,
+              score_b:
+                team === "b" ? Math.max(0, prev.score_b + delta) : prev.score_b,
             }
-          : null
+          : null,
       );
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Score update failed', 'error');
+      showToast(
+        e instanceof Error ? e.message : "Score update failed",
+        "error",
+      );
       void loadMatches();
     }
   };
@@ -586,11 +664,11 @@ export function RefereePage() {
     if (currentMatch.score_a !== currentMatch.score_b) {
       // Clear winner — end directly
       void (async () => {
-        await run('Ending match...', async () => {
+        await run("Ending match...", async () => {
           const res = await endMatch(sid, currentMatch.id);
           showToast(
             `Match ${currentMatch.match_number} over! Winner: ${res.winner_name}`,
-            'success'
+            "success",
           );
         });
       })();
@@ -602,22 +680,22 @@ export function RefereePage() {
   };
 
   const handleDeleteMatch = async (matchId: number) => {
-    await run('Deleting...', async () => {
+    await run("Deleting...", async () => {
       await deleteMatch(sid, matchId);
-      showToast('Match deleted', 'success');
+      showToast("Match deleted", "success");
       setShowManualForm(false);
       setEditingMatch(null);
     });
   };
 
-  const handlePickWinner = async (winner: 'a' | 'b') => {
+  const handlePickWinner = async (winner: "a" | "b") => {
     setShowWinnerPicker(false);
     if (!pendingEndMatch) return;
-    await run('Ending match...', async () => {
+    await run("Ending match...", async () => {
       const res = await endMatch(sid, pendingEndMatch.id, winner);
       showToast(
         `Match ${pendingEndMatch.match_number} over! Winner: ${res.winner_name}`,
-        'success'
+        "success",
       );
       setPendingEndMatch(null);
     });
@@ -628,11 +706,11 @@ export function RefereePage() {
     const action = confirmAction;
     if (!action) return;
     setConfirmAction(null);
-    if (action.kind === 'end') {
+    if (action.kind === "end") {
       handleEndMatch();
-    } else if (action.kind === 'reset') {
+    } else if (action.kind === "reset") {
       await handleReset();
-    } else if (action.kind === 'delete') {
+    } else if (action.kind === "delete") {
       await handleDeleteMatch(action.matchId);
     }
   };
@@ -644,29 +722,29 @@ export function RefereePage() {
     score_b: number;
   }) => {
     if (editingMatch) {
-      await run('Saving...', async () => {
+      await run("Saving...", async () => {
         await setScores(sid, editingMatch.id, body.score_a, body.score_b);
-        showToast('Score updated', 'success');
+        showToast("Score updated", "success");
         setEditingMatch(null);
         setShowManualForm(false);
       });
     } else {
-      await run('Saving...', async () => {
+      await run("Saving...", async () => {
         await createMatch(sid, body);
-        showToast('Match result saved', 'success');
+        showToast("Match result saved", "success");
         setShowManualForm(false);
       });
     }
   };
 
   const handleStartNewMatch = async () => {
-    await run('Creating match...', async () => {
+    await run("Creating match...", async () => {
       await createNewPendingMatch(sid, {
         team_a_idx: selectedTeamA,
         team_b_idx: selectedTeamB,
       });
       setSelectingTeams(false);
-      showToast('New match ready — start the timer!', 'success');
+      showToast("New match ready — start the timer!", "success");
     });
   };
 
@@ -686,14 +764,18 @@ export function RefereePage() {
     );
   }
 
-  const completedMatches = matches.filter((m) => m.status === 'completed');
+  const completedMatches = matches.filter((m) => m.status === "completed");
   const allComplete =
     matches.length > 0 &&
-    matches.every((m) => m.status === 'completed') &&
+    matches.every((m) => m.status === "completed") &&
     !currentMatch;
 
   // Show next match preview after a match ended
-  const nextMatch = matches.find((m) => m.status === 'pending' && m.match_number > (currentMatch?.match_number || 0));
+  const nextMatch = matches.find(
+    (m) =>
+      m.status === "pending" &&
+      m.match_number > (currentMatch?.match_number || 0),
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -713,13 +795,17 @@ export function RefereePage() {
               Match Control
             </h1>
             <p className="text-xs text-violet-200">
-              {currentMatch ? `Match ${currentMatch.match_number} · ${currentMatch.team_a.name} vs ${currentMatch.team_b.name}` : allComplete ? 'All matches done' : 'No active match'}
+              {currentMatch
+                ? `Match ${currentMatch.match_number} · ${currentMatch.team_a.name} vs ${currentMatch.team_b.name}`
+                : allComplete
+                  ? "All matches done"
+                  : "No active match"}
             </p>
           </div>
           {currentMatch && (
             <button
               type="button"
-              onClick={() => setConfirmAction({ kind: 'reset' })}
+              onClick={() => setConfirmAction({ kind: "reset" })}
               disabled={busy !== null}
               className="p-2 rounded-lg hover:bg-white/20 disabled:opacity-40 active:scale-95 transition-transform"
               aria-label="Reset match"
@@ -736,13 +822,16 @@ export function RefereePage() {
           <div className="space-y-4">
             <div className="text-center space-y-2 py-4">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800">
-                <CheckCircle2 className="h-7 w-7 text-gray-400 dark:text-gray-500" aria-hidden />
+                <CheckCircle2
+                  className="h-7 w-7 text-gray-500 dark:text-gray-400"
+                  aria-hidden
+                />
               </div>
               <div>
                 <h2 className="text-lg font-bold text-gray-500 dark:text-gray-400">
                   Session closed
                 </h2>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Locked 15 min after session end
                 </p>
               </div>
@@ -756,14 +845,29 @@ export function RefereePage() {
               setShowManualForm(false);
               setEditingMatch(null);
             }}
-            onDelete={editingMatch ? () => setConfirmAction({ kind: 'delete', matchId: editingMatch.id }) : undefined}
-            existingTeamNames={matches.flatMap((m) => [m.team_a.name, m.team_b.name])}
-            initial={editingMatch ? {
-              team_a_name: editingMatch.team_a.name,
-              team_b_name: editingMatch.team_b.name,
-              score_a: editingMatch.score_a,
-              score_b: editingMatch.score_b,
-            } : undefined}
+            onDelete={
+              editingMatch
+                ? () =>
+                    setConfirmAction({
+                      kind: "delete",
+                      matchId: editingMatch.id,
+                    })
+                : undefined
+            }
+            existingTeamNames={matches.flatMap((m) => [
+              m.team_a.name,
+              m.team_b.name,
+            ])}
+            initial={
+              editingMatch
+                ? {
+                    team_a_name: editingMatch.team_a.name,
+                    team_b_name: editingMatch.team_b.name,
+                    score_a: editingMatch.score_a,
+                    score_b: editingMatch.score_b,
+                  }
+                : undefined
+            }
           />
         ) : allComplete && selectingTeams ? (
           /* Team selection for new match */
@@ -778,7 +882,9 @@ export function RefereePage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team A</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Team A
+                </label>
                 <div className="relative">
                   <select
                     value={selectedTeamA}
@@ -786,7 +892,11 @@ export function RefereePage() {
                     className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
                   >
                     {teamsData?.map((t, i) => (
-                      <option key={t.id} value={i} disabled={i === selectedTeamB}>
+                      <option
+                        key={t.id}
+                        value={i}
+                        disabled={i === selectedTeamB}
+                      >
                         {t.name ?? `Team ${i + 1}`}
                       </option>
                     ))}
@@ -795,7 +905,9 @@ export function RefereePage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team B</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Team B
+                </label>
                 <div className="relative">
                   <select
                     value={selectedTeamB}
@@ -803,7 +915,11 @@ export function RefereePage() {
                     className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
                   >
                     {teamsData?.map((t, i) => (
-                      <option key={t.id} value={i} disabled={i === selectedTeamA}>
+                      <option
+                        key={t.id}
+                        value={i}
+                        disabled={i === selectedTeamA}
+                      >
                         {t.name ?? `Team ${i + 1}`}
                       </option>
                     ))}
@@ -835,11 +951,15 @@ export function RefereePage() {
           /* All matches done but deadline not passed — offer to add more */
           <div className="text-center space-y-6 py-8">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-violet-100 dark:bg-violet-900/40">
-              <CheckCircle2 className="h-7 w-7 text-violet-600 dark:text-violet-400" aria-hidden />
+              <CheckCircle2
+                className="h-7 w-7 text-violet-600 dark:text-violet-400"
+                aria-hidden
+              />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                {completedMatches.length} match{completedMatches.length !== 1 ? 'es' : ''} recorded
+                {completedMatches.length} match
+                {completedMatches.length !== 1 ? "es" : ""} recorded
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Add another match or edit existing results below.
@@ -878,23 +998,31 @@ export function RefereePage() {
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 {teamsData && teamsData.length > 2
-                  ? 'Pick which two teams play first.'
-                  : 'Start the first match between Team 1 and Team 2.'}
+                  ? "Pick which two teams play first."
+                  : "Start the first match between Team 1 and Team 2."}
               </p>
             </div>
             {teamsData && teamsData.length > 2 ? (
               <div className="space-y-4 max-w-sm mx-auto">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5 text-left">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team A</label>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Team A
+                    </label>
                     <div className="relative">
                       <select
                         value={selectedTeamA}
-                        onChange={(e) => setSelectedTeamA(Number(e.target.value))}
+                        onChange={(e) =>
+                          setSelectedTeamA(Number(e.target.value))
+                        }
                         className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
                       >
                         {teamsData.map((t, i) => (
-                          <option key={t.id} value={i} disabled={i === selectedTeamB}>
+                          <option
+                            key={t.id}
+                            value={i}
+                            disabled={i === selectedTeamB}
+                          >
                             {t.name ?? `Team ${i + 1}`}
                           </option>
                         ))}
@@ -903,15 +1031,23 @@ export function RefereePage() {
                     </div>
                   </div>
                   <div className="space-y-1.5 text-left">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Team B</label>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Team B
+                    </label>
                     <div className="relative">
                       <select
                         value={selectedTeamB}
-                        onChange={(e) => setSelectedTeamB(Number(e.target.value))}
+                        onChange={(e) =>
+                          setSelectedTeamB(Number(e.target.value))
+                        }
                         className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
                       >
                         {teamsData.map((t, i) => (
-                          <option key={t.id} value={i} disabled={i === selectedTeamA}>
+                          <option
+                            key={t.id}
+                            value={i}
+                            disabled={i === selectedTeamA}
+                          >
                             {t.name ?? `Team ${i + 1}`}
                           </option>
                         ))}
@@ -922,7 +1058,12 @@ export function RefereePage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => void handleStartAll({ team_a_idx: selectedTeamA, team_b_idx: selectedTeamB })}
+                  onClick={() =>
+                    void handleStartAll({
+                      team_a_idx: selectedTeamA,
+                      team_b_idx: selectedTeamB,
+                    })
+                  }
                   disabled={busy !== null || selectedTeamA === selectedTeamB}
                   className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-violet-600 text-white text-lg font-bold hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
                 >
@@ -990,12 +1131,12 @@ export function RefereePage() {
                 <span
                   className={`text-4xl font-bold tabular-nums ${getTimerColor(
                     timerSeconds,
-                    currentMatch.timer_total_seconds
+                    currentMatch.timer_total_seconds,
                   )}`}
                 >
                   {formatTimer(timerSeconds)}
                 </span>
-                {isPaused && currentMatch.status === 'active' && (
+                {isPaused && currentMatch.status === "active" && (
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-1">
                     Paused
                   </p>
@@ -1004,7 +1145,7 @@ export function RefereePage() {
             </div>
 
             {/* Timer controls */}
-            {currentMatch.status === 'pending' && (
+            {currentMatch.status === "pending" && (
               <button
                 type="button"
                 onClick={() => void handleStartTimer()}
@@ -1016,7 +1157,7 @@ export function RefereePage() {
               </button>
             )}
 
-            {currentMatch.status === 'active' && !isPaused && (
+            {currentMatch.status === "active" && !isPaused && (
               <button
                 type="button"
                 onClick={() => void handlePauseTimer()}
@@ -1028,7 +1169,7 @@ export function RefereePage() {
               </button>
             )}
 
-            {currentMatch.status === 'active' && isPaused && (
+            {currentMatch.status === "active" && isPaused && (
               <button
                 type="button"
                 onClick={() => void handleResumeTimer()}
@@ -1048,14 +1189,14 @@ export function RefereePage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => void handleScore('a')}
+                  onClick={() => void handleScore("a")}
                   className="w-full py-6 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-3xl font-bold hover:bg-emerald-100 dark:hover:bg-emerald-950/50 active:bg-emerald-200 dark:active:bg-emerald-900/50 active:scale-[0.97] transition-transform min-h-[80px]"
                 >
                   +1
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleScore('a', -1)}
+                  onClick={() => void handleScore("a", -1)}
                   className="w-full py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-[0.97] transition-transform"
                 >
                   −1
@@ -1067,14 +1208,14 @@ export function RefereePage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => void handleScore('b')}
+                  onClick={() => void handleScore("b")}
                   className="w-full py-6 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-3xl font-bold hover:bg-blue-100 dark:hover:bg-blue-950/50 active:bg-blue-200 dark:active:bg-blue-900/50 active:scale-[0.97] transition-transform min-h-[80px]"
                 >
                   +1
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleScore('b', -1)}
+                  onClick={() => void handleScore("b", -1)}
                   className="w-full py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-[0.97] transition-transform"
                 >
                   −1
@@ -1085,7 +1226,7 @@ export function RefereePage() {
             {/* End match */}
             <button
               type="button"
-              onClick={() => setConfirmAction({ kind: 'end' })}
+              onClick={() => setConfirmAction({ kind: "end" })}
               disabled={busy !== null}
               className="w-full py-5 rounded-2xl bg-red-600 text-white text-xl font-bold hover:bg-red-700 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
             >
@@ -1096,7 +1237,10 @@ export function RefereePage() {
             {/* Delete match */}
             <button
               type="button"
-              onClick={() => currentMatch && setConfirmAction({ kind: 'delete', matchId: currentMatch.id })}
+              onClick={() =>
+                currentMatch &&
+                setConfirmAction({ kind: "delete", matchId: currentMatch.id })
+              }
               disabled={busy !== null}
               className="w-full py-3 rounded-2xl border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-sm font-semibold hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
             >
@@ -1143,8 +1287,8 @@ export function RefereePage() {
                     <span
                       className={`text-sm font-semibold truncate ${
                         winner === m.team_a.name
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-gray-600 dark:text-gray-400'
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-600 dark:text-gray-400"
                       }`}
                     >
                       {m.team_a.name} {m.score_a}
@@ -1153,8 +1297,8 @@ export function RefereePage() {
                     <span
                       className={`text-sm font-semibold truncate ${
                         winner === m.team_b.name
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-gray-600 dark:text-gray-400'
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-600 dark:text-gray-400"
                       }`}
                     >
                       {m.score_b} {m.team_b.name}
@@ -1175,7 +1319,9 @@ export function RefereePage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setConfirmAction({ kind: 'delete', matchId: m.id })}
+                        onClick={() =>
+                          setConfirmAction({ kind: "delete", matchId: m.id })
+                        }
                         className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 shrink-0"
                         aria-label={`Delete match ${m.match_number}`}
                       >
@@ -1195,27 +1341,27 @@ export function RefereePage() {
       <ConfirmDialog
         open={confirmAction != null}
         title={
-          confirmAction?.kind === 'delete'
-            ? 'Delete this match?'
-            : confirmAction?.kind === 'reset'
-              ? 'Reset this match?'
-              : 'End this match?'
+          confirmAction?.kind === "delete"
+            ? "Delete this match?"
+            : confirmAction?.kind === "reset"
+              ? "Reset this match?"
+              : "End this match?"
         }
         description={
-          confirmAction?.kind === 'delete'
-            ? 'The match and its score will be permanently removed.'
-            : confirmAction?.kind === 'reset'
-              ? 'Timer and score will be cleared and the match goes back to ready.'
-              : 'The match will be marked complete.'
+          confirmAction?.kind === "delete"
+            ? "The match and its score will be permanently removed."
+            : confirmAction?.kind === "reset"
+              ? "Timer and score will be cleared and the match goes back to ready."
+              : "The match will be marked complete."
         }
         confirmLabel={
-          confirmAction?.kind === 'delete'
-            ? 'Delete'
-            : confirmAction?.kind === 'reset'
-              ? 'Reset'
-              : 'End match'
+          confirmAction?.kind === "delete"
+            ? "Delete"
+            : confirmAction?.kind === "reset"
+              ? "Reset"
+              : "End match"
         }
-        destructive={confirmAction?.kind !== 'end'}
+        destructive={confirmAction?.kind !== "end"}
         onConfirm={() => void handleConfirmAction()}
         onCancel={() => setConfirmAction(null)}
       />

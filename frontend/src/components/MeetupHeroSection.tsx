@@ -41,7 +41,7 @@ export function MeetupHeroSection({ session }: MeetupHeroSectionProps) {
   const { totals, balanced, maxDiff } = teamSkillBalanceSummary(session.teams);
   const balanceHint =
     totals.length > 0
-      ? `${totals.map((t, i) => `T${i + 1}: ${t}`).join(' vs ')}${maxDiff > 0 ? ` (±${maxDiff})` : ''}`
+      ? `${totals.map((t, i) => `T${i + 1}: ${t.toFixed(1)}`).join(' vs ')}${maxDiff > 0 ? ` (±${maxDiff.toFixed(1)})` : ''}`
       : null;
 
   const confirmed = session.attendance.filter(

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { format, formatDistanceToNow } from 'date-fns';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { format, formatDistanceToNow } from "date-fns";
 import {
   ArrowLeft,
   ClipboardList,
@@ -17,8 +17,8 @@ import {
   Trophy,
   UserCheck,
   Users,
-} from 'lucide-react';
-import type { User } from '../../types';
+} from "lucide-react";
+import type { User } from "../../types";
 import {
   fetchSessionDetail,
   fetchSessionScores,
@@ -27,7 +27,7 @@ import {
   type MatchScoreItem,
   type SessionDetail,
   type TeamsResponse,
-} from '../../api/sessionsApi';
+} from "../../api/sessionsApi";
 import {
   adminAdjustTeams,
   adminMoveAttendance,
@@ -35,27 +35,27 @@ import {
   adminUpdateSession,
   type TeamAssignmentMode,
   type WaitlistMode,
-} from '../../api/adminApi';
-import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
-import { MatchHistoryList } from '../../components/MatchHistoryList';
-import { MeetupWeatherBadge } from '../../components/MeetupWeatherBadge';
-import { PlayerAvatarFace, SkillBadge } from '../../components/PlayerAvatar';
-import { TeamRoster } from '../../components/TeamRoster';
-import { useToast } from '../../context/ToastContext';
+} from "../../api/adminApi";
+import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
+import { MatchHistoryList } from "../../components/MatchHistoryList";
+import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
+import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
+import { TeamRoster } from "../../components/TeamRoster";
+import { useToast } from "../../context/ToastContext";
 import {
   parseSessionStart,
   sessionStartToDatetimeLocalValue,
-} from '../../utils/datetime';
-import { hapticLight } from '../../utils/haptics';
-import { shareMeetup } from '../../utils/share';
+} from "../../utils/datetime";
+import { hapticLight } from "../../utils/haptics";
+import { shareMeetup } from "../../utils/share";
 
-const TEAM_COLORS = ['#0ea5e9', '#f43f5e', '#8b5cf6', '#22c55e', '#eab308'];
+const TEAM_COLORS = ["#0ea5e9", "#f43f5e", "#8b5cf6", "#22c55e", "#eab308"];
 
 const SPECIALTY_LABELS: Record<string, string> = {
-  ATT: 'Attacker',
-  MID: 'Midfielder',
-  DEF: 'Defender',
-  GK: 'Goalkeeper',
+  ATT: "Attacker",
+  MID: "Midfielder",
+  DEF: "Defender",
+  GK: "Goalkeeper",
 };
 
 function formatSpecialty(code: string | null | undefined): string | null {
@@ -63,9 +63,7 @@ function formatSpecialty(code: string | null | undefined): string | null {
   return SPECIALTY_LABELS[code] ?? code;
 }
 
-function mapTeamPlayers(
-  team: TeamsResponse['teams'][0]
-): User[] {
+function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
   return team.players.map((p) => ({
     id: p.id,
     name: p.name,
@@ -78,7 +76,7 @@ function mapTeamPlayers(
   }));
 }
 
-function getTeamName(team: TeamsResponse['teams'][0], index: number): string {
+function getTeamName(team: TeamsResponse["teams"][0], index: number): string {
   return team.name ?? `Team ${index + 1}`;
 }
 
@@ -91,28 +89,35 @@ export function AdminSessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [startLocal, setStartLocal] = useState('');
-  const [location, setLocation] = useState('');
-  const [fee, setFee] = useState('0');
-  const [minPlayers, setMinPlayers] = useState('10');
-  const [maxPlayers, setMaxPlayers] = useState('15');
-  const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
-  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
+  const [startLocal, setStartLocal] = useState("");
+  const [location, setLocation] = useState("");
+  const [fee, setFee] = useState("0");
+  const [minPlayers, setMinPlayers] = useState("10");
+  const [maxPlayers, setMaxPlayers] = useState("15");
+  const [waitlistMode, setWaitlistMode] =
+    useState<WaitlistMode>("auto_promote");
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("balanced");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   const [savingMeta, setSavingMeta] = useState(false);
   const [movingKey, setMovingKey] = useState<string | null>(null);
-  const [tab, setTab] = useState<'details' | 'attendance' | 'teams' | 'scores'>('details');
+  const [tab, setTab] = useState<"details" | "attendance" | "teams" | "scores">(
+    "details",
+  );
   const [attFilter, setAttFilter] = useState<
-    'all' | 'confirmed' | 'waitlisted' | 'cancelled'
-  >('all');
-  const [attSearch, setAttSearch] = useState('');
+    "all" | "confirmed" | "waitlisted" | "cancelled"
+  >("all");
+  const [attSearch, setAttSearch] = useState("");
   const [teamsData, setTeamsData] = useState<TeamsResponse | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
   const [reshuffling, setReshuffling] = useState(false);
-  const [playerScores, setPlayerScores] = useState<Record<string, number | null>>({});
-  const [adjustingTeam, setAdjustingTeam] = useState<'expand' | 'contract' | null>(null);
+  const [playerScores, setPlayerScores] = useState<
+    Record<string, number | null>
+  >({});
+  const [adjustingTeam, setAdjustingTeam] = useState<
+    "expand" | "contract" | null
+  >(null);
 
   const load = useCallback(async () => {
     if (Number.isNaN(id)) return;
@@ -126,11 +131,11 @@ export function AdminSessionDetailPage() {
       setMinPlayers(String(d.min_players));
       setMaxPlayers(String(d.max_players));
       setWaitlistMode(
-        d.waitlist_mode === 'broadcast' ? 'broadcast' : 'auto_promote'
+        d.waitlist_mode === "broadcast" ? "broadcast" : "auto_promote",
       );
-      setTeamMode(d.team_assignment_mode === 'random' ? 'random' : 'balanced');
+      setTeamMode(d.team_assignment_mode === "random" ? "random" : "balanced");
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      setError(e instanceof Error ? e.message : "Failed to load");
       setDetail(null);
     } finally {
       setLoading(false);
@@ -147,7 +152,7 @@ export function AdminSessionDetailPage() {
     const min = Number(minPlayers);
     const max = Number(maxPlayers);
     if (max < min) {
-      setError('Max players must be ≥ min players.');
+      setError("Max players must be ≥ min players.");
       return;
     }
     setSavingMeta(true);
@@ -163,9 +168,9 @@ export function AdminSessionDetailPage() {
         team_assignment_mode: teamMode,
       });
       await load();
-      showToast('Session updated.', 'success');
+      showToast("Session updated.", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed');
+      setError(err instanceof Error ? err.message : "Update failed");
     } finally {
       setSavingMeta(false);
     }
@@ -178,47 +183,47 @@ export function AdminSessionDetailPage() {
     try {
       await adminReshuffleTeams(id);
       await load();
-      showToast('Teams reshuffled.', 'success');
+      showToast("Teams reshuffled.", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reshuffle failed');
+      setError(err instanceof Error ? err.message : "Reshuffle failed");
     } finally {
       setReshuffling(false);
     }
   }
 
-  async function adjustTeams(op: 'expand' | 'contract') {
+  async function adjustTeams(op: "expand" | "contract") {
     if (Number.isNaN(id)) return;
     setAdjustingTeam(op);
     setError(null);
     try {
       const result = await adminAdjustTeams(id, op, 1);
       await load();
-      if (op === 'expand') {
+      if (op === "expand") {
         const count = result.promoted_user_ids?.length ?? 0;
         showToast(
           count > 0
             ? `Added team — ${count} player(s) promoted from waitlist.`
-            : 'Team capacity increased.',
-          'success'
+            : "Team capacity increased.",
+          "success",
         );
       } else {
         const count = result.returned_user_ids?.length ?? 0;
         showToast(
           count > 0
             ? `Removed team — ${count} player(s) returned to waitlist.`
-            : 'Team removed.',
-          'success'
+            : "Team removed.",
+          "success",
         );
       }
       hapticLight();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Adjustment failed');
+      setError(err instanceof Error ? err.message : "Adjustment failed");
     } finally {
       setAdjustingTeam(null);
     }
   }
 
-  async function moveUser(userId: number, next: 'confirmed' | 'waitlisted') {
+  async function moveUser(userId: number, next: "confirmed" | "waitlisted") {
     if (Number.isNaN(id)) return;
     setMovingKey(`${userId}-${next}`);
     setError(null);
@@ -227,7 +232,7 @@ export function AdminSessionDetailPage() {
       await load();
       hapticLight();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Move failed');
+      setError(err instanceof Error ? err.message : "Move failed");
     } finally {
       setMovingKey(null);
     }
@@ -235,29 +240,29 @@ export function AdminSessionDetailPage() {
 
   async function confirmAllWaitlisted() {
     if (!detail || Number.isNaN(id)) return;
-    const waiters = detail.attendees.filter((a) => a.status === 'waitlisted');
+    const waiters = detail.attendees.filter((a) => a.status === "waitlisted");
     if (waiters.length === 0) {
-      showToast('No waitlisted players.', 'success');
+      showToast("No waitlisted players.", "success");
       return;
     }
     setBulkWorking(true);
     setError(null);
     try {
       for (const a of waiters) {
-        await adminMoveAttendance(id, a.user_id, 'confirmed');
+        await adminMoveAttendance(id, a.user_id, "confirmed");
       }
       await load();
-      showToast(`Confirmed ${waiters.length} player(s).`, 'success');
+      showToast(`Confirmed ${waiters.length} player(s).`, "success");
       hapticLight();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk confirm failed');
+      setError(err instanceof Error ? err.message : "Bulk confirm failed");
     } finally {
       setBulkWorking(false);
     }
   }
 
   useEffect(() => {
-    if (tab !== 'teams' || Number.isNaN(id)) return;
+    if (tab !== "teams" || Number.isNaN(id)) return;
     let cancelled = false;
     setTeamsLoading(true);
     setPlayerScores({});
@@ -270,7 +275,7 @@ export function AdminSessionDetailPage() {
         setTeamsData(t);
         const scoreMap: Record<string, number | null> = {};
         for (const s of rawScores) {
-          if (s.type === 'individual') {
+          if (s.type === "individual") {
             scoreMap[String(s.player_id)] = s.score;
           }
         }
@@ -296,26 +301,25 @@ export function AdminSessionDetailPage() {
           session_id: id,
           player_id: parseInt(key, 10),
           score,
-          type: 'individual',
+          type: "individual",
         });
         setPlayerScores((prev) => ({ ...prev, [key]: score }));
         hapticLight();
       } catch (e) {
-        showToast(e instanceof Error ? e.message : 'Rating failed', 'error');
+        showToast(e instanceof Error ? e.message : "Rating failed", "error");
       }
     },
-    [id, showToast]
+    [id, showToast],
   );
 
   const filteredAttendees = useMemo(() => {
     if (!detail) return [];
     const q = attSearch.trim().toLowerCase();
     return detail.attendees.filter((a) => {
-      if (attFilter !== 'all' && a.status !== attFilter) return false;
+      if (attFilter !== "all" && a.status !== attFilter) return false;
       if (q) {
         const name = a.display_name.toLowerCase();
-        if (!name.includes(q))
-          return false;
+        if (!name.includes(q)) return false;
       }
       return true;
     });
@@ -327,25 +331,40 @@ export function AdminSessionDetailPage() {
     if (!detail) return { all: 0, confirmed: 0, waitlisted: 0, cancelled: 0 };
     return {
       all: detail.attendees.length,
-      confirmed: detail.attendees.filter((a) => a.status === 'confirmed').length,
-      waitlisted: detail.attendees.filter((a) => a.status === 'waitlisted').length,
-      cancelled: detail.attendees.filter((a) => a.status === 'cancelled').length,
+      confirmed: detail.attendees.filter((a) => a.status === "confirmed")
+        .length,
+      waitlisted: detail.attendees.filter((a) => a.status === "waitlisted")
+        .length,
+      cancelled: detail.attendees.filter((a) => a.status === "cancelled")
+        .length,
     };
   }, [detail]);
 
   // ── Tab definitions ─────────────────────────────────────────────
 
-  const tabs: { key: typeof tab; label: string; icon: typeof ArrowLeft; badge?: number }[] = [
-    { key: 'details', label: 'Details', icon: Settings2 },
-    { key: 'attendance', label: 'Attendance', icon: ClipboardList, badge: detail?.attendees.length },
-    { key: 'teams', label: 'Teams', icon: LayoutGrid },
-    { key: 'scores', label: 'Scores', icon: Trophy },
+  const tabs: {
+    key: typeof tab;
+    label: string;
+    icon: typeof ArrowLeft;
+    badge?: number;
+  }[] = [
+    { key: "details", label: "Details", icon: Settings2 },
+    {
+      key: "attendance",
+      label: "Attendance",
+      icon: ClipboardList,
+      badge: detail?.attendees.length,
+    },
+    { key: "teams", label: "Teams", icon: LayoutGrid },
+    { key: "scores", label: "Scores", icon: Trophy },
   ];
 
   // ── Loading / error states ──────────────────────────────────────
 
   if (Number.isNaN(id)) {
-    return <p className="text-red-600 dark:text-red-400">Invalid session id.</p>;
+    return (
+      <p className="text-red-600 dark:text-red-400">Invalid session id.</p>
+    );
   }
 
   if (loading) {
@@ -371,29 +390,35 @@ export function AdminSessionDetailPage() {
 
   const startDate = parseSessionStart(detail.start_time);
   const kickoffFuture = startDate.getTime() > Date.now();
-  const countdown =
-    kickoffFuture ? formatDistanceToNow(startDate, { addSuffix: true }) : null;
+  const countdown = kickoffFuture
+    ? formatDistanceToNow(startDate, { addSuffix: true })
+    : null;
   const sessionActive = !kickoffFuture;
-  const currentMatch = (detail as unknown as Record<string, unknown>).current_match as
+  // SAFETY: the sessions API may include an undeclared `current_match` object
+  // ({ status, match_number }) in the session-detail payload; it is absent,
+  // null, or that shape — never another type. The TS type lags behind the API.
+  const currentMatch = (detail as unknown as Record<string, unknown>)
+    .current_match as
     | { status: string; match_number: number }
     | null
     | undefined;
-  const matchActive = currentMatch?.status === 'active' || currentMatch?.status === 'time_up';
-  const canReshuffle = teamMode === 'random';
+  const matchActive =
+    currentMatch?.status === "active" || currentMatch?.status === "time_up";
+  const canReshuffle = teamMode === "random";
 
   // ── Shared handlers ─────────────────────────────────────────────
 
   const handleShare = () => {
     hapticLight();
     void shareMeetup({
-      title: 'Miootz meetup',
-      text: `${detail.location} · ${format(startDate, 'EEE d MMM HH:mm')}`,
-      url: window.location.origin + '/',
+      title: "Miootz meetup",
+      text: `${detail.location} · ${format(startDate, "EEE d MMM HH:mm")}`,
+      url: window.location.origin + "/",
     }).then((ok) =>
       showToast(
-        ok ? 'Link copied or shared.' : 'Could not share.',
-        ok ? 'success' : 'error'
-      )
+        ok ? "Link copied or shared." : "Could not share.",
+        ok ? "success" : "error",
+      ),
     );
   };
 
@@ -404,8 +429,8 @@ export function AdminSessionDetailPage() {
       {/* Breadcrumb */}
       <AdminBreadcrumb
         items={[
-          { label: 'Admin', to: '/admin' },
-          { label: 'Sessions', to: '/admin/sessions' },
+          { label: "Admin", to: "/admin" },
+          { label: "Sessions", to: "/admin/sessions" },
           { label: detail.location },
         ]}
       />
@@ -424,8 +449,8 @@ export function AdminSessionDetailPage() {
             {detail.location}
           </h1>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            #{detail.id} · {format(startDate, 'EEE, d MMM yyyy')} ·{' '}
-            {format(startDate, 'HH:mm')}
+            #{detail.id} · {format(startDate, "EEE, d MMM yyyy")} ·{" "}
+            {format(startDate, "HH:mm")}
             {countdown ? (
               <span className="text-emerald-600 dark:text-emerald-400 ml-1">
                 · {countdown}
@@ -434,9 +459,7 @@ export function AdminSessionDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!Number.isNaN(id) && (
-            <MeetupWeatherBadge sessionId={id} />
-          )}
+          {!Number.isNaN(id) && <MeetupWeatherBadge sessionId={id} />}
         </div>
       </header>
 
@@ -448,7 +471,7 @@ export function AdminSessionDetailPage() {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 active:scale-[0.98] transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
-            Manage match {currentMatch?.match_number ?? ''}
+            Manage match {currentMatch?.match_number ?? ""}
           </Link>
         )}
         {sessionActive && !currentMatch && (
@@ -486,7 +509,11 @@ export function AdminSessionDetailPage() {
       </div>
 
       {/* Tabs — horizontal scroll on desktop, accordion on mobile */}
-      <div className="sm:hidden" role="tablist" aria-label="Session sections">
+      <div
+        className="sm:hidden flex flex-col gap-2"
+        role="tablist"
+        aria-label="Session sections"
+      >
         {tabs.map(({ key, label, icon: Icon, badge }) => (
           <button
             key={key}
@@ -496,8 +523,8 @@ export function AdminSessionDetailPage() {
             onClick={() => setTab(key)}
             className={`w-full flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-colors active:scale-[0.99] ${
               tab === key
-                ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'
+                ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -506,10 +533,10 @@ export function AdminSessionDetailPage() {
             </div>
             {badge != null && (
               <span
-                className={`text-xs tabular-nums ${
+                className={`text-2xs tabular-nums ${
                   tab === key
-                    ? 'text-violet-500 dark:text-violet-400'
-                    : 'text-gray-400 dark:text-gray-500'
+                    ? "text-violet-500 dark:text-violet-400"
+                    : "text-gray-500 dark:text-gray-400"
                 }`}
               >
                 {badge}
@@ -533,18 +560,18 @@ export function AdminSessionDetailPage() {
             onClick={() => setTab(key)}
             className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium transition-colors active:scale-[0.97] ${
               tab === key
-                ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
+                ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
             }`}
           >
             <Icon className="w-3.5 h-3.5" aria-hidden />
             {label}
             {badge != null && (
               <span
-                className={`text-[11px] tabular-nums ${
+                className={`text-2xs tabular-nums ${
                   tab === key
-                    ? 'text-violet-500 dark:text-violet-400'
-                    : 'text-gray-400 dark:text-gray-500'
+                    ? "text-violet-500 dark:text-violet-400"
+                    : "text-gray-500 dark:text-gray-400"
                 }`}
               >
                 {badge}
@@ -566,7 +593,7 @@ export function AdminSessionDetailPage() {
 
       {/* ── Details tab ─────────────────────────────────────────── */}
 
-      {tab === 'details' && (
+      {tab === "details" && (
         <section>
           {/* Collapsed summary */}
           {!detailsExpanded && (
@@ -574,41 +601,64 @@ export function AdminSessionDetailPage() {
               <div className="p-4 sm:p-6">
                 <div className="grid sm:grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Start time</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Start time
+                    </span>
                     <p className="text-gray-900 dark:text-gray-100 mt-0.5">
-                      {format(startDate, 'EEE, d MMM yyyy')} at {format(startDate, 'HH:mm')}
+                      {format(startDate, "EEE, d MMM yyyy")} at{" "}
+                      {format(startDate, "HH:mm")}
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Location</span>
-                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 truncate">{location}</p>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Location
+                    </span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 truncate">
+                      {location}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Players</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Players
+                    </span>
                     <p className="text-gray-900 dark:text-gray-100 mt-0.5">
                       {minPlayers}–{maxPlayers}
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Fee</span>
-                    <p className="text-gray-900 dark:text-gray-100 mt-0.5">${Number(fee).toFixed(0)}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Team mode</span>
-                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 capitalize">
-                      {teamMode === 'random' ? 'Random' : 'Balanced (skill snake)'}
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Fee
+                    </span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5">
+                      ${Number(fee).toFixed(0)}
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Waitlist</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Team mode
+                    </span>
                     <p className="text-gray-900 dark:text-gray-100 mt-0.5 capitalize">
-                      {waitlistMode === 'broadcast' ? 'Broadcast' : 'Auto-promote'}
+                      {teamMode === "random"
+                        ? "Random"
+                        : "Balanced (skill snake)"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Waitlist
+                    </span>
+                    <p className="text-gray-900 dark:text-gray-100 mt-0.5 capitalize">
+                      {waitlistMode === "broadcast"
+                        ? "Broadcast"
+                        : "Auto-promote"}
                     </p>
                   </div>
                 </div>
                 {detail.game_template_id && detail.game_template && (
                   <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Template</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      Template
+                    </span>
                     <Link
                       to={`/admin/game-templates/${detail.game_template_id}`}
                       className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline ml-1"
@@ -741,8 +791,9 @@ export function AdminSessionDetailPage() {
                       <option value="balanced">Balanced (skill snake)</option>
                       <option value="random">Random order (snake)</option>
                     </select>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                      Random mode allows reshuffling teams without changing the mode.
+                    <p className="text-2xs text-gray-500 dark:text-gray-400 mt-1">
+                      Random mode allows reshuffling teams without changing the
+                      mode.
                     </p>
                   </div>
                 </div>
@@ -754,8 +805,9 @@ export function AdminSessionDetailPage() {
                     Weekly template
                   </p>
                   <p className="text-xs text-gray-600 dark:text-gray-400">
-                    This meetup was created from the template below. Edit schedule and
-                    defaults under Templates — this page is only for this session instance.
+                    This meetup was created from the template below. Edit
+                    schedule and defaults under Templates — this page is only
+                    for this session instance.
                   </p>
                   <Link
                     to={`/admin/game-templates/${detail.game_template_id}`}
@@ -772,7 +824,9 @@ export function AdminSessionDetailPage() {
                   disabled={savingMeta}
                   className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-60 active:scale-[0.98]"
                 >
-                  {savingMeta ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {savingMeta ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : null}
                   Save changes
                 </button>
                 <button
@@ -790,11 +844,11 @@ export function AdminSessionDetailPage() {
 
       {/* ── Attendance tab ──────────────────────────────────────── */}
 
-      {tab === 'attendance' && (
+      {tab === "attendance" && (
         <section className="space-y-3">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Move players between confirmed and waitlisted. Cancelled spots require
-            the player to rejoin from the app.
+            Move players between confirmed and waitlisted. Cancelled spots
+            require the player to rejoin from the app.
           </p>
 
           {/* Search + filters */}
@@ -812,29 +866,31 @@ export function AdminSessionDetailPage() {
             </label>
 
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {(['all', 'confirmed', 'waitlisted', 'cancelled'] as const).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setAttFilter(key)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
-                    attFilter === key
-                      ? 'border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600'
-                  }`}
-                >
-                  {key.charAt(0).toUpperCase() + key.slice(1)}
-                  <span
-                    className={`ml-1 text-[11px] tabular-nums ${
+              {(["all", "confirmed", "waitlisted", "cancelled"] as const).map(
+                (key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setAttFilter(key)}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                       attFilter === key
-                        ? 'text-violet-500 dark:text-violet-400'
-                        : 'text-gray-400 dark:text-gray-500'
+                        ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                     }`}
                   >
-                    {attCounts[key]}
-                  </span>
-                </button>
-              ))}
+                    {key.charAt(0).toUpperCase() + key.slice(1)}
+                    <span
+                      className={`ml-1 text-2xs tabular-nums ${
+                        attFilter === key
+                          ? "text-violet-500 dark:text-violet-400"
+                          : "text-gray-500 dark:text-gray-400"
+                      }`}
+                    >
+                      {attCounts[key]}
+                    </span>
+                  </button>
+                ),
+              )}
               <div className="w-px py-1 bg-gray-200 dark:bg-gray-700 shrink-0 mx-1" />
               <button
                 type="button"
@@ -842,7 +898,11 @@ export function AdminSessionDetailPage() {
                 onClick={() => void confirmAllWaitlisted()}
                 className="shrink-0 inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 disabled:opacity-50 active:scale-[0.97]"
               >
-                {bulkWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                {bulkWorking ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <UserCheck className="w-3 h-3" />
+                )}
                 Confirm all
               </button>
             </div>
@@ -851,11 +911,13 @@ export function AdminSessionDetailPage() {
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
             {filteredAttendees.length === 0 ? (
-              <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-8">No matching players.</p>
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-8">
+                No matching players.
+              </p>
             ) : (
               filteredAttendees.map((a) => {
                 const canMove =
-                  a.status === 'confirmed' || a.status === 'waitlisted';
+                  a.status === "confirmed" || a.status === "waitlisted";
                 const busy =
                   movingKey === `${a.user_id}-confirmed` ||
                   movingKey === `${a.user_id}-waitlisted`;
@@ -863,7 +925,8 @@ export function AdminSessionDetailPage() {
                 const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
                 const primaryPos = formatSpecialty(a.primary_specialty);
                 const secondaryPos = formatSpecialty(a.secondary_specialty);
-                const posLabel = [primaryPos, secondaryPos].filter(Boolean).join('/') || null;
+                const posLabel =
+                  [primaryPos, secondaryPos].filter(Boolean).join("/") || null;
                 return (
                   <div
                     key={a.user_id}
@@ -882,46 +945,50 @@ export function AdminSessionDetailPage() {
                             {displayName}
                           </span>
                           {posLabel && (
-                            <span className="shrink-0 text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-full px-1.5 py-0.5">
+                            <span className="shrink-0 text-2xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-full px-1.5 py-0.5">
                               {posLabel}
                             </span>
                           )}
                           <SkillBadge score={mmSkill} size="sm" />
                           <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              a.status === 'confirmed'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                                : a.status === 'waitlisted'
-                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                  : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-2xs font-medium ${
+                              a.status === "confirmed"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                                : a.status === "waitlisted"
+                                  ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                                  : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
                             }`}
                           >
                             {a.status}
                           </span>
                         </div>
                         {a.calculated_skill != null && (
-                          <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          <div className="text-2xs text-gray-500 dark:text-gray-400 mt-0.5">
                             calc {a.calculated_skill}
                           </div>
                         )}
                       </div>
                       {canMove && (
                         <div className="flex gap-1.5 shrink-0">
-                          {a.status !== 'confirmed' && (
+                          {a.status !== "confirmed" && (
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => void moveUser(a.user_id, 'confirmed')}
+                              onClick={() =>
+                                void moveUser(a.user_id, "confirmed")
+                              }
                               className="min-h-[36px] px-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50"
                             >
                               Confirm
                             </button>
                           )}
-                          {a.status !== 'waitlisted' && (
+                          {a.status !== "waitlisted" && (
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => void moveUser(a.user_id, 'waitlisted')}
+                              onClick={() =>
+                                void moveUser(a.user_id, "waitlisted")
+                              }
                               className="min-h-[36px] px-2.5 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs font-medium bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/40 disabled:opacity-50"
                             >
                               Waitlist
@@ -969,15 +1036,22 @@ export function AdminSessionDetailPage() {
                   ) : (
                     filteredAttendees.map((a) => {
                       const canMove =
-                        a.status === 'confirmed' || a.status === 'waitlisted';
+                        a.status === "confirmed" || a.status === "waitlisted";
                       const busy =
                         movingKey === `${a.user_id}-confirmed` ||
                         movingKey === `${a.user_id}-waitlisted`;
                       const displayName = a.display_name;
-                      const mmSkill = Math.min(5, Math.max(1, Math.round(a.skill)));
+                      const mmSkill = Math.min(
+                        5,
+                        Math.max(1, Math.round(a.skill)),
+                      );
                       const primaryPos = formatSpecialty(a.primary_specialty);
-                      const secondaryPos = formatSpecialty(a.secondary_specialty);
-                      const posLabel = [primaryPos, secondaryPos].filter(Boolean).join('/') || '—';
+                      const secondaryPos = formatSpecialty(
+                        a.secondary_specialty,
+                      );
+                      const posLabel =
+                        [primaryPos, secondaryPos].filter(Boolean).join("/") ||
+                        "—";
                       return (
                         <tr
                           key={a.user_id}
@@ -998,7 +1072,7 @@ export function AdminSessionDetailPage() {
                                   </span>
                                   <SkillBadge score={mmSkill} size="sm" />
                                 </div>
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                <div className="text-2xs text-gray-500 dark:text-gray-400">
                                   {a.calculated_skill != null && (
                                     <span>calc {a.calculated_skill}</span>
                                   )}
@@ -1013,12 +1087,12 @@ export function AdminSessionDetailPage() {
                           </td>
                           <td className="py-2.5 px-4 align-top">
                             <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
-                                a.status === 'confirmed'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                                  : a.status === 'waitlisted'
-                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-medium ${
+                                a.status === "confirmed"
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                                  : a.status === "waitlisted"
+                                    ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                                    : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
                               }`}
                             >
                               {a.status}
@@ -1027,12 +1101,12 @@ export function AdminSessionDetailPage() {
                           <td className="py-2.5 px-4 text-right align-top">
                             {canMove ? (
                               <div className="inline-flex flex-wrap justify-end gap-1.5">
-                                {a.status !== 'confirmed' && (
+                                {a.status !== "confirmed" && (
                                   <button
                                     type="button"
                                     disabled={busy}
                                     onClick={() =>
-                                      void moveUser(a.user_id, 'confirmed')
+                                      void moveUser(a.user_id, "confirmed")
                                     }
                                     className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 px-2.5 py-1.5 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50"
                                   >
@@ -1040,12 +1114,12 @@ export function AdminSessionDetailPage() {
                                     Confirm
                                   </button>
                                 )}
-                                {a.status !== 'waitlisted' && (
+                                {a.status !== "waitlisted" && (
                                   <button
                                     type="button"
                                     disabled={busy}
                                     onClick={() =>
-                                      void moveUser(a.user_id, 'waitlisted')
+                                      void moveUser(a.user_id, "waitlisted")
                                     }
                                     className="inline-flex items-center gap-1 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 px-2.5 py-1.5 text-xs font-medium bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/40 disabled:opacity-50"
                                   >
@@ -1071,7 +1145,7 @@ export function AdminSessionDetailPage() {
 
       {/* ── Teams tab ───────────────────────────────────────────── */}
 
-      {tab === 'teams' && (
+      {tab === "teams" && (
         <section className="space-y-3">
           {/* Team capacity card */}
           {detail && (
@@ -1083,10 +1157,16 @@ export function AdminSessionDetailPage() {
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     {teamsData
-                      ? `${teamsData.teams.length} team(s) · ${detail.attendees.filter((a) => a.status === 'confirmed').length} confirmed`
-                      : 'Loading…'}
+                      ? `${teamsData.teams.length} team(s) · ${detail.attendees.filter((a) => a.status === "confirmed").length} confirmed`
+                      : "Loading…"}
                     <span className="text-amber-600 dark:text-amber-400 ml-1">
-                      · {detail.attendees.filter((a) => a.status === 'waitlisted').length} waitlisted
+                      ·{" "}
+                      {
+                        detail.attendees.filter(
+                          (a) => a.status === "waitlisted",
+                        ).length
+                      }{" "}
+                      waitlisted
                     </span>
                   </p>
                 </div>
@@ -1098,11 +1178,11 @@ export function AdminSessionDetailPage() {
                       detail.max_teams <= 2 ||
                       adjustingTeam !== null
                     }
-                    onClick={() => void adjustTeams('contract')}
+                    onClick={() => void adjustTeams("contract")}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs font-medium bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
                     title="Remove a team (returns players to waitlist)"
                   >
-                    {adjustingTeam === 'contract' ? (
+                    {adjustingTeam === "contract" ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Minus className="w-3.5 h-3.5" />
@@ -1112,14 +1192,14 @@ export function AdminSessionDetailPage() {
                   <button
                     type="button"
                     disabled={
-                      detail.attendees.filter((a) => a.status === 'waitlisted').length === 0 ||
-                      adjustingTeam !== null
+                      detail.attendees.filter((a) => a.status === "waitlisted")
+                        .length === 0 || adjustingTeam !== null
                     }
-                    onClick={() => void adjustTeams('expand')}
+                    onClick={() => void adjustTeams("expand")}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
                     title="Add a team (promotes players from waitlist)"
                   >
-                    {adjustingTeam === 'expand' ? (
+                    {adjustingTeam === "expand" ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Plus className="w-3.5 h-3.5" />
@@ -1128,14 +1208,22 @@ export function AdminSessionDetailPage() {
                   </button>
                 </div>
               </div>
-              {detail.attendees.filter((a) => a.status === 'waitlisted').length > 0 &&
-                detail.attendees.filter((a) => a.status === 'waitlisted').length < 5 && (
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2">
-                  Only {detail.attendees.filter((a) => a.status === 'waitlisted').length} waitlisted player(s) — adding a team will create a partial team.
-                </p>
-              )}
+              {detail.attendees.filter((a) => a.status === "waitlisted")
+                .length > 0 &&
+                detail.attendees.filter((a) => a.status === "waitlisted")
+                  .length < 5 && (
+                  <p className="text-2xs text-gray-500 dark:text-gray-400 mt-2">
+                    Only{" "}
+                    {
+                      detail.attendees.filter((a) => a.status === "waitlisted")
+                        .length
+                    }{" "}
+                    waitlisted player(s) — adding a team will create a partial
+                    team.
+                  </p>
+                )}
               {!detail.max_teams && (
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-2">
+                <p className="text-2xs text-gray-500 dark:text-gray-400 mt-2">
                   Team count is automatic. Adding a team sets an explicit cap.
                 </p>
               )}
@@ -1143,14 +1231,15 @@ export function AdminSessionDetailPage() {
           )}
 
           {teamsLoading ? (
-            <div className="flex justify-center py-12 text-gray-500">
+            <div className="flex justify-center py-12 text-gray-500 dark:text-gray-400">
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
           ) : !teamsData || teamsData.teams.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
               <LayoutGrid className="w-8 h-8 mx-auto text-gray-400 mb-2" />
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                No team assignments yet — players need to join and teams must be formed.
+                No team assignments yet — players need to join and teams must be
+                formed.
               </p>
             </div>
           ) : (
@@ -1174,7 +1263,8 @@ export function AdminSessionDetailPage() {
                           </h3>
                         </div>
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {players.length} player{players.length !== 1 ? 's' : ''}
+                          {players.length} player
+                          {players.length !== 1 ? "s" : ""}
                         </span>
                       </div>
                       <TeamRoster
@@ -1194,14 +1284,14 @@ export function AdminSessionDetailPage() {
 
       {/* ── Scores tab ──────────────────────────────────────────── */}
 
-      {tab === 'scores' && (
+      {tab === "scores" && (
         <section className="space-y-3">
           <MatchHistoryList sessionId={id} editable />
         </section>
       )}
 
       {/* Footer */}
-      <footer className="text-[11px] text-gray-400 dark:text-gray-500 border-t border-gray-200 dark:border-gray-800 pt-4">
+      <footer className="text-2xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-800 pt-4">
         Data revision #{detail.content_revision}
       </footer>
     </div>

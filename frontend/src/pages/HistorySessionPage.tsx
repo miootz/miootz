@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { fetchSessionDetail, type SessionDetail } from '../api/sessionsApi';
-import { SessionDetailPanel } from '../components/SessionDetailPanel';
-import { parseSessionStart } from '../utils/datetime';
+import { useCallback, useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { fetchSessionDetail, type SessionDetail } from "../api/sessionsApi";
+import { SessionDetailPanel } from "../components/SessionDetailPanel";
+import { parseSessionStart } from "../utils/datetime";
 
 export function HistorySessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -22,7 +22,7 @@ export function HistorySessionPage() {
       const d = await fetchSessionDetail(id);
       setDetail(d);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load session');
+      setError(e instanceof Error ? e.message : "Failed to load session");
       setDetail(null);
     } finally {
       setLoading(false);
@@ -38,7 +38,7 @@ export function HistorySessionPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-500 dark:text-gray-400" />
       </div>
     );
   }
@@ -49,11 +49,11 @@ export function HistorySessionPage() {
     return (
       <div className="p-4 max-w-2xl mx-auto text-center space-y-4">
         <p className="text-red-600 dark:text-red-400">
-          {error || 'Session not found'}
+          {error || "Session not found"}
         </p>
         <button
           type="button"
-          onClick={() => navigate('/history')}
+          onClick={() => navigate("/history")}
           className="inline-flex items-center gap-1.5 min-h-[44px] rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -66,15 +66,15 @@ export function HistorySessionPage() {
   /* ── Detail ───────────────────────────────────────── */
 
   const start = parseSessionStart(detail.start_time);
-  const dateLabel = format(start, 'EEEE, d MMMM yyyy');
-  const timeLabel = format(start, 'HH:mm');
+  const dateLabel = format(start, "EEEE, d MMMM yyyy");
+  const timeLabel = format(start, "HH:mm");
 
   return (
     <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4">
       {/* Back button */}
       <button
         type="button"
-        onClick={() => navigate('/history')}
+        onClick={() => navigate("/history")}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors min-h-[44px]"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -89,10 +89,7 @@ export function HistorySessionPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
           {detail.location}
           {detail.fee != null && detail.fee > 0 && (
-            <span>
-              {' '}
-              · ${detail.fee.toFixed(0)}
-            </span>
+            <span> · ${detail.fee.toFixed(0)}</span>
           )}
         </p>
       </header>

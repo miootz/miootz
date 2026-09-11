@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
@@ -25,7 +25,7 @@ async def test_rating_constraint_unattended_session():
         await db.refresh(auth_user)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=5),
+            start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
@@ -49,8 +49,7 @@ async def test_rating_constraint_unattended_session():
         )
     assert resp.status_code == 403
     assert (
-        resp.json()["detail"]
-        == "You can only rate players from sessions you attended"
+        resp.json()["detail"] == "You can only rate players from sessions you attended"
     )
 
 
@@ -65,7 +64,7 @@ async def test_anonymity_check():
         await db.refresh(player)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=5),
+            start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
@@ -114,7 +113,7 @@ async def test_score_update_verification():
         await db.refresh(player1)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(days=3),
+            start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3),
             location="Test Park",
             max_players=10,
         )
@@ -144,7 +143,7 @@ async def test_score_update_verification():
 
         async with async_session() as db:
             session2 = GameSession(
-                start_time=datetime.utcnow() - timedelta(days=2),
+                start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2),
                 location="Test Park 2",
                 max_players=10,
             )
@@ -186,7 +185,7 @@ async def test_rating_context_allows_non_attendee_read_only():
         await db.refresh(player)
 
         session = GameSession(
-            start_time=datetime.utcnow() - timedelta(hours=5),
+            start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Pitch A",
             max_players=10,
         )

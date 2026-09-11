@@ -121,7 +121,7 @@ function PlusOneModal({
 				<button
 					type="button"
 					onClick={onClose}
-					className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"
+					className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400"
 					aria-label="Close"
 				>
 					<X size={18} />
@@ -152,7 +152,7 @@ function PlusOneModal({
 							<button
 								type="button"
 								onClick={onClose}
-								className="flex-1 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
+								className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
 							>
 								Done
 							</button>
@@ -161,17 +161,14 @@ function PlusOneModal({
 				) : (
 					<>
 						<div className="flex items-center gap-2">
-							<UserPlus
-								className="text-violet-600 dark:text-violet-400"
-								size={20}
-							/>
+							<UserPlus className="text-violet-600 dark:text-violet-400" size={20} />
 							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
 								Add a plus-one
 							</h3>
 						</div>
 						<p className="text-sm text-gray-500 dark:text-gray-400">
-							Invite a friend to play with you. They'll receive a link to claim
-							their spot.
+							Invite a friend to play with you. They'll receive a link to claim their
+							spot.
 						</p>
 
 						<form onSubmit={handleSubmit} className="space-y-4">
@@ -209,14 +206,13 @@ function PlusOneModal({
 									Skill level
 								</label>
 								<StarRating value={skill} onChange={setSkill} size={28} />
-								<p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{SKILL_SCALE_BLURB}</p>
+								<p className="mt-1 text-2xs text-gray-500 dark:text-gray-400">
+									{SKILL_SCALE_BLURB}
+								</p>
 							</div>
 
 							{error && (
-								<p
-									className="text-sm text-red-600 dark:text-red-400"
-									role="alert"
-								>
+								<p className="text-sm text-red-600 dark:text-red-400" role="alert">
 									{error}
 								</p>
 							)}
@@ -232,7 +228,7 @@ function PlusOneModal({
 								<button
 									type="submit"
 									disabled={busy}
-									className="flex-1 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+									className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
 								>
 									{busy ? "Adding…" : "Add plus-one"}
 								</button>
@@ -356,7 +352,7 @@ function MeetupAttendanceActions({
 						type="button"
 						disabled={busy}
 						onClick={() => void runJoin()}
-						className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98]"
+						className="px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98]"
 					>
 						{status === "cancelled" ? "Join again" : "Join meetup"}
 					</button>

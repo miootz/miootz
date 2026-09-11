@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -16,12 +17,19 @@ from app.models.user_notification_preference import (
     UserNotificationPreference,
 )
 from app.models.web_push_subscription import WebPushSubscription
-from app.schemas.user import SPECIALTY_OPTIONS, UserMe, UserProfileUpdate
+from app.schemas.user import SPECIALTY_OPTIONS, UserProfileUpdate
 from app.models.invite import InviteToken
-from app.services.pocket_id_client import create_signup_token, delete_user, get_user_by_id
+from app.services.pocket_id_client import (
+    create_signup_token,
+    delete_user,
+    get_user_by_id,
+)
 from app.services.skill_service import update_user_calculated_skill
 from app.services.template_subscriptions import user_wants_template_notifications
 from pydantic import BaseModel, ConfigDict, Field
+from app.core.timeutil import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -38,8 +46,14 @@ def _synthetic_email(first_name: str, last_name: str) -> str:
     """Generate a synthetic email for Pocket ID (never shown to the user)."""
     slug = _slugify(f"{first_name} {last_name}") or "player"
     import secrets
+
     suffix = secrets.token_hex(4)
     return f"{slug}.{suffix}@passkey.internal"
+
+
+class AdminUserCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=80)
+    last_name: str = Field(..., min_length=1, max_length=80)
 
 
 @router.post("")
@@ -52,7 +66,9 @@ async def admin_create_user(
     first_name = body.first_name.strip()
     last_name = body.last_name.strip()
     if not first_name or not last_name:
-        raise HTTPException(status_code=400, detail="First name and last name are required")
+        raise HTTPException(
+            status_code=400, detail="First name and last name are required"
+        )
 
     user = User(
         sso_display_name=f"{first_name} {last_name}",
@@ -124,7 +140,7 @@ async def admin_generate_invite(
     expires_at = (
         datetime.fromisoformat(pocket_token.get("expiresAt", ""))
         if pocket_token.get("expiresAt")
-        else datetime.utcnow() + timedelta(days=7)
+        else utcnow() + timedelta(days=7)
     )
 
     invite = InviteToken(
@@ -304,9 +320,7 @@ async def save_push_subscription(
         raise HTTPException(status_code=400, detail="Missing p256dh or auth key")
 
     result = await db.execute(
-        select(WebPushSubscription).where(
-            WebPushSubscription.endpoint == body.endpoint
-        )
+        select(WebPushSubscription).where(WebPushSubscription.endpoint == body.endpoint)
     )
     row = result.scalar_one_or_none()
     if row:
@@ -398,10 +412,12 @@ async def list_notification_preferences(
     explicit = {row.category: row.enabled for row in result.scalars().all()}
     items = []
     for cat in NOTIFICATION_CATEGORIES:
-        items.append({
-            "category": cat,
-            "enabled": explicit.get(cat, True),
-        })
+        items.append(
+            {
+                "category": cat,
+                "enabled": explicit.get(cat, True),
+            }
+        )
     return {"items": items}
 
 
@@ -445,11 +461,6 @@ async def patch_notification_preference(
     }
 
 
-class AdminUserCreate(BaseModel):
-    first_name: str = Field(..., min_length=1, max_length=80)
-    last_name: str = Field(..., min_length=1, max_length=80)
-
-
 class AdminUserListOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -484,11 +495,11 @@ async def list_users_admin(
     _: User = Depends(require_admin),
 ):
     """List all users for the admin UI, enriched with fresh Pocket ID profile data."""
-    from sqlalchemy import func
 
     result = await db.execute(
-        select(User, func.count().over().label("total"))
-        .order_by(User.sso_display_name.asc(), User.pocket_id_sub.asc())
+        select(User, func.count().over().label("total")).order_by(
+            User.sso_display_name.asc(), User.pocket_id_sub.asc()
+        )
     )
     rows = result.all()
 
@@ -497,32 +508,31 @@ async def list_users_admin(
     sso_cache: dict[str, dict[str, Any]] = {}
     if subs:
         import asyncio
+
         results = await asyncio.gather(
             *(get_user_by_id(user.pocket_id_sub) for user, _ in subs),
         )
-        for (user, _), sso_data in zip(subs, results):
+        for (user, _), sso_data in zip(subs, results, strict=True):
             if sso_data and user.pocket_id_sub:
                 sso_cache[user.pocket_id_sub] = sso_data
 
     users = []
-    for (user, _total) in rows:
+    for user, _total in rows:
         sso = sso_cache.get(user.pocket_id_sub) if user.pocket_id_sub else None
-        display_name = (
-            sso.get("displayName")
-            if sso
-            else user.sso_display_name
-        )
+        display_name = sso.get("displayName") if sso else user.sso_display_name
         username = (
             sso.get("preferredUsername") or sso.get("username")
             if sso
             else user.sso_preferred_username
         )
-        users.append({
-            **AdminUserListOut.model_validate(user).model_dump(),
-            "display_name": display_name,
-            "username": username,
-            "has_pocket_id": bool(user.pocket_id_sub),
-        })
+        users.append(
+            {
+                **AdminUserListOut.model_validate(user).model_dump(),
+                "display_name": display_name,
+                "username": username,
+                "has_pocket_id": bool(user.pocket_id_sub),
+            }
+        )
     return {"items": users}
 
 
@@ -580,8 +590,6 @@ async def admin_set_self_assessed_skill(
     await db.commit()
     await update_user_calculated_skill(db, user_id=user_id)
     return {"message": "Self-assessed skill updated"}
-
-
 
 
 @router.delete("/{user_id}")

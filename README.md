@@ -10,6 +10,13 @@ Bootstrap the full stack (Pocket ID + API + Frontend) in one command:
 
 See [INITIAL_SETUP.md](INITIAL_SETUP.md) for details.
 
+## Showcase demo
+
+Run `.venv/bin/python -m app.demo --scenario full`, then open
+[the local demo menu](http://127.0.0.1:5180/api/demo). This uses fictional data in
+a temporary database and requires no passkey. See [the demo guide](docs/DEMO.md)
+for scenarios, account switching, screenshot routes, and integration limits.
+
 ## Development Setup (Local)
 
 ### Backend

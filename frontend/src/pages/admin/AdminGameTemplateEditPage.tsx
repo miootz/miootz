@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import {
   adminCreateGameTemplate,
   adminDeleteGameTemplate,
@@ -9,18 +9,21 @@ import {
   type GameTemplatePayload,
   type TeamAssignmentMode,
   type WaitlistMode,
-} from '../../api/adminApi';
-import { AdminSessionRecurrenceForm } from '../../components/AdminSessionRecurrenceForm';
-import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
-import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { LocationPicker, type GeoPoint } from '../../components/admin/LocationPicker';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { useToast } from '../../context/ToastContext';
+} from "../../api/adminApi";
+import { AdminSessionRecurrenceForm } from "../../components/AdminSessionRecurrenceForm";
+import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
+import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
+import {
+  LocationPicker,
+  type GeoPoint,
+} from "../../components/admin/LocationPicker";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useToast } from "../../context/ToastContext";
 
 function defaultStartLocal(): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() - (d.getMinutes() % 15) + 60);
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
@@ -28,7 +31,7 @@ export function AdminGameTemplateEditPage() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const isNew = templateId === 'new';
+  const isNew = templateId === "new";
   const id = !isNew && templateId ? parseInt(templateId, 10) : NaN;
 
   const [loading, setLoading] = useState(!isNew);
@@ -36,30 +39,31 @@ export function AdminGameTemplateEditPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const [name, setName] = useState('Meetup');
-  const [location, setLocation] = useState('');
+  const [name, setName] = useState("Meetup");
+  const [location, setLocation] = useState("");
   const [coords, setCoords] = useState<GeoPoint | null>(null);
-  const [fee, setFee] = useState('0');
-  const [minPlayers, setMinPlayers] = useState('10');
-  const [maxPlayers, setMaxPlayers] = useState('15');
-  const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
-  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
-  const [matchDuration, setMatchDuration] = useState('10');
+  const [fee, setFee] = useState("0");
+  const [minPlayers, setMinPlayers] = useState("10");
+  const [maxPlayers, setMaxPlayers] = useState("15");
+  const [waitlistMode, setWaitlistMode] =
+    useState<WaitlistMode>("auto_promote");
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("balanced");
+  const [matchDuration, setMatchDuration] = useState("10");
   const [isActive, setIsActive] = useState(true);
   const [anchorStartLocal, setAnchorStartLocal] = useState(defaultStartLocal);
 
   const [recurrenceTz, setRecurrenceTz] = useState(() =>
-    typeof Intl !== 'undefined'
+    typeof Intl !== "undefined"
       ? Intl.DateTimeFormat().resolvedOptions().timeZone
-      : 'UTC'
+      : "UTC",
   );
   const [recurrenceWeekday, setRecurrenceWeekday] = useState(0);
   const [recurrenceHour, setRecurrenceHour] = useState(19);
   const [recurrenceMinute, setRecurrenceMinute] = useState(0);
   const [announceTz, setAnnounceTz] = useState(() =>
-    typeof Intl !== 'undefined'
+    typeof Intl !== "undefined"
       ? Intl.DateTimeFormat().resolvedOptions().timeZone
-      : 'UTC'
+      : "UTC",
   );
   const [announceWeekday, setAnnounceWeekday] = useState(0);
   const [announceHour, setAnnounceHour] = useState(9);
@@ -82,8 +86,10 @@ export function AdminGameTemplateEditPage() {
       setFee(String(t.fee));
       setMinPlayers(String(t.min_players));
       setMaxPlayers(String(t.max_players));
-      setWaitlistMode(t.waitlist_mode === 'broadcast' ? 'broadcast' : 'auto_promote');
-      setTeamMode(t.team_assignment_mode === 'random' ? 'random' : 'balanced');
+      setWaitlistMode(
+        t.waitlist_mode === "broadcast" ? "broadcast" : "auto_promote",
+      );
+      setTeamMode(t.team_assignment_mode === "random" ? "random" : "balanced");
       setMatchDuration(String(t.match_duration_minutes ?? 10));
       setIsActive(t.is_active);
       setRecurrenceTz(t.timezone);
@@ -96,7 +102,7 @@ export function AdminGameTemplateEditPage() {
       setAnnounceMinute(t.announce_minute);
       setSessionCount(t.materialized_session_count ?? 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -111,20 +117,20 @@ export function AdminGameTemplateEditPage() {
     const min = Number(minPlayers);
     const max = Number(maxPlayers);
     if (max < min) {
-      setError('Max players must be ≥ min players.');
+      setError("Max players must be ≥ min players.");
       return;
     }
     if (!location.trim()) {
-      setError('Location is required.');
+      setError("Location is required.");
       return;
     }
     const body: GameTemplatePayload = {
-      name: name.trim() || 'Meetup',
-      timezone: recurrenceTz.trim() || 'UTC',
+      name: name.trim() || "Meetup",
+      timezone: recurrenceTz.trim() || "UTC",
       weekday: recurrenceWeekday,
       hour: recurrenceHour,
       minute: recurrenceMinute,
-      announce_timezone: announceTz.trim() || 'UTC',
+      announce_timezone: announceTz.trim() || "UTC",
       announce_weekday: announceWeekday,
       announce_hour: announceHour,
       announce_minute: announceMinute,
@@ -144,15 +150,15 @@ export function AdminGameTemplateEditPage() {
     try {
       if (isNew) {
         const created = await adminCreateGameTemplate(body);
-        showToast('Template created.', 'success');
+        showToast("Template created.", "success");
         navigate(`/admin/game-templates/${created.id}`, { replace: true });
       } else {
         await adminUpdateGameTemplate(id, body);
-        showToast('Template saved.', 'success');
+        showToast("Template saved.", "success");
         await load();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      setError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -161,10 +167,10 @@ export function AdminGameTemplateEditPage() {
   async function doDelete() {
     try {
       await adminDeleteGameTemplate(id);
-      showToast('Template deleted.', 'success');
-      navigate('/admin/game-templates');
+      showToast("Template deleted.", "success");
+      navigate("/admin/game-templates");
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Delete failed', 'error');
+      showToast(e instanceof Error ? e.message : "Delete failed", "error");
     } finally {
       setConfirmDelete(false);
     }
@@ -177,13 +183,15 @@ export function AdminGameTemplateEditPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-24">
-        <Loader2 className="w-8 h-8 animate-spin text-violet-600" aria-label="Loading" />
+        <Loader2
+          className="w-8 h-8 animate-spin text-violet-600"
+          aria-label="Loading"
+        />
       </div>
     );
   }
 
-  const canDelete =
-    !isNew && (sessionCount === 0 || sessionCount === null);
+  const canDelete = !isNew && (sessionCount === 0 || sessionCount === null);
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
@@ -191,13 +199,13 @@ export function AdminGameTemplateEditPage() {
         breadcrumb={
           <AdminBreadcrumb
             items={[
-              { label: 'Admin', to: '/admin' },
-              { label: 'Game templates', to: '/admin/game-templates' },
-              { label: isNew ? 'New' : name },
+              { label: "Admin", to: "/admin" },
+              { label: "Game templates", to: "/admin/game-templates" },
+              { label: isNew ? "New" : name },
             ]}
           />
         }
-        title={isNew ? 'New game template' : 'Edit game template'}
+        title={isNew ? "New game template" : "Edit game template"}
         subtitle="Kickoff schedule, announce time, and defaults copied onto each auto-created session."
       />
 
@@ -224,8 +232,9 @@ export function AdminGameTemplateEditPage() {
 
         {!isNew && sessionCount != null && sessionCount > 0 && (
           <p className="text-xs text-amber-800 dark:text-amber-200 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
-            {sessionCount} materialized session{sessionCount === 1 ? '' : 's'} reference this template.
-            You can still edit schedule and defaults; delete is disabled until no sessions use this template.
+            {sessionCount} materialized session{sessionCount === 1 ? "" : "s"}{" "}
+            reference this template. You can still edit schedule and defaults;
+            delete is disabled until no sessions use this template.
           </p>
         )}
 
@@ -312,9 +321,7 @@ export function AdminGameTemplateEditPage() {
           </label>
           <select
             value={waitlistMode}
-            onChange={(e) =>
-              setWaitlistMode(e.target.value as WaitlistMode)
-            }
+            onChange={(e) => setWaitlistMode(e.target.value as WaitlistMode)}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
           >
             <option value="auto_promote">Auto-promote</option>
@@ -328,9 +335,7 @@ export function AdminGameTemplateEditPage() {
           </label>
           <select
             value={teamMode}
-            onChange={(e) =>
-              setTeamMode(e.target.value as TeamAssignmentMode)
-            }
+            onChange={(e) => setTeamMode(e.target.value as TeamAssignmentMode)}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
           >
             <option value="balanced">Balanced (skill snake)</option>
@@ -350,7 +355,7 @@ export function AdminGameTemplateEditPage() {
             onChange={(e) => setMatchDuration(e.target.value)}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Duration for each team-vs-team match during live meetups.
           </p>
         </div>
@@ -365,8 +370,9 @@ export function AdminGameTemplateEditPage() {
             onChange={(e) => setAnchorStartLocal(e.target.value)}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
           />
-          <p className="text-xs text-gray-500 mt-1">
-            Optional helper — use “Match start time above” in the schedule block to align kickoff fields.
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Optional helper — use “Match start time above” in the schedule block
+            to align kickoff fields.
           </p>
         </div>
 
@@ -403,7 +409,7 @@ export function AdminGameTemplateEditPage() {
             className="inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-60"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {isNew ? 'Create template' : 'Save changes'}
+            {isNew ? "Create template" : "Save changes"}
           </button>
           {!isNew && (
             <button

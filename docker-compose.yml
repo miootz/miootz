@@ -3,16 +3,24 @@ services:
     image: traefik:v2.10
     container_name: traefik
     command:
-      - "--api.insecure=true"
+      # Dashboard disabled: `api.insecure` exposed an unauthenticated
+      # Traefik control plane on :8080, and the docker.sock mount made that
+      # a path to full host compromise. Re-enable behind an auth middleware
+      # + websecure entrypoint only if a dashboard is actually needed.
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      # :80 keeps only a permanent redirect to HTTPS. Caveat: this breaks
+      # ACME HTTP-01 challenges on :80 — we use mkcert self-signed certs
+      # (tls.stores below), so that's fine; revert if real ACME is added.
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
       - "--tls.stores.default.defaultCertificate=/certs/cert.pem,/certs/key.pem"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./docker/traefik/acme.json:/acme.json"
@@ -47,7 +55,6 @@ services:
     container_name: miootz_api
     env_file: .env
     environment:
-      UPLOAD_DIR: /data/uploads
       POCKET_ID_INTERNAL_URL: "http://pocket-id:1411"
       POCKET_ID_APP_URL: "https://auth.miootz.local"
       POCKET_ID_STATIC_API_KEY: "${POCKET_ID_STATIC_API_KEY:-}"
@@ -63,7 +70,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
       - "traefik.http.routers.api.rule=Host(`api.miootz.local`)"
-      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls=true"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
       - "traefik.http.routers.api-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/api`)"
       - "traefik.http.routers.api-on-app.entrypoints=websecure"
@@ -71,11 +79,6 @@ services:
       - "traefik.http.routers.api-on-app.middlewares=api-strip@docker"
       - "traefik.http.routers.api-on-app.service=api"
       - "traefik.http.routers.api-on-app.priority=100"
-      - "traefik.http.routers.api-uploads-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/uploads`)"
-      - "traefik.http.routers.api-uploads-on-app.entrypoints=websecure"
-      - "traefik.http.routers.api-uploads-on-app.tls=true"
-      - "traefik.http.routers.api-uploads-on-app.service=api"
-      - "traefik.http.routers.api-uploads-on-app.priority=50"
 
   frontend:
     build:
@@ -83,7 +86,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_POCKET_ID_ISSUER: "https://auth.miootz.local"
-        VITE_POCKET_ID_CLIENT_SECRET: "${POCKET_ID_OIDC_CLIENT_SECRET:-}"
     container_name: miootz_frontend
     networks:
       - web

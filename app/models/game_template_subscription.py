@@ -32,9 +32,9 @@ class GameTemplateSubscription(Base):
     #: False = user opted out of new-session emails/pushes for this template.
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    user: Mapped["User"] = relationship(
+    user: Mapped[User] = relationship(
         "User", back_populates="game_template_subscriptions"
     )
-    game_template: Mapped["GameTemplate"] = relationship(
+    game_template: Mapped[GameTemplate] = relationship(
         "GameTemplate", back_populates="subscriptions"
     )

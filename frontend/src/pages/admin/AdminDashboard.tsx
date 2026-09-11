@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
-import { Calendar, Plus, Repeat, Users, Wrench } from 'lucide-react';
-import { adminListGameTemplates } from '../../api/adminApi';
-import { fetchSessionDetail, fetchSessions } from '../../api/sessionsApi';
-import { parseSessionStart } from '../../utils/datetime';
-import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
-import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { format } from "date-fns";
+import { Calendar, Plus, Repeat, Users, Wrench } from "lucide-react";
+import { adminListGameTemplates } from "../../api/adminApi";
+import { fetchSessionDetail, fetchSessions } from "../../api/sessionsApi";
+import { parseSessionStart } from "../../utils/datetime";
+import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
+import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 
 function DashboardSkeleton() {
   return (
@@ -43,7 +43,7 @@ export function AdminDashboard() {
         const [data, gt, upcoming] = await Promise.all([
           fetchSessions(),
           adminListGameTemplates(),
-          fetchSessions({ status: 'upcoming', order: 'asc', limit: 1 }),
+          fetchSessions({ status: "upcoming", order: "asc", limit: 1 }),
         ]);
         if (!c) return;
         setSessionCount(data.total);
@@ -56,7 +56,7 @@ export function AdminDashboard() {
             const detail = await fetchSessionDetail(next.id);
             if (!c) return;
             waitlistCount = detail.attendees.filter(
-              (a) => a.status === 'waitlisted'
+              (a) => a.status === "waitlisted",
             ).length;
           } catch {
             /* waitlist depth is optional */
@@ -73,18 +73,18 @@ export function AdminDashboard() {
         } else {
           // No upcoming session — surface the next signups-open time
           const past = await fetchSessions({
-            status: 'all',
-            order: 'desc',
+            status: "all",
+            order: "desc",
             limit: 5,
           });
           if (!c) return;
           setNextAnnounceAt(
             past.items.find((x) => x.game_template?.next_announce_at)
-              ?.game_template?.next_announce_at ?? null
+              ?.game_template?.next_announce_at ?? null,
           );
         }
       } catch (e) {
-        if (c) setErr(e instanceof Error ? e.message : 'Failed to load');
+        if (c) setErr(e instanceof Error ? e.message : "Failed to load");
       }
     })();
     return () => {
@@ -96,42 +96,38 @@ export function AdminDashboard() {
 
   const cards = [
     {
-      to: '/admin/sessions',
-      title: 'Sessions',
-      desc: 'Create, edit, delete meetups; manage attendance.',
+      to: "/admin/sessions",
+      title: "Sessions",
+      desc: "Create, edit, delete meetups; manage attendance.",
       icon: Calendar,
       stat:
-        sessionCount !== null
-          ? `${sessionCount} scheduled`
-          : err
-            ? '—'
-            : '…',
+        sessionCount !== null ? `${sessionCount} scheduled` : err ? "—" : "…",
     },
     {
-      to: '/admin/game-templates',
-      title: 'Templates',
-      desc: 'Weekly schedules and defaults for auto-created meetups.',
+      to: "/admin/game-templates",
+      title: "Templates",
+      desc: "Weekly schedules and defaults for auto-created meetups.",
       icon: Repeat,
       stat:
         templateCount !== null
-          ? `${templateCount} template${templateCount === 1 ? '' : 's'}`
+          ? `${templateCount} template${templateCount === 1 ? "" : "s"}`
           : err
-            ? '—'
-            : '…',
+            ? "—"
+            : "…",
     },
     {
-      to: '/admin/users',
-      title: 'Users',
-      desc: 'Manage players, edit profiles, and generate invite links.',
+      to: "/admin/users",
+      title: "Users",
+      desc: "Manage players, edit profiles, and generate invite links.",
       icon: Users,
-      stat: 'Player roster',
+      stat: "Player roster",
     },
     {
-      to: '/admin/tools',
-      title: 'Tools',
-      desc: 'Run recurring session jobs manually (catch-up / test).',
+      to: "/admin/tools",
+      title: "Tools",
+      desc: "Run recurring session jobs manually (catch-up / test).",
       icon: Wrench,
-      stat: 'Maintenance',
+      stat: "Maintenance",
     },
   ];
 
@@ -140,7 +136,7 @@ export function AdminDashboard() {
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
-            items={[{ label: 'Admin', to: '/admin' }, { label: 'Overview' }]}
+            items={[{ label: "Admin", to: "/admin" }, { label: "Overview" }]}
           />
         }
         title="Overview"
@@ -159,7 +155,7 @@ export function AdminDashboard() {
                   <h2 className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
                     {format(
                       parseSessionStart(nextSession.start_time),
-                      'EEEE, d MMMM · HH:mm'
+                      "EEEE, d MMMM · HH:mm",
                     )}
                   </h2>
                   <p className="mt-0.5 truncate text-sm text-gray-600 dark:text-gray-400">
@@ -188,15 +184,15 @@ export function AdminDashboard() {
                   </h2>
                   <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
                     {nextAnnounceAt
-                      ? `Signups open ${format(new Date(nextAnnounceAt), 'EEEE, HH:mm')}`
-                      : 'Create one below to get started.'}
+                      ? `Signups open ${format(new Date(nextAnnounceAt), "EEEE, HH:mm")}`
+                      : "Create one below to get started."}
                   </p>
                 </>
               )}
             </div>
             <Link
               to="/admin/sessions/new"
-              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 font-medium text-white hover:bg-violet-700 transition-colors"
+              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 font-medium text-white hover:bg-violet-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
               New session
@@ -208,28 +204,30 @@ export function AdminDashboard() {
       {loading ? (
         <DashboardSkeleton />
       ) : (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {cards.map(({ to, title, desc, icon: Icon, stat }) => (
-          <Link
-            key={to}
-            to={to}
-            className="group rounded-2xl border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-violet-50/50 to-white dark:from-violet-950/20 dark:to-gray-900 p-5 shadow-sm hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md transition-all active:scale-[0.99]"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="rounded-lg bg-violet-100 dark:bg-violet-950 p-2 text-violet-700 dark:text-violet-300">
-                <Icon className="w-5 h-5" aria-hidden />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map(({ to, title, desc, icon: Icon, stat }) => (
+            <Link
+              key={to}
+              to={to}
+              className="group rounded-2xl border border-gray-200 dark:border-gray-800 bg-gradient-to-br from-violet-50/50 to-white dark:from-violet-950/20 dark:to-gray-900 p-5 shadow-sm hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md transition-all active:scale-[0.99]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="rounded-lg bg-violet-100 dark:bg-violet-950 p-2 text-violet-700 dark:text-violet-300">
+                  <Icon className="w-5 h-5" aria-hidden />
+                </div>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {stat}
+                </span>
               </div>
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {stat}
-              </span>
-            </div>
-            <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-violet-600 dark:group-hover:text-violet-400">
-              {title}
-            </h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{desc}</p>
-          </Link>
-        ))}
-      </div>
+              <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 group-hover:text-violet-600 dark:group-hover:text-violet-400">
+                {title}
+              </h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {desc}
+              </p>
+            </Link>
+          ))}
+        </div>
       )}
 
       <div className="mt-8 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center transition-colors">
@@ -238,7 +236,7 @@ export function AdminDashboard() {
         </p>
         <Link
           to="/admin/sessions/new"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           New session

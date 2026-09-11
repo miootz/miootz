@@ -4,13 +4,13 @@ from app.core.database import async_session
 from app.services.kickoff_reminders import scan_and_send_kickoff_reminders
 from app.services.recurring_sessions import materialize_next_session_and_notify
 from app.services.web_push import notify_rating_reminder_for_session
+from app.core.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
 
 async def record_session_weather(session_id: int) -> None:
     """Fetch current conditions from Open-Meteo and save to the session."""
-    from datetime import datetime
 
     from app.models.session import GameSession
 
@@ -20,7 +20,9 @@ async def record_session_weather(session_id: int) -> None:
             logger.info("Weather recording: session %s not found, skipping", session_id)
             return
         if session.latitude is None or session.longitude is None:
-            logger.info("Weather recording: session %s has no coordinates, skipping", session_id)
+            logger.info(
+                "Weather recording: session %s has no coordinates, skipping", session_id
+            )
             return
         # Skip if already recorded
         if session.weather_actual_temp_c is not None:
@@ -30,13 +32,15 @@ async def record_session_weather(session_id: int) -> None:
 
         current = await fetch_current(session.latitude, session.longitude)
         if current is None:
-            logger.warning("Weather recording: Open-Meteo unavailable for session %s", session_id)
+            logger.warning(
+                "Weather recording: Open-Meteo unavailable for session %s", session_id
+            )
             return
 
         session.weather_actual_temp_c = current["temp_c"]
         session.weather_actual_code = current["weather_code"]
         session.weather_actual_label = current["label"]
-        session.weather_actual_recorded_at = datetime.utcnow()
+        session.weather_actual_recorded_at = utcnow()
 
         await db.commit()
         logger.info(
@@ -69,7 +73,9 @@ async def send_rating_reminder_for_session(session_id: int) -> None:
 
         session = await db.get(GameSession, session_id)
         if not session:
-            logger.info("Rating reminder job: session %s not found, skipping", session_id)
+            logger.info(
+                "Rating reminder job: session %s not found, skipping", session_id
+            )
             return
         try:
             await notify_rating_reminder_for_session(db, session)

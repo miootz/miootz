@@ -1,25 +1,57 @@
-import { useContext } from 'react';
-import { AuthContext } from '../auth/auth-context';
-import { authorize } from '../auth/pocketIdOidc';
+import { useContext } from "react";
+import { AuthContext } from "../auth/auth-context";
+import { authorize } from "../auth/pocketIdOidc";
 
 /** Base path for API (same-origin /api in production / Traefik). */
 export function apiBase(): string {
-  return (import.meta.env.VITE_API_BASE as string | undefined) || '/api';
+  return (import.meta.env.VITE_API_BASE as string | undefined) || "/api";
+}
+
+/** Clear persisted OIDC tokens after a hard 401 (session no longer valid). */
+function clearStoredTokens(): void {
+  try {
+    localStorage.removeItem("miootz_tokens");
+    localStorage.removeItem("miootz_id_token");
+  } catch {
+    /* ignore */
+  }
+}
+
+// A burst of 401s (parallel requests with an expired token) must trigger a
+// single OIDC redirect — concurrent authorize() calls would race on PKCE
+// state. The flag self-resets so a failed authorize doesn't lock us out.
+let _authRedirectInFlight = false;
+
+function redirectToLogin(): void {
+  if (_authRedirectInFlight) return;
+  _authRedirectInFlight = true;
+  window.setTimeout(() => {
+    _authRedirectInFlight = false;
+  }, 3000);
+  try {
+    sessionStorage.setItem(
+      "miootz_return_path",
+      window.location.pathname + window.location.search,
+    );
+  } catch {
+    /* ignore */
+  }
+  void authorize();
 }
 
 export async function parseApiError(res: Response): Promise<string> {
   try {
     const j = (await res.json()) as { detail?: unknown };
     const d = j.detail;
-    if (typeof d === 'string') return d;
+    if (typeof d === "string") return d;
     if (Array.isArray(d)) {
       return d
         .map((x) =>
-          typeof x === 'object' && x !== null && 'msg' in x
+          typeof x === "object" && x !== null && "msg" in x
             ? String((x as { msg: string }).msg)
-            : String(x)
+            : String(x),
         )
-        .join(', ');
+        .join(", ");
     }
   } catch {
     /* ignore */
@@ -34,23 +66,26 @@ export async function parseApiError(res: Response): Promise<string> {
 export function useApiFetch() {
   const auth = useContext(AuthContext);
 
-  return async (path: string, init?: RequestInit & { skipAuth?: boolean }): Promise<Response> => {
+  return async (
+    path: string,
+    init?: RequestInit & { skipAuth?: boolean },
+  ): Promise<Response> => {
     const skipAuth = init?.skipAuth;
     const headers: Record<string, string> = {
-      Accept: 'application/json',
+      Accept: "application/json",
     };
 
     if (!skipAuth && auth?.tokens?.accessToken) {
       headers.Authorization = `Bearer ${auth.tokens.accessToken}`;
     }
 
-    if (init?.body && typeof init.body === 'string') {
-      headers['Content-Type'] = 'application/json';
+    if (init?.body && typeof init.body === "string") {
+      headers["Content-Type"] = "application/json";
     }
 
-    const url = path.startsWith('http')
+    const url = path.startsWith("http")
       ? path
-      : `${apiBase()}${path.startsWith('/') ? '' : '/'}${path}`;
+      : `${apiBase()}${path.startsWith("/") ? "" : "/"}${path}`;
 
     const response = await fetch(url, {
       ...init,
@@ -61,11 +96,9 @@ export function useApiFetch() {
     });
 
     if (response.status === 401 && auth?.login) {
-      sessionStorage.setItem(
-        'miootz_return_path',
-        window.location.pathname + window.location.search,
-      );
-      void authorize();
+      // Token rejected server-side: drop stale tokens and re-auth once.
+      clearStoredTokens();
+      redirectToLogin();
     }
 
     return response;
@@ -78,17 +111,17 @@ export function useApiFetch() {
  */
 export async function apiFetch(
   path: string,
-  init?: RequestInit & { skipAuth?: boolean }
+  init?: RequestInit & { skipAuth?: boolean },
 ): Promise<Response> {
   const skipAuth = init?.skipAuth;
   const headers: Record<string, string> = {
-    Accept: 'application/json',
+    Accept: "application/json",
   };
 
   // Try to get token from local storage (fallback for non-hook usage)
   if (!skipAuth) {
     try {
-      const raw = localStorage.getItem('miootz_tokens');
+      const raw = localStorage.getItem("miootz_tokens");
       if (raw) {
         const t = JSON.parse(raw) as { accessToken: string };
         if (t.accessToken) {
@@ -100,13 +133,13 @@ export async function apiFetch(
     }
   }
 
-  if (init?.body && typeof init.body === 'string') {
-    headers['Content-Type'] = 'application/json';
+  if (init?.body && typeof init.body === "string") {
+    headers["Content-Type"] = "application/json";
   }
 
-  const url = path.startsWith('http')
+  const url = path.startsWith("http")
     ? path
-    : `${apiBase()}${path.startsWith('/') ? '' : '/'}${path}`;
+    : `${apiBase()}${path.startsWith("/") ? "" : "/"}${path}`;
 
   const response = await fetch(url, {
     ...init,
@@ -117,15 +150,8 @@ export async function apiFetch(
   });
 
   if (response.status === 401) {
-    try {
-      localStorage.removeItem('miootz_tokens');
-      localStorage.removeItem('miootz_id_token');
-    } catch { /* ignore */ }
-    sessionStorage.setItem(
-      'miootz_return_path',
-      window.location.pathname + window.location.search,
-    );
-    void authorize();
+    clearStoredTokens();
+    redirectToLogin();
   }
 
   return response;

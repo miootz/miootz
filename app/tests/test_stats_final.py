@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -7,16 +10,24 @@ from app.api.users_stats import get_current_authenticated_user
 from app.core.database import Base, get_db
 from app.models.user import User
 from app.models.session import GameSession, Attendance
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
-SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test_stats_final.db"
+# Keep test artifacts out of the repo root (was ./test_stats_final.db).
+_DB_PATH = os.path.join(tempfile.gettempdir(), "miootz_test_stats_final.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{_DB_PATH}"
 
 
 @pytest.fixture(name="engine")
 def engine():
-    return create_async_engine(
+    if os.path.exists(_DB_PATH):
+        os.remove(_DB_PATH)
+    eng = create_async_engine(
         SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
     )
+    yield eng
+    eng.sync_engine.dispose()
+    if os.path.exists(_DB_PATH):
+        os.remove(_DB_PATH)
 
 
 @pytest.fixture(name="async_session_factory")
@@ -69,9 +80,9 @@ async def auth_user(db: AsyncSession):
 async def test_games_played_count_matches_confirmed_sessions(
     client: AsyncClient, auth_user: User, db: AsyncSession
 ):
-    session1 = GameSession(start_time=datetime.now(timezone.utc), location="Park 1")
-    session2 = GameSession(start_time=datetime.now(timezone.utc), location="Park 2")
-    session3 = GameSession(start_time=datetime.now(timezone.utc), location="Park 3")
+    session1 = GameSession(start_time=datetime.now(UTC), location="Park 1")
+    session2 = GameSession(start_time=datetime.now(UTC), location="Park 2")
+    session3 = GameSession(start_time=datetime.now(UTC), location="Park 3")
     db.add_all([session1, session2, session3])
     await db.commit()
 
@@ -84,19 +95,25 @@ async def test_games_played_count_matches_confirmed_sessions(
 
     app.dependency_overrides[get_current_authenticated_user] = lambda: auth_user
 
-    response = await client.get("/users/me/stats")
+    # Middleware is default-deny now; the mock token passes authz and the
+    # endpoint dependency override supplies the user regardless.
+    response = await client.get(
+        "/users/me/stats", headers={"Authorization": "Bearer tester"}
+    )
     assert response.status_code == 200
     assert response.json()["games_played"] == 2
 
 
 @pytest.mark.asyncio
 async def test_dashboard_load_zero_vs_many_games(client: AsyncClient, db: AsyncSession):
-    user_many = User(pocket_id_sub="test-pro", sso_display_name="pro", calculated_skill=4)
+    user_many = User(
+        pocket_id_sub="test-pro", sso_display_name="pro", calculated_skill=4
+    )
     db.add(user_many)
     await db.commit()
 
     for i in range(10):
-        s = GameSession(start_time=datetime.now(timezone.utc), location=f"Park {i}")
+        s = GameSession(start_time=datetime.now(UTC), location=f"Park {i}")
         db.add(s)
         await db.commit()
         db.add(Attendance(session_id=s.id, user_id=user_many.id, status="confirmed"))
@@ -104,6 +121,10 @@ async def test_dashboard_load_zero_vs_many_games(client: AsyncClient, db: AsyncS
 
     app.dependency_overrides[get_current_authenticated_user] = lambda: user_many
 
-    response = await client.get("/users/me/stats")
+    # Middleware is default-deny now; the mock token passes authz and the
+    # endpoint dependency override supplies the user regardless.
+    response = await client.get(
+        "/users/me/stats", headers={"Authorization": "Bearer tester"}
+    )
     assert response.status_code == 200
     assert response.json()["games_played"] == 10

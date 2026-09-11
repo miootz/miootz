@@ -1,15 +1,13 @@
 """Tests for Phase 2 Sub-task 1: Session CRUD, attendance, and admin actions."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
-from app.models.session import Attendance, GameSession
 from app.models.user import User
 
 
@@ -21,8 +19,12 @@ async def setup_db():
     yield
 
 
-async def _create_user(db: AsyncSession, display_name: str, pocket_id_sub: str, is_admin: bool = False) -> User:
-    user = User(pocket_id_sub=pocket_id_sub, sso_display_name=display_name, is_admin=is_admin)
+async def _create_user(
+    db: AsyncSession, display_name: str, pocket_id_sub: str, is_admin: bool = False
+) -> User:
+    user = User(
+        pocket_id_sub=pocket_id_sub, sso_display_name=display_name, is_admin=is_admin
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -40,7 +42,9 @@ async def test_create_session_as_admin():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,
@@ -65,7 +69,9 @@ async def test_join_session_as_player():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,
@@ -95,7 +101,9 @@ async def test_leave_session():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,
@@ -129,7 +137,9 @@ async def test_admin_can_manage_attendance():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,
@@ -163,7 +173,9 @@ async def test_non_admin_cannot_create_session():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,
@@ -186,7 +198,9 @@ async def test_session_list_shows_active_sessions():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 10,

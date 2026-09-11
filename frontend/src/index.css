@@ -2,66 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Global base styles. NOTE: keep every rule here minimal and do not
+ * re-introduce element-level typography rules (the old Vite scaffold
+ * styled h1/h2/#root at the top level, which silently beat Tailwind
+ * utilities because the build flattens @layer blocks). All typography
+ * should come from Tailwind utility classes on components instead.
+ */
+
+:root {
+  /* Tied to the app theme (html.dark), not the OS, so scrollbars,
+   * form controls and overscroll match the rendered theme. */
+  color-scheme: light;
+  background-color: #f9fafb; /* gray-50, matches page bg */
+}
+
+/* Dark palette — toggled via `html.dark` (ThemeProvider) */
+html.dark {
+  color-scheme: dark;
+  background-color: #030712; /* gray-950, matches page bg */
+}
+
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+  margin: 0;
+  color: #6b7280; /* gray-500 fallback for unstyled text */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.dark body {
+  color: #9ca3af; /* gray-400 fallback for unstyled text */
+}
+
 @layer base {
   :where(a, button, input, textarea, select, summary):focus-visible {
     @apply outline-none ring-2 ring-violet-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-950;
   }
 }
 
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
+/* Keep iOS from zooming and clipping dialogs when a form field receives focus. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
     font-size: 16px;
   }
-}
-
-/* Dark palette — toggled via `html.dark` (ThemeProvider) */
-html.dark {
-  color-scheme: dark;
-  --text: #9ca3af;
-  --text-h: #f3f4f6;
-  --bg: #16171d;
-  --border: #2e303a;
-  --code-bg: #1f2028;
-  --accent: #c084fc;
-  --accent-bg: rgba(192, 132, 252, 0.15);
-  --accent-border: rgba(192, 132, 252, 0.5);
-  --social-bg: rgba(47, 48, 58, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-}
-
-html.dark #social .button-icon {
-  filter: invert(1) brightness(2);
-}
-
-html {
-  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 @keyframes toastIn {
@@ -85,58 +74,8 @@ html {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

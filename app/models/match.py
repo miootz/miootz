@@ -9,6 +9,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
     from app.models.session import GameSession
@@ -18,9 +19,7 @@ class SessionMatch(Base):
     __tablename__ = "session_matches"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(
-        ForeignKey("game_sessions.id"), index=True
-    )
+    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
     #: 1-based sequence within the session.
     match_number: Mapped[int] = mapped_column(Integer)
 
@@ -46,7 +45,7 @@ class SessionMatch(Base):
     #: When the timer was started (UTC).
     timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    session: Mapped["GameSession"] = relationship("GameSession")
+    session: Mapped[GameSession] = relationship("GameSession")

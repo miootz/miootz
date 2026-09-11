@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class UserStats(BaseModel):
     games_played: int
+    season_games: int
     average_rating: float
     total_ratings: int
     skill_level: float

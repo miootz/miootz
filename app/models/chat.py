@@ -1,7 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
+
 from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
+from app.core.timeutil import utcnow
+
+if TYPE_CHECKING:
+    from app.models.session import GameSession
+    from app.models.user import User
 
 
 class ChatMessage(Base):
@@ -11,9 +18,9 @@ class ChatMessage(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     message: Mapped[str] = mapped_column(String)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    session: Mapped["GameSession"] = relationship(
+    session: Mapped[GameSession] = relationship(
         "GameSession", back_populates="messages"
     )
-    user: Mapped["User"] = relationship("User")
+    user: Mapped[User] = relationship("User")

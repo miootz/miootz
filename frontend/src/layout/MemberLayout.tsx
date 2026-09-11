@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   History,
   LayoutGrid,
@@ -8,17 +8,20 @@ import {
   UserCircle,
   WifiOff,
   X,
-} from 'lucide-react';
-import { useAuth } from '../auth/useAuth';
-import { setPreferMemberView } from '../auth/memberViewStorage';
-import { useOnlineStatus } from '../offline/useOnlineStatus';
-import { MemberShellProvider, useMemberShell } from '../context/MemberShellContext';
-import { OfflineBanner } from '../components/OfflineBanner';
-import { InstallAppBanner } from '../components/InstallAppBanner';
-import { MemberNotificationPrompt } from '../components/MemberNotificationPrompt';
-import { MeetupWeatherBadge } from '../components/MeetupWeatherBadge';
+} from "lucide-react";
+import { useAuth } from "../auth/useAuth";
+import { setPreferMemberView } from "../auth/memberViewStorage";
+import { useOnlineStatus } from "../offline/useOnlineStatus";
+import {
+  MemberShellProvider,
+  useMemberShell,
+} from "../context/MemberShellContext";
+import { OfflineBanner } from "../components/OfflineBanner";
+import { InstallAppBanner } from "../components/InstallAppBanner";
+import { MemberNotificationPrompt } from "../components/MemberNotificationPrompt";
+import { MeetupWeatherBadge } from "../components/MeetupWeatherBadge";
 
-const BOTTOM_NAV_H = '4.5rem';
+const BOTTOM_NAV_H = "4.5rem";
 
 function SseIndicator({ live }: { live: boolean }) {
   return (
@@ -29,7 +32,7 @@ function SseIndicator({ live }: { live: boolean }) {
           <span className="relative block h-2 w-2 rounded-full bg-emerald-500" />
         </span>
       ) : (
-        <WifiOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+        <WifiOff className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
       )}
     </span>
   );
@@ -50,22 +53,27 @@ function MemberChrome() {
       const d = (e as CustomEvent<{ unread?: boolean }>).detail;
       setChatUnread(!!d?.unread);
     };
-    window.addEventListener('miootz-chat-unread', onUnread);
-    return () => window.removeEventListener('miootz-chat-unread', onUnread);
+    window.addEventListener("miootz-chat-unread", onUnread);
+    return () => window.removeEventListener("miootz-chat-unread", onUnread);
   }, []);
 
-  const isProfile = location.pathname === '/profile';
-  const isHistory = location.pathname.startsWith('/history');
+  const isProfile = location.pathname === "/profile";
+  const isHistory = location.pathname.startsWith("/history");
+  let fallbackTitle = "Upcoming meetup";
+  if (isProfile) fallbackTitle = "Your profile";
+  if (isHistory) fallbackTitle = "Meetup history";
   const isPlayerHome =
-    location.pathname === '/' ||
-    (location.pathname !== '/profile' && !location.pathname.startsWith('/admin') && !isHistory);
+    location.pathname === "/" ||
+    (location.pathname !== "/profile" &&
+      !location.pathname.startsWith("/admin") &&
+      !isHistory);
 
   const goDetails = () => {
-    navigate('/');
+    navigate("/");
   };
 
   const goHistory = () => {
-    navigate('/history');
+    navigate("/history");
   };
 
   return (
@@ -85,33 +93,46 @@ function MemberChrome() {
             <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
               Miootz
               {isAdmin && (
-                <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                   Player view
                 </span>
               )}
-              {header?.sseLive != null && <SseIndicator live={header.sseLive} />}
+              {header?.sseLive != null && (
+                <SseIndicator live={header.sseLive} />
+              )}
             </p>
             {header ? (
               <>
                 <p className="text-base font-semibold text-gray-900 dark:text-white">
                   {header.line1}
                 </p>
-                {(header.location != null || header.fee != null || header.sessionId != null) && (
+                {(header.location != null ||
+                  header.fee != null ||
+                  header.sessionId != null) && (
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-gray-600 dark:text-gray-400">
                     {header.location != null && (
-                      <span className="truncate max-w-[min(100%,20rem)]">{header.location}</span>
+                      <span className="truncate max-w-[min(100%,20rem)]">
+                        {header.location}
+                      </span>
                     )}
-                    {header.location != null && (header.fee != null || header.sessionId != null) && (
-                      <span className="shrink-0 text-gray-400 dark:text-gray-500">&middot;</span>
-                    )}
+                    {header.location != null &&
+                      (header.fee != null || header.sessionId != null) && (
+                        <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                          &middot;
+                        </span>
+                      )}
                     {header.fee != null && header.fee > 0 && (
                       <span className="shrink-0 font-medium text-gray-800 dark:text-gray-200">
                         ${header.fee.toFixed(0)}
                       </span>
                     )}
-                    {header.fee != null && header.fee > 0 && header.sessionId != null && (
-                      <span className="shrink-0 text-gray-400 dark:text-gray-500">&middot;</span>
-                    )}
+                    {header.fee != null &&
+                      header.fee > 0 &&
+                      header.sessionId != null && (
+                        <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                          &middot;
+                        </span>
+                      )}
                     {header.sessionId != null && (
                       <MeetupWeatherBadge sessionId={header.sessionId} />
                     )}
@@ -120,7 +141,7 @@ function MemberChrome() {
               </>
             ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isProfile ? 'Your profile' : 'Upcoming meetup'}
+                {fallbackTitle}
               </p>
             )}
           </div>
@@ -226,7 +247,7 @@ function MemberChrome() {
       <nav
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95"
         style={{
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
         aria-label="Member navigation"
       >
@@ -234,15 +255,11 @@ function MemberChrome() {
           <button
             type="button"
             onClick={goDetails}
-            aria-label={
-              chatUnread
-                ? 'Meetup, unread chat messages'
-                : 'Meetup'
-            }
+            aria-label={chatUnread ? "Meetup, unread chat messages" : "Meetup"}
             className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isPlayerHome
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
             <span className="relative inline-flex">
@@ -257,9 +274,9 @@ function MemberChrome() {
             <span className="truncate">Meetup</span>
             <span
               className={`h-0.5 w-8 rounded-full ${
-              isPlayerHome
-                  ? 'bg-violet-600 dark:bg-violet-400'
-                  : 'bg-transparent'
+                isPlayerHome
+                  ? "bg-violet-600 dark:bg-violet-400"
+                  : "bg-transparent"
               }`}
             />
           </button>
@@ -268,8 +285,8 @@ function MemberChrome() {
             onClick={goHistory}
             className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isHistory
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
             <History className="h-5 w-5 shrink-0" aria-hidden />
@@ -277,8 +294,8 @@ function MemberChrome() {
             <span
               className={`h-0.5 w-8 rounded-full ${
                 isHistory
-                  ? 'bg-violet-600 dark:bg-violet-400'
-                  : 'bg-transparent'
+                  ? "bg-violet-600 dark:bg-violet-400"
+                  : "bg-transparent"
               }`}
             />
           </button>
@@ -286,15 +303,17 @@ function MemberChrome() {
             to="/profile"
             className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isProfile
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
             <UserCircle className="h-5 w-5 shrink-0" aria-hidden />
             <span className="truncate">Profile</span>
             <span
               className={`h-0.5 w-8 rounded-full ${
-                isProfile ? 'bg-violet-600 dark:bg-violet-400' : 'bg-transparent'
+                isProfile
+                  ? "bg-violet-600 dark:bg-violet-400"
+                  : "bg-transparent"
               }`}
             />
           </Link>

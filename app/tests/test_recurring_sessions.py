@@ -1,6 +1,6 @@
 """Game templates + materialize + sessions API (weekly templates + notify)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -24,14 +24,16 @@ async def setup_db():
 
 def test_utc_start_matches_rule_europe_london():
     # 2024-06-03 is Monday; 18:00 in London = 17:00 UTC (BST)
-    start = datetime(2024, 6, 3, 17, 0, tzinfo=timezone.utc)
+    start = datetime(2024, 6, 3, 17, 0, tzinfo=UTC)
     from app.services.recurring_sessions import utc_start_matches_rule
+
     assert utc_start_matches_rule(start, "Europe/London", 0, 18, 0) is True
     assert utc_start_matches_rule(start, "Europe/London", 1, 18, 0) is False
 
 
 def test_next_occurrence_skips_same_week_if_time_passed():
     from app.services.recurring_sessions import next_occurrence_utc
+
     rule = GameTemplate(
         name="Test",
         timezone="UTC",
@@ -50,9 +52,9 @@ def test_next_occurrence_skips_same_week_if_time_passed():
         is_active=True,
     )
     # Monday 2024-06-03 11:00 UTC — next Monday 10:00 is 2024-06-10
-    after = datetime(2024, 6, 3, 11, 0, tzinfo=timezone.utc)
+    after = datetime(2024, 6, 3, 11, 0, tzinfo=UTC)
     n = next_occurrence_utc(rule, after)
-    assert n == datetime(2024, 6, 10, 10, 0, tzinfo=timezone.utc)
+    assert n == datetime(2024, 6, 10, 10, 0, tzinfo=UTC)
 
 
 @pytest.mark.asyncio
@@ -81,7 +83,7 @@ async def test_materialize_next_idempotent():
         await db.flush()
         rule_id = rule.id
 
-        anchor = datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc)
+        anchor = datetime(2030, 1, 1, 12, 0, tzinfo=UTC)
         first = GameSession(
             start_time=anchor,
             location="Pitch",

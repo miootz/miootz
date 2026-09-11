@@ -1,10 +1,5 @@
-import { useEffect, useState } from 'react';
-import {
-  NavLink,
-  Outlet,
-  useLocation,
-  useNavigate,
-} from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Calendar,
   Home,
@@ -16,19 +11,19 @@ import {
   UserCircle,
   Wrench,
   X,
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { logout } from '../../auth/pocketIdOidc';
-import { useAuth } from '../../auth/useAuth';
-import { setPreferMemberView } from '../../auth/memberViewStorage';
-import { OfflineBanner } from '../../components/OfflineBanner';
-import { AdminNotificationPrompt } from '../../components/admin/AdminNotificationPrompt';
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import { logout } from "../../auth/pocketIdOidc";
+import { useAuth } from "../../auth/useAuth";
+import { setPreferMemberView } from "../../auth/memberViewStorage";
+import { OfflineBanner } from "../../components/OfflineBanner";
+import { AdminNotificationPrompt } from "../../components/admin/AdminNotificationPrompt";
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
     isActive
-      ? 'bg-violet-600 text-white shadow-sm'
-      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+      ? "bg-violet-600 text-white shadow-sm"
+      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
   }`;
 
 function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -42,7 +37,11 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
         <Calendar className="w-4 h-4 shrink-0" />
         Sessions
       </NavLink>
-      <NavLink to="/admin/game-templates" className={navCls} onClick={onNavigate}>
+      <NavLink
+        to="/admin/game-templates"
+        className={navCls}
+        onClick={onNavigate}
+      >
         <Repeat className="w-4 h-4 shrink-0" />
         Templates
       </NavLink>
@@ -69,7 +68,7 @@ export function AdminLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   /** Pathname when the mobile drawer was opened; drawer stays open only while it matches. */
   const [navPathWhenOpened, setNavPathWhenOpened] = useState<string | null>(
-    null
+    null,
   );
   const drawerOpen =
     mobileNavOpen &&
@@ -87,14 +86,14 @@ export function AdminLayout() {
 
   useEffect(() => {
     if (!loading && me && !me.is_admin) {
-      navigate('/', { replace: true });
+      navigate("/", { replace: true });
     }
   }, [loading, me, navigate]);
 
   useEffect(() => {
     if (!drawerOpen) return;
     const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
@@ -106,28 +105,28 @@ export function AdminLayout() {
       const t = e.target as HTMLElement | null;
       const inField =
         t &&
-        (t.tagName === 'INPUT' ||
-          t.tagName === 'TEXTAREA' ||
-          t.tagName === 'SELECT' ||
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
           t.isContentEditable);
-      if (e.key === 'Escape' && drawerOpen) {
+      if (e.key === "Escape" && drawerOpen) {
         e.preventDefault();
         closeDrawer();
         return;
       }
       if (inField) return;
-      if (e.key === 'n' || e.key === 'N') {
-        if (location.pathname === '/admin/sessions') {
+      if (e.key === "n" || e.key === "N") {
+        if (location.pathname === "/admin/sessions") {
           e.preventDefault();
-          navigate('/admin/sessions/new');
+          navigate("/admin/sessions/new");
         }
-      } else if (e.key === '/') {
+      } else if (e.key === "/") {
         e.preventDefault();
-        document.getElementById('admin-sessions-search')?.focus();
+        document.getElementById("admin-sessions-search")?.focus();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [me?.is_admin, location.pathname, navigate, drawerOpen]);
 
   if (loading || !me) {
@@ -172,7 +171,9 @@ export function AdminLayout() {
         <div className="min-w-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
             Admin
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Viewing as Admin</span>
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              Viewing as Admin
+            </span>
           </p>
           <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
             {me.user.display_name}
@@ -199,11 +200,14 @@ export function AdminLayout() {
           </Link>
           <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <span className="text-violet-600">Admin</span>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               Viewing as Admin
             </span>
           </h2>
-          <p className="text-xs text-gray-500 truncate mt-1" title={me.user.display_name ?? ''}>
+          <p
+            className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1"
+            title={me.user.display_name ?? ""}
+          >
             {me.user.display_name}
           </p>
         </div>
@@ -214,7 +218,7 @@ export function AdminLayout() {
           <button
             type="button"
             onClick={() => void refresh()}
-            className="text-xs text-gray-500 hover:text-violet-600"
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
           >
             Refresh session
           </button>
@@ -242,13 +246,15 @@ export function AdminLayout() {
           />
           <div
             className="absolute left-0 top-0 flex h-full w-[min(20rem,88vw)] flex-col border-r border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
           >
             <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                   Admin
-                <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Viewing as Admin</span>
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    Viewing as Admin
+                  </span>
                 </p>
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                   {me.user.display_name}
@@ -272,7 +278,10 @@ export function AdminLayout() {
                 }}
                 className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-violet-400 w-full"
               >
-                <Home className="w-4 h-4 shrink-0 text-violet-600" aria-hidden />
+                <Home
+                  className="w-4 h-4 shrink-0 text-violet-600"
+                  aria-hidden
+                />
                 Member view
               </Link>
             </div>
@@ -283,7 +292,7 @@ export function AdminLayout() {
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="text-xs text-gray-500 hover:text-violet-600"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
               >
                 Refresh session
               </button>
@@ -297,7 +306,7 @@ export function AdminLayout() {
         tabIndex={-1}
         className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 outline-none"
         style={{
-          paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+          paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
         }}
       >
         <AdminNotificationPrompt />

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { type MeResponse } from '../api/meApi';
 import { cacheDelete, cacheGet, cachePut } from '../offline/db';
 import { CACHE_PROFILE_ME } from '../offline/cacheKeys';
+import { consumeReturnPath } from './returnPath';
 import { AuthContext, type AuthState } from './auth-context';
 import type { OidcTokens } from './pocketIdOidc';
 import {
@@ -166,10 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const newTokens = await handleCallback();
           saveTokens(newTokens);
-          // Redirect to / — the session-restore path below will pick up
-          // the saved tokens and fetch /me there, avoiding a slow
-          // /me call on the callback page.
-          window.location.href = '/';
+          // Restore the requested page after exchanging the sign-in code.
+          window.location.href = consumeReturnPath();
           return;
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Authentication failed');

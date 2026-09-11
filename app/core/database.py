@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,6 @@ async def init_db():
         await conn.exec_driver_sql("PRAGMA synchronous=NORMAL")
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     async with async_session() as session:
         yield session

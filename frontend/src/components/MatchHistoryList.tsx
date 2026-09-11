@@ -1,14 +1,15 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { parseSessionStart } from "../utils/datetime";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   createMatch,
   deleteMatch,
   fetchSessionMatches,
   setScores,
   type MatchSummary,
-} from '../api/matchesApi';
-import { Flag, Loader2, Plus, Trash2, Trophy } from 'lucide-react';
-import { AuthContext } from '../auth/auth-context';
-import { useToast } from '../context/ToastContext';
+} from "../api/matchesApi";
+import { Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
+import { AuthContext } from "../auth/auth-context";
+import { useToast } from "../context/ToastContext";
 
 export function MatchHistoryList({
   sessionId,
@@ -32,7 +33,7 @@ export function MatchHistoryList({
     setLoading(true);
     try {
       const res = await fetchSessionMatches(sessionId);
-      setMatches(res.matches.filter((m) => m.status === 'completed'));
+      setMatches(res.matches.filter((m) => m.status === "completed"));
     } catch {
       setMatches([]);
     } finally {
@@ -62,8 +63,10 @@ export function MatchHistoryList({
     // Optimistic update
     setMatches((prev) =>
       prev.map((m) =>
-        m.id === match.id ? { ...m, score_a: newScoreA, score_b: newScoreB } : m
-      )
+        m.id === match.id
+          ? { ...m, score_a: newScoreA, score_b: newScoreB }
+          : m,
+      ),
     );
     setEditingId(null);
 
@@ -73,12 +76,14 @@ export function MatchHistoryList({
       // Revert on failure
       setMatches((prev) =>
         prev.map((m) =>
-          m.id === match.id ? { ...m, score_a: match.score_a, score_b: match.score_b } : m
-        )
+          m.id === match.id
+            ? { ...m, score_a: match.score_a, score_b: match.score_b }
+            : m,
+        ),
       );
       showToast(
-        e instanceof Error ? e.message : 'Failed to update score',
-        'error'
+        e instanceof Error ? e.message : "Failed to update score",
+        "error",
       );
     }
   };
@@ -88,16 +93,21 @@ export function MatchHistoryList({
       await deleteMatch(sessionId, matchId);
       setMatches((prev) => prev.filter((m) => m.id !== matchId));
       setEditingId(null);
-      showToast('Match deleted', 'success');
+      showToast("Match deleted", "success");
     } catch (e) {
       showToast(
-        e instanceof Error ? e.message : 'Failed to delete match',
-        'error'
+        e instanceof Error ? e.message : "Failed to delete match",
+        "error",
       );
     }
   };
 
-  const handleAddMatch = async (teamA: string, teamB: string, scoreA: number, scoreB: number) => {
+  const handleAddMatch = async (
+    teamA: string,
+    teamB: string,
+    scoreA: number,
+    scoreB: number,
+  ) => {
     try {
       const res = await createMatch(sessionId, {
         team_a_name: teamA.trim(),
@@ -108,11 +118,11 @@ export function MatchHistoryList({
       // Add the new match to the list (it's completed)
       setMatches((prev) => [...prev, res.match]);
       setShowAddForm(false);
-      showToast('Match added.', 'success');
+      showToast("Match added.", "success");
     } catch (e) {
       showToast(
-        e instanceof Error ? e.message : 'Failed to add match',
-        'error'
+        e instanceof Error ? e.message : "Failed to add match",
+        "error",
       );
     }
   };
@@ -129,7 +139,7 @@ export function MatchHistoryList({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-500">
+      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-500 dark:text-gray-400">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
         Loading matches…
       </div>
@@ -207,29 +217,29 @@ function MatchResultRow({
 }) {
   const winner =
     match.score_a > match.score_b
-      ? 'a'
+      ? "a"
       : match.score_b > match.score_a
-        ? 'b'
+        ? "b"
         : null;
   const isEditing = editingId === match.id;
 
   const timeLabel = (() => {
     if (!match.completed_at) return null;
-    const d = new Date(match.completed_at);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const d = parseSessionStart(match.completed_at);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   })();
 
   return (
     <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
       {/* Match header */}
       <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800">
-        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+        <span className="text-2xs font-medium text-gray-500 dark:text-gray-400">
           Match {match.match_number}
         </span>
         {timeLabel && (
           <>
             <span className="text-gray-300 dark:text-gray-600">·</span>
-            <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">
+            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
               {timeLabel}
             </span>
           </>
@@ -242,9 +252,9 @@ function MatchResultRow({
           <div className="flex-1 min-w-0 text-right">
             <span
               className={`text-sm font-semibold truncate block ${
-                winner === 'a'
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-gray-700 dark:text-gray-300'
+                winner === "a"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-gray-700 dark:text-gray-300"
               }`}
             >
               {match.team_a.name}
@@ -262,17 +272,24 @@ function MatchResultRow({
             ) : (
               <button
                 type="button"
-                onClick={canEdit ? (e) => { e.stopPropagation(); onEditStart(); } : undefined}
+                onClick={
+                  canEdit
+                    ? (e) => {
+                        e.stopPropagation();
+                        onEditStart();
+                      }
+                    : undefined
+                }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? 'cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400'
-                    : 'cursor-default text-gray-900 dark:text-gray-100'
+                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400"
+                    : "cursor-default text-gray-900 dark:text-gray-100"
                 }`}
               >
                 {match.score_a}
               </button>
             )}
-            <span className="text-gray-400 dark:text-gray-500 text-lg font-bold select-none">
+            <span className="text-gray-500 dark:text-gray-400 text-lg font-bold select-none">
               :
             </span>
             {isEditing ? (
@@ -284,11 +301,18 @@ function MatchResultRow({
             ) : (
               <button
                 type="button"
-                onClick={canEdit ? (e) => { e.stopPropagation(); onEditStart(); } : undefined}
+                onClick={
+                  canEdit
+                    ? (e) => {
+                        e.stopPropagation();
+                        onEditStart();
+                      }
+                    : undefined
+                }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? 'cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400'
-                    : 'cursor-default text-gray-900 dark:text-gray-100'
+                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400"
+                    : "cursor-default text-gray-900 dark:text-gray-100"
                 }`}
               >
                 {match.score_b}
@@ -300,9 +324,9 @@ function MatchResultRow({
           <div className="flex-1 min-w-0 text-left">
             <span
               className={`text-sm font-semibold truncate block ${
-                winner === 'b'
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-gray-700 dark:text-gray-300'
+                winner === "b"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-gray-700 dark:text-gray-300"
               }`}
             >
               {match.team_b.name}
@@ -325,7 +349,7 @@ function MatchResultRow({
               type="button"
               onClick={() => {
                 const inputs = document.querySelectorAll<HTMLInputElement>(
-                  `input[data-match-edit="${match.id}"]`
+                  `input[data-match-edit="${match.id}"]`,
                 );
                 const scoreA = inputs[0]?.value ?? String(match.score_a);
                 const scoreB = inputs[1]?.value ?? String(match.score_b);
@@ -334,7 +358,13 @@ function MatchResultRow({
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 active:scale-95 transition-colors min-h-[32px]"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M13.5 4.5L6 12L2.5 8.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path
+                  d="M13.5 4.5L6 12L2.5 8.5"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               Save
             </button>
@@ -400,10 +430,15 @@ function AddMatchForm({
   teamNames: string[];
   isOpen: boolean;
   onToggle: () => void;
-  onSubmit: (teamA: string, teamB: string, scoreA: number, scoreB: number) => void;
+  onSubmit: (
+    teamA: string,
+    teamB: string,
+    scoreA: number,
+    scoreB: number,
+  ) => void;
 }) {
-  const [teamA, setTeamA] = useState('');
-  const [teamB, setTeamB] = useState('');
+  const [teamA, setTeamA] = useState("");
+  const [teamB, setTeamB] = useState("");
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -424,11 +459,11 @@ function AddMatchForm({
     const a = teamA.trim();
     const b = teamB.trim();
     if (!a || !b) {
-      setError('Both team names are required.');
+      setError("Both team names are required.");
       return;
     }
     if (a.toLowerCase() === b.toLowerCase()) {
-      setError('Teams must be different.');
+      setError("Teams must be different.");
       return;
     }
 
@@ -459,9 +494,9 @@ function AddMatchForm({
       className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 shadow-sm"
     >
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
           Add match result
-        </h3>
+        </h2>
         <button
           type="button"
           onClick={onToggle}
@@ -469,13 +504,20 @@ function AddMatchForm({
           aria-label="Close"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            <path
+              d="M12 4L4 12M4 4l8 8"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       </div>
 
       {error && (
-        <p className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+          {error}
+        </p>
       )}
 
       {/* Team dropdowns */}
@@ -490,7 +532,11 @@ function AddMatchForm({
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
           >
             {teamNames.map((name) => (
-              <option key={name} value={name} disabled={name.toLowerCase() === teamB.trim().toLowerCase()}>
+              <option
+                key={name}
+                value={name}
+                disabled={name.toLowerCase() === teamB.trim().toLowerCase()}
+              >
                 {name}
               </option>
             ))}
@@ -506,7 +552,11 @@ function AddMatchForm({
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
           >
             {teamNames.map((name) => (
-              <option key={name} value={name} disabled={name.toLowerCase() === teamA.trim().toLowerCase()}>
+              <option
+                key={name}
+                value={name}
+                disabled={name.toLowerCase() === teamA.trim().toLowerCase()}
+              >
                 {name}
               </option>
             ))}
@@ -517,29 +567,33 @@ function AddMatchForm({
       {/* Score inputs */}
       <div className="flex items-center justify-center gap-3">
         <div className="text-center">
-          <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
-            {teamA || 'Team A'}
+          <label className="block text-2xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+            {teamA || "Team A"}
           </label>
           <input
             type="number"
             inputMode="numeric"
             min={0}
             value={scoreA}
-            onChange={(e) => setScoreA(Math.max(0, parseInt(e.target.value || '0', 10)))}
+            onChange={(e) =>
+              setScoreA(Math.max(0, parseInt(e.target.value || "0", 10)))
+            }
             className="w-16 text-center text-xl font-bold tabular-nums rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-2 py-1.5 dark:text-white"
           />
         </div>
         <span className="text-gray-400 text-lg font-bold select-none">:</span>
         <div className="text-center">
-          <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
-            {teamB || 'Team B'}
+          <label className="block text-2xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+            {teamB || "Team B"}
           </label>
           <input
             type="number"
             inputMode="numeric"
             min={0}
             value={scoreB}
-            onChange={(e) => setScoreB(Math.max(0, parseInt(e.target.value || '0', 10)))}
+            onChange={(e) =>
+              setScoreB(Math.max(0, parseInt(e.target.value || "0", 10)))
+            }
             className="w-16 text-center text-xl font-bold tabular-nums rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-2 py-1.5 dark:text-white"
           />
         </div>
@@ -553,7 +607,7 @@ function AddMatchForm({
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 active:scale-95 transition-colors min-h-[36px]"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          {submitting ? 'Adding…' : 'Save match'}
+          {submitting ? "Adding…" : "Save match"}
         </button>
         <button
           type="button"

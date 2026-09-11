@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+import hashlib
 import logging
 import secrets
 
@@ -6,14 +7,24 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
 import json
 
 from app.api.deps import require_admin
+
+# slowapi limiter instance shared with main.py (bucket key: user id or client IP)
+from app.api.rate_limit import (
+    LIMIT_MUTATION,
+    LIMIT_PUBLIC,
+    LIMIT_SSE,
+    LIMIT_WRITE,
+    limiter,
+)
 from app.core.database import get_db
+from app.core.json_column import loads_int_list
 from app.models.game_template import GameTemplate
 from app.models.session import GameSession, Attendance, MatchScore
 from app.models.match import SessionMatch
@@ -24,7 +35,6 @@ from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
-    update_user_calculated_skill,
 )
 from app.core.session_data_manager import session_data_manager
 from app.services.session_promotion import handle_leave_or_cancel
@@ -52,6 +62,7 @@ from app.services.recurring_sessions import (
     next_announce_occurrence_utc,
 )
 from app.services import weather_service
+from app.core.timeutil import utcnow
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -132,7 +143,7 @@ class TeamsAdjustBody(BaseModel):
 
 
 class ChatMessageCreate(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 class ChatTypingBody(BaseModel):
@@ -147,10 +158,30 @@ class PlusOneCreate(BaseModel):
 
 class PlusOneClaim(BaseModel):
     """Claim a plus-one guest reservation.
-    
+
     The guest must already have a Pocket ID account.
     Their pocket_id_sub is extracted from the auth middleware.
     """
+
+
+def _name_color(name: str) -> str:
+    """Deterministic pastel color from display name for chat bubbles.
+
+    Uses blake2b instead of ``hash()`` — Python's str hash is salted per
+    process, so colors would change on every server restart / worker."""
+    digest = hashlib.blake2b(name.encode(), digest_size=3).digest()
+    r, g, b = digest[0], digest[1], digest[2]
+    return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
+
+
+async def _confirmed_count(db: AsyncSession, session_id: int) -> int:
+    """Scalar COUNT of confirmed attendees (avoids hydrating ORM rows)."""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Attendance)
+        .where(Attendance.session_id == session_id, Attendance.status == "confirmed")
+    )
+    return count or 0
 
 
 def _user_skill(u: User) -> float:
@@ -161,17 +192,13 @@ def _user_skill(u: User) -> float:
         v = u.self_assessed_skill
     else:
         v = None
-    return float(v) if v is not None else 50.0
+    return v if v is not None else 50.0
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
     if not t:
         return None
-    next_announce = (
-        next_announce_occurrence_utc(t, datetime.now(timezone.utc))
-        if t.is_active
-        else None
-    )
+    next_announce = next_announce_occurrence_utc(t, utcnow()) if t.is_active else None
     return {
         "id": t.id,
         "name": t.name,
@@ -184,8 +211,7 @@ def _game_template_json(t: GameTemplate | None) -> dict | None:
         "announce_hour": t.announce_hour,
         "announce_minute": t.announce_minute,
         "is_active": t.is_active,
-        "team_assignment_mode": getattr(t, "team_assignment_mode", None)
-        or "balanced",
+        "team_assignment_mode": getattr(t, "team_assignment_mode", None) or "balanced",
         "next_announce_at": next_announce.isoformat() if next_announce else None,
     }
 
@@ -198,8 +224,9 @@ async def create_session(
 ):
     payload = session_data.model_dump(exclude={"send_push_notifications"})
     new_session = GameSession(**payload, game_template_id=None)
-    # Auto-generate team names (default 3 teams for max_players=15)
-    ensure_team_names(new_session, 3)
+    # Team count follows the same heuristic as the migrations backfill:
+    # 3 teams for full-fifths-sized sessions (max_players >= 13), else 2.
+    ensure_team_names(new_session, 3 if (new_session.max_players or 15) >= 13 else 2)
     db.add(new_session)
     await db.flush()
     await db.commit()
@@ -248,33 +275,36 @@ async def list_sessions(
     ),
     q: str | None = Query(None, description="Filter by location (contains)"),
 ):
-    now = datetime.now(timezone.utc)
-    filters = []
-    if q and (q := q.strip()):
-        filters.append(GameSession.location.ilike(f"%{q}%"))
-    if status == "past":
-        filters.append(GameSession.start_time < now)
-    elif status == "upcoming":
-        filters.append(GameSession.start_time >= now)
-    elif status not in (None, "all"):
-        raise HTTPException(status_code=400, detail="Invalid status filter")
+    now = utcnow()
+
+    # Order direction via explicit allowlist (no dynamic identifiers).
+    order_exprs = {
+        "asc": GameSession.start_time.asc(),
+        "desc": GameSession.start_time.desc(),
+    }
     o = order.lower()
-    if o not in ("asc", "desc"):
+    if o not in order_exprs:
         raise HTTPException(status_code=400, detail="Invalid order")
 
+    # Build both queries with the same parameterized filters.
     count_stmt = select(func.count()).select_from(GameSession)
-    for f in filters:
-        count_stmt = count_stmt.where(f)
+    stmt = select(GameSession).options(selectinload(GameSession.game_template))
+
+    if q and (q := q.strip()):
+        count_stmt = count_stmt.where(GameSession.location.contains(q))
+        stmt = stmt.where(GameSession.location.contains(q))
+    if status == "past":
+        count_stmt = count_stmt.where(GameSession.start_time < now)
+        stmt = stmt.where(GameSession.start_time < now)
+    elif status == "upcoming":
+        count_stmt = count_stmt.where(GameSession.start_time >= now)
+        stmt = stmt.where(GameSession.start_time >= now)
+    elif status not in (None, "all"):
+        raise HTTPException(status_code=400, detail="Invalid status filter")
+
     total = (await db.execute(count_stmt)).scalar_one()
 
-    stmt = select(GameSession).options(selectinload(GameSession.game_template))
-    for f in filters:
-        stmt = stmt.where(f)
-    if o == "asc":
-        stmt = stmt.order_by(GameSession.start_time.asc())
-    else:
-        stmt = stmt.order_by(GameSession.start_time.desc())
-    stmt = stmt.offset(offset)
+    stmt = stmt.order_by(order_exprs[o]).offset(offset)
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await db.execute(stmt)
@@ -386,11 +416,7 @@ async def get_session(
                 my_attendance = att.status
                 break
         if my_attendance == "waitlisted":
-            waitlist = [
-                u.id
-                for att, u in rows
-                if att.status == "waitlisted"
-            ]
+            waitlist = [u.id for att, u in rows if att.status == "waitlisted"]
             if user.id in waitlist:
                 my_waitlist_position = waitlist.index(user.id) + 1
 
@@ -405,10 +431,8 @@ async def get_session(
     )
     active_match = result.scalar_one_or_none()
     if active_match:
-        import json as _json
-        team_a_users = _json.loads(active_match.team_a_users)
-        team_b_users = _json.loads(active_match.team_b_users)
-        user_map = {r[1].id: r[1] for _, r in []}
+        team_a_users = loads_int_list(active_match.team_a_users)
+        team_b_users = loads_int_list(active_match.team_b_users)
         # Build from existing attendee data
         attendee_map = {a["user_id"]: a for a in attendees}
 
@@ -417,16 +441,30 @@ async def get_session(
             for uid in ids:
                 a = attendee_map.get(uid)
                 if a:
-                    out.append({"id": uid, "display_name": a["display_name"], "avatar_url": a["avatar_url"]})
+                    out.append(
+                        {
+                            "id": uid,
+                            "display_name": a["display_name"],
+                            "avatar_url": a["avatar_url"],
+                        }
+                    )
                 else:
-                    out.append({"id": uid, "display_name": f"User {uid}", "avatar_url": None})
+                    out.append(
+                        {"id": uid, "display_name": f"User {uid}", "avatar_url": None}
+                    )
             return out
 
         current_match = {
             "id": active_match.id,
             "match_number": active_match.match_number,
-            "team_a": {"name": active_match.team_a_name, "users": _user_list(team_a_users)},
-            "team_b": {"name": active_match.team_b_name, "users": _user_list(team_b_users)},
+            "team_a": {
+                "name": active_match.team_a_name,
+                "users": _user_list(team_a_users),
+            },
+            "team_b": {
+                "name": active_match.team_b_name,
+                "users": _user_list(team_b_users),
+            },
             "score_a": active_match.score_a,
             "score_b": active_match.score_b,
             "status": active_match.status,
@@ -598,13 +636,17 @@ async def patch_session_teams(
         }
         for _, user in rows
     ]
-    confirmed_ids = {int(p["id"]) for p in players}
+    confirmed_ids = {p["user_id"] for p in players}
     try:
         int_teams = [[int(x) for x in team] for team in body.teams]
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid user id in teams")
+    except TypeError, ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid user id in teams"
+        ) from None
 
-    if not validate_team_partition(int_teams, confirmed_ids, max_teams=session.max_teams):
+    if not validate_team_partition(
+        int_teams, confirmed_ids, max_teams=session.max_teams
+    ):
         raise HTTPException(
             status_code=400,
             detail="Teams must partition all confirmed players with valid team sizes",
@@ -669,7 +711,9 @@ async def adjust_session_teams(
 
     op = body.operation.lower().strip()
     if op not in ("expand", "contract"):
-        raise HTTPException(status_code=400, detail="operation must be 'expand' or 'contract'")
+        raise HTTPException(
+            status_code=400, detail="operation must be 'expand' or 'contract'"
+        )
     if body.num_teams < 1:
         raise HTTPException(status_code=400, detail="num_teams must be >= 1")
 
@@ -744,17 +788,31 @@ async def join_session(
 
     if attendance:
         if attendance.status == "cancelled":
-            attendance.previous_status = None
-            attendance.joined_at = datetime.now(timezone.utc)
-            result_confirmed = await db.execute(
-                select(Attendance).where(
-                    Attendance.session_id == session_id,
-                    Attendance.status == "confirmed",
-                )
-            )
-            confirmed_count = len(result_confirmed.scalars().all())
-            attendance.status = (
-                "confirmed" if confirmed_count < session.max_players else "waitlisted"
+            # Atomic reactivation: the CASE subquery sees the latest committed
+            # state at statement time, so a concurrent join cannot silently
+            # over-fill the session (SQLite serializes writers).
+            await db.execute(
+                text(
+                    """
+                    UPDATE attendance
+                       SET status = CASE WHEN (
+                               SELECT COUNT(*) FROM attendance a2
+                                WHERE a2.session_id = :sid
+                                  AND a2.status = 'confirmed'
+                                  AND a2.id <> :aid
+                           ) < :maxp
+                           THEN 'confirmed' ELSE 'waitlisted' END,
+                           joined_at = :now,
+                           previous_status = NULL
+                     WHERE id = :aid AND session_id = :sid
+                    """
+                ),
+                {
+                    "sid": session_id,
+                    "aid": attendance.id,
+                    "maxp": session.max_players,
+                    "now": utcnow(),
+                },
             )
             rev = await bump_session_revision(db, session_id)
             await db.commit()
@@ -765,12 +823,7 @@ async def join_session(
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined session")
 
-    result_confirmed = await db.execute(
-        select(Attendance).where(
-            Attendance.session_id == session_id, Attendance.status == "confirmed"
-        )
-    )
-    confirmed_count = len(result_confirmed.scalars().all())
+    confirmed_count = await _confirmed_count(db, session_id)
 
     status_new = "confirmed" if confirmed_count < session.max_players else "waitlisted"
 
@@ -779,13 +832,34 @@ async def join_session(
     )
     db.add(new_attendance)
     rev = await bump_session_revision(db, session_id)
+    await db.flush()
+    if status_new == "confirmed":
+        # Close the TOCTOU window between the COUNT above and this INSERT:
+        # a concurrent join may have committed in between. This single UPDATE
+        # sees the latest committed data and demotes *our* row if the session
+        # is now over capacity (SQLite serializes writers, so exactly one
+        # join loses and self-demotes).
+        await db.execute(
+            text(
+                """
+                UPDATE attendance
+                   SET status = 'waitlisted'
+                 WHERE id = :aid
+                   AND status = 'confirmed'
+                   AND (SELECT COUNT(*) FROM attendance a2
+                         WHERE a2.session_id = :sid
+                           AND a2.status = 'confirmed') > :maxp
+                """
+            ),
+            {"aid": new_attendance.id, "sid": session_id, "maxp": session.max_players},
+        )
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
     await recalculate_skills_for_attendance_change(db, session_id, user_id)
     await db.refresh(new_attendance)
 
-    return {"status": status_new, "attendance_id": new_attendance.id}
+    return {"status": new_attendance.status, "attendance_id": new_attendance.id}
 
 
 @router.delete("/{session_id}/leave")
@@ -906,6 +980,7 @@ async def delete_session(
 
 
 @router.get("/{session_id}/data/events")
+@limiter.limit(LIMIT_SSE)
 async def session_data_events(session_id: int, request: Request):
     """SSE: roster/session field changes (`session_updated` / `session_deleted`)."""
 
@@ -924,6 +999,7 @@ async def session_data_events(session_id: int, request: Request):
 
 
 @router.get("/{session_id}/chat/events")
+@limiter.limit(LIMIT_SSE)
 async def chat_events(session_id: int, request: Request):
     async def event_generator():
         queue = await chat_manager.subscribe(session_id)
@@ -940,7 +1016,13 @@ async def chat_events(session_id: int, request: Request):
 
 
 @router.get("/{session_id}/chat")
-async def get_session_chat(session_id: int, db: AsyncSession = Depends(get_db)):
+async def get_session_chat(
+    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Chat history. Authenticated only — messages can contain personal plans."""
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
@@ -948,11 +1030,6 @@ async def get_session_chat(session_id: int, db: AsyncSession = Depends(get_db)):
         .order_by(ChatMessage.created_at.asc())
     )
     messages = result.scalars().all()
-    def _name_color(name: str) -> str:
-        """Deterministic pastel color from display name for chat bubbles."""
-        h = hash(name) & 0xFFFFFF
-        r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
-        return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
 
     return [
         {
@@ -1028,11 +1105,6 @@ async def send_message(
         else "Unknown"
     )
 
-    def _name_color(name: str) -> str:
-        h = hash(name) & 0xFFFFFF
-        r, g, b = (h >> 16) & 0xFF, (h >> 8) & 0xFF, h & 0xFF
-        return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
-
     broadcast_data = {
         "type": "message",
         "id": new_msg.id,
@@ -1058,6 +1130,7 @@ async def send_message(
 
 # ── Plus-one guest reservations ──────────────────────────────────
 
+
 def _generate_claim_token() -> str:
     return secrets.token_urlsafe(24)  # ~32 chars
 
@@ -1068,6 +1141,7 @@ def _make_guest_pocket_id_sub() -> str:
 
 
 @router.post("/{session_id}/plus-one", status_code=201)
+@limiter.limit(LIMIT_MUTATION)
 async def add_plus_one(
     session_id: int,
     body: PlusOneCreate,
@@ -1085,9 +1159,7 @@ async def add_plus_one(
     inviter = request.state.user
 
     # Verify session exists
-    result = await db.execute(
-        select(GameSession).where(GameSession.id == session_id)
-    )
+    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1136,13 +1208,7 @@ async def add_plus_one(
     await db.flush()
 
     # Create Attendance for the guest
-    confirmed_result = await db.execute(
-        select(Attendance).where(
-            Attendance.session_id == session_id,
-            Attendance.status == "confirmed",
-        )
-    )
-    confirmed_count = len(confirmed_result.scalars().all())
+    confirmed_count = await _confirmed_count(db, session_id)
     att_status = "confirmed" if confirmed_count < session.max_players else "waitlisted"
 
     attendance = Attendance(
@@ -1220,6 +1286,7 @@ async def list_plus_ones(session_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{session_id}/plus-one/{plus_one_id}")
+@limiter.limit(LIMIT_WRITE)
 async def cancel_plus_one(
     session_id: int,
     plus_one_id: int,
@@ -1282,7 +1349,10 @@ async def cancel_plus_one(
 
 
 @router.get("/plus-one/{claim_token}")
-async def check_plus_one_claim(claim_token: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit(LIMIT_PUBLIC)
+async def check_plus_one_claim(
+    request: Request, claim_token: str, db: AsyncSession = Depends(get_db)
+):
     """Public: check claim status for a plus-one token."""
     result = await db.execute(
         select(GuestPlusOne)
@@ -1309,6 +1379,7 @@ async def check_plus_one_claim(claim_token: str, db: AsyncSession = Depends(get_
 
 
 @router.post("/plus-one/{claim_token}/claim")
+@limiter.limit(LIMIT_MUTATION)
 async def claim_plus_one(
     claim_token: str,
     request: Request,
@@ -1317,7 +1388,7 @@ async def claim_plus_one(
     """Claim a plus-one reservation.
 
     The guest must be authenticated via Pocket ID.
-    The placeholder user is linked to the guest's Pocket ID account.
+    The reserved attendance is transferred to the guest's existing member account.
     """
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -1326,7 +1397,6 @@ async def claim_plus_one(
         select(GuestPlusOne)
         .where(
             GuestPlusOne.claim_token == claim_token,
-            GuestPlusOne.status == "pending",
         )
         .options(
             selectinload(GuestPlusOne.guest_user),
@@ -1335,36 +1405,28 @@ async def claim_plus_one(
     )
     plus_one = result.scalar_one_or_none()
     if not plus_one:
-        raise HTTPException(status_code=404, detail="Invalid or already claimed token")
+        raise HTTPException(status_code=404, detail="Invalid claim token")
 
-    # Update the placeholder user with the guest's Pocket ID identity
-    guest_user = plus_one.guest_user
-    if not guest_user:
-        raise HTTPException(status_code=400, detail="Guest account not found")
+    from app.services.guest_claims import claim_reservation
 
-    guest_user.pocket_id_sub = request.state.user.pocket_id_sub
-    guest_user.sso_display_name = request.state.user.sso_display_name
-    guest_user.sso_groups = request.state.user.sso_groups
-    # Preserve the self-assessed skill set by the inviter
-    guest_user.self_assessed_skill = plus_one.self_assessed_skill
-
-    # Mark as claimed
-    plus_one.status = "claimed"
-    plus_one.claimed_by_user_id = guest_user.id
-    plus_one.claimed_at = datetime.utcnow()
-
+    member = await db.get(User, request.state.user.id)
+    if member is None:
+        raise HTTPException(status_code=401, detail="Please sign in again")
+    revision = await claim_reservation(db, plus_one, member)
     await db.commit()
-    await db.refresh(guest_user)
+    if revision is not None:
+        await notify_session_data_changed(plus_one.session_id, revision)
 
     return {
         "status": "claimed",
-        "user_id": guest_user.id,
-        "display_name": guest_user.display_name,
-        "self_assessed_skill": guest_user.self_assessed_skill,
+        "user_id": member.id,
+        "display_name": member.display_name,
+        "self_assessed_skill": member.self_assessed_skill,
     }
 
 
 # ── Weather ─────────────────────────────────────────────────────
+
 
 @router.get("/{session_id}/weather")
 async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db)):
@@ -1396,17 +1458,18 @@ async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db
         }
 
     # Cached forecast
-    now = datetime.utcnow()
-    forecast_age_ok = (
-        session.weather_forecast_fetched_at
-        and session.weather_forecast_fetched_at > now - timedelta(hours=1)
-    )
-    if forecast_age_ok and session.weather_forecast_temp_c is not None:
+    now = utcnow()
+    fetched_at = session.weather_forecast_fetched_at
+    if (
+        fetched_at is not None
+        and fetched_at > now - timedelta(hours=1)
+        and session.weather_forecast_temp_c is not None
+    ):
         response["forecast"] = {
             "temperature_c": session.weather_forecast_temp_c,
             "weather_code": session.weather_forecast_code,
             "label": session.weather_forecast_label,
-            "cached_at": session.weather_forecast_fetched_at.isoformat(),
+            "cached_at": fetched_at.isoformat(),
         }
         response["can_refresh"] = False
     else:
@@ -1416,14 +1479,43 @@ async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.post("/{session_id}/weather/refresh")
-async def refresh_session_weather(session_id: int, db: AsyncSession = Depends(get_db)):
-    """Fetch a fresh forecast from Open-Meteo and cache it for 1 hour."""
+@limiter.limit(LIMIT_WRITE)
+async def refresh_session_weather(
+    session_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch a fresh forecast from Open-Meteo and cache it for 1 hour.
+
+    Authenticated only, and the 1 h cache is enforced server-side: a warm
+    cache returns the stored values without any upstream call, so anonymous
+    (or overzealous) clients cannot use this endpoint as a DoS proxy against
+    the weather service.
+    """
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     result = await db.execute(select(GameSession).where(GameSession.id == session_id))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.latitude is None or session.longitude is None:
         raise HTTPException(status_code=400, detail="Session has no coordinates")
+
+    # Serve warm cache — never forward the request upstream.
+    fetched_at = session.weather_forecast_fetched_at
+    if (
+        fetched_at is not None
+        and fetched_at > utcnow() - timedelta(hours=1)
+        and session.weather_forecast_temp_c is not None
+    ):
+        return {
+            "status": "cached",
+            "temperature_c": session.weather_forecast_temp_c,
+            "weather_code": session.weather_forecast_code,
+            "label": session.weather_forecast_label,
+            "cached_at": fetched_at.isoformat(),
+        }
 
     start_time = session.start_time.astimezone()
     duration = session.duration_minutes or 120
@@ -1445,7 +1537,7 @@ async def refresh_session_weather(session_id: int, db: AsyncSession = Depends(ge
         session.weather_forecast_temp_c = current["temp_c"]
         session.weather_forecast_code = current["weather_code"]
         session.weather_forecast_label = current["label"]
-        session.weather_forecast_fetched_at = datetime.utcnow()
+        session.weather_forecast_fetched_at = utcnow()
         await db.commit()
         return {
             "status": "ok",
@@ -1457,7 +1549,7 @@ async def refresh_session_weather(session_id: int, db: AsyncSession = Depends(ge
     session.weather_forecast_temp_c = forecast["temp_c"]
     session.weather_forecast_code = forecast["weather_code"]
     session.weather_forecast_label = forecast["label"]
-    session.weather_forecast_fetched_at = datetime.utcnow()
+    session.weather_forecast_fetched_at = utcnow()
 
     await db.commit()
 
@@ -1486,16 +1578,14 @@ async def record_session_weather(
     if session.latitude is None or session.longitude is None:
         raise HTTPException(status_code=400, detail="Session has no coordinates")
 
-    current = await weather_service.fetch_current(
-        session.latitude, session.longitude
-    )
+    current = await weather_service.fetch_current(session.latitude, session.longitude)
     if current is None:
         raise HTTPException(status_code=502, detail="Weather service unavailable")
 
     session.weather_actual_temp_c = current["temp_c"]
     session.weather_actual_code = current["weather_code"]
     session.weather_actual_label = current["label"]
-    session.weather_actual_recorded_at = datetime.utcnow()
+    session.weather_actual_recorded_at = utcnow()
 
     await db.commit()
 

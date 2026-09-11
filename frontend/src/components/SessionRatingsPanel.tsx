@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { mediaUrl } from '../api/meApi';
+import { useCallback, useEffect, useState } from "react";
+import { mediaUrl } from "../api/meApi";
 import {
   fetchRatingContext,
   submitRating,
   type RateeContext,
   type RatingContextResponse,
-} from '../api/ratingsApi';
-import { cacheGet, cachePut } from '../offline/db';
-import { cacheKeyRatingContext } from '../offline/cacheKeys';
-import { enqueueOutbox, requestBackgroundSync } from '../offline/outbox';
-import { useToast } from '../context/ToastContext';
-import { StarRating } from './StarRating';
+} from "../api/ratingsApi";
+import { cacheGet, cachePut } from "../offline/db";
+import { cacheKeyRatingContext } from "../offline/cacheKeys";
+import { enqueueOutbox, requestBackgroundSync } from "../offline/outbox";
+import { useToast } from "../context/ToastContext";
+import { StarRating } from "./StarRating";
 
 interface SessionRatingsPanelProps {
   sessionId: number;
@@ -42,10 +42,9 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
       await cachePut(cacheKeyRatingContext(sessionId), ctx);
     } catch (e) {
       const cached = await cacheGet<RatingContextResponse>(
-        cacheKeyRatingContext(sessionId)
+        cacheKeyRatingContext(sessionId),
       );
-      const offline =
-        typeof navigator !== 'undefined' && !navigator.onLine;
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (cached?.data && offline) {
         const ctx = cached.data;
         setRatees(ctx.ratees);
@@ -54,9 +53,9 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         setLocked(ctx.ratings_locked);
         setLockHint(ctx.ratings_lock_at);
         setViewerAttended(ctx.viewer_attended ?? true);
-        setError('Offline — showing saved ratings.');
+        setError("Offline — showing saved ratings.");
       } else {
-        setError(e instanceof Error ? e.message : 'Failed to load ratings');
+        setError(e instanceof Error ? e.message : "Failed to load ratings");
         setRatees([]);
       }
     } finally {
@@ -73,9 +72,9 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
     setSavingId(rateeId);
     setError(null);
     try {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
         await enqueueOutbox({
-          type: 'rating',
+          type: "rating",
           sessionId,
           rateeId,
           score,
@@ -83,16 +82,19 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         await requestBackgroundSync();
         setRatees((prev) =>
           prev.map((r) =>
-            r.user_id === rateeId ? { ...r, my_score: score } : r
-          )
+            r.user_id === rateeId ? { ...r, my_score: score } : r,
+          ),
         );
-        showToast('Rating queued — will save when you’re back online.', 'success');
+        showToast(
+          "Rating queued — will save when you’re back online.",
+          "success",
+        );
         return;
       }
       await submitRating(sessionId, rateeId, score);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSavingId(null);
     }
@@ -154,7 +156,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
             <div className="flex items-center gap-2 min-w-0">
               {r.avatar_url ? (
                 <img
-                  src={mediaUrl(r.avatar_url) || ''}
+                  src={mediaUrl(r.avatar_url) || ""}
                   alt=""
                   className="w-8 h-8 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
                 />
@@ -180,10 +182,10 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         ))}
       </ul>
       {ratees.length === 0 && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           {viewerAttended
-            ? 'No other players to rate.'
-            : 'No confirmed players listed.'}
+            ? "No other players to rate."
+            : "No confirmed players listed."}
         </p>
       )}
     </div>

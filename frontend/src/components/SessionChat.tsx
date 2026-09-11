@@ -1,27 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { ChatMessage } from '../types';
+import { parseSessionStart } from "../utils/datetime";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import type { ChatMessage } from "../types";
 import {
   groupMessages,
   formatDateHeader,
   formatCompactTime,
   usernameColor,
   type ChatMessageGroup,
-} from '../utils/chat';
-import { apiFetch } from '../api/client';
-import { mediaUrl } from '../api/meApi';
-import { postSessionChatTyping, sessionChatEventsUrl } from '../api/sessionsApi';
-import { useAuth } from '../auth/useAuth';
+} from "../utils/chat";
+import { apiFetch } from "../api/client";
+import { mediaUrl } from "../api/meApi";
+import {
+  postSessionChatTyping,
+  sessionChatEventsUrl,
+} from "../api/sessionsApi";
+import { useAuth } from "../auth/useAuth";
 import {
   appendCachedChatMessage,
   getCachedChatMessages,
   setCachedChatMessages,
-} from '../stores/sessionChatCache';
-import { useToast } from '../context/ToastContext';
+} from "../stores/sessionChatCache";
+import { useToast } from "../context/ToastContext";
 import {
   enqueueOutbox,
   processOutbox,
   requestBackgroundSync,
-} from '../offline/outbox';
+} from "../offline/outbox";
 import {
   ArrowDown,
   ChevronDown,
@@ -30,27 +40,28 @@ import {
   Smile,
   Users,
   X,
-} from 'lucide-react';
-import { hapticLight } from '../utils/haptics';
+} from "lucide-react";
+import { hapticLight } from "../utils/haptics";
 
-const chatLastReadKey = (sessionId: string) => `miootz:chat:lastRead:${sessionId}`;
+const chatLastReadKey = (sessionId: string) =>
+  `miootz:chat:lastRead:${sessionId}`;
 
 const QUICK_EMOJIS = [
-  '⚽',
-  '👍',
-  '🔥',
-  '😂',
-  '❤️',
-  '🎉',
-  '👏',
-  '🙌',
-  '😀',
-  '🙏',
-  '💪',
-  '✅',
-  '⚡',
-  '🏃',
-  '☀️',
+  "⚽",
+  "👍",
+  "🔥",
+  "😂",
+  "❤️",
+  "🎉",
+  "👏",
+  "🙌",
+  "😀",
+  "🙏",
+  "💪",
+  "✅",
+  "⚡",
+  "🏃",
+  "☀️",
 ] as const;
 
 const MAX_MESSAGE_LENGTH = 1000;
@@ -63,15 +74,13 @@ interface SessionChatProps {
 function Avatar({
   url,
   username,
-  size = 'sm',
+  size = "sm",
 }: {
   url?: string | null;
   username: string;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
 }) {
-  const sizeClasses = size === 'md'
-    ? 'w-9 h-9 text-sm'
-    : 'w-7 h-7 text-xs';
+  const sizeClasses = size === "md" ? "w-9 h-9 text-sm" : "w-7 h-7 text-xs";
 
   const resolved = mediaUrl(url ?? undefined);
   if (resolved) {
@@ -88,7 +97,7 @@ function Avatar({
   const initials = username
     .slice(0, 2)
     .toUpperCase()
-    .replace(/[^A-Z]/g, '');
+    .replace(/[^A-Z]/g, "");
 
   return (
     <div
@@ -103,23 +112,28 @@ function Avatar({
 /** ─── Skeleton loader ───────────────────────────────────────────── */
 function ChatSkeleton() {
   const pulse =
-    'motion-safe:animate-pulse motion-reduce:animate-none bg-gray-200 dark:bg-gray-700';
-  const bubbleHeights = ['h-12', 'h-8', 'h-10', 'h-8', 'h-12'] as const;
+    "motion-safe:animate-pulse motion-reduce:animate-none bg-gray-200 dark:bg-gray-700";
+  const bubbleHeights = ["h-12", "h-8", "h-10", "h-8", "h-12"] as const;
 
   return (
     <div className="space-y-6 px-4 pt-4" aria-hidden="true">
       {Array.from({ length: 5 }).map((_, i) => {
         const mine = i % 3 === 1;
         return (
-          <div key={i} className={`flex gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
+          <div
+            key={i}
+            className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}
+          >
             <div className={`h-7 w-7 flex-shrink-0 rounded-full ${pulse}`} />
             <div
-              className={`flex-1 space-y-2 ${mine ? 'flex flex-col items-end' : ''}`}
+              className={`flex-1 space-y-2 ${mine ? "flex flex-col items-end" : ""}`}
             >
-              <div className={`h-3 w-20 rounded ${mine ? 'ml-auto' : ''} ${pulse}`} />
+              <div
+                className={`h-3 w-20 rounded ${mine ? "ml-auto" : ""} ${pulse}`}
+              />
               <div
                 className={`w-full max-w-[14rem] rounded-2xl ${bubbleHeights[i]} ${pulse} ${
-                  mine ? 'ml-auto' : ''
+                  mine ? "ml-auto" : ""
                 }`}
               />
             </div>
@@ -135,15 +149,12 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
   const isFirst = group.showHeader;
   const mine = group.isMine;
 
-  const bubbleMine =
-    'bg-violet-600 text-white dark:bg-violet-600 shadow-sm';
+  const bubbleMine = "bg-violet-600 text-white dark:bg-violet-600 shadow-sm";
   const bubbleOther =
-    'bg-gray-100 text-gray-800 dark:bg-gray-700/70 dark:text-gray-100';
+    "bg-gray-100 text-gray-800 dark:bg-gray-700/70 dark:text-gray-100";
 
   return (
-    <div
-      className={`flex gap-2 group/chat ${mine ? 'flex-row-reverse' : ''}`}
-    >
+    <div className={`flex gap-2 group/chat ${mine ? "flex-row-reverse" : ""}`}>
       {/* Avatar column */}
       <div className="w-7 flex-shrink-0 pt-1">
         {isFirst && <Avatar url={group.avatarUrl} username={group.username} />}
@@ -151,26 +162,26 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
 
       {/* Messages column */}
       <div
-        className={`flex-1 min-w-0 flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+        className={`flex-1 min-w-0 flex flex-col ${mine ? "items-end" : "items-start"}`}
       >
         {/* Username + timestamp */}
         {isFirst && (
           <div
             className={`flex items-baseline gap-2 mb-1 px-1 max-w-[85%] ${
-              mine ? 'flex-row-reverse justify-end' : ''
+              mine ? "flex-row-reverse justify-end" : ""
             }`}
           >
             <span
               className={
                 mine
-                  ? 'text-xs font-semibold truncate text-violet-700 dark:text-violet-300'
-                  : 'text-xs font-semibold truncate'
+                  ? "text-xs font-semibold truncate text-violet-700 dark:text-violet-300"
+                  : "text-xs font-semibold truncate"
               }
               style={mine ? undefined : { color: group.usernameColor }}
             >
-              {mine ? 'You' : group.username}
+              {mine ? "You" : group.username}
             </span>
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
+            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
               {formatCompactTime(group.messages[0].time)}
             </span>
           </div>
@@ -196,10 +207,10 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
                   mine ? bubbleMine : bubbleOther
                 } ${
                   idx === 0
-                    ? 'rounded-t-2xl'
+                    ? "rounded-t-2xl"
                     : idx === group.messages.length - 1
-                      ? 'rounded-b-2xl'
-                      : ''
+                      ? "rounded-b-2xl"
+                      : ""
                 }`}
               >
                 {m.text}
@@ -217,7 +228,7 @@ function DateSeparator({ date }: { date: Date }) {
   return (
     <div className="flex items-center gap-3 py-3">
       <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-      <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+      <span className="text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         {formatDateHeader(date)}
       </span>
       <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
@@ -242,10 +253,10 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
 /** ─── Main component ────────────────────────────────────────────── */
 export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   const { showToast } = useToast();
-  const { me } = useAuth();
+  const { me, tokens } = useAuth();
   const myUserId = me?.user.id ?? null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showScrollFab, setShowScrollFab] = useState(false);
@@ -257,9 +268,9 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiWrapRef = useRef<HTMLDivElement>(null);
   const lastTypingSentRef = useRef(0);
-  const typingClearTimeoutsRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
-    new Map()
-  );
+  const typingClearTimeoutsRef = useRef<
+    Map<number, ReturnType<typeof setTimeout>>
+  >(new Map());
   const [typingByUser, setTypingByUser] = useState<Record<number, string>>({});
 
   const typingLabel = useMemo(() => {
@@ -287,7 +298,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
               return n;
             });
             typingClearTimeoutsRef.current.delete(uid);
-          }, 3000)
+          }, 3000),
         );
       } else {
         setTypingByUser((prev) => {
@@ -298,7 +309,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
         typingClearTimeoutsRef.current.delete(uid);
       }
     },
-    [myUserId]
+    [myUserId],
   );
 
   useEffect(() => {
@@ -340,10 +351,10 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       const el = chatContainerRef.current;
       if (!el) return;
       if (force || !userScrolledUp()) {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       }
     },
-    [userScrolledUp]
+    [userScrolledUp],
   );
 
   // Auto-scroll on new messages
@@ -357,8 +368,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       if (emojiWrapRef.current?.contains(e.target as Node)) return;
       setEmojiOpen(false);
     };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
   }, [emojiOpen]);
 
   // Track scroll position for FAB
@@ -366,8 +377,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     const el = chatContainerRef.current;
     if (!el) return;
     const onScroll = () => setShowScrollFab(userScrolledUp());
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
   }, [userScrolledUp]);
 
   // Unread indicator for bottom nav (Details tab dot)
@@ -379,27 +390,27 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     if (raw === null) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
-        new CustomEvent('miootz-chat-unread', {
+        new CustomEvent("miootz-chat-unread", {
           detail: { sessionId, unread: false },
-        })
+        }),
       );
       return;
     }
     if (isExpanded) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
-        new CustomEvent('miootz-chat-unread', {
+        new CustomEvent("miootz-chat-unread", {
           detail: { sessionId, unread: false },
-        })
+        }),
       );
       return;
     }
     const lastRead = Number(raw) || 0;
     const unread = latestId > lastRead;
     window.dispatchEvent(
-      new CustomEvent('miootz-chat-unread', {
+      new CustomEvent("miootz-chat-unread", {
         detail: { sessionId, unread },
-      })
+      }),
     );
   }, [messages, sessionId, isExpanded]);
 
@@ -422,21 +433,26 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   // SSE + initial fetch
   useEffect(() => {
     let cancelled = false;
-    const eventSource = new EventSource(sessionChatEventsUrl(sessionId));
+    const eventSource = new EventSource(
+      sessionChatEventsUrl(sessionId, tokens?.accessToken),
+    );
 
     eventSource.onmessage = (event) => {
-      const raw = JSON.parse(event.data) as {
+      let raw: {
         type?: string;
         user_id?: number;
         username?: string;
         typing?: boolean;
         id?: number;
       };
-      if (raw.type === 'typing') {
-        if (
-          raw.user_id != null &&
-          raw.username != null
-        ) {
+      try {
+        raw = JSON.parse(event.data);
+      } catch {
+        console.error("SSE: ignoring malformed message");
+        return;
+      }
+      if (raw.type === "typing") {
+        if (raw.user_id != null && raw.username != null) {
           handleTypingEvent({
             user_id: raw.user_id,
             username: raw.username,
@@ -455,7 +471,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     };
 
     eventSource.onerror = (error) => {
-      console.error('SSE Error:', error);
+      console.error("SSE Error:", error);
       eventSource.close();
     };
 
@@ -476,7 +492,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
           await setCachedChatMessages(sessionId, []);
         }
       } catch (error) {
-        console.error('Failed to fetch initial messages:', error);
+        console.error("Failed to fetch initial messages:", error);
         const fallback = await getCachedChatMessages(sessionId);
         if (!cancelled && fallback !== undefined) {
           setMessages(fallback);
@@ -490,7 +506,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       cancelled = true;
       eventSource.close();
     };
-  }, [sessionId, handleTypingEvent]);
+  }, [sessionId, handleTypingEvent, tokens?.accessToken]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -500,48 +516,51 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
 
     setSendError(null);
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       try {
         await enqueueOutbox({
-          type: 'chat',
+          type: "chat",
           sessionId,
           message: trimmed,
         });
         await requestBackgroundSync();
-        setNewMessage('');
+        setNewMessage("");
         flushTypingFalse();
         hapticLight();
-        showToast('Message queued — will send when you’re back online.', 'success');
+        showToast(
+          "Message queued — will send when you’re back online.",
+          "success",
+        );
       } catch (err) {
         console.error(err);
-        setSendError('Could not queue message');
+        setSendError("Could not queue message");
       }
       return;
     }
 
     try {
       const response = await apiFetch(`/sessions/${sessionId}/chat`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ message: trimmed }),
       });
 
       if (response.ok) {
-        setNewMessage('');
+        setNewMessage("");
         flushTypingFalse();
         hapticLight();
         void processOutbox();
       } else {
         const errBody = await response.text();
-        setSendError(errBody || 'Failed to send message');
+        setSendError(errBody || "Failed to send message");
       }
     } catch (error) {
-      console.error('Failed to send message:', error);
-      setSendError('Network error — check your connection');
+      console.error("Failed to send message:", error);
+      setSendError("Network error — check your connection");
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       e.currentTarget.form?.requestSubmit();
     }
@@ -557,11 +576,16 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     text: string;
     time: Date;
   }> = messages.map((m) => {
-    const mine =
-      myUserId != null && m.user_id === myUserId;
+    const mine = myUserId != null && m.user_id === myUserId;
+    // SAFETY: /me `user` is loose backend JSON; profile_pic is an optional
+    // avatar path not yet reflected in the MeResponse TS type. Both reads
+    // null-check before use, so a missing key is safe.
+    const meUser = me as unknown as Record<string, unknown> | null;
     const cropped =
-      mine && me != null && (me.user as unknown as Record<string, unknown>)?.profile_pic != null
-        ? String((me.user as unknown as Record<string, unknown>).profile_pic)
+      mine &&
+      me != null &&
+      (meUser as Record<string, unknown>)?.profile_pic != null
+        ? String((meUser as Record<string, unknown>).profile_pic)
         : m.avatar_url;
     return {
       id: m.id,
@@ -570,7 +594,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       usernameColor: m.username_color ?? usernameColor(m.username),
       avatarUrl: cropped ?? null,
       text: m.message,
-      time: new Date(m.created_at),
+      time: parseSessionStart(m.created_at),
     };
   });
 
@@ -578,14 +602,21 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
 
   // Interleave date separators
   const rendered: React.ReactNode[] = [];
-  let lastDateStr = '';
+  let lastDateStr = "";
   for (const group of groups) {
     const dateStr = formatDateHeader(group.messages[0].time);
     if (dateStr !== lastDateStr) {
-      rendered.push(<DateSeparator key={`date-${group.messages[0].id}`} date={group.messages[0].time} />);
+      rendered.push(
+        <DateSeparator
+          key={`date-${group.messages[0].id}`}
+          date={group.messages[0].time}
+        />,
+      );
       lastDateStr = dateStr;
     }
-    rendered.push(<MessageGroup key={`group-${group.messages[0].id}`} group={group} />);
+    rendered.push(
+      <MessageGroup key={`group-${group.messages[0].id}`} group={group} />,
+    );
   }
 
   const messageCount = messages.length;
@@ -596,9 +627,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   if (!isExpanded) {
     return (
       <section className="max-w-2xl mx-auto w-full">
-        <div
-          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
-        >
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Header */}
           <button
             type="button"
@@ -610,8 +639,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
               <Users className="w-4 h-4 text-violet-500" />
               Session Chat
               {messageCount > 0 && (
-                <span className="text-xs font-normal text-gray-400 dark:text-gray-500">
-                  · {messageCount} message{messageCount !== 1 ? 's' : ''}
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  · {messageCount} message{messageCount !== 1 ? "s" : ""}
                 </span>
               )}
             </span>
@@ -651,13 +680,13 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     <section
       className={`max-w-2xl mx-auto w-full ${
         isExpanded
-          ? 'max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-gray-950/40'
-          : ''
+          ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-gray-950/40"
+          : ""
       }`}
     >
       <div
         className={`relative bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-md:rounded-xl h-[min(75vh,600px)] ${
-          isExpanded ? 'max-md:h-[calc(100dvh-1rem)]' : ''
+          isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""
         }`}
       >
         {/* Header */}
@@ -666,8 +695,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             <Users className="w-4 h-4 text-violet-500" />
             Session Chat
             {messageCount > 0 && (
-              <span className="text-xs font-normal text-gray-400 dark:text-gray-500">
-                · {messageCount} message{messageCount !== 1 ? 's' : ''}
+              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                · {messageCount} message{messageCount !== 1 ? "s" : ""}
               </span>
             )}
           </span>
@@ -677,7 +706,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
               setIsExpanded(false);
               scrollToBottom(true);
             }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500"
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
             aria-label="Collapse chat"
           >
             <ChevronDown className="w-4 h-4" />
@@ -694,7 +723,9 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
           ) : flatMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-2">
               <Users className="w-8 h-8 opacity-50" />
-              <p className="text-sm">No messages yet — start the conversation!</p>
+              <p className="text-sm">
+                No messages yet — start the conversation!
+              </p>
             </div>
           ) : (
             rendered
@@ -748,7 +779,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
                     className="rounded p-1.5 text-lg leading-none hover:bg-gray-100 dark:hover:bg-gray-800"
                     onClick={() => {
                       setNewMessage((m) =>
-                        (m + em).slice(0, MAX_MESSAGE_LENGTH)
+                        (m + em).slice(0, MAX_MESSAGE_LENGTH),
                       );
                       setEmojiOpen(false);
                       inputRef.current?.focus();
@@ -769,7 +800,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             onKeyDown={handleKeyDown}
             placeholder="Type a message…"
             maxLength={MAX_MESSAGE_LENGTH + 10}
-            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-shadow placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-shadow placeholder:text-gray-500 dark:placeholder:text-gray-400"
             aria-label="Chat message"
           />
           <button
@@ -783,9 +814,11 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
         </form>
 
         {/* Footer info */}
-        <div className="flex items-center justify-between px-4 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800 flex-shrink-0">
-          <span>{messageCount} message{messageCount !== 1 ? 's' : ''}</span>
-          <span className={isOverLimit ? 'text-red-500 font-medium' : ''}>
+        <div className="flex items-center justify-between px-4 py-1.5 text-2xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800 flex-shrink-0">
+          <span>
+            {messageCount} message{messageCount !== 1 ? "s" : ""}
+          </span>
+          <span className={isOverLimit ? "text-red-500 font-medium" : ""}>
             {charCount}/{MAX_MESSAGE_LENGTH}
           </span>
         </div>

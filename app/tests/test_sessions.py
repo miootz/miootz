@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.user import User
-from app.models.session import GameSession, Attendance
-from datetime import datetime, timedelta
+from app.models.session import Attendance
+from datetime import datetime, timedelta, UTC
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -19,7 +19,9 @@ async def setup_db():
 async def create_test_user(
     db: AsyncSession, display_name: str, pocket_id_sub: str, is_admin: bool = False
 ) -> User:
-    user = User(pocket_id_sub=pocket_id_sub, sso_display_name=display_name, is_admin=is_admin)
+    user = User(
+        pocket_id_sub=pocket_id_sub, sso_display_name=display_name, is_admin=is_admin
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -41,7 +43,9 @@ async def test_session_lifecycle():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Test Pitch",
                 "min_players": 1,
                 "max_players": 2,
@@ -88,11 +92,14 @@ async def test_session_lifecycle():
             from sqlalchemy import select
 
             res = await db.execute(select(User).where(User.pocket_id_sub == "p3-uuid"))
-            user_id = res.scalar().id
+            u = res.scalar()
+            assert u is not None
+            user_id = u.id
             res_att = await db.execute(
                 select(Attendance).where(Attendance.user_id == user_id)
             )
             att = res_att.scalar()
+            assert att is not None
             assert att.status == "confirmed"
 
 
@@ -107,7 +114,7 @@ async def test_admin_override():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": datetime.utcnow().isoformat(),
+                "start_time": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 "location": "Override Pitch",
                 "min_players": 1,
                 "max_players": 1,
@@ -128,8 +135,12 @@ async def test_admin_override():
         async with AsyncSession(engine) as db:
             from sqlalchemy import select
 
-            res = await db.execute(select(User).where(User.pocket_id_sub == "p1_2-uuid"))
-            user_id = res.scalar().id
+            res = await db.execute(
+                select(User).where(User.pocket_id_sub == "p1_2-uuid")
+            )
+            u = res.scalar()
+            assert u is not None
+            user_id = u.id
 
         resp = await ac.post(
             f"/sessions/{session_id}/admin/move?user_id={user_id}&new_status=waitlisted",
@@ -149,7 +160,9 @@ async def test_chat_typing_endpoint():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Pitch A",
                 "min_players": 1,
                 "max_players": 5,
@@ -182,7 +195,9 @@ async def test_patch_session_teams_admin():
         resp = await ac.post(
             "/sessions/",
             json={
-                "start_time": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Pitch Teams",
                 "min_players": 1,
                 "max_players": 10,
@@ -206,11 +221,18 @@ async def test_patch_session_teams_admin():
             ids = {}
             for sub in ("tp1-uuid", "tp2-uuid", "tp3-uuid", "tp4-uuid"):
                 res = await db.execute(select(User).where(User.pocket_id_sub == sub))
-                ids[sub] = str(res.scalar().id)
+                u = res.scalar()
+                assert u is not None
+                ids[sub] = str(u.id)
 
         swap = await ac.patch(
             f"/sessions/{session_id}/teams",
-            json={"teams": [[ids["tp1-uuid"], ids["tp3-uuid"]], [ids["tp2-uuid"], ids["tp4-uuid"]]]},
+            json={
+                "teams": [
+                    [ids["tp1-uuid"], ids["tp3-uuid"]],
+                    [ids["tp2-uuid"], ids["tp4-uuid"]],
+                ]
+            },
             headers={"Authorization": "Bearer admint"},
         )
         assert swap.status_code == 200
@@ -225,7 +247,12 @@ async def test_patch_session_teams_admin():
 
         r403 = await ac.patch(
             f"/sessions/{session_id}/teams",
-            json={"teams": [[ids["tp1-uuid"], ids["tp2-uuid"]], [ids["tp3-uuid"], ids["tp4-uuid"]]]},
+            json={
+                "teams": [
+                    [ids["tp1-uuid"], ids["tp2-uuid"]],
+                    [ids["tp3-uuid"], ids["tp4-uuid"]],
+                ]
+            },
             headers={"Authorization": "Bearer tp1"},
         )
         assert r403.status_code == 403

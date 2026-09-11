@@ -75,13 +75,13 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
         {/* Date chip */}
         <div className="shrink-0 mt-0.5">
           <div className="rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-center min-w-[52px]">
-            <div className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase leading-tight">
+            <div className="text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase leading-tight">
               {format(start, "EEE")}
             </div>
             <div className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
               {format(start, "d")}
             </div>
-            <div className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
+            <div className="text-2xs text-gray-500 dark:text-gray-400 leading-tight">
               {format(start, "MMM")}
             </div>
           </div>
@@ -101,7 +101,7 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
           {/* Metadata chips */}
           <div className="flex flex-wrap items-center gap-1.5">
             {matchCount > 0 && (
-              <span className="rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] text-gray-600 dark:text-gray-400">
+              <span className="rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs text-gray-600 dark:text-gray-400">
                 {matchCount} match{matchCount !== 1 ? "es" : ""}
                 {final && (
                   <span className="ml-1 text-gray-500 dark:text-gray-400">
@@ -112,7 +112,7 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
               </span>
             )}
             {ratingAvg != null && (
-              <span className="rounded-md bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              <span className="rounded-md bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">
                 ★ {ratingAvg.toFixed(1)}
               </span>
             )}

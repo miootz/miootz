@@ -2,9 +2,6 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-ARG VITE_POCKET_ID_CLIENT_SECRET
-ENV VITE_POCKET_ID_CLIENT_SECRET=${VITE_POCKET_ID_CLIENT_SECRET}
-
 COPY package.json package-lock.json ./
 RUN npm ci
 

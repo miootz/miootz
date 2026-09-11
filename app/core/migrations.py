@@ -1,5 +1,6 @@
 """Lightweight additive SQLite migrations (no Alembic)."""
 
+import json as _json
 import logging
 
 from sqlalchemy import text
@@ -26,13 +27,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE game_sessions ADD COLUMN min_players INTEGER DEFAULT 10")
         )
     if not await has_column("game_sessions", "latitude"):
-        await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN latitude FLOAT")
-        )
+        await conn.execute(text("ALTER TABLE game_sessions ADD COLUMN latitude FLOAT"))
     if not await has_column("game_sessions", "longitude"):
-        await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN longitude FLOAT")
-        )
+        await conn.execute(text("ALTER TABLE game_sessions ADD COLUMN longitude FLOAT"))
     if not await has_column("game_sessions", "waitlist_mode"):
         await conn.execute(
             text(
@@ -47,7 +44,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     if not await has_column("game_sessions", "content_revision"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN content_revision INTEGER DEFAULT 0")
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN content_revision INTEGER DEFAULT 0"
+            )
         )
 
     if not await has_column("game_sessions", "recurrence_rule_id"):
@@ -56,7 +55,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         await conn.execute(
             text(
-                'CREATE INDEX IF NOT EXISTS ix_game_sessions_recurrence_rule_id '
+                "CREATE INDEX IF NOT EXISTS ix_game_sessions_recurrence_rule_id "
                 "ON game_sessions (recurrence_rule_id)"
             )
         )
@@ -128,12 +127,12 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     if await has_table("ratings"):
         if not await has_column("ratings", "updated_at"):
             await conn.execute(
-                text(
-                    "ALTER TABLE ratings ADD COLUMN updated_at TIMESTAMP"
-                )
+                text("ALTER TABLE ratings ADD COLUMN updated_at TIMESTAMP")
             )
             await conn.execute(
-                text("UPDATE ratings SET updated_at = created_at WHERE updated_at IS NULL")
+                text(
+                    "UPDATE ratings SET updated_at = created_at WHERE updated_at IS NULL"
+                )
             )
         ridx = await conn.execute(
             text(
@@ -158,9 +157,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     # Game templates: FK on sessions + copy legacy session_recurrence_rules → game_templates
     if not await has_column("users", "pocket_id_sub"):
-        await conn.execute(
-            text("ALTER TABLE users ADD COLUMN pocket_id_sub VARCHAR")
-        )
+        await conn.execute(text("ALTER TABLE users ADD COLUMN pocket_id_sub VARCHAR"))
         await conn.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub "
@@ -179,7 +176,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
-    if await has_table("session_recurrence_rules") and await has_table("game_templates"):
+    if await has_table("session_recurrence_rules") and await has_table(
+        "game_templates"
+    ):
         r_gt = await conn.execute(text("SELECT COUNT(*) FROM game_templates"))
         n_gt = r_gt.scalar_one()
         r_sr = await conn.execute(text("SELECT COUNT(*) FROM session_recurrence_rules"))
@@ -245,7 +244,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("game_sessions", "rating_reminder_sent_at"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN rating_reminder_sent_at TIMESTAMP")
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN rating_reminder_sent_at TIMESTAMP"
+            )
         )
 
     # ── Remove email from users; replace with display_name ──────────────
@@ -295,13 +296,17 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
         # Recreate indexes
         await conn.execute(
-            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"
+            )
         )
         await conn.execute(
             text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)")
         )
         await conn.execute(
-            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)")
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)"
+            )
         )
 
     # ── Replace email with first_name + last_name in invite_tokens ──────
@@ -331,7 +336,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
         await conn.execute(text("DROP TABLE invite_tokens"))
-        await conn.execute(text("ALTER TABLE invite_tokens_new RENAME TO invite_tokens"))
+        await conn.execute(
+            text("ALTER TABLE invite_tokens_new RENAME TO invite_tokens")
+        )
         await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_invite_tokens_first_name "
@@ -433,13 +440,19 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             await conn.execute(text("DROP TABLE users"))
             await conn.execute(text("ALTER TABLE users_new RENAME TO users"))
             await conn.execute(
-                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)")
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"
+                )
             )
             await conn.execute(
-                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)")
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone)"
+                )
             )
             await conn.execute(
-                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)")
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_pocket_id_sub ON users (pocket_id_sub)"
+                )
             )
 
     # ── Cache SSO display name and groups from Pocket ID ─────────────
@@ -452,9 +465,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE users ADD COLUMN sso_preferred_username VARCHAR")
         )
     if not await has_column("users", "sso_groups"):
-        await conn.execute(
-            text("ALTER TABLE users ADD COLUMN sso_groups TEXT")
-        )
+        await conn.execute(text("ALTER TABLE users ADD COLUMN sso_groups TEXT"))
+    if not await has_column("users", "sso_synced_at"):
+        await conn.execute(text("ALTER TABLE users ADD COLUMN sso_synced_at TIMESTAMP"))
 
     # ── Remove local avatar columns (avatars now served by Pocket ID) ──
     for col in ("profile_pic", "profile_pic_original", "avatar_crop_pixels"):
@@ -468,7 +481,6 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 logger.warning(
                     "Cannot drop column '%s' from users (SQLite < 3.35)", col
                 )
-
 
     # ── Replace username with pocket_id_sub as primary identity ──
     # Remove: username, full_name, phone (if still present)
@@ -558,7 +570,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         "invite_tokens", "user_id"
     ):
         await conn.execute(
-            text("ALTER TABLE invite_tokens ADD COLUMN user_id INTEGER REFERENCES users(id)")
+            text(
+                "ALTER TABLE invite_tokens ADD COLUMN user_id INTEGER REFERENCES users(id)"
+            )
         )
 
     # ── Live match management ──
@@ -570,9 +584,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("game_sessions", "match_duration_minutes"):
         await conn.execute(
-            text(
-                "ALTER TABLE game_sessions ADD COLUMN match_duration_minutes INTEGER"
-            )
+            text("ALTER TABLE game_sessions ADD COLUMN match_duration_minutes INTEGER")
         )
 
     # ── Weather: cached forecast + recorded actuals ───────────────────
@@ -590,7 +602,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("game_sessions", "weather_forecast_fetched_at"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_fetched_at TIMESTAMP")
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN weather_forecast_fetched_at TIMESTAMP"
+            )
         )
     if not await has_column("game_sessions", "weather_actual_temp_c"):
         await conn.execute(
@@ -606,7 +620,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("game_sessions", "weather_actual_recorded_at"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_recorded_at TIMESTAMP")
+            text(
+                "ALTER TABLE game_sessions ADD COLUMN weather_actual_recorded_at TIMESTAMP"
+            )
         )
 
     # ── Team names: persisted random names per session ─────────────────
@@ -629,7 +645,6 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 """
             )
         )
-        import json as _json
         for _row in _r.fetchall():
             _sid, _all_names = _row
             _names = [
@@ -662,23 +677,64 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     )
     import random as _random
+
     _pool = [
-        "Red Devils", "Blue Stars", "Golden Boot", "Iron Leg",
-        "Thunder FC", "Lightning United", "Phoenix Rising", "Eagles Soar",
-        "Crimson Tide", "Silver Arrows", "Wildcats", "Panthers",
-        "Raptors", "Hawks", "Vipers", "Cobras", "Tigers", "Lions",
-        "Sharks", "Wolves", "Galacticos", "Night Owls", "Fire Storm",
-        "Ice Breakers", "Diamondbacks", "Steel City", "Rough Riders",
-        "Storm Chasers", "Blaze", "Vendetta", "Renegades", "Warriors",
-        "Gladiators", "Spartans", "Crusaders", "Titans", "Vikings",
-        "Samurai", "Ninjas", "Phantoms", "Spectres", "Rebels",
-        "Outlaws", "Bandits", "Corsairs", "Marauders", "Conquerors",
-        "Legion", "Dynasty",
+        "Red Devils",
+        "Blue Stars",
+        "Golden Boot",
+        "Iron Leg",
+        "Thunder FC",
+        "Lightning United",
+        "Phoenix Rising",
+        "Eagles Soar",
+        "Crimson Tide",
+        "Silver Arrows",
+        "Wildcats",
+        "Panthers",
+        "Raptors",
+        "Hawks",
+        "Vipers",
+        "Cobras",
+        "Tigers",
+        "Lions",
+        "Sharks",
+        "Wolves",
+        "Galacticos",
+        "Night Owls",
+        "Fire Storm",
+        "Ice Breakers",
+        "Diamondbacks",
+        "Steel City",
+        "Rough Riders",
+        "Storm Chasers",
+        "Blaze",
+        "Vendetta",
+        "Renegades",
+        "Warriors",
+        "Gladiators",
+        "Spartans",
+        "Crusaders",
+        "Titans",
+        "Vikings",
+        "Samurai",
+        "Ninjas",
+        "Phantoms",
+        "Spectres",
+        "Rebels",
+        "Outlaws",
+        "Bandits",
+        "Corsairs",
+        "Marauders",
+        "Conquerors",
+        "Legion",
+        "Dynasty",
     ]
     _used_names: set[str] = set()
     # Collect already-used names to avoid repeats
     _existing = await conn.execute(
-        text("SELECT team_names_json FROM game_sessions WHERE team_names_json IS NOT NULL")
+        text(
+            "SELECT team_names_json FROM game_sessions WHERE team_names_json IS NOT NULL"
+        )
     )
     for _erow in _existing.fetchall():
         try:
@@ -699,9 +755,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         for _p in _picked:
             _used_names.add(_p)
         await conn.execute(
-            text(
-                "UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"
-            ),
+            text("UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"),
             {"val": _json.dumps(_picked), "sid": _nsid},
         )
 
@@ -714,4 +768,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""
-    return tuple(int(p) for p in version.split(".") if p.isdigit())
+    try:
+        return tuple(int(p) for p in version.split(".") if p.isdigit())
+    except ValueError:
+        return (0,)
