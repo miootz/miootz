@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchSessionMatches, type MatchSummary } from "../api/matchesApi";
-import { sessionDataEventsUrl } from "../api/sessionsApi";
+import {
+  fetchSessionMatches,
+  pauseTimer,
+  resetMatch,
+  resumeTimer,
+  startTimer,
+  type MatchSummary,
+} from "../api/matchesApi";
+import { subscribeSessionData } from "../utils/sessionDataBus";
 import { useAuth } from "../auth/useAuth";
+import { useStewardUi } from "../hooks/useStewardUi";
+import { GoalEntrySheet } from "./GoalEntrySheet";
+import { GoalList } from "./GoalList";
+import { leaseBusyLabel } from "../utils/lease";
 import { Timer } from "lucide-react";
 
 function formatTimer(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+  const m = Math.floor(Math.max(0, seconds) / 60);
+  const s = Math.max(0, seconds) % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
@@ -26,6 +37,14 @@ function getTimerBg(seconds: number, total: number): string {
   return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
 }
 
+/** Steward gate → reason line shown to locked members (never silent). */
+function stewardReasonLine(reason: string | undefined): string {
+  if (reason === "not_attending") return "You're not marked as attending.";
+  if (reason === "outside_window")
+    return "Scoring is closed — you're outside the session window.";
+  return "";
+}
+
 export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
   const { me, tokens } = useAuth();
   const sid =
@@ -35,10 +54,16 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
   const [isPaused, setIsPaused] = useState(false);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [halfTimeFlash, setHalfTimeFlash] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const prevRatioRef = useRef<number | null>(null);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const esRef = useRef<EventSource | null>(null);
+
+  // Steward gate / lease chip / goal log — fed from the ONE SSE channel this
+  // banner already owns (see effect below). No second EventSource.
+  const { steward, lease, leaseLeft, goals, applyEvent, removeGoal, refreshGoals } =
+    useStewardUi(sid, currentMatch?.id ?? null);
 
   const loadMatch = useCallback(async () => {
     try {
@@ -81,33 +106,56 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     return () => clearTimeout(t);
   }, [halfTimeFlash]);
 
-  // SSE listener
+  // SSE — rides the ONE existing session-data connection via the shared
+  // hub (utils/sessionDataBus); does not open a second EventSource.
+  // Scoring events (goal_added / goal_removed / lease_acquired /
+  // lease_released) flow through the hook's applyEvent (snapshot refetch,
+  // never replay); timer events update the clock here; on link (re)connect
+  // we refetch snapshots so a gap self-heals.
   useEffect(() => {
-    const url = sessionDataEventsUrl(sid, tokens?.accessToken);
-    const es = new EventSource(url);
-    esRef.current = es;
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
+    let wasLive = false; // hub pushes current status on subscribe
+    return subscribeSessionData(
+      sid,
+      tokens?.accessToken,
+      (data) => {
+        if (applyEvent(data)) {
+          // goal_added / goal_removed / lease_acquired / lease_released —
+          // rows refreshed via the hook; pull the new score into the board.
+          void loadMatch();
+          return;
+        }
         if (data.type === "match_timer_started") {
-          setTimerSeconds(data.seconds_remaining ?? 0);
+          const secs =
+            typeof data.seconds_remaining === "number"
+              ? Math.max(0, data.seconds_remaining)
+              : 0;
+          setTimerSeconds(secs);
           setIsPaused(false);
           prevRatioRef.current = null;
-          setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
+          const endsAt =
+            typeof data.ends_at === "string" ? Date.parse(data.ends_at) : NaN;
+          setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
         } else if (data.type === "match_timer_paused") {
-          setTimerSeconds(data.seconds_remaining ?? 0);
+          const secs =
+            typeof data.seconds_remaining === "number"
+              ? Math.max(0, data.seconds_remaining)
+              : 0;
+          setTimerSeconds(secs);
           setIsPaused(true);
           setTimerEndsAt(null);
         } else if (data.type === "match_timer_resumed") {
-          setTimerSeconds(data.seconds_remaining ?? 0);
+          const secs =
+            typeof data.seconds_remaining === "number"
+              ? Math.max(0, data.seconds_remaining)
+              : 0;
+          setTimerSeconds(secs);
           setIsPaused(false);
-          setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
+          const endsAt =
+            typeof data.ends_at === "string" ? Date.parse(data.ends_at) : NaN;
+          setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
         } else if (data.type === "match_timer_expired") {
           setTimerSeconds(0);
           setIsPaused(false);
-        } else if (data.type === "match_score_updated") {
-          // Refresh match data on score change
-          void loadMatch();
         } else if (
           data.type === "match_ended" ||
           data.type === "match_created" ||
@@ -115,18 +163,17 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
         ) {
           void loadMatch();
         }
-      } catch {
-        // ignore parse errors
-      }
-    };
-    es.onerror = () => {
-      // EventSource auto-reconnects
-    };
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [sid, loadMatch, tokens?.accessToken]);
+      },
+      (live) => {
+        if (live && !wasLive) {
+          // (Re)connected after a gap — refetch snapshots, never replay.
+          void loadMatch();
+          void refreshGoals();
+        }
+        wasLive = live;
+      },
+    );
+  }, [sid, loadMatch, applyEvent, refreshGoals, tokens?.accessToken]);
 
   // Timer tick
   useEffect(() => {
@@ -174,11 +221,24 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
   if (!currentMatch) return null;
 
   const isTimeUp = currentMatch.status === "time_up";
+  const canControl = !!steward?.can_control;
+  const leaseHeld = !!lease && leaseLeft > 0;
   const timerColor = getTimerColor(
     timerSeconds,
     currentMatch.timer_total_seconds,
   );
   const timerBg = getTimerBg(timerSeconds, currentMatch.timer_total_seconds);
+
+  const runTimer = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+      // Timer calls are idempotent (double-tap is a no-op) — pull fresh state.
+      await loadMatch();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -211,7 +271,7 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
             </span>
           )}
         </div>
-        {me?.is_admin && (
+        {canControl && (
           <a
             href={`/session-matches/${sid}`}
             className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium"
@@ -245,7 +305,7 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
       </div>
 
       {/* Timer */}
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <span
           className={`text-2xl sm:text-3xl font-bold tabular-nums ${timerColor} transition-colors`}
           style={{
@@ -257,7 +317,109 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
         >
           {formatTimer(timerSeconds)}
         </span>
+
+        {/* Controls (present members only — steward gate). */}
+        {canControl && !isTimeUp && (
+          <div className="flex items-center gap-2">
+            {currentMatch.status === "pending" && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void runTimer(() => startTimer(sid, currentMatch.id))
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                <Timer className="h-4 w-4" aria-hidden />
+                Start timer
+              </button>
+            )}
+            {currentMatch.status === "active" && !isPaused && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void runTimer(() => pauseTimer(sid, currentMatch.id))
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                Pause
+              </button>
+            )}
+            {currentMatch.status === "active" && isPaused && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void runTimer(() => resumeTimer(sid, currentMatch.id))
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                Resume
+              </button>
+            )}
+          </div>
+        )}
+        {canControl && isTimeUp && me?.is_admin && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void runTimer(() => resetMatch(sid, currentMatch.id))
+            }
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-700 text-white text-xs font-semibold hover:bg-gray-800 disabled:opacity-50 transition-transform"
+          >
+            Reset (admin)
+          </button>
+        )}
+
+        {/* + Goal / lease chip — named, never silent. */}
+        {canControl && (
+          <button
+            type="button"
+            disabled={leaseHeld || busy}
+            onClick={() => setSheetOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-60 active:scale-[0.98] transition-transform"
+          >
+            {leaseHeld
+              ? leaseBusyLabel(lease!.holderName, leaseLeft)
+              : "+ Goal"}
+          </button>
+        )}
+        {!canControl && stewardReasonLine(steward?.reason) && (
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            {stewardReasonLine(steward?.reason)}
+          </p>
+        )}
       </div>
+
+      {/* Goal log — visible to everyone, delete when the viewer controls. */}
+      <div className="pt-1">
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+          Goals
+        </p>
+        <GoalList
+          goals={goals}
+          teamAName={currentMatch.team_a.name}
+          teamBName={currentMatch.team_b.name}
+          canDelete={canControl}
+          onDelete={async (g) => {
+            await removeGoal(g.id);
+          }}
+        />
+      </div>
+
+      {sheetOpen && (
+        <GoalEntrySheet
+          sessionId={sid}
+          match={currentMatch}
+          onClose={() => setSheetOpen(false)}
+          onLogged={() => {
+            // Score + rows refresh via SSE/poll — no local optimistic row.
+            void loadMatch();
+          }}
+        />
+      )}
     </div>
   );
 }

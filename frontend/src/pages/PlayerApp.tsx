@@ -9,7 +9,6 @@ import {
   fetchSessionDetail,
   fetchSessionTeams,
   patchSessionTeams,
-  sessionDataEventsUrl,
   type SessionDetail,
 } from "../api/sessionsApi";
 import { mediaUrl } from "../api/meApi";
@@ -20,6 +19,7 @@ import {
   saveSessionSnapshot,
 } from "../offline/sessionSnapshot";
 import { parseSessionStart } from "../utils/datetime";
+import { subscribeSessionData } from "../utils/sessionDataBus";
 import { useMemberShell } from "../context/MemberShellContext";
 import { MeetupDetailsSkeleton } from "../components/MeetupDetailsSkeleton";
 import { OnboardingCard } from "../components/OnboardingCard";
@@ -80,7 +80,6 @@ export function PlayerApp() {
   >(null);
   const [rosterChannelLive, setRosterChannelLive] = useState(false);
   const [lastRosterSync, setLastRosterSync] = useState<Date | null>(null);
-  const [sseReconnectKey, setSseReconnectKey] = useState(0);
   const [nextAnnounceAt, setNextAnnounceAt] = useState<string | null>(null);
   const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
     null,
@@ -170,63 +169,34 @@ export function PlayerApp() {
     void loadInitialData();
   }, [loadInitialData]);
 
+  // Existing session-data SSE plumbing, now behind the shared hub
+  // (utils/sessionDataBus): LiveMatchBanner (scoreboard/goals) subscribes
+  // through the SAME physical connection — no second EventSource.
   useEffect(() => {
     if (activeSessionNumericId == null) {
       setRosterChannelLive(false);
       return;
     }
-    const url = sessionDataEventsUrl(
+    return subscribeSessionData(
       activeSessionNumericId,
       tokens?.accessToken,
+      (data) => {
+        if (
+          data.type === "session_updated" &&
+          data.session_id === activeSessionNumericId
+        ) {
+          void loadSession(activeSessionNumericId);
+        }
+        if (
+          data.type === "session_deleted" &&
+          data.session_id === activeSessionNumericId
+        ) {
+          void clearSessionChatCache().then(() => loadInitialData());
+        }
+      },
+      setRosterChannelLive,
     );
-    const es = new EventSource(url);
-    es.onopen = () => setRosterChannelLive(true);
-    es.onmessage = (ev) => {
-      let data: { type: string; session_id?: number };
-      try {
-        data = JSON.parse(ev.data);
-      } catch {
-        console.error("SSE: ignoring malformed message");
-        return;
-      }
-      if (
-        data.type === "session_updated" &&
-        data.session_id === activeSessionNumericId
-      ) {
-        void loadSession(activeSessionNumericId);
-      }
-      if (
-        data.type === "session_deleted" &&
-        data.session_id === activeSessionNumericId
-      ) {
-        void clearSessionChatCache().then(() => loadInitialData());
-      }
-    };
-    es.onerror = () => {
-      setRosterChannelLive(false);
-    };
-    // Listen for browser offline/online events — EventSource doesn't
-    // always reconnect reliably after DevTools Offline Mode is toggled.
-    const goOffline = () => setRosterChannelLive(false);
-    const goOnline = () => {
-      es.close();
-      setSseReconnectKey((k) => k + 1); // force this effect to re-run
-    };
-    window.addEventListener("offline", goOffline);
-    window.addEventListener("online", goOnline);
-    return () => {
-      es.close();
-      window.removeEventListener("offline", goOffline);
-      window.removeEventListener("online", goOnline);
-      setRosterChannelLive(false);
-    };
-  }, [
-    activeSessionNumericId,
-    loadSession,
-    loadInitialData,
-    sseReconnectKey,
-    tokens?.accessToken,
-  ]);
+  }, [activeSessionNumericId, loadSession, loadInitialData, tokens?.accessToken]);
 
   useEffect(() => {
     if (loading || !session) {

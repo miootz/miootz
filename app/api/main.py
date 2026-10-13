@@ -22,6 +22,8 @@ from app.core.database import Base, engine, init_db
 from app.models import game_template  # noqa: F401 — GameTemplate + GameSession FK
 from app.models import game_template_subscription  # noqa: F401
 from app.models import match  # noqa: F401 — SessionMatch
+from app.models import match_editor_lease  # noqa: F401 — MatchEditorLease
+from app.models import match_goal  # noqa: F401 — MatchGoal
 from app.models import web_push_subscription  # noqa: F401
 from app.models import user_notification_preference  # noqa: F401
 from app.core.migrations import run_sqlite_migrations

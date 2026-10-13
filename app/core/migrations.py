@@ -765,6 +765,25 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE game_sessions ADD COLUMN max_teams INTEGER")
         )
 
+    # ── match_goals.goalkeeper_id: the keeper who conceded (optional) ──
+    # A fresh DB gets this column (and its index) from create_all; this block
+    # only fires for a DB that already has match_goals from an earlier deploy.
+    if await has_table("match_goals") and not await has_column(
+        "match_goals", "goalkeeper_id"
+    ):
+        await conn.execute(
+            text(
+                "ALTER TABLE match_goals ADD COLUMN goalkeeper_id INTEGER "
+                "REFERENCES users(id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_match_goals_goalkeeper_id "
+                "ON match_goals (goalkeeper_id)"
+            )
+        )
+
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""

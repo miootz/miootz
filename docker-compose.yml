@@ -17,6 +17,8 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
+      # Flush proxied responses now (SSE must not buffer).
+      - "--entrypoints.websecure.http.responseforwarding.flushinterval=1ms"
       - "--tls.stores.default.defaultCertificate=/certs/cert.pem,/certs/key.pem"
     ports:
       - "80:80"
@@ -73,7 +75,9 @@ services:
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
-      - "traefik.http.routers.api-on-app.rule=Host(`app.miootz.local`) && PathPrefix(`/api`)"
+      - >-
+        traefik.http.routers.api-on-app.rule=Host(`app.miootz.local`) &&
+        PathPrefix(`/api`)
       - "traefik.http.routers.api-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-on-app.tls=true"
       - "traefik.http.routers.api-on-app.middlewares=api-strip@docker"

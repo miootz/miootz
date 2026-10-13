@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Any
 
 from fastapi import Request
@@ -259,6 +260,10 @@ _PUBLIC_PATH_PREFIXES = (
     "/sessions/plus-one/",  # guest claim preview — claim_token is the capability
 )
 
+#: Live goal log is readable without auth (plan §4: watchers at home, shared
+#: link). GET only — mutating the log still requires a present member/admin.
+_PUBLIC_GET_PATH_RES = (re.compile(r"^/sessions/\d+/matches/\d+/goals$"),)
+
 #: SSE endpoints: EventSource cannot send Authorization headers, so the access
 #: token is accepted from the `access_token` query param *only* on these paths.
 _SSE_TOKEN_QUERY_SUFFIXES = ("/data/events", "/chat/events")
@@ -289,8 +294,13 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
         request.state.auth_groups = []
 
         path = request.url.path
-        is_public = path in _PUBLIC_EXACT_PATHS or path.startswith(
-            _PUBLIC_PATH_PREFIXES
+        is_public = (
+            path in _PUBLIC_EXACT_PATHS
+            or path.startswith(_PUBLIC_PATH_PREFIXES)
+            or (
+                request.method == "GET"
+                and any(rx.match(path) for rx in _PUBLIC_GET_PATH_RES)
+            )
         )
 
         # Extract the token: Authorization header first; `access_token` query

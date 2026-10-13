@@ -4,18 +4,29 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from datetime import datetime, timedelta, UTC
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import cast
 
-from app.api.deps import require_admin
+from app.api.deps import (
+    presence_for_session,
+    require_admin,
+    require_present_member,
+)
 from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.session_data_manager import session_data_manager
+from app.core.timeutil import utcnow
 from app.models.match import SessionMatch
+from app.models.match_editor_lease import MatchEditorLease
+from app.models.match_goal import MatchGoal
 from app.models.session import Attendance, GameSession
 from app.models.user import User
 from app.services.manual_teams import (
@@ -68,6 +79,24 @@ class MatchCreateBody(BaseModel):
 class MatchScoreSet(BaseModel):
     score_a: int = Field(ge=0)
     score_b: int = Field(ge=0)
+
+
+class LeaseTokenBody(BaseModel):
+    #: Token handed out by ``lease/acquire``; must be echoed to renew/release.
+    lease_token: str = Field(min_length=1)
+
+
+class GoalCreate(BaseModel):
+    team: str = Field(pattern=r"^[ab]$")
+    scorer_id: int
+    assist_id: int | None = None
+    #: Keeper who was in goal for the *conceding* team (must be an opposing
+    #: player). Optional — nobody should be blocked on an unknown/rotated keeper.
+    goalkeeper_id: int | None = None
+    #: Client-minted idempotency key (UUID hex) — a retry replays the goal.
+    intent_id: str = Field(min_length=1, max_length=64)
+    #: Explicit user confirmation that a duplicated/after-whistle entry stands.
+    force: bool = False
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -688,12 +717,29 @@ async def start_timer(
     session_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    user: User = Depends(require_present_member),
 ):
-    """Start the match timer."""
+    """Start the match timer (any present member, idempotent)."""
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    if match.status == "completed":
+        raise HTTPException(status_code=409, detail="This match is completed.")
+    if match.status == "time_up":
+        raise HTTPException(
+            status_code=409,
+            detail="Time is up — only an admin can open extra time.",
+        )
+    if match.status == "active":
+        # Double tap: never restart a running/paused timer.
+        return {
+            "status": "active",
+            "already": True,
+            "seconds_remaining": _compute_timer_remaining(match),
+            "timer_paused": _is_currently_paused(match),
+            "ends_at": _timer_ends_at_iso(match),
+            "controlled_by": {"name": user.display_name},
+        }
 
     match.timer_started_at = datetime.now(UTC)
     match.timer_seconds_remaining = match.timer_total_seconds
@@ -716,7 +762,11 @@ async def start_timer(
 
     return {
         "status": "started",
+        "already": False,
         "seconds_remaining": match.timer_total_seconds,
+        "timer_paused": False,
+        "ends_at": _timer_ends_at_iso(match),
+        "controlled_by": {"name": user.display_name},
     }
 
 
@@ -725,14 +775,24 @@ async def pause_timer(
     session_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    user: User = Depends(require_present_member),
 ):
-    """Pause the match timer."""
+    """Pause the match timer (any present member, idempotent)."""
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active",):
         raise HTTPException(status_code=409, detail="Timer is not running.")
+    if _is_currently_paused(match):
+        # Double tap: no second interval is appended (the old bug).
+        return {
+            "status": "paused",
+            "already": True,
+            "seconds_remaining": _compute_timer_remaining(match),
+            "timer_paused": True,
+            "ends_at": None,
+            "controlled_by": {"name": user.display_name},
+        }
 
     now = datetime.now(UTC)
     remaining = _compute_timer_remaining(match)
@@ -763,7 +823,11 @@ async def pause_timer(
 
     return {
         "status": "paused",
+        "already": False,
         "seconds_remaining": remaining,
+        "timer_paused": True,
+        "ends_at": None,
+        "controlled_by": {"name": user.display_name},
     }
 
 
@@ -772,12 +836,24 @@ async def resume_timer(
     session_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    user: User = Depends(require_present_member),
 ):
-    """Resume the match timer."""
+    """Resume the match timer (any present member, idempotent)."""
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    if match.status not in ("active",) or match.timer_started_at is None:
+        raise HTTPException(status_code=409, detail="Timer is not running.")
+    if not _is_currently_paused(match):
+        # Timer is already running — nothing to resume.
+        return {
+            "status": "running",
+            "already": True,
+            "seconds_remaining": _compute_timer_remaining(match),
+            "timer_paused": False,
+            "ends_at": _timer_ends_at_iso(match),
+            "controlled_by": {"name": user.display_name},
+        }
 
     intervals: list[dict] = []
     if match.timer_pause_intervals:
@@ -812,7 +888,11 @@ async def resume_timer(
 
     return {
         "status": "resumed",
+        "already": False,
         "seconds_remaining": remaining,
+        "timer_paused": False,
+        "ends_at": _timer_ends_at_iso(match),
+        "controlled_by": {"name": user.display_name},
     }
 
 
@@ -821,12 +901,21 @@ async def reset_timer(
     session_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    user: User = Depends(require_present_member),
 ):
-    """Reset timer and scores for current match (admin only, active match)."""
+    """Reset timer and scores for a match (present member, idempotent)."""
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    if match.status == "pending":
+        return {
+            "status": "pending",
+            "already": True,
+            "seconds_remaining": match.timer_total_seconds,
+            "timer_paused": False,
+            "ends_at": None,
+            "controlled_by": {"name": user.display_name},
+        }
     if match.status not in ("active", "time_up"):
         raise HTTPException(
             status_code=409, detail="Can only reset an active or time_up match."
@@ -1077,3 +1166,525 @@ async def end_match(
     else:
         result["all_matches_complete"] = True
     return result
+
+
+# ── Steward lease + live goal log (live collaborative scoring) ─────
+
+
+#: One-writer window for goal entry: 45 s, renewable, self-expiring.
+LEASE_TTL_SECONDS = 45
+#: Re-entering the same (team, scorer, minute) inside this window is a
+#: duplicate: refused until the user confirms it with ``force``.
+GOAL_DEDUPE_WINDOW_SECONDS = 90
+
+
+def _seconds_left(expires_at: datetime, now: datetime) -> int:
+    """Whole seconds left on a lease deadline (never negative)."""
+    return max(int((expires_at - now).total_seconds()), 0)
+
+
+async def _current_match(db: AsyncSession, session_id: int) -> SessionMatch | None:
+    """The session's current match: the highest-numbered one still open
+    (pending / active / time_up), else the highest-numbered overall."""
+    res = await db.execute(
+        select(SessionMatch)
+        .where(SessionMatch.session_id == session_id)
+        .where(SessionMatch.status.in_(("pending", "active", "time_up")))
+        .order_by(SessionMatch.match_number.desc())
+        .limit(1)
+    )
+    match = res.scalar_one_or_none()
+    if match is not None:
+        return match
+    res = await db.execute(
+        select(SessionMatch)
+        .where(SessionMatch.session_id == session_id)
+        .order_by(SessionMatch.match_number.desc())
+        .limit(1)
+    )
+    return res.scalar_one_or_none()
+
+
+async def _ensure_lease_row(db: AsyncSession, match_id: int, now: datetime) -> None:
+    """Create the single lease row for a match if absent (idempotent).
+
+    ``expires_at = now`` makes a fresh row immediately acquirable.
+    """
+    await db.execute(
+        insert(MatchEditorLease)
+        .prefix_with("OR IGNORE")
+        .values(
+            match_id=match_id,
+            holder_id=None,
+            acquired_at=now,
+            expires_at=now,
+            release_token="",
+        )
+    )
+
+
+async def _lease_busy_response(
+    db: AsyncSession, match_id: int, now: datetime
+) -> JSONResponse:
+    """409 naming whoever holds the lease and how long they have left.
+
+    Never silent: the caller always learns whose turn it is.
+    """
+    holder_name, expires_in = "Someone", 0
+    lease = await db.get(MatchEditorLease, match_id)
+    if lease is not None and lease.holder_id is not None:
+        holder = await db.get(User, lease.holder_id)
+        holder_name = holder.display_name if holder else "Someone"
+        expires_in = _seconds_left(lease.expires_at, now)
+    return JSONResponse(
+        status_code=409,
+        content={"holder_name": holder_name, "expires_in": expires_in},
+    )
+
+
+@router.post("/{session_id}/matches/lease/acquire")
+async def acquire_lease(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Claim the one-writer goal-entry lease for the current match.
+
+    Atomic: INSERT OR IGNORE the row, then a single guarded UPDATE
+    (``holder_id IS NULL OR expires_at <= now``). ``rowcount == 0`` means
+    somebody else holds it — they are named in the 409.
+    """
+    match = await _current_match(db, session_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail="No match in this session yet")
+
+    now = utcnow()
+    await _ensure_lease_row(db, match.id, now)
+    token = secrets.token_urlsafe(24)
+    res = await db.execute(
+        update(MatchEditorLease)
+        .where(MatchEditorLease.match_id == match.id)
+        .where(
+            or_(
+                MatchEditorLease.holder_id.is_(None),
+                MatchEditorLease.expires_at <= now,
+            )
+        )
+        .values(
+            holder_id=user.id,
+            acquired_at=now,
+            expires_at=now + timedelta(seconds=LEASE_TTL_SECONDS),
+            release_token=token,
+        )
+    )
+    await db.commit()
+
+    if cast(CursorResult, res).rowcount != 1:
+        return await _lease_busy_response(db, match.id, utcnow())
+
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "lease_acquired",
+            "match_id": match.id,
+            "holder_name": user.display_name,
+            "expires_in": LEASE_TTL_SECONDS,
+        },
+    )
+    return {"lease_token": token, "expires_in": LEASE_TTL_SECONDS}
+
+
+@router.post("/{session_id}/matches/lease/renew")
+async def renew_lease(
+    session_id: int,
+    body: LeaseTokenBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Extend the lease by another 45 s — token checked, holder only."""
+    match = await _current_match(db, session_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail="No match in this session yet")
+
+    now = utcnow()
+    res = await db.execute(
+        update(MatchEditorLease)
+        .where(MatchEditorLease.match_id == match.id)
+        .where(
+            MatchEditorLease.holder_id == user.id,
+            MatchEditorLease.release_token == body.lease_token,
+        )
+        .values(expires_at=now + timedelta(seconds=LEASE_TTL_SECONDS))
+    )
+    await db.commit()
+
+    if cast(CursorResult, res).rowcount != 1:
+        # Token is not the live lease any more (taken over, or never ours).
+        return await _lease_busy_response(db, match.id, utcnow())
+    return {"lease_token": body.lease_token, "expires_in": LEASE_TTL_SECONDS}
+
+
+@router.post("/{session_id}/matches/lease/release")
+async def release_lease(
+    session_id: int,
+    body: LeaseTokenBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Give the lease up immediately — token checked, then broadcast."""
+    match = await _current_match(db, session_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail="No match in this session yet")
+
+    now = utcnow()
+    res = await db.execute(
+        update(MatchEditorLease)
+        .where(MatchEditorLease.match_id == match.id)
+        .where(
+            MatchEditorLease.holder_id == user.id,
+            MatchEditorLease.release_token == body.lease_token,
+        )
+        .values(holder_id=None, expires_at=now, release_token="")
+    )
+    await db.commit()
+
+    if cast(CursorResult, res).rowcount != 1:
+        return await _lease_busy_response(db, match.id, utcnow())
+
+    await _broadcast_match_event(
+        session_id,
+        {"type": "lease_released", "match_id": match.id},
+    )
+    return {"released": True}
+
+
+def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
+    """One goal row for the log (display names resolved, never bare ids)."""
+
+    def person(uid: int | None) -> dict | None:
+        if uid is None:
+            return None
+        entry = users_by_id.get(uid)
+        name = entry["display_name"] if entry else f"User {uid}"
+        return {
+            "id": uid,
+            "display_name": name,
+            # Resolved here so any consumer (banner, log, history) can show a
+            # profile pic without a second lookup.
+            "avatar_url": (entry or {}).get("avatar_url"),
+        }
+
+    return {
+        "id": goal.id,
+        "team": goal.team,
+        "clock_minute": goal.clock_minute,
+        "clock_secs": goal.clock_secs,
+        "scorer": person(goal.scorer_id),
+        "assist": person(goal.assist_id),
+        "goalkeeper": person(goal.goalkeeper_id),
+        "recorded_by": person(goal.recorded_by),
+        "after_whistle": bool(goal.after_whistle),
+    }
+
+
+async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
+    """Derive score_a / score_b from COUNT of LIVE goals (source of truth)."""
+    counts: dict[str, int] = {}
+    for team in ("a", "b"):
+        res = await db.execute(
+            select(func.count())
+            .select_from(MatchGoal)
+            .where(
+                MatchGoal.match_id == match.id,
+                MatchGoal.team == team,
+                MatchGoal.deleted_at.is_(None),
+            )
+        )
+        counts[team] = int(res.scalar() or 0)
+    match.score_a, match.score_b = counts["a"], counts["b"]
+    return match.score_a, match.score_b
+
+
+@router.post("/{session_id}/matches/{match_id}/goals", status_code=201)
+async def create_goal(
+    session_id: int,
+    match_id: int,
+    body: GoalCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Log one goal (caller must hold the live lease; idempotent via intent).
+
+    On success: recompute ``score_a``/``score_b`` from COUNT, release the
+    lease (the next person's turn starts clean) and broadcast ``goal_added``.
+    """
+    match = await db.get(SessionMatch, match_id)
+    if not match or match.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    users_by_id = await _load_users_for_session(db, session_id)
+    if body.scorer_id not in users_by_id:
+        raise HTTPException(status_code=400, detail="Scorer is not in this session")
+    if body.assist_id is not None:
+        if body.assist_id not in users_by_id:
+            raise HTTPException(status_code=400, detail="Assist is not in this session")
+        if body.assist_id == body.scorer_id:
+            raise HTTPException(
+                status_code=400, detail="Assist must be a different player"
+            )
+
+    # The keeper field always means "the keeper who was beaten", so it must
+    # be an *opposing* player. Enforced server-side, not just in the picker,
+    # so a stale client cannot file a striker under 'goalkeeper'.
+    if body.goalkeeper_id is not None:
+        if body.goalkeeper_id not in users_by_id:
+            raise HTTPException(
+                status_code=400, detail="Goalkeeper is not in this session"
+            )
+        if body.goalkeeper_id == body.scorer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Goalkeeper must be on the conceding team, not the scorer",
+            )
+        if body.assist_id is not None and body.goalkeeper_id == body.assist_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Goalkeeper must be on the conceding team, not the assist",
+            )
+        conceding = match.team_b_users if body.team == "a" else match.team_a_users
+        if body.goalkeeper_id not in set(_loads_int_list(conceding)):
+            raise HTTPException(
+                status_code=400,
+                detail="Goalkeeper must be on the conceding team",
+            )
+
+    # Network retry with the same intent replays the row already stored.
+    res = await db.execute(
+        select(MatchGoal).where(MatchGoal.intent_id == body.intent_id)
+    )
+    replayed = res.scalar_one_or_none()
+    if replayed is not None:
+        score_a, score_b = await _recompute_scores(db, match)
+        await db.commit()
+        # Idempotent replay: 200 (not 201) — nothing new was created.
+        return JSONResponse(
+            status_code=200,
+            content={
+                "goal": _goal_json(replayed, users_by_id),
+                "replayed": True,
+                "score_a": score_a,
+                "score_b": score_b,
+            },
+        )
+
+    # Lease gate: whose turn it is, named (never silent).
+    lease = await db.get(MatchEditorLease, match_id)
+    now = utcnow()
+    if lease is None or lease.holder_id is None or lease.expires_at <= now:
+        return await _lease_busy_response(db, match_id, now)
+    if lease.holder_id != user.id:
+        return await _lease_busy_response(db, match_id, now)
+
+    # Timer clock is authoritative for the minute mark.
+    remaining = _compute_timer_remaining(match)
+    elapsed = max((match.timer_total_seconds or 0) - remaining, 0)
+    clock_minute = elapsed // 60 + 1
+    after_whistle = remaining <= 0 or match.status in ("time_up", "completed")
+
+    # Duplicate backstop: the same (team, scorer, minute) inside 90 s.
+    res = await db.execute(
+        select(MatchGoal).where(
+            MatchGoal.match_id == match_id,
+            MatchGoal.team == body.team,
+            MatchGoal.clock_minute == clock_minute,
+            MatchGoal.scorer_id == body.scorer_id,
+            MatchGoal.deleted_at.is_(None),
+        )
+    )
+    duplicate = res.scalar_one_or_none()
+    if duplicate is not None:
+        if not body.force:
+            age = int((utcnow() - duplicate.created_at).total_seconds())
+            if age <= GOAL_DEDUPE_WINDOW_SECONDS:
+                await db.commit()
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "detail": "duplicate_goal_within_90s",
+                        "existing": _goal_json(duplicate, users_by_id),
+                        "holder_name": user.display_name,
+                        "expires_in": _seconds_left(lease.expires_at, utcnow()),
+                    },
+                )
+        # Confirmed duplicate (force): the row already exists — replay it
+        # rather than break the live-dedupe unique index. 200, not 201.
+        await db.commit()
+        return JSONResponse(
+            status_code=200,
+            content={
+                "goal": _goal_json(duplicate, users_by_id),
+                "replayed": True,
+                "score_a": match.score_a,
+                "score_b": match.score_b,
+            },
+        )
+
+    goal = MatchGoal(
+        match_id=match_id,
+        team=body.team,
+        scorer_id=body.scorer_id,
+        assist_id=body.assist_id,
+        goalkeeper_id=body.goalkeeper_id,
+        clock_secs=remaining,
+        clock_minute=clock_minute,
+        after_whistle=after_whistle,
+        recorded_by=user.id,
+        intent_id=body.intent_id,
+    )
+    db.add(goal)
+    await db.flush()
+    score_a, score_b = await _recompute_scores(db, match)
+    # Our turn ends with the goal logged: release the lease in the same tx.
+    lease.holder_id = None
+    lease.expires_at = utcnow()
+    lease.release_token = ""
+    await db.commit()
+
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "goal_added",
+            "match_id": match_id,
+            "goal": _goal_json(goal, users_by_id),
+            "score_a": score_a,
+            "score_b": score_b,
+        },
+    )
+    await bump_and_notify(db, session_id)
+
+    return {
+        "goal": _goal_json(goal, users_by_id),
+        "replayed": False,
+        "score_a": score_a,
+        "score_b": score_b,
+    }
+
+
+@router.get("/{session_id}/matches/{match_id}/goals")
+async def list_goals(
+    session_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Live goal log for one match (public, ordered by minute)."""
+    match = await db.get(SessionMatch, match_id)
+    if not match or match.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    res = await db.execute(
+        select(MatchGoal)
+        .where(MatchGoal.match_id == match_id, MatchGoal.deleted_at.is_(None))
+        .order_by(MatchGoal.clock_minute, MatchGoal.id)
+    )
+    goals = list(res.scalars().all())
+    users_by_id = await _load_users_for_session(db, session_id)
+    return {
+        "goals": [_goal_json(g, users_by_id) for g in goals],
+        "score_a": match.score_a,
+        "score_b": match.score_b,
+    }
+
+
+async def _require_goal_deleter(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> User:
+    """Any present member while the presence window is open; admin only after."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if getattr(request.state, "is_admin", False):
+        return user
+    ok, reason = await presence_for_session(
+        db, int(request.path_params["session_id"]), user
+    )
+    if not ok:
+        raise HTTPException(status_code=403, detail=reason)
+    return user
+
+
+@router.delete("/{session_id}/matches/{match_id}/goals/{goal_id}", status_code=204)
+async def remove_goal(
+    session_id: int,
+    match_id: int,
+    goal_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(_require_goal_deleter),
+):
+    """Soft-delete one goal, recompute counters, broadcast ``goal_removed``."""
+    res = await db.execute(
+        select(MatchGoal).where(
+            MatchGoal.id == goal_id,
+            MatchGoal.match_id == match_id,
+            MatchGoal.deleted_at.is_(None),
+        )
+    )
+    goal = res.scalar_one_or_none()
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    match = await db.get(SessionMatch, match_id)
+    if not match or match.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    goal.deleted_at = utcnow()
+    await db.flush()
+    score_a, score_b = await _recompute_scores(db, match)
+    await db.commit()
+
+    await _broadcast_match_event(
+        session_id,
+        {
+            "type": "goal_removed",
+            "match_id": match_id,
+            "goal_id": goal_id,
+            "removed_by": user.display_name,
+            "score_a": score_a,
+            "score_b": score_b,
+        },
+    )
+    await bump_and_notify(db, session_id)
+    return None
+
+
+@router.get("/{session_id}/steward-state")
+async def steward_state(
+    session_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Steward gate + current lease, fetched once to decide what to render.
+
+    Answers 200 with the *reason* rather than 403, so the UI can explain
+    itself (``not_attending`` vs ``outside_window``) without an error toast.
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    ok, reason = await presence_for_session(db, session_id, user)
+
+    lease = None
+    match = await _current_match(db, session_id)
+    if match is not None:
+        row = await db.get(MatchEditorLease, match.id)
+        if row is not None and row.holder_id is not None:
+            left = _seconds_left(row.expires_at, utcnow())
+            if left > 0:
+                holder = await db.get(User, row.holder_id)
+                lease = {
+                    "holder_name": holder.display_name if holder else "Someone",
+                    "expires_in": left,
+                }
+    return {
+        "can_control": ok,
+        "reason": reason,
+        "lease": lease,
+        "match_id": match.id if match is not None else None,
+    }

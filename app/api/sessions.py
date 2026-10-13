@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -990,12 +991,23 @@ async def session_data_events(session_id: int, request: Request):
             while True:
                 if await request.is_disconnected():
                     break
-                data = await queue.get()
-                yield f"data: {json.dumps(data)}\n\n"
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {json.dumps(data)}\n\n"
+                except TimeoutError:
+                    yield ": ping\n\n"  # keep-alive, ignored by EventSource
         finally:
             await session_data_manager.unsubscribe(session_id, queue)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # nginx: don't buffer this stream
+        },
+    )
 
 
 @router.get("/{session_id}/chat/events")
@@ -1007,12 +1019,23 @@ async def chat_events(session_id: int, request: Request):
             while True:
                 if await request.is_disconnected():
                     break
-                data = await queue.get()
-                yield f"data: {json.dumps(data)}\n\n"
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {json.dumps(data)}\n\n"
+                except TimeoutError:
+                    yield ": ping\n\n"  # keep-alive, ignored by EventSource
         finally:
             await chat_manager.unsubscribe(session_id, queue)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # nginx: don't buffer this stream
+        },
+    )
 
 
 @router.get("/{session_id}/chat")

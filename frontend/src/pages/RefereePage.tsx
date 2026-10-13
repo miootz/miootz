@@ -21,10 +21,12 @@ import {
 import {
   fetchSessionDetail,
   fetchSessionTeams,
-  sessionDataEventsUrl,
   type SessionDetail,
   type TeamsResponse,
 } from "../api/sessionsApi";
+import { subscribeSessionData } from "../utils/sessionDataBus";
+import { useStewardUi } from "../hooks/useStewardUi";
+import { GoalList } from "../components/GoalList";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   ArrowLeft,
@@ -355,7 +357,7 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
 export function RefereePage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const { me, tokens } = useAuth();
+  const { tokens } = useAuth();
   const { showToast } = useToast();
   const sid = sessionId ? parseInt(sessionId, 10) : NaN;
 
@@ -390,6 +392,12 @@ export function RefereePage() {
   const [selectingTeams, setSelectingTeams] = useState(false);
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
+
+  // Steward gate / goal log — fed by the ONE shared session-data feed
+  // (see the hub subscription below). Any present member may use the
+  // controls when the backend gate opens, not only admins.
+  const { steward, goals, applyEvent, removeGoal, refreshGoals } =
+    useStewardUi(sid, currentMatch?.id ?? null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Drives deadline re-evaluation without waiting for SSE (see effect below).
@@ -467,59 +475,70 @@ export function RefereePage() {
       .catch(() => {});
   }, [sid]);
 
-  // SSE
+  // SSE — rides the ONE existing session-data connection through the shared
+  // hub (utils/sessionDataBus); no second EventSource here anymore.
+  // Scoring types (goal_added / goal_removed / lease_acquired /
+  // lease_released) go through the steward hook; timer types drive the
+  // clock; on link (re)connect we refetch snapshots, never replay events.
   useEffect(() => {
-    const url = sessionDataEventsUrl(sid, tokens?.accessToken);
-    const es = new EventSource(url);
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
+    let wasLive = false; // hub pushes current status on subscribe
+    return subscribeSessionData(
+      sid,
+      tokens?.accessToken,
+      (data) => {
+        if (applyEvent(data)) {
+          // goal_added / goal_removed / lease_acquired / lease_released —
+          // rows + lease refreshed via the hook; pull the new score in too.
+          void loadMatches();
+          return;
+        }
+        const secs =
+          typeof data.seconds_remaining === "number"
+            ? Math.max(0, data.seconds_remaining)
+            : null;
+        const endsAt =
+          typeof data.ends_at === "string" ? Date.parse(data.ends_at) : NaN;
         switch (data.type) {
           case "match_timer_started":
-            setTimerSeconds(data.seconds_remaining ?? 0);
+            setTimerSeconds(secs ?? 0);
             setIsPaused(false);
-            setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
+            prevRatioRef.current = null;
+            setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
             break;
           case "match_timer_paused":
-            setTimerSeconds(data.seconds_remaining ?? 0);
+            setTimerSeconds(secs ?? 0);
             setIsPaused(true);
             setTimerEndsAt(null);
             break;
           case "match_timer_resumed":
-            setTimerSeconds(data.seconds_remaining ?? 0);
+            setTimerSeconds(secs ?? 0);
             setIsPaused(false);
-            setTimerEndsAt(data.ends_at ? Date.parse(data.ends_at) : null);
+            setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
             break;
           case "match_timer_expired":
             setTimerSeconds(0);
             setIsPaused(false);
-            void loadMatches();
             setTimerEndsAt(null);
-            break;
-          case "match_score_updated":
-            setCurrentMatch((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    score_a: data.score_a ?? prev.score_a,
-                    score_b: data.score_b ?? prev.score_b,
-                  }
-                : prev,
-            );
             void loadMatches();
             break;
           case "match_ended":
           case "match_created":
           case "match_reset":
+          case "match_score_updated":
             void loadMatches();
             break;
         }
-      } catch {
-        // ignore
-      }
-    };
-    return () => es.close();
-  }, [sid, loadMatches, tokens?.accessToken]);
+      },
+      (live) => {
+        if (live && !wasLive) {
+          // (Re)connected after a gap — refetch snapshots, never replay.
+          void loadMatches();
+          void refreshGoals();
+        }
+        wasLive = live;
+      },
+    );
+  }, [sid, loadMatches, applyEvent, refreshGoals, tokens?.accessToken]);
 
   // Timer tick
   useEffect(() => {
@@ -748,10 +767,22 @@ export function RefereePage() {
     });
   };
 
-  if (!me?.is_admin) {
+  // Steward gate (mirrors the backend): any present member inside the
+  // window may use the controls; locked users see a named reason line.
+  const canControl = !!steward?.can_control;
+
+  if (!canControl) {
+    const line =
+      steward == null
+        ? "Loading steward state…"
+        : steward.reason === "not_attending"
+          ? "You're not marked as attending."
+          : steward.reason === "outside_window"
+            ? "Scoring is closed — you're outside the session window."
+            : "Scoring controls unavailable.";
     return (
       <div className="p-6 text-center text-red-600 dark:text-red-400">
-        Admin access required.
+        {line}
       </div>
     );
   }
@@ -1221,6 +1252,22 @@ export function RefereePage() {
                   −1
                 </button>
               </div>
+            </div>
+
+            {/* Goals log — attribution + delete on light confirm (gate: steward). */}
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-1">
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Goals log
+              </h3>
+              <GoalList
+                goals={goals}
+                teamAName={currentMatch.team_a.name}
+                teamBName={currentMatch.team_b.name}
+                canDelete={canControl}
+                onDelete={async (g) => {
+                  await removeGoal(g.id);
+                }}
+              />
             </div>
 
             {/* End match */}
