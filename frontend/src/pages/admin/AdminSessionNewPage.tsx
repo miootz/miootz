@@ -413,7 +413,7 @@ export function AdminSessionNewPage() {
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 <span className="font-medium text-gray-900 dark:text-gray-100">
-                  Email all players
+                  Notify all players
                 </span>
                 <span className="block text-gray-600 dark:text-gray-400 mt-0.5">
                   Send a push notification to everyone with the join link.

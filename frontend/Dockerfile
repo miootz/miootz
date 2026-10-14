@@ -7,7 +7,7 @@ RUN npm ci
 
 COPY . .
 
-# Same-origin /api on app host (Traefik + Authelia); default base in app code is /api
+# Same-origin /api on app host (Traefik); default base in app code is /api
 RUN npm run build
 
 FROM nginx:1.27-alpine

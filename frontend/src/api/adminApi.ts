@@ -14,7 +14,7 @@ export interface SessionCreateBody {
   longitude?: number | null;
   waitlist_mode?: WaitlistMode;
   team_assignment_mode?: TeamAssignmentMode;
-  /** When true (default), email all users with join links for this meetup. */
+  /** When true (default), push-notify all users with join links for this meetup. */
   send_push_notifications?: boolean;
 }
 

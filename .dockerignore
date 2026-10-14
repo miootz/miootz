@@ -11,7 +11,7 @@ ENV/
 frontend/
 data/
 
-# Traefik, Authelia, OpenLDAP bootstrap, etc. are not copied into the API image.
+# Traefik / Pocket ID stack config is not copied into the API image.
 # Also avoids build failures when bind mounts leave root-owned sed* temp files unreadable on the host.
 docker/
 

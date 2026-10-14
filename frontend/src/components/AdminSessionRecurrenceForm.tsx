@@ -23,7 +23,7 @@ type Props = {
   onHourChange: (v: number) => void;
   minute: number;
   onMinuteChange: (v: number) => void;
-  /** When each week to create the next session + send join-link emails */
+  /** When each week to create the next session + send join-link pushes */
   announceTimezone: string;
   onAnnounceTimezoneChange: (v: string) => void;
   announceWeekday: number;
@@ -95,7 +95,7 @@ export function AdminSessionRecurrenceForm({
         <p className="text-xs text-gray-600 dark:text-gray-400">
           The first session sets location, fees, and roster size. When repeat is on,
           you define the weekly kickoff time and a separate weekly moment when the
-          next meetup is created and invite emails (with join links) are sent.
+          next meetup is created and invite notifications (with join links) are sent.
         </p>
       ) : null}
 

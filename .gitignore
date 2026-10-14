@@ -76,9 +76,11 @@ logs/
 tmp/
 temp/
 .cache/
+*.bak
 
-# Docker (local tooling dir; tracked config lives under docker/)
-.docker/
+# Docker — generated artifacts only; the one tracked config is docker/traefik/tls.yml
+docker/traefik/acme.json
+docker/traefik/certs/
 
 # IDE & editors
 .vscode/
@@ -91,14 +93,21 @@ temp/
 .DS_Store
 Thumbs.db
 
-# Project
+# Project — local data and tooling state
 data/
-docker/traefik/acme.json
-
-
-.pi/
 private_key.pem
+
+# Agent/IDE scratch
+.pi/
+.zed/
+
+# Working notes and handoffs (never published)
+plan/
+.handoff/
+
+# Environment templates (everything else under .env* stays ignored)
+!.env.example
 !.env.dev.example
 
-# Separate git repo (own history, 1.1G incl. node_modules) — showcase site
+# Separate git repo (own history, ~1.1G incl. node_modules) — showcase site
 showcase/

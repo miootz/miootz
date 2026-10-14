@@ -1,0 +1,58 @@
+# CI only — validates backend tests and frontend checks + production build.
+# CD (build / publish / deploy) is intentionally NOT wired up here: this
+# project is self-hostable and there are no live deploy targets to push to.
+# The marketing site in showcase/ is a SEPARATE nested git repository and is
+# not tracked by this one (see .gitignore); it ships via ChatGPT Sites /
+# Cloudflare Workers independently — see showcase/AGENTS.md.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs uv and enables the uv cache (dependency + built wheels).
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies from lockfile
+        run: uv sync --frozen
+
+      - name: Run tests (pytest, asyncio_mode=auto via pyproject.toml)
+        run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The "test" script is `vitest run` — already single-run /
+      # non-interactive, no watch-mode flag needed.
+      - name: Run tests
+        run: npm run test
+
+      - name: Production build (tsc -b && vite build)
+        run: npm run build
