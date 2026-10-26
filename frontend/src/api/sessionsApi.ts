@@ -48,9 +48,6 @@ export interface GameTemplateInfo {
   next_announce_at?: string | null;
 }
 
-/** @deprecated use GameTemplateInfo */
-export type SessionRecurrenceInfo = GameTemplateInfo;
-
 export interface SessionListItem {
   id: number;
   start_time: string;
@@ -281,9 +278,6 @@ export async function postSessionChatTyping(
   });
   if (!r.ok) throw new Error(await parseApiError(r));
 }
-
-/** @deprecated use apiBase from client — kept for any legacy imports */
-export { apiBase as getApiBase };
 
 // ── Plus-one guest reservations ──────────────────────────────────
 

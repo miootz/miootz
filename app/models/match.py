@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -17,6 +17,12 @@ if TYPE_CHECKING:
 
 class SessionMatch(Base):
     __tablename__ = "session_matches"
+    # Two devices ending the same match must not both insert the "next"
+    # match with the same number — the guarded UPDATE in end_match decides
+    # the winner, this index is the hard backstop.
+    __table_args__ = (
+        UniqueConstraint("session_id", "match_number", name="uq_session_match_number"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
@@ -31,6 +37,11 @@ class SessionMatch(Base):
 
     score_a: Mapped[int] = mapped_column(Integer, default=0)
     score_b: Mapped[int] = mapped_column(Integer, default=0)
+    #: Manual referee correction layered on top of the goal COUNT
+    #: (score = live_goal_count + offset), so +1/-1/set-score and goal
+    #: entry compose instead of overwriting each other.
+    score_offset_a: Mapped[int] = mapped_column(Integer, default=0)
+    score_offset_b: Mapped[int] = mapped_column(Integer, default=0)
 
     #: "pending" | "active" | "time_up" | "completed"
     status: Mapped[str] = mapped_column(String, default="pending")

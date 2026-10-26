@@ -313,7 +313,8 @@ async def test_goal_dedupe_90s_and_force_bypass():
         assert r2.json()["detail"] == "duplicate_goal_within_90s"
         assert r2.json()["existing"]["id"] == goal["id"]
 
-        # force:true replays the existing row instead of refusing.
+        # force:true confirms a genuine second goal in the same minute —
+        # a fresh row, counted in the score (finding 2).
         r3 = await ac.post(
             f"/sessions/{sid}/matches/{mid}/goals",
             json={
@@ -324,9 +325,9 @@ async def test_goal_dedupe_90s_and_force_bypass():
             },
             headers=hdr("p1"),
         )
-        assert r3.status_code == 200
-        assert r3.json()["replayed"] is True
-        assert r3.json()["goal"]["id"] == goal["id"]
+        assert r3.status_code == 201
+        assert r3.json()["goal"]["id"] != goal["id"]
+        assert r3.json()["score_a"] == 2
 
 
 @pytest.mark.asyncio

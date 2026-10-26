@@ -784,6 +784,66 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    # ── Manual score offsets: score = live goal COUNT + offset ──
+    if not await has_column("session_matches", "score_offset_a"):
+        await conn.execute(
+            text(
+                "ALTER TABLE session_matches ADD COLUMN score_offset_a "
+                "INTEGER DEFAULT 0"
+            )
+        )
+    if not await has_column("session_matches", "score_offset_b"):
+        await conn.execute(
+            text(
+                "ALTER TABLE session_matches ADD COLUMN score_offset_b "
+                "INTEGER DEFAULT 0"
+            )
+        )
+
+    # The hard dedupe index on (match, team, minute, scorer) blocked a second
+    # same-minute goal by the same player — the 90 s soft check is enough.
+    await conn.execute(text("DROP INDEX IF EXISTS uq_match_goals_dedupe"))
+
+    # ── One "next" match per (session, number): guarded end_match ──
+    if await has_table("session_matches"):
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_match_number "
+                "ON session_matches (session_id, match_number)"
+            )
+        )
+
+    # ── One materialized session per template kickoff instant ──
+    # Fresh DBs get it from the model constraint; this covers existing DBs.
+    # (game_template_id is NULL for ad-hoc sessions — SQLite treats NULLs as
+    # distinct, so they are exempt.)
+    if await has_table("game_sessions") and await has_column(
+        "game_sessions", "game_template_id"
+    ):
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_template_start "
+                "ON game_sessions (game_template_id, start_time)"
+            )
+        )
+
+    # ── match_editor_lease.kind: the "roster" mode was never implemented ──
+    if await has_table("match_editor_lease") and await has_column(
+        "match_editor_lease", "kind"
+    ):
+        r = await conn.execute(text("SELECT sqlite_version()"))
+        version = r.scalar_one_or_none() or ""
+        if _parse_sqlite_version(version) >= (3, 35, 0):
+            await conn.execute(
+                text(
+                    "ALTER TABLE match_editor_lease DROP COLUMN IF EXISTS kind"
+                )
+            )
+        else:
+            logger.warning(
+                "Cannot drop column 'kind' from match_editor_lease (SQLite < 3.35)"
+            )
+
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""

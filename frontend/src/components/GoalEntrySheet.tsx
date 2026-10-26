@@ -68,6 +68,9 @@ export function GoalEntrySheet({
   const [minute, setMinute] = useState<number>(1);
   const [minuteTouched, setMinuteTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Server said "same player already has a goal in this minute" — ask before
+  // confirming a genuine second goal (force re-send).
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false);
 
   // ── Roster (confirmed attendees, with team tags for this match) ─
   const [roster, setRoster] = useState<SelectablePlayer[]>([]);
@@ -185,57 +188,72 @@ export function GoalEntrySheet({
     !submitting && !acquiring && !!scorer && (holding || lease === null);
   const afterWhistle = isAfterWhistle(minute, match.timer_total_seconds);
 
+  const postGoal = useCallback(
+    async (force: boolean) => {
+      if (!scorer) return;
+      setSubmitting(true);
+      setConfirmDuplicate(false);
+      try {
+        if (!holding) {
+          const won = await tryAcquire();
+          if (!won) return; // busy label now visible; fields preserved
+        }
+        const res = await createGoal(sessionId, match.id, {
+          team,
+          scorer_id: scorer.id,
+          assist_id: assist?.id ?? null,
+          goalkeeper_id: goalkeeper?.id ?? null,
+          intent_id: intentIdRef.current,
+          force: force || (afterWhistle && isAdmin),
+        });
+        if (res.goal) {
+          onLogged(res.goal);
+          showToast(
+            `Goal logged — ${team === "a" ? match.team_a.name : match.team_b.name} ${g2score(match, res.goal)}`,
+            "success",
+          );
+        }
+        onClose();
+      } catch (e) {
+        if (e instanceof Error && e.message === "duplicate_goal_within_90s") {
+          // A live same-minute goal exists: let the user confirm a second one
+          // (force re-send) instead of silently dropping it.
+          setConfirmDuplicate(true);
+        } else {
+          showToast(
+            e instanceof Error ? e.message : "Could not log the goal",
+            "error",
+          );
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [
+      assist,
+      goalkeeper,
+      isAdmin,
+      afterWhistle,
+      holding,
+      match,
+      onClose,
+      onLogged,
+      scorer,
+      sessionId,
+      showToast,
+      team,
+      tryAcquire,
+    ],
+  );
+
   const submit = useCallback(async () => {
     if (!scorer || submitting) return;
-    setSubmitting(true);
-    try {
-      if (!holding) {
-        const won = await tryAcquire();
-        if (!won) {
-          setSubmitting(false);
-          return; // busy label now visible; fields preserved
-        }
-      }
-      const res = await createGoal(sessionId, match.id, {
-        team,
-        scorer_id: scorer.id,
-        assist_id: assist?.id ?? null,
-        goalkeeper_id: goalkeeper?.id ?? null,
-        intent_id: intentIdRef.current,
-        force: afterWhistle && isAdmin,
-      });
-      if (res.goal) {
-        onLogged(res.goal);
-        showToast(
-          `Goal logged — ${team === "a" ? match.team_a.name : match.team_b.name} ${g2score(match, res.goal)}`,
-          "success",
-        );
-      }
-      onClose();
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Could not log the goal",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }, [
-    assist,
-    goalkeeper,
-    isAdmin,
-    afterWhistle,
-    holding,
-    match,
-    onClose,
-    onLogged,
-    scorer,
-    sessionId,
-    showToast,
-    submitting,
-    team,
-    tryAcquire,
-  ]);
+    await postGoal(false);
+  }, [scorer, submitting, postGoal]);
+
+  const confirmSecondGoal = useCallback(() => {
+    void postGoal(true);
+  }, [postGoal]);
 
   // Release the lease when the user closes without submitting.
   const close = useCallback(() => onClose(), [onClose]);
@@ -307,7 +325,10 @@ export function GoalEntrySheet({
               <button
                 key={t}
                 type="button"
-                onClick={() => setTeam(t)}
+                onClick={() => {
+                  setTeam(t);
+                  setConfirmDuplicate(false);
+                }}
                 className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors ${
                   team === t
                     ? t === "a"
@@ -329,6 +350,7 @@ export function GoalEntrySheet({
           selected={scorer}
           onSelect={(p) => {
             setScorer(p);
+            setConfirmDuplicate(false);
             if (assist?.id === p.id) setAssist(null);
             if (goalkeeper?.id === p.id) setGoalkeeper(null);
           }}
@@ -374,6 +396,7 @@ export function GoalEntrySheet({
               onChange={(e) => {
                 setMinuteTouched(true);
                 setMinute(Math.max(1, parseInt(e.target.value, 10) || 1));
+                setConfirmDuplicate(false);
               }}
               className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-base font-bold tabular-nums text-gray-900 dark:text-gray-100"
             />
@@ -399,6 +422,22 @@ export function GoalEntrySheet({
         </div>
 
         {/* Confirm */}
+        {confirmDuplicate && (
+          <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+              {scorer?.name} already has a goal in {minute}′. Log a second
+              goal?
+            </p>
+            <button
+              type="button"
+              onClick={confirmSecondGoal}
+              disabled={submitting}
+              className="w-full py-2.5 rounded-lg bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
+            >
+              Yes — second goal
+            </button>
+          </div>
+        )}
         <button
           type="button"
           disabled={!canSubmit}

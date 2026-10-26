@@ -33,11 +33,6 @@ from app.services.scheduler_setup import shutdown_scheduler, start_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail fast rather than boot with an empty signing secret.
-    if not settings.SECRET_KEY:
-        raise RuntimeError(
-            "SECRET_KEY is not set — configure it in .env or the environment"
-        )
     await init_db()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

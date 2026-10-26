@@ -28,8 +28,6 @@ class MatchEditorLease(Base):
     holder_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True, index=True
     )
-    #: 'goal' | 'roster'
-    kind: Mapped[str] = mapped_column(String, default="goal")
     acquired_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     #: Lease is free once this timestamp passes (45 s TTL, renewable).
     expires_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

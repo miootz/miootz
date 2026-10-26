@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 import json
 
 from app.api.deps import require_admin
+from app.api.matches import _compute_timer_remaining, _is_currently_paused
 
 # slowapi limiter instance shared with main.py (bucket key: user id or client IP)
 from app.api.rate_limit import (
@@ -63,7 +64,7 @@ from app.services.recurring_sessions import (
     next_announce_occurrence_utc,
 )
 from app.services import weather_service
-from app.core.timeutil import utcnow
+from app.core.timeutil import to_utc, utcnow
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -239,10 +240,10 @@ async def create_session(
         if all_users:
             await notify_new_session_invites(db, new_session, list(all_users))
 
-    # Schedule rating reminder at session end time
+    # Queue rating reminder at session end time (durable job queue)
     from app.services.rating_reminder_scheduler import register_rating_reminder
 
-    register_rating_reminder(new_session)
+    await register_rating_reminder(db, new_session)
 
     return {
         "id": new_session.id,
@@ -470,8 +471,9 @@ async def get_session(
             "score_b": active_match.score_b,
             "status": active_match.status,
             "timer_total_seconds": active_match.timer_total_seconds,
-            "timer_seconds_remaining": active_match.timer_seconds_remaining,
-            "timer_paused": active_match.timer_pause_intervals is not None,
+            # Live value (the stored column only updates at start/pause/resume).
+            "timer_seconds_remaining": _compute_timer_remaining(active_match),
+            "timer_paused": _is_currently_paused(active_match),
         }
 
     return {
@@ -742,6 +744,15 @@ async def update_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     data = update_data.model_dump(exclude_unset=True)
+
+    # Cross-field check against the CURRENT values (the same rule create enforces).
+    eff_min = data.get("min_players", session.min_players)
+    eff_max = data.get("max_players", session.max_players)
+    if eff_min is not None and eff_max is not None and eff_max < eff_min:
+        raise HTTPException(
+            status_code=400, detail="max_players must be >= min_players"
+        )
+
     if "waitlist_mode" in data and data["waitlist_mode"]:
         m = data["waitlist_mode"].lower()
         if m not in ("broadcast", "auto_promote"):
@@ -761,6 +772,11 @@ async def update_session(
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
+    if "start_time" in data or "duration_minutes" in data:
+        # Re-point the durable rating-reminder job at the new end time
+        from app.services.rating_reminder_scheduler import register_rating_reminder
+
+        await register_rating_reminder(db, session)
     return {"status": "updated"}
 
 
@@ -926,13 +942,27 @@ async def move_attendance(
     if not attendance:
         raise HTTPException(status_code=404, detail="Attendance record not found")
 
+    prev = attendance.status
     attendance.status = new_status
     attendance.previous_status = None
+    if prev == "confirmed" and new_status == "waitlisted":
+        # A demoted player re-enters the waitlist *now*, not with their old
+        # join time — otherwise the promotion below would promote them right
+        # back into the spot the admin just freed.
+        attendance.joined_at = utcnow()
     rev = await bump_session_revision(db, session_id)
     await db.commit()
     if rev is not None:
         await notify_session_data_changed(session_id, rev)
     await recalculate_skills_for_attendance_change(db, session_id, user_id)
+    if prev == "confirmed" and new_status == "waitlisted":
+        # Same rule as leave/cancel: demoting a confirmed player opens the spot.
+        session_res = await db.execute(
+            select(GameSession).where(GameSession.id == session_id)
+        )
+        session = session_res.scalar_one_or_none()
+        if session:
+            await handle_leave_or_cancel(db, session, prev)
     return {"status": "moved"}
 
 
@@ -970,11 +1000,14 @@ async def delete_session(
     await notify_session_cancelled_recipients(db, session)
     await notify_session_deleted(session_id)
 
-    # Unschedule rating reminder job
+    # Unqueue rating reminder job
     from app.services.rating_reminder_scheduler import unregister_rating_reminder
 
-    unregister_rating_reminder(session_id)
+    await unregister_rating_reminder(db, session_id)
 
+    from app.services.deletes import delete_session_children
+
+    await delete_session_children(db, session_id)
     await db.delete(session)
     await db.commit()
     return {"status": "deleted"}
@@ -1256,6 +1289,25 @@ async def add_plus_one(
     db.add(plus_one)
     await db.flush()
 
+    if att_status == "confirmed":
+        # Same self-demote backstop as join_session: a concurrent join may have
+        # filled the last spot between the COUNT above and this INSERT.
+        await db.execute(
+            text(
+                """
+                UPDATE attendance
+                   SET status = 'waitlisted'
+                 WHERE id = :aid
+                   AND status = 'confirmed'
+                   AND (SELECT COUNT(*) FROM attendance a2
+                         WHERE a2.session_id = :sid
+                           AND a2.status = 'confirmed') > :maxp
+                """
+            ),
+            {"aid": attendance.id, "sid": session_id, "maxp": session.max_players},
+        )
+        await db.refresh(attendance)
+
     rev = await bump_session_revision(db, session_id)
     await db.commit()
     if rev is not None:
@@ -1272,14 +1324,21 @@ async def add_plus_one(
         "self_assessed_skill": body.self_assessed_skill,
         "claim_token": claim_token,
         "claim_url": claim_url,
-        "attendance_status": att_status,
+        "attendance_status": attendance.status,
     }
 
 
 @router.get("/{session_id}/plus-one")
-async def list_plus_ones(session_id: int, db: AsyncSession = Depends(get_db)):
-    """List pending plus-one reservations for a session."""
-    result = await db.execute(
+async def list_plus_ones(
+    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Pending plus-one reservations — the inviter sees their own, admins all.
+
+    Claim tokens are capability links: the rest of the club doesn't need them.
+    """
+    user = request.state.user
+    is_admin = getattr(request.state, "is_admin", False)
+    stmt = (
         select(GuestPlusOne)
         .where(
             GuestPlusOne.session_id == session_id,
@@ -1290,6 +1349,9 @@ async def list_plus_ones(session_id: int, db: AsyncSession = Depends(get_db)):
             selectinload(GuestPlusOne.guest_user),
         )
     )
+    if not is_admin:
+        stmt = stmt.where(GuestPlusOne.inviter_id == user.id)
+    result = await db.execute(stmt)
     plus_ones = result.scalars().all()
     return [
         {
@@ -1355,9 +1417,13 @@ async def cancel_plus_one(
             if session:
                 await handle_leave_or_cancel(db, session, prev)
 
-    # Delete the placeholder user
+    # Delete the placeholder user (children first: its attendance row from
+    # above would block the FK now that SQLite enforces them).
     guest_user = plus_one.guest_user
     if guest_user:
+        from app.services.deletes import delete_user_children
+
+        await delete_user_children(db, guest_user.id)
         await db.delete(guest_user)
 
     # Delete the plus-one record
@@ -1540,7 +1606,10 @@ async def refresh_session_weather(
             "cached_at": fetched_at.isoformat(),
         }
 
-    start_time = session.start_time.astimezone()
+    # Naive start_time is UTC: tag it explicitly. .astimezone() would tag it
+    # with the *server's* local tz, shifting the requested window on any
+    # non-UTC box.
+    start_time = to_utc(session.start_time)
     duration = session.duration_minutes or 120
     end_time = start_time + timedelta(minutes=duration)
     forecast = await weather_service.fetch_forecast(

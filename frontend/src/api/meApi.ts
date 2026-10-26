@@ -28,13 +28,6 @@ export interface UserStats {
     skill_level: number;
 }
 
-export async function fetchMe(): Promise<MeResponse | null> {
-    const r = await apiFetch("/me");
-    if (r.status === 401) return null;
-    if (!r.ok) throw new Error(await parseApiError(r));
-    return r.json() as Promise<MeResponse>;
-}
-
 export async function fetchMyStats(): Promise<UserStats> {
     const r = await apiFetch("/users/me/stats");
     if (!r.ok) throw new Error(await parseApiError(r));

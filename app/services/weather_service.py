@@ -133,22 +133,18 @@ class _RateLimiter:
         self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
-        async with self._lock:
-            now = monotonic()
-            elapsed = now - self._last
-            self._last = now
-            self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
-
-            if self._tokens < 1.0:
+        while True:
+            async with self._lock:
+                now = monotonic()
+                elapsed = now - self._last
+                self._last = now
+                self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return
                 wait = (1.0 - self._tokens) / self._rate
-                # Release the lock while sleeping so other callers can
-                # inspect the bucket (they'll also wait if needed).
-
-                # Schedule a refill callback
-                async def _delay() -> None:
-                    await asyncio.sleep(wait)
-
-                await _delay()
+            # Sleep outside the lock so other callers aren't held up.
+            await asyncio.sleep(wait)
 
 
 _open_meteo_limiter = _RateLimiter()

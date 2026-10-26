@@ -266,17 +266,3 @@ async def validate_pocket_id_token(access_token: str) -> dict[str, Any] | None:
         return None
 
     return claims
-
-
-def extract_user_claims(claims: dict[str, Any]) -> dict[str, Any]:
-    """
-    Extract user identity from Pocket ID JWT claims.
-
-    Returns dict with keys: sub, groups, preferred_username, name
-    """
-    return {
-        "sub": claims.get("sub", ""),
-        "groups": claims.get("groups", []),
-        "preferred_username": claims.get("preferred_username", ""),
-        "name": claims.get("name", ""),
-    }

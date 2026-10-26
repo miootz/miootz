@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text
+from sqlalchemy import (
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,6 +27,13 @@ if TYPE_CHECKING:
 
 class GameSession(Base):
     __tablename__ = "game_sessions"
+    __table_args__ = (
+        # One materialized session per template kickoff instant (missed-week
+        # backfill + concurrent pollers both race on the same slot).
+        UniqueConstraint(
+            "game_template_id", "start_time", name="uq_session_template_start"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -99,9 +114,6 @@ class GameSession(Base):
     )
     scores: Mapped[list[MatchScore]] = relationship(
         "MatchScore", back_populates="session", cascade="all, delete-orphan"
-    )
-    matches: Mapped[list[SessionMatch]] = relationship(
-        "SessionMatch", back_populates="session", cascade="all, delete-orphan"
     )
     matches: Mapped[list[SessionMatch]] = relationship(
         "SessionMatch", back_populates="session", cascade="all, delete-orphan"

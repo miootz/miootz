@@ -1,5 +1,3 @@
-import { useContext } from "react";
-import { AuthContext } from "../auth/auth-context";
 import { authorize } from "../auth/pocketIdOidc";
 
 /** Base path for API (same-origin /api in production / Traefik). */
@@ -25,9 +23,6 @@ let _authRedirectInFlight = false;
 function redirectToLogin(): void {
   if (_authRedirectInFlight) return;
   _authRedirectInFlight = true;
-  window.setTimeout(() => {
-    _authRedirectInFlight = false;
-  }, 3000);
   try {
     sessionStorage.setItem(
       "miootz_return_path",
@@ -36,7 +31,11 @@ function redirectToLogin(): void {
   } catch {
     /* ignore */
   }
-  void authorize();
+  // authorize() resolves once the redirect is issued (or rejects on failure)
+  // — the flag resets on the real outcome, not a guessed timeout.
+  void authorize().finally(() => {
+    _authRedirectInFlight = false;
+  });
 }
 
 export async function parseApiError(res: Response): Promise<string> {
@@ -60,54 +59,8 @@ export async function parseApiError(res: Response): Promise<string> {
 }
 
 /**
- * Fetch with auto Bearer token from AuthContext.
+ * Fetch with auto Bearer token from localStorage.
  * Pass `skipAuth` to skip token injection (public endpoints).
- */
-export function useApiFetch() {
-  const auth = useContext(AuthContext);
-
-  return async (
-    path: string,
-    init?: RequestInit & { skipAuth?: boolean },
-  ): Promise<Response> => {
-    const skipAuth = init?.skipAuth;
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-    };
-
-    if (!skipAuth && auth?.tokens?.accessToken) {
-      headers.Authorization = `Bearer ${auth.tokens.accessToken}`;
-    }
-
-    if (init?.body && typeof init.body === "string") {
-      headers["Content-Type"] = "application/json";
-    }
-
-    const url = path.startsWith("http")
-      ? path
-      : `${apiBase()}${path.startsWith("/") ? "" : "/"}${path}`;
-
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        ...headers,
-        ...init?.headers,
-      },
-    });
-
-    if (response.status === 401 && auth?.login) {
-      // Token rejected server-side: drop stale tokens and re-auth once.
-      clearStoredTokens();
-      redirectToLogin();
-    }
-
-    return response;
-  };
-}
-
-/**
- * Legacy: plain fetch without auth context.
- * Use `useApiFetch()` hook for authenticated requests.
  */
 export async function apiFetch(
   path: string,
@@ -149,7 +102,9 @@ export async function apiFetch(
     },
   });
 
-  if (response.status === 401) {
+  // Public endpoints (skipAuth) can 401 without a session — clearing tokens
+  // and bouncing to login would trap an otherwise-valid session.
+  if (response.status === 401 && !skipAuth) {
     clearStoredTokens();
     redirectToLogin();
   }

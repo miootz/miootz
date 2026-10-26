@@ -18,7 +18,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
 
     scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
     scheduler.start()
-    from app.services.jobs import run_kickoff_reminder_job
+    from app.services.jobs import run_job_queue_poll, run_kickoff_reminder_job
 
     scheduler.add_job(
         run_kickoff_reminder_job,
@@ -26,8 +26,14 @@ def start_scheduler() -> AsyncIOScheduler | None:
         id="kickoff_reminders_1h",
         replace_existing=True,
     )
+    scheduler.add_job(
+        run_job_queue_poll,
+        IntervalTrigger(seconds=30),
+        id="job_queue_poll",
+        replace_existing=True,
+    )
     logger.info(
-        "Scheduler started (%s); kickoff 1h reminders every 1m; game templates register weekly jobs; rating reminders scheduled per-session",
+        "Scheduler started (%s); kickoff 1h reminders every 1m; durable job queue polled every 30s; game templates register weekly jobs; rating reminders queued per-session",
         settings.SCHEDULER_TIMEZONE,
     )
     return scheduler

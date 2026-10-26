@@ -7,6 +7,21 @@
  */
 
 // ── Env ────────────────────────────────────────────────────────────────────
+
+// Plain HTTP (non-localhost) is not a secure context: crypto.subtle /
+// crypto.randomUUID don't exist, so sign-in can never start. The local dev
+// stack serves the same app over mkcert HTTPS on :8443 — bounce there once
+// instead of failing inside authorize().
+if (
+  window.location.protocol === "http:" &&
+  !["localhost", "127.0.0.1"].includes(window.location.hostname)
+) {
+  const httpsUrl = new URL(window.location.href);
+  httpsUrl.protocol = "https:";
+  if (httpsUrl.port === "8880") httpsUrl.port = "8443";
+  window.location.replace(httpsUrl.toString());
+}
+
 const OIDC_ISSUER =
   (import.meta.env.VITE_POCKET_ID_ISSUER as string | undefined) ??
   (() => {
@@ -139,7 +154,7 @@ export interface OidcTokens {
 const _CODE_VERIFIER_KEY = "miootz_pkce_verifier";
 const _OIDC_STATE_KEY = "miootz_oidc_state";
 
-export async function authorize(returnTo?: string): Promise<void> {
+export async function authorize(): Promise<void> {
   const endpoints = await discoverEndpoints();
   const verifier = generateCodeVerifier();
   const challenge = await computeCodeChallenge(verifier);
@@ -157,10 +172,6 @@ export async function authorize(returnTo?: string): Promise<void> {
     code_challenge_method: "S256",
     state,
   });
-
-  if (returnTo) {
-    params.set("login_hint", returnTo);
-  }
 
   // Allowlisted: full redirect URL re-validated against the issuer origin
   // (params are internally generated PKCE values, never user input).
@@ -306,20 +317,6 @@ export async function logout(): Promise<void> {
     OIDC_ISSUER.replace(/\/+$/, ""),
     "issuer home redirect",
   );
-}
-
-// ── Decode ID token (for display name, etc.) ───────────────────────────────
-export function decodeIdToken(idToken: string): Record<string, unknown> {
-  try {
-    const parts = idToken.split(".");
-    if (parts.length !== 3) return {};
-    const payload = JSON.parse(
-      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
-    );
-    return payload;
-  } catch {
-    return {};
-  }
 }
 
 // ── Get Pocket ID base URL ─────────────────────────────────────────────────

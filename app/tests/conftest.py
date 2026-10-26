@@ -14,7 +14,6 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_db_path}"
 
 # Avoid background scheduler threads during pytest unless explicitly enabled.
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
 
 
 # ── Pocket ID JWT mock ─────────────────────────────────────────────────────

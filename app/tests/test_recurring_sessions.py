@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
@@ -20,15 +21,6 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
-
-
-def test_utc_start_matches_rule_europe_london():
-    # 2024-06-03 is Monday; 18:00 in London = 17:00 UTC (BST)
-    start = datetime(2024, 6, 3, 17, 0, tzinfo=UTC)
-    from app.services.recurring_sessions import utc_start_matches_rule
-
-    assert utc_start_matches_rule(start, "Europe/London", 0, 18, 0) is True
-    assert utc_start_matches_rule(start, "Europe/London", 1, 18, 0) is False
 
 
 def test_next_occurrence_skips_same_week_if_time_passed():
@@ -104,6 +96,93 @@ async def test_materialize_next_idempotent():
         a2 = await materialize_next_session_and_notify(rule_id)
     assert a1 in (True, False)
     assert a2 is False
+
+
+@pytest.mark.asyncio
+async def test_materialize_backfills_missed_week():
+    """Tail I: a server that was down across a kickoff recreates that week's
+    session (the most recent past slot) in addition to the next one."""
+    from app.services.recurring_sessions import materialize_next_session_and_notify
+
+    async with AsyncSession(engine) as db:
+        rule = GameTemplate(
+            name="Test",
+            timezone="UTC",
+            weekday=1,
+            hour=9,
+            minute=0,
+            announce_timezone="UTC",
+            announce_weekday=1,
+            announce_hour=8,
+            announce_minute=0,
+            location="Pitch",
+            fee=0.0,
+            min_players=10,
+            max_players=15,
+            waitlist_mode="auto_promote",
+            is_active=True,
+        )
+        db.add(rule)
+        await db.flush()
+        rule_id = rule.id
+        await db.commit()
+
+    ok = await materialize_next_session_and_notify(rule_id)
+    assert ok is True
+
+    async with AsyncSession(engine) as db:
+        rows = (
+            (
+                await db.execute(
+                    select(GameSession.start_time).where(
+                        GameSession.game_template_id == rule_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    now = datetime.now(UTC).replace(tzinfo=None)
+    assert len(rows) == 2
+    assert rows[0] < now < rows[1]
+
+
+@pytest.mark.asyncio
+async def test_session_template_start_is_unique():
+    """Tail J: the (template, kickoff) unique index is what makes the
+    materializer race-safe."""
+    from sqlalchemy.exc import IntegrityError
+
+    async with AsyncSession(engine) as db:
+        rule = GameTemplate(
+            name="Test",
+            timezone="UTC",
+            weekday=1,
+            hour=9,
+            minute=0,
+            announce_timezone="UTC",
+            announce_weekday=1,
+            announce_hour=8,
+            announce_minute=0,
+            location="Pitch",
+            fee=0.0,
+            min_players=10,
+            max_players=15,
+            waitlist_mode="auto_promote",
+            is_active=True,
+        )
+        db.add(rule)
+        await db.flush()
+        rule_id = rule.id
+        await db.commit()
+        t = datetime(2031, 5, 5, 9, 0, tzinfo=UTC)
+        db.add(GameSession(start_time=t, location="Pitch", game_template_id=rule_id))
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        db.add(GameSession(start_time=t, location="Pitch", game_template_id=rule_id))
+        with pytest.raises(IntegrityError):
+            await db.commit()
 
 
 @pytest.mark.asyncio

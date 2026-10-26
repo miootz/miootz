@@ -59,6 +59,15 @@ async def run_kickoff_reminder_job() -> None:
             logger.info("Kickoff 1h reminders: %s session(s)", n)
 
 
+async def run_job_queue_poll() -> None:
+    """Every 30s: run due one-shot jobs from the durable job_queue table."""
+    from app.services.job_queue import run_due_jobs
+
+    n = await run_due_jobs()
+    if n:
+        logger.info("Job queue: %s job(s) processed", n)
+
+
 async def send_rating_reminder_for_session(session_id: int) -> None:
     """One-shot job: fire at session end time, push confirmed attendees to rate peers
     and record actual weather conditions."""

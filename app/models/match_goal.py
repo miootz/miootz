@@ -15,11 +15,9 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     String,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,21 +29,10 @@ class MatchGoal(Base):
     __tablename__ = "match_goals"
     __table_args__ = (
         UniqueConstraint("intent_id", name="uq_match_goals_intent"),
-        # Hard dedupe backstop (plan §3): two people cannot keep two LIVE rows
-        # for the same (team, scorer, minute) event — but a soft-deleted goal
-        # may be re-entered with the same key later (plan §8 "deleted then
-        # re-added"), so the unique index covers live rows only
-        # (deleted_at IS NULL). ``force`` bypasses only the 90 s window
-        # *reply*; if a live row exists the endpoint replays it.
-        Index(
-            "uq_match_goals_dedupe",
-            "match_id",
-            "team",
-            "clock_minute",
-            "scorer_id",
-            unique=True,
-            sqlite_where=text("deleted_at IS NULL"),
-        ),
+        # No hard unique index on (match, team, minute, scorer): a striker can
+        # score twice in the same minute. The 90 s soft check in create_goal
+        # is the dedupe backstop — it returns 409 (or replays after 90 s) and
+        # an explicit ``force`` confirms a genuine second goal as a new row.
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

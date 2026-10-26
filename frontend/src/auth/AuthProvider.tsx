@@ -14,6 +14,8 @@ import {
 } from './pocketIdOidc';
 
 const TOKENS_KEY = 'miootz_tokens';
+/** Refresh this long before expiry so a long live session never hits a 401. */
+const REFRESH_BUFFER_MS = 60_000;
 
 function loadTokens(): OidcTokens | null {
   try {
@@ -51,6 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tokens, setTokens] = useState<OidcTokens | null>(null);
   const [searchParams] = useSearchParams();
   const initialized = useRef(false);
+  // One in-flight refresh at a time: concurrent callers share the same
+  // promise, so a rotating refresh token cannot be consumed twice and the
+  // loser's catch cannot wipe a session the winner just renewed.
+  const refreshInFlight = useRef<Promise<OidcTokens | null> | null>(null);
+  const refreshTimer = useRef<number | null>(null);
+  const tryRefreshRef = useRef<((t: OidcTokens) => Promise<OidcTokens | null>) | null>(null);
 
   const fetchMeWithAuth = useCallback(
     async (t: OidcTokens | null): Promise<MeResponse | null> => {
@@ -78,18 +86,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const scheduleRefresh = useCallback((t: OidcTokens) => {
+    if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+    const delay = Math.max(t.expiresAt - Date.now() - REFRESH_BUFFER_MS, 5_000);
+    refreshTimer.current = window.setTimeout(
+      () => void tryRefreshRef.current?.(t),
+      delay,
+    );
+  }, []);
+
   const tryRefreshTokens = useCallback(
     async (oldTokens: OidcTokens): Promise<OidcTokens | null> => {
-      try {
-        const newTokens = await oidcRefreshTokens(oldTokens.refreshToken);
-        setTokens(newTokens);
-        saveTokens(newTokens);
-        return newTokens;
-      } catch {
-        clearTokens();
-        setTokens(null);
-        return null;
-      }
+      if (refreshInFlight.current) return refreshInFlight.current;
+      const p = (async () => {
+        try {
+          const newTokens = await oidcRefreshTokens(oldTokens.refreshToken);
+          setTokens(newTokens);
+          saveTokens(newTokens);
+          scheduleRefresh(newTokens);
+          return newTokens;
+        } catch {
+          clearTokens();
+          setTokens(null);
+          return null;
+        } finally {
+          refreshInFlight.current = null;
+        }
+      })();
+      refreshInFlight.current = p;
+      return p;
+    },
+    [scheduleRefresh],
+  );
+  tryRefreshRef.current = tryRefreshTokens;
+
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
     },
     [],
   );
@@ -196,6 +229,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           tokensToUse = refreshed;
         }
+        // Keep the session alive past the access-token lifetime (finding 5).
+        scheduleRefresh(tokensToUse);
 
         try {
           const data = await fetchMeWithAuth(tokensToUse);
@@ -227,7 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     void init();
-  }, [searchParams, fetchMeWithAuth, tryRefreshTokens]);
+  }, [searchParams, fetchMeWithAuth, tryRefreshTokens, scheduleRefresh]);
 
   const value = useMemo(
     () => ({ me, loading, error, tokens, refresh, login, logout }),

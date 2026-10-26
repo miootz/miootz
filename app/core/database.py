@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
@@ -43,6 +44,16 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False},
 )
+
+# SQLite ignores ON DELETE behavior / FK constraints unless the pragma is set
+# on *every* connection. Enforced here so deletes actually cascade at the
+# statement level and orphan rows cannot be inserted (issue: counts drifting
+# higher all season).
+@event.listens_for(engine.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 

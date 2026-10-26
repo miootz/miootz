@@ -11,3 +11,4 @@ from app.models.user_notification_preference import UserNotificationPreference  
 from app.models.rating import Rating  # noqa: F401
 from app.models.guest_plus_one import GuestPlusOne  # noqa: F401
 from app.models.match import SessionMatch  # noqa: F401
+from app.models.job_queue import JobQueue  # noqa: F401

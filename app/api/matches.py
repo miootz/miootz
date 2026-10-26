@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy import func, insert, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import cast
@@ -462,6 +462,13 @@ async def create_new_pending_match(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    body = body or CreatePendingMatchBody()
+    if (body.team_a_idx is None) != (body.team_b_idx is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide both team_a_idx and team_b_idx, or neither.",
+        )
+
     # Find the last match to determine match number
     existing = await db.execute(
         select(SessionMatch)
@@ -508,7 +515,6 @@ async def create_new_pending_match(
     )
     team_names = get_team_names(session)
 
-    body = body or CreatePendingMatchBody()
     if body.team_a_idx is not None and body.team_b_idx is not None:
         # User-selected teams
         if body.team_a_idx < 0 or body.team_a_idx >= len(teams_nested):
@@ -626,6 +632,9 @@ async def delete_match(
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    from app.services.deletes import delete_match_children
+
+    await delete_match_children(db, match_id)
     await db.delete(match)
     await db.commit()
     await bump_and_notify(db, session_id)
@@ -804,9 +813,43 @@ async def pause_timer(
         except json.JSONDecodeError, TypeError:
             pass
     intervals.append({"paused_at": now.isoformat(), "resumed_at": None})
-    match.timer_pause_intervals = json.dumps(intervals)
-    match.timer_seconds_remaining = remaining
+    new_intervals = json.dumps(intervals)
 
+    # Check-and-append as ONE conditional UPDATE: it only applies when no
+    # open pause interval exists, so a racing double-tap loses rowcount 0
+    # and takes the idempotent path below — two open intervals (pause time
+    # subtracted twice) cannot be committed.
+    res = await db.execute(
+        text(
+            """
+            UPDATE session_matches
+               SET timer_pause_intervals = :iv,
+                   timer_seconds_remaining = :rem
+             WHERE id = :mid
+               AND (
+                 timer_pause_intervals IS NULL
+                 OR timer_pause_intervals = ''
+                 OR NOT EXISTS (
+                    SELECT 1 FROM json_each(session_matches.timer_pause_intervals)
+                    WHERE json_extract(json_each.value, '$.resumed_at') IS NULL
+                 )
+               )
+            """
+        ),
+        {"iv": new_intervals, "rem": remaining, "mid": match.id},
+    )
+    if cast(CursorResult, res).rowcount == 0:
+        # Lost the race / already paused: idempotent, no second interval.
+        return {
+            "status": "paused",
+            "already": True,
+            "seconds_remaining": _compute_timer_remaining(match),
+            "timer_paused": True,
+            "ends_at": None,
+            "controlled_by": {"name": user.display_name},
+        }
+    match.timer_pause_intervals = new_intervals
+    match.timer_seconds_remaining = remaining
     await db.commit()
 
     await _broadcast_match_event(
@@ -921,12 +964,25 @@ async def reset_timer(
             status_code=409, detail="Can only reset an active or time_up match."
         )
 
+    # A reset restarts the match: soft-delete the old goals in the same tx so
+    # the next recompute (COUNT of live goals) starts from 0, not from the
+    # pre-reset rows.
+    await db.execute(
+        update(MatchGoal)
+        .where(
+            MatchGoal.match_id == match.id,
+            MatchGoal.deleted_at.is_(None),
+        )
+        .values(deleted_at=utcnow())
+    )
     match.timer_started_at = None
     match.timer_seconds_remaining = None
     match.timer_pause_intervals = None
-    match.score_a = 0
-    match.score_b = 0
+    match.score_offset_a = 0
+    match.score_offset_b = 0
     match.status = "pending"
+    await db.flush()
+    await _recompute_scores(db, match)
     await db.commit()
 
     await _broadcast_match_event(
@@ -960,10 +1016,22 @@ async def increment_score(
             status_code=409, detail="Can only score during an active match."
         )
 
+    # Atomic read-modify-write at the SQL level: two devices tapping +1
+    # can't lose each other's update (no read-modify-write in Python).
+    col = SessionMatch.score_a if body.team == "a" else SessionMatch.score_b
+    await db.execute(
+        update(SessionMatch)
+        .where(SessionMatch.id == match.id)
+        .values({col.name: func.max(0, col + body.delta)})
+    )
+    await db.flush()
+    await db.refresh(match)
+    # Keep the manual offset consistent with the (now authoritative) score.
+    count_a, count_b = await _goal_counts(db, match)
     if body.team == "a":
-        match.score_a = max(0, match.score_a + body.delta)
+        match.score_offset_a = match.score_a - count_a
     else:
-        match.score_b = max(0, match.score_b + body.delta)
+        match.score_offset_b = match.score_b - count_b
     await db.commit()
 
     await _broadcast_match_event(
@@ -997,8 +1065,11 @@ async def set_score(
     match = await db.get(SessionMatch, match_id)
     if not match or match.session_id != session_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    count_a, count_b = await _goal_counts(db, match)
     match.score_a = body.score_a
     match.score_b = body.score_b
+    match.score_offset_a = body.score_a - count_a
+    match.score_offset_b = body.score_b - count_b
     await db.commit()
 
     await _broadcast_match_event(
@@ -1048,8 +1119,20 @@ async def end_match(
             )
         winner_team = body.winner_team
 
-    # Complete current match
+    # Complete current match — guarded UPDATE: under a double-tap / two
+    # devices, exactly one request flips the row; the loser gets 409.
     now = datetime.now(UTC)
+    res = await db.execute(
+        update(SessionMatch)
+        .where(
+            SessionMatch.id == match.id,
+            SessionMatch.status != "completed",
+        )
+        .values(status="completed", completed_at=now)
+    )
+    if cast(CursorResult, res).rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Match already completed.")
     match.status = "completed"
     match.completed_at = now
     await db.flush()
@@ -1132,7 +1215,10 @@ async def end_match(
             score_a=0,
             score_b=0,
             status="pending",
-            timer_total_seconds=match.timer_total_seconds,
+            # The session's configured duration, NOT the ended match's:
+            # retroactive matches carry timer_total_seconds=0 and would
+            # poison every following match.
+            timer_total_seconds=(_session.match_duration_minutes or 10) * 60,
         )
         db.add(next_match)
         await db.flush()
@@ -1268,6 +1354,9 @@ async def acquire_lease(
             or_(
                 MatchEditorLease.holder_id.is_(None),
                 MatchEditorLease.expires_at <= now,
+                # Re-claim by the current holder (sheet double-open, page
+                # remount): issue a fresh token instead of a 409 naming them.
+                MatchEditorLease.holder_id == user.id,
             )
         )
         .values(
@@ -1387,8 +1476,8 @@ def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
     }
 
 
-async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
-    """Derive score_a / score_b from COUNT of LIVE goals (source of truth)."""
+async def _goal_counts(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
+    """Live (non-soft-deleted) goal counts per team."""
     counts: dict[str, int] = {}
     for team in ("a", "b"):
         res = await db.execute(
@@ -1401,7 +1490,18 @@ async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int,
             )
         )
         counts[team] = int(res.scalar() or 0)
-    match.score_a, match.score_b = counts["a"], counts["b"]
+    return counts["a"], counts["b"]
+
+
+async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
+    """Derive score_a / score_b from COUNT of LIVE goals + manual offset.
+
+    Goals are the source of truth; the referee's +1/-1/set-score corrections
+    live in ``score_offset_*`` so both write paths compose.
+    """
+    count_a, count_b = await _goal_counts(db, match)
+    match.score_a = count_a + (match.score_offset_a or 0)
+    match.score_b = count_b + (match.score_offset_b or 0)
     return match.score_a, match.score_b
 
 
@@ -1502,22 +1602,21 @@ async def create_goal(
         )
     )
     duplicate = res.scalar_one_or_none()
-    if duplicate is not None:
-        if not body.force:
-            age = int((utcnow() - duplicate.created_at).total_seconds())
-            if age <= GOAL_DEDUPE_WINDOW_SECONDS:
-                await db.commit()
-                return JSONResponse(
-                    status_code=409,
-                    content={
-                        "detail": "duplicate_goal_within_90s",
-                        "existing": _goal_json(duplicate, users_by_id),
-                        "holder_name": user.display_name,
-                        "expires_in": _seconds_left(lease.expires_at, utcnow()),
-                    },
-                )
-        # Confirmed duplicate (force): the row already exists — replay it
-        # rather than break the live-dedupe unique index. 200, not 201.
+    if duplicate is not None and not body.force:
+        age = int((utcnow() - duplicate.created_at).total_seconds())
+        if age <= GOAL_DEDUPE_WINDOW_SECONDS:
+            await db.commit()
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "duplicate_goal_within_90s",
+                    "existing": _goal_json(duplicate, users_by_id),
+                    "holder_name": user.display_name,
+                    "expires_in": _seconds_left(lease.expires_at, utcnow()),
+                },
+            )
+        # Duplicate confirmed after the 90 s window: the row already exists —
+        # replay it. 200, not 201.
         await db.commit()
         return JSONResponse(
             status_code=200,
@@ -1528,6 +1627,8 @@ async def create_goal(
                 "score_b": match.score_b,
             },
         )
+    # ``force`` with a live duplicate means a genuine second goal in the same
+    # minute: a fresh row is inserted below (no hard index blocks it).
 
     goal = MatchGoal(
         match_id=match_id,

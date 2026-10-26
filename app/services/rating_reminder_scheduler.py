@@ -1,75 +1,44 @@
-"""One-shot APScheduler job per session: rating reminder at session end time."""
+"""Rating reminder at session end, queued in the durable ``job_queue`` table.
+
+Survives restarts: the row is picked up by the job-queue poller after boot,
+and re-pointed automatically when the session's start time or duration changes.
+"""
 
 from __future__ import annotations
 
 import logging
-from datetime import timedelta, UTC
+from datetime import timedelta
 
-from apscheduler.jobstores.base import JobLookupError
-from apscheduler.triggers.date import DateTrigger
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.timeutil import to_utc
 from app.models.session import GameSession
+from app.services.job_queue import remove_job, upsert_job
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DURATION_MINUTES = 60
-JOB_PREFIX = "rating_reminder_"
+JOB_TYPE = "rating_reminder"
 
 
-def get_scheduler():
-    from app.services import scheduler_setup
-
-    return scheduler_setup.scheduler
-
-
-def unregister_rating_reminder(session_id: int) -> None:
-    sched = get_scheduler()
-    if not sched:
-        return
-    job_id = f"{JOB_PREFIX}{session_id}"
-    try:
-        sched.remove_job(job_id)
-    except JobLookupError:
-        pass
-
-
-def _compute_end_time(session: GameSession) -> str | None:
-    """Compute expected end time as ISO string (UTC-aware) or None."""
-
+def _compute_end_time(session: GameSession):
+    """Expected end time as naive UTC (DB storage format)."""
     duration = session.duration_minutes or _DEFAULT_DURATION_MINUTES
-    start = session.start_time
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
-    end = start.astimezone(UTC) + timedelta(minutes=duration)
-    return end.isoformat()
+    return to_utc(session.start_time).replace(tzinfo=None) + timedelta(minutes=duration)
 
 
-def register_rating_reminder(session: GameSession) -> None:
-    """Schedule a one-shot job to send rating reminder at session end time."""
-    sched = get_scheduler()
-    if not sched:
-        return
-
-    end_time = _compute_end_time(session)
-    if end_time is None:
-        return
-
-    job_id = f"{JOB_PREFIX}{session.id}"
-
-    from app.services.jobs import send_rating_reminder_for_session
-
-    sched.add_job(
-        send_rating_reminder_for_session,
-        DateTrigger(run_date=end_time, timezone=settings.SCHEDULER_TIMEZONE),
-        id=job_id,
-        args=[session.id],
-        replace_existing=True,
-        misfire_grace_time=300,  # 5 min grace
-    )
+async def register_rating_reminder(db: AsyncSession, session: GameSession) -> None:
+    """Queue (or re-point) the rating-reminder job at session end time."""
+    await upsert_job(db, JOB_TYPE, session.id, _compute_end_time(session))
+    await db.commit()
     logger.info(
-        "Scheduled rating reminder job %s at %s for session %s",
-        job_id,
-        end_time,
+        "Queued %s for session %s at %s",
+        JOB_TYPE,
         session.id,
+        _compute_end_time(session).isoformat(),
     )
+
+
+async def unregister_rating_reminder(db: AsyncSession, session_id: int) -> None:
+    await remove_job(db, JOB_TYPE, session_id)
+    await db.commit()

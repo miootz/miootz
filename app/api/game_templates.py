@@ -81,7 +81,6 @@ class GameTemplateCreate(BaseModel):
     team_assignment_mode: str = Field(default="balanced")
     is_active: bool = True
     match_duration_minutes: int = Field(default=10, ge=1, le=60)
-    match_duration_minutes: int = Field(default=10, ge=1, le=60)
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
@@ -291,6 +290,15 @@ async def delete_game_template(
             detail="This template has materialized sessions. Deactivate it instead, or remove sessions first.",
         )
     unregister_game_template_job(template_id)
+    from sqlalchemy import delete
+
+    from app.models.game_template_subscription import GameTemplateSubscription
+
+    await db.execute(
+        delete(GameTemplateSubscription).where(
+            GameTemplateSubscription.game_template_id == template_id
+        )
+    )
     await db.delete(t)
     await db.commit()
     return {"status": "deleted"}

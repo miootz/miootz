@@ -54,11 +54,6 @@ export function leaseBusyLabel(
   return `${holderName} is entering a goal… ${Math.max(0, Math.ceil(countdownSec))}s`;
 }
 
-/** Same chip for the holder themself ("You are entering a goal… 41s"). */
-export function mineLeaseLabel(countdownSec: number): string {
-  return leaseBusyLabel("You are", countdownSec);
-}
-
 /**
  * Default goal minute, derived from the server-authoritative clock
  * (1-based: a goal scored in the first running minute is "1'").

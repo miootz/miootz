@@ -605,6 +605,9 @@ async def admin_delete_user(
     # Remove from Pocket ID first
     if user.pocket_id_sub:
         await delete_user(user.pocket_id_sub)
+    from app.services.deletes import delete_user_children
+
+    await delete_user_children(db, user.id)
     await db.delete(user)
     await db.commit()
     return {"message": "User deleted successfully"}

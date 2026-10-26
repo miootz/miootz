@@ -16,7 +16,7 @@ import {
  * Shared state for the live-scoring surfaces (LiveMatchBanner and
  * RefereePage), fed from the ONE existing session data SSE channel:
  *
- * - steward gate: fetched once on mount per session — decides whether
+ * - steward gate: fetched on mount and every 30 s — decides whether
  *   controls render and what reason line a locked member sees.
  * - lease chip: seeded from the steward snapshot, then kept in sync from
  *   `lease_acquired` / `lease_released` events. The countdown is always
@@ -34,10 +34,12 @@ export function useStewardUi(sid: number, matchId: number | null) {
   const [leaseLeft, setLeaseLeft] = useState(0);
   const [goals, setGoals] = useState<GoalRow[]>([]);
 
-  // Steward gate — fetched once on mount (per session id).
+  // Steward gate — fetched on mount and every 30 s: the control window opens
+  // around kickoff, so a member already on the live page must see the
+  // controls appear without navigating away.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    const load = async () => {
       try {
         const s = await fetchStewardState(sid);
         if (cancelled) return;
@@ -50,9 +52,12 @@ export function useStewardUi(sid: number, matchId: number | null) {
       } catch {
         // Stay null → controls stay hidden until the next refresh.
       }
-    })();
+    };
+    void load();
+    const iv = setInterval(load, 30_000);
     return () => {
       cancelled = true;
+      clearInterval(iv);
     };
   }, [sid]);
 
