@@ -24,3 +24,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+
+# Re-include the frontend for the demo image (Dockerfile.demo) — its Vite dev
+# server runs inside the container. The API image simply gets extra source.
+!frontend/

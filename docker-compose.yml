@@ -5,7 +5,8 @@
 # port, so no explicit port appears in any URL below).
 services:
   traefik:
-    image: traefik:v2.10
+    # v3: v2.10's docker client predates modern engines' minimum API version.
+    image: traefik:v3
     container_name: traefik
     command:
       # Dashboard disabled: `api.insecure` exposed an unauthenticated

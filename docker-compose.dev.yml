@@ -6,7 +6,8 @@
 #   docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 services:
   traefik:
-    image: traefik:v2.10
+    # v3: v2.10's docker client predates modern engines' minimum API version.
+    image: traefik:v3
     container_name: traefik
     command:
       - "--api.insecure=true"

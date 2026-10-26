@@ -1,0 +1,69 @@
+# ISOLATED DEMO STACK (docs/DEMO.md). Runs the `python -m app.demo` entrypoint
+# (fresh temporary database, random local tokens, no Pocket ID) behind the same
+# Traefik + mkcert TLS as the dev stack, on the existing app.miootz.local host.
+#
+#   docker compose --env-file .env.dev -f docker-compose.demo.yml up -d --build
+#
+# App:  https://app.miootz.local:8443   (demo account menu: /api/demo)
+# The API is same-origin under /api (Vite proxy), so only APP_DOMAIN is needed.
+# Mutually exclusive with the dev stack: both own :8443 and the traefik name.
+#
+# Scenario: DEMO_SCENARIO env var (open|full|broadcast|random|live, default full).
+
+services:
+  traefik:
+    # v3: v2.10's docker client predates this engine's minimum API version.
+    image: traefik:v3
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/tls.yml"
+      - "--entrypoints.websecure.address=:8443"
+    ports:
+      # 127.0.0.1 only: /etc/hosts points *.miootz.local at 127.0.0.1, and this
+      # leaves the socat LAN forwarder on 127.0.0.1:8443 untouched.
+      - "127.0.0.1:8443:8443"
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./docker/traefik/certs:/certs:ro"
+      - "./docker/traefik/tls.yml:/etc/traefik/tls.yml:ro"
+    networks:
+      - web
+
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+    container_name: miootz_demo
+    environment:
+      # Bind both servers to the container interface (not just loopback).
+      DEMO_BIND_HOST: "0.0.0.0"
+      # Traefik forwards Host: app.miootz.local (no port).
+      DEMO_TRUSTED_HOSTS: "${APP_DOMAIN},127.0.0.1,localhost"
+      # Deep links in push notifications.
+      DEMO_PUBLIC_APP_URL: "https://${APP_DOMAIN}:8443"
+    command:
+      [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "app.demo",
+        "--scenario",
+        "${DEMO_SCENARIO:-full}",
+      ]
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.demo.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.demo.entrypoints=websecure"
+      - "traefik.http.routers.demo.tls=true"
+      - "traefik.http.services.demo.loadbalancer.server.port=5180"
+
+networks:
+  web:
+    driver: bridge

@@ -10,6 +10,18 @@ Open [the demo account menu](http://127.0.0.1:5180/api/demo). Select an account;
 
 Stop with Ctrl+C. Restart to restore the initial state, or choose another scenario. Each run creates a fresh temporary SQLite database; it never seeds or resets `data/miootz.db`, Pocket ID, or any existing account. The temporary database is removed on normal shutdown. The account menu is available only in this separate demo entrypoint, not in the production application.
 
+## In a container
+
+The same entrypoint can be served from a container behind the dev stack's Traefik + mkcert TLS (no Pocket ID; the API stays same-origin under `/api` via Vite's proxy):
+
+```sh
+docker compose --env-file .env.dev -f docker-compose.demo.yml up -d --build
+# pick a scenario:
+DEMO_SCENARIO=live docker compose --env-file .env.dev -f docker-compose.demo.yml up -d
+```
+
+App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — account menu at `/api/demo`. `DEMO_BIND_HOST`, `DEMO_TRUSTED_HOSTS` and `DEMO_PUBLIC_APP_URL` let the entrypoint bind beyond loopback and trust the proxy `Host` header (defaults keep the loopback behavior). It is mutually exclusive with the dev stack: both own `:8443`. `docker compose down` (same flags) stops it; restarting the container resets the scenario.
+
 ## Scenarios
 
 | Argument | Initial member screen | Suggested demonstration |

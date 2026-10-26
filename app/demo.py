@@ -1,7 +1,9 @@
 """Local showcase runner: python -m app.demo --scenario full.
 
 This entrypoint alone installs demo adapters. The production app never imports it.
-Every run owns a fresh temporary database and binds both servers to loopback.
+Every run owns a fresh temporary database and binds both servers to loopback,
+unless the DEMO_BIND_HOST / DEMO_TRUSTED_HOSTS / DEMO_PUBLIC_APP_URL env vars
+override it (e.g. when served from a container behind a reverse proxy).
 """
 
 import argparse
@@ -30,9 +32,13 @@ def configure_environment(
             "DATABASE_URL": f"sqlite+aiosqlite:///{directory / 'demo.db'}",
             "SECRET_KEY": secrets.token_urlsafe(32),
             "SCHEDULER_ENABLED": "false",
-            "TRUSTED_HOSTS": "127.0.0.1,localhost",
+            "TRUSTED_HOSTS": os.environ.get(
+                "DEMO_TRUSTED_HOSTS", "127.0.0.1,localhost"
+            ),
             "CORS_ORIGINS": "",
-            "PUBLIC_APP_URL": f"http://127.0.0.1:{frontend_port}",
+            "PUBLIC_APP_URL": os.environ.get(
+                "DEMO_PUBLIC_APP_URL", f"http://127.0.0.1:{frontend_port}"
+            ),
             "POCKET_ID_INTERNAL_URL": "",
             "POCKET_ID_APP_URL": "",
             "POCKET_ID_OIDC_ISSUER": "",
@@ -131,6 +137,17 @@ async def prepare(
             status_code=503,
             detail="Account invitations and deletion require the real Pocket ID service; they are disabled in this isolated demo.",
         )
+
+    # The menu and its buttons are plain browser navigations without an
+    # Authorization header; the demo owns these routes, so mark them public.
+    middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {"/demo"}
+    middleware._PUBLIC_PATH_PREFIXES = (
+        middleware._PUBLIC_PATH_PREFIXES + ("/demo/login/",)
+    )
+    if enable_push:
+        middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {
+            "/demo/push"
+        }
 
     middleware.validate_pocket_id_token = validate
     middleware.get_user_by_id = get_user
@@ -257,6 +274,7 @@ def main() -> None:
         help="Record the real admin UI with simulated Pocket ID responses and nonfunctional .example links.",
     )
     args = parser.parse_args()
+    bind_host = os.environ.get("DEMO_BIND_HOST", "127.0.0.1")
     if args.api_port == args.frontend_port:
         parser.error("API and frontend ports must differ")
     check_port(args.api_port)
@@ -306,7 +324,7 @@ def main() -> None:
             [
                 *frontend_args,
                 "--host",
-                "127.0.0.1",
+                bind_host,
                 "--port",
                 str(args.frontend_port),
             ],
@@ -316,7 +334,7 @@ def main() -> None:
         try:
             import uvicorn
 
-            uvicorn.run(app, host="127.0.0.1", port=args.api_port)
+            uvicorn.run(app, host=bind_host, port=args.api_port)
         finally:
             frontend.terminate()
             try:
