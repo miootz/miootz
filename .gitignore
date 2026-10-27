@@ -104,6 +104,7 @@ private_key.pem
 # Working notes and handoffs (never published)
 plan/
 .handoff/
+.impeccable/
 
 # Environment templates (everything else under .env* stays ignored)
 !.env.example
