@@ -10,7 +10,7 @@ class UserStats(BaseModel):
 
 
 class MatchScoreReport(BaseModel):
-    session_id: int
+    meetup_id: int
     player_id: int
     score: int  # 1-5
     type: str  # 'team' or 'individual'

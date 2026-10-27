@@ -257,12 +257,12 @@ async def _resolve_or_create_user(db: AsyncSession, claims: dict) -> User:
 #: irrevocable tokens anymore and push links now go through authed SPA routes.)
 _PUBLIC_EXACT_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 _PUBLIC_PATH_PREFIXES = (
-    "/sessions/plus-one/",  # guest claim preview — claim_token is the capability
+    "/meetups/plus-one/",  # guest claim preview — claim_token is the capability
 )
 
 #: Live goal log is readable without auth (plan §4: watchers at home, shared
 #: link). GET only — mutating the log still requires a present member/admin.
-_PUBLIC_GET_PATH_RES = (re.compile(r"^/sessions/\d+/matches/\d+/goals$"),)
+_PUBLIC_GET_PATH_RES = (re.compile(r"^/meetups/\d+/matches/\d+/goals$"),)
 
 #: SSE endpoints: EventSource cannot send Authorization headers, so the access
 #: token is accepted from the `access_token` query param *only* on these paths.

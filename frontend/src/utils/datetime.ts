@@ -1,10 +1,10 @@
 /**
- * Session `start_time` from the API is stored as UTC but often serialized without
+ * Meetup `start_time` from the API is stored as UTC but often serialized without
  * a `Z` suffix (naive datetime). ECMAScript parses ISO strings *without* a zone as
  * **local** wall time, which shifts the instant and makes datetime-local inputs
  * jump (e.g. 8PM → 5PM for UTC−3).
  */
-export function parseSessionStart(iso: string): Date {
+export function parseMeetupStart(iso: string): Date {
   const t = iso.trim();
   if (!t) return new Date(NaN);
   if (/[zZ]$/.test(t)) return new Date(t);
@@ -15,8 +15,8 @@ export function parseSessionStart(iso: string): Date {
 }
 
 /** Value for `<input type="datetime-local" />` in the user's local timezone. */
-export function sessionStartToDatetimeLocalValue(iso: string): string {
-  const d = parseSessionStart(iso);
+export function meetupStartToDatetimeLocalValue(iso: string): string {
+  const d = parseMeetupStart(iso);
   if (Number.isNaN(d.getTime())) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;

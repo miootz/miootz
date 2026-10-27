@@ -12,7 +12,7 @@ export interface MemberHeaderInfo {
   line2?: string;
   location?: string;
   fee?: number;
-  sessionId?: number;
+  meetupId?: number;
   sseLive?: boolean;
 }
 

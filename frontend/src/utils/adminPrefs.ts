@@ -1,29 +1,29 @@
 const PREFIX = 'miootz-admin';
 
-export const ADMIN_SESSION_DRAFT_KEY = `${PREFIX}-session-draft-v1`;
-export const ADMIN_LAST_LOCATION_KEY = `${PREFIX}-last-session-location`;
+export const ADMIN_MEETUP_DRAFT_KEY = `${PREFIX}-meetup-draft-v1`;
+export const ADMIN_LAST_LOCATION_KEY = `${PREFIX}-last-meetup-location`;
 export const ADMIN_LAST_MIN_PLAYERS_KEY = `${PREFIX}-last-min-players`;
 export const ADMIN_LAST_MAX_PLAYERS_KEY = `${PREFIX}-last-max-players`;
 export const ADMIN_TOOLS_JOB_HISTORY_KEY = `${PREFIX}-tools-job-history-v1`;
 
-export type SessionDraftPayload = Record<string, unknown>;
+export type MeetupDraftPayload = Record<string, unknown>;
 
-export function readSessionDraft(): SessionDraftPayload | null {
+export function readMeetupDraft(): MeetupDraftPayload | null {
   try {
-    const raw = localStorage.getItem(ADMIN_SESSION_DRAFT_KEY);
+    const raw = localStorage.getItem(ADMIN_MEETUP_DRAFT_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as SessionDraftPayload;
+    return JSON.parse(raw) as MeetupDraftPayload;
   } catch {
     return null;
   }
 }
 
-export function writeSessionDraft(data: SessionDraftPayload) {
-  localStorage.setItem(ADMIN_SESSION_DRAFT_KEY, JSON.stringify(data));
+export function writeMeetupDraft(data: MeetupDraftPayload) {
+  localStorage.setItem(ADMIN_MEETUP_DRAFT_KEY, JSON.stringify(data));
 }
 
-export function clearSessionDraft() {
-  localStorage.removeItem(ADMIN_SESSION_DRAFT_KEY);
+export function clearMeetupDraft() {
+  localStorage.removeItem(ADMIN_MEETUP_DRAFT_KEY);
 }
 
 export type JobHistoryEntry = {

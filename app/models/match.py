@@ -1,4 +1,4 @@
-"""SessionMatch: individual team-vs-team match within a GameSession."""
+"""MeetupMatch: individual team-vs-team match within a Meetup."""
 
 from __future__ import annotations
 
@@ -12,21 +12,21 @@ from app.core.database import Base
 from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
-    from app.models.session import GameSession
+    from app.models.meetup import Meetup
 
 
-class SessionMatch(Base):
-    __tablename__ = "session_matches"
+class MeetupMatch(Base):
+    __tablename__ = "meetup_matches"
     # Two devices ending the same match must not both insert the "next"
     # match with the same number — the guarded UPDATE in end_match decides
     # the winner, this index is the hard backstop.
     __table_args__ = (
-        UniqueConstraint("session_id", "match_number", name="uq_session_match_number"),
+        UniqueConstraint("meetup_id", "match_number", name="uq_meetup_match_number"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
-    #: 1-based sequence within the session.
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
+    #: 1-based sequence within the meetup.
     match_number: Mapped[int] = mapped_column(Integer)
 
     # Team composition (user IDs stored as JSON text arrays)
@@ -47,7 +47,7 @@ class SessionMatch(Base):
     status: Mapped[str] = mapped_column(String, default="pending")
 
     # Timer
-    #: Total match duration in seconds (from session.match_duration_minutes).
+    #: Total match duration in seconds (from meetup.match_duration_minutes).
     timer_total_seconds: Mapped[int] = mapped_column(Integer, default=600)
     #: Server-authoritative remaining seconds.
     timer_seconds_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -59,4 +59,4 @@ class SessionMatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    session: Mapped[GameSession] = relationship("GameSession")
+    meetup: Mapped[Meetup] = relationship("Meetup")

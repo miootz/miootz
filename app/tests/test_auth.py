@@ -11,10 +11,10 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    async with async_session() as session:
+    async with async_session() as meetup:
         user = User(pocket_id_sub="testuser-uuid", sso_display_name="testuser", is_admin=False)
-        session.add(user)
-        await session.commit()
+        meetup.add(user)
+        await meetup.commit()
     yield
 
 

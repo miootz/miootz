@@ -4,7 +4,7 @@ import { InstallAppBanner } from './InstallAppBanner';
 import { OverlayLockProvider } from '../context/OverlayLock';
 
 vi.mock('../offline/engagement', () => ({
-  getSessionViewCount: () => 1,
+  getMeetupViewCount: () => 1,
   engagementChangedEventName: 'engagement-changed',
 }));
 

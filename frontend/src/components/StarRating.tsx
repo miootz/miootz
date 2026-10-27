@@ -5,6 +5,8 @@ interface StarRatingProps {
   onChange?: (value: number) => void;
   size?: number;
   readonly?: boolean;
+  /** Accessible name for the rating group. */
+  label?: string;
 }
 
 export function StarRating({
@@ -12,9 +14,10 @@ export function StarRating({
   onChange,
   size = 24,
   readonly = false,
+  label = 'Rating',
 }: StarRatingProps) {
   return (
-    <div className="inline-flex gap-0.5" role="group" aria-label="Rating">
+    <div className="inline-flex gap-0.5" role="group" aria-label={label}>
       {[1, 2, 3, 4, 5].map((n) => (
         <button
           key={n}

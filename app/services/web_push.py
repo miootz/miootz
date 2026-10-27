@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
@@ -44,14 +44,14 @@ def _payload(
 def _action(
     action: str,
     title: str,
-    session: GameSession,
+    meetup: Meetup,
 ) -> dict:
     """Build a single action button that deep-links into the PWA."""
     base = settings.PUBLIC_APP_URL.rstrip("/")
     return {
         "action": action,
         "title": title,
-        "url": f"{base}/session-action?sid={session.id}&act={action}",
+        "url": f"{base}/meetup-action?mid={meetup.id}&act={action}",
     }
 
 
@@ -75,13 +75,13 @@ def _is_subscription_gone(exc: WebPushException) -> bool:
     return resp.status_code in (404, 410)
 
 
-def _format_session_summary(session: GameSession) -> str:
+def _format_meetup_summary(meetup: Meetup) -> str:
     from datetime import datetime
 
-    when = session.start_time
+    when = meetup.start_time
     if isinstance(when, datetime):
         when = when.isoformat(timespec="minutes")
-    return f"{when} @ {session.location} (fee: {session.fee})"
+    return f"{when} @ {meetup.location} (fee: {meetup.fee})"
 
 
 async def user_wants_notification(
@@ -186,36 +186,36 @@ async def _send_push_to_users(
 # ── notification functions ───────────────────────────────────────────
 
 
-async def notify_new_session_invites(
+async def notify_new_meetup_invites(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
     recipients: list[User],
 ) -> None:
     """Announce sign-ups; tapping the notification or Join opens the join flow."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
 
-    summary = _format_session_summary(session)
+    summary = _format_meetup_summary(meetup)
     user_ids: set[int] = {u.id for u in recipients if u.id}
     if not user_ids:
         return
 
-    loc = (session.location or "Meetup")[:80]
+    loc = (meetup.location or "Meetup")[:80]
     data = _payload(
-        title="Miootz: new session",
+        title="Miootz: new meetup",
         body=f"{loc} — {summary}",
-        url=f"/session-action?sid={session.id}&act=join",
+        url=f"/meetup-action?mid={meetup.id}&act=join",
         actions=[
-            _action("join", "Join", session),
-            _action("ignore", "Ignore", session),
+            _action("join", "Join", meetup),
+            _action("ignore", "Ignore", meetup),
         ],
     )
-    await _send_push_to_users(db, user_ids, data, category="session_invite")
+    await _send_push_to_users(db, user_ids, data, category="meetup_invite")
 
 
 async def notify_broadcast_spot_open(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
     waitlisted_users: list[User],
 ) -> None:
     """When a spot opens in broadcast mode, push all waitlisted players a Confirm action."""
@@ -226,13 +226,13 @@ async def notify_broadcast_spot_open(
     if not user_ids:
         return
 
-    loc = (session.location or "Meetup")[:80]
+    loc = (meetup.location or "Meetup")[:80]
     data = _payload(
         title="Miootz: spot available",
         body=f"First to confirm gets it — {loc}",
-        url=f"/sessions/{session.id}",
+        url=f"/meetups/{meetup.id}",
         actions=[
-            _action("join", "Confirm", session),
+            _action("join", "Confirm", meetup),
         ],
     )
     await _send_push_to_users(db, user_ids, data, category="waitlist")
@@ -240,28 +240,28 @@ async def notify_broadcast_spot_open(
 
 async def notify_auto_promoted(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
     user: User,
 ) -> None:
     """Push the user who was auto-promoted from the waitlist."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
 
-    loc = (session.location or "Meetup")[:80]
+    loc = (meetup.location or "Meetup")[:80]
     data = _payload(
         title="Miootz: you're in!",
         body=f"Promoted from waitlist — {loc}",
-        url=f"/sessions/{session.id}",
+        url=f"/meetups/{meetup.id}",
         actions=[
-            _action("view", "View", session),
+            _action("view", "View", meetup),
         ],
     )
     await _send_push_to_users(db, {user.id}, data, category="waitlist")
 
 
-async def notify_session_chat_recipients(
+async def notify_meetup_chat_recipients(
     db: AsyncSession,
-    session_id: int,
+    meetup_id: int,
     sender_user_id: int,
     sender_username: str,
     message_preview: str,
@@ -271,7 +271,7 @@ async def notify_session_chat_recipients(
 
     r = await db.execute(
         select(Attendance.user_id).where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.user_id != sender_user_id,
             Attendance.status != "cancelled",
         )
@@ -282,13 +282,13 @@ async def notify_session_chat_recipients(
 
     title = "Miootz chat"
     body = f"{sender_username}: {message_preview[:200]}"
-    data = _payload(title, body, f"/sessions/{session_id}")
+    data = _payload(title, body, f"/meetups/{meetup_id}")
     await _send_push_to_users(db, user_ids, data, category="chat")
 
 
-async def notify_session_cancelled_recipients(
+async def notify_meetup_cancelled_recipients(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
 ) -> None:
     """Notify all non-cancelled attendees that an admin removed the meetup."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
@@ -296,7 +296,7 @@ async def notify_session_cancelled_recipients(
 
     r = await db.execute(
         select(Attendance.user_id).where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status != "cancelled",
         )
     )
@@ -304,18 +304,18 @@ async def notify_session_cancelled_recipients(
     if not user_ids:
         return
 
-    loc = (session.location or "Meetup")[:120]
+    loc = (meetup.location or "Meetup")[:120]
     data = _payload(
-        title="Session cancelled",
+        title="Meetup cancelled",
         body=f"{loc} — this meetup was removed from the schedule.",
-        url="/sessions",
+        url="/meetups",
     )
-    await _send_push_to_users(db, user_ids, data, category="session_cancelled")
+    await _send_push_to_users(db, user_ids, data, category="meetup_cancelled")
 
 
-async def notify_kickoff_reminder_for_session(
+async def notify_kickoff_reminder_for_meetup(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
 ) -> None:
     """Notify all non-cancelled attendees that kickoff is in about one hour."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
@@ -323,7 +323,7 @@ async def notify_kickoff_reminder_for_session(
 
     r = await db.execute(
         select(Attendance.user_id).where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status != "cancelled",
         )
     )
@@ -331,29 +331,29 @@ async def notify_kickoff_reminder_for_session(
     if not user_ids:
         return
 
-    loc = (session.location or "Meetup")[:120]
+    loc = (meetup.location or "Meetup")[:120]
     data = _payload(
         title="Kickoff in 1 hour",
         body=f"{loc} — see you at the pitch!",
-        url=f"/sessions/{session.id}",
+        url=f"/meetups/{meetup.id}",
         actions=[
-            _action("view", "View", session),
+            _action("view", "View", meetup),
         ],
     )
     await _send_push_to_users(db, user_ids, data, category="kickoff_reminder")
 
 
-async def notify_rating_reminder_for_session(
+async def notify_rating_reminder_for_meetup(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
 ) -> None:
-    """Notify all confirmed attendees to rate their peers after the session ends."""
+    """Notify all confirmed attendees to rate their peers after the meetup ends."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
 
     r = await db.execute(
         select(Attendance.user_id).where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status == "confirmed",
         )
     )
@@ -361,13 +361,13 @@ async def notify_rating_reminder_for_session(
     if not user_ids:
         return
 
-    loc = (session.location or "Meetup")[:120]
+    loc = (meetup.location or "Meetup")[:120]
     data = _payload(
         title="Rate your teammates",
-        body=f"{loc} — rate the players from this session",
-        url=f"/sessions/{session.id}",
+        body=f"{loc} — rate the players from this meetup",
+        url=f"/meetups/{meetup.id}",
         actions=[
-            _action("rate", "Rate", session),
+            _action("rate", "Rate", meetup),
         ],
     )
     await _send_push_to_users(db, user_ids, data, category="rating_reminder")

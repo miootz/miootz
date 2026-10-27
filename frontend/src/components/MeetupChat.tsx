@@ -1,4 +1,4 @@
-import { parseSessionStart } from "../utils/datetime";
+import { parseMeetupStart } from "../utils/datetime";
 import React, {
   useState,
   useEffect,
@@ -17,15 +17,15 @@ import {
 import { apiFetch } from "../api/client";
 import { mediaUrl } from "../api/meApi";
 import {
-  postSessionChatTyping,
-  sessionChatEventsUrl,
-} from "../api/sessionsApi";
+  postMeetupChatTyping,
+  meetupChatEventsUrl,
+} from "../api/meetupsApi";
 import { useAuth } from "../auth/useAuth";
 import {
   appendCachedChatMessage,
   getCachedChatMessages,
   setCachedChatMessages,
-} from "../stores/sessionChatCache";
+} from "../stores/meetupChatCache";
 import { useToast } from "../context/ToastContext";
 import {
   enqueueOutbox,
@@ -43,8 +43,8 @@ import {
 } from "lucide-react";
 import { hapticLight } from "../utils/haptics";
 
-const chatLastReadKey = (sessionId: string) =>
-  `miootz:chat:lastRead:${sessionId}`;
+const chatLastReadKey = (meetupId: string) =>
+  `miootz:chat:lastRead:${meetupId}`;
 
 const QUICK_EMOJIS = [
   "⚽",
@@ -66,8 +66,8 @@ const QUICK_EMOJIS = [
 
 const MAX_MESSAGE_LENGTH = 1000;
 
-interface SessionChatProps {
-  sessionId: string;
+interface MeetupChatProps {
+  meetupId: string;
 }
 
 /** ─── Avatar / initials ─────────────────────────────────────────── */
@@ -149,7 +149,7 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
   const isFirst = group.showHeader;
   const mine = group.isMine;
 
-  const bubbleMine = "bg-violet-600 text-white dark:bg-violet-600 shadow-sm";
+  const bubbleMine = "bg-teal-700 text-white dark:bg-teal-700 shadow-sm";
   const bubbleOther =
     "bg-gray-100 text-gray-800 dark:bg-gray-700/70 dark:text-gray-100";
 
@@ -174,7 +174,7 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
             <span
               className={
                 mine
-                  ? "text-xs font-semibold truncate text-violet-700 dark:text-violet-300"
+                  ? "text-xs font-semibold truncate text-teal-800 dark:text-teal-300"
                   : "text-xs font-semibold truncate"
               }
               style={mine ? undefined : { color: group.usernameColor }}
@@ -242,7 +242,7 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="absolute bottom-20 right-4 z-10 w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 hover:shadow-xl transition-all"
+      className="absolute bottom-20 right-4 z-10 w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 hover:shadow-xl transition-all"
       aria-label="Scroll to latest messages"
     >
       <ArrowDown className="w-4 h-4" />
@@ -251,7 +251,7 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
 }
 
 /** ─── Main component ────────────────────────────────────────────── */
-export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
+export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
   const { showToast } = useToast();
   const { me, tokens } = useAuth();
   const myUserId = me?.user.id ?? null;
@@ -321,8 +321,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   }, []);
 
   const flushTypingFalse = useCallback(() => {
-    void postSessionChatTyping(sessionId, false).catch(() => {});
-  }, [sessionId]);
+    void postMeetupChatTyping(meetupId, false).catch(() => {});
+  }, [meetupId]);
 
   const onMessageInputChange = (v: string) => {
     setNewMessage(v);
@@ -334,7 +334,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     const now = Date.now();
     if (now - lastTypingSentRef.current > 2000) {
       lastTypingSentRef.current = now;
-      void postSessionChatTyping(sessionId, true).catch(() => {});
+      void postMeetupChatTyping(meetupId, true).catch(() => {});
     }
   };
 
@@ -385,13 +385,13 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
   useEffect(() => {
     if (messages.length === 0) return;
     const latestId = Math.max(...messages.map((m) => m.id));
-    const key = chatLastReadKey(sessionId);
+    const key = chatLastReadKey(meetupId);
     const raw = localStorage.getItem(key);
     if (raw === null) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
         new CustomEvent("miootz-chat-unread", {
-          detail: { sessionId, unread: false },
+          detail: { meetupId, unread: false },
         }),
       );
       return;
@@ -400,7 +400,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
         new CustomEvent("miootz-chat-unread", {
-          detail: { sessionId, unread: false },
+          detail: { meetupId, unread: false },
         }),
       );
       return;
@@ -409,16 +409,16 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     const unread = latestId > lastRead;
     window.dispatchEvent(
       new CustomEvent("miootz-chat-unread", {
-        detail: { sessionId, unread },
+        detail: { meetupId, unread },
       }),
     );
-  }, [messages, sessionId, isExpanded]);
+  }, [messages, meetupId, isExpanded]);
 
-  // Reset state when sessionId changes (hydrate from IndexedDB)
+  // Reset state when meetupId changes (hydrate from IndexedDB)
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const fromStore = await getCachedChatMessages(sessionId);
+      const fromStore = await getCachedChatMessages(meetupId);
       if (cancelled) return;
       setMessages(fromStore ?? []);
       setIsLoading(fromStore === undefined);
@@ -428,13 +428,13 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [meetupId]);
 
   // SSE + initial fetch
   useEffect(() => {
     let cancelled = false;
     const eventSource = new EventSource(
-      sessionChatEventsUrl(sessionId, tokens?.accessToken),
+      meetupChatEventsUrl(meetupId, tokens?.accessToken),
     );
 
     eventSource.onmessage = (event) => {
@@ -465,7 +465,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       if (msg.id == null) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev;
-        void appendCachedChatMessage(sessionId, msg);
+        void appendCachedChatMessage(meetupId, msg);
         return [...prev, msg];
       });
     };
@@ -476,24 +476,24 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     };
 
     (async () => {
-      const cached = await getCachedChatMessages(sessionId);
+      const cached = await getCachedChatMessages(meetupId);
       if (cached !== undefined) {
         if (!cancelled) setIsLoading(false);
         return;
       }
       try {
-        const response = await apiFetch(`/sessions/${sessionId}/chat`);
+        const response = await apiFetch(`/meetups/${meetupId}/chat`);
         if (cancelled) return;
         if (response.ok) {
           const data = (await response.json()) as ChatMessage[];
           setMessages(data);
-          await setCachedChatMessages(sessionId, data);
+          await setCachedChatMessages(meetupId, data);
         } else {
-          await setCachedChatMessages(sessionId, []);
+          await setCachedChatMessages(meetupId, []);
         }
       } catch (error) {
         console.error("Failed to fetch initial messages:", error);
-        const fallback = await getCachedChatMessages(sessionId);
+        const fallback = await getCachedChatMessages(meetupId);
         if (!cancelled && fallback !== undefined) {
           setMessages(fallback);
         }
@@ -506,7 +506,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       cancelled = true;
       eventSource.close();
     };
-  }, [sessionId, handleTypingEvent, tokens?.accessToken]);
+  }, [meetupId, handleTypingEvent, tokens?.accessToken]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -520,7 +520,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       try {
         await enqueueOutbox({
           type: "chat",
-          sessionId,
+          meetupId,
           message: trimmed,
         });
         await requestBackgroundSync();
@@ -539,7 +539,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
     }
 
     try {
-      const response = await apiFetch(`/sessions/${sessionId}/chat`, {
+      const response = await apiFetch(`/meetups/${meetupId}/chat`, {
         method: "POST",
         body: JSON.stringify({ message: trimmed }),
       });
@@ -594,7 +594,7 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
       usernameColor: m.username_color ?? usernameColor(m.username),
       avatarUrl: cropped ?? null,
       text: m.message,
-      time: parseSessionStart(m.created_at),
+      time: parseMeetupStart(m.created_at),
     };
   });
 
@@ -636,8 +636,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             aria-expanded="false"
           >
             <span className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-violet-500" />
-              Session Chat
+              <Users className="w-4 h-4 text-teal-500" />
+              Meetup Chat
               {messageCount > 0 && (
                 <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                   · {messageCount} message{messageCount !== 1 ? "s" : ""}
@@ -692,8 +692,8 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
           <span className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-violet-500" />
-            Session Chat
+            <Users className="w-4 h-4 text-teal-500" />
+            Meetup Chat
             {messageCount > 0 && (
               <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                 · {messageCount} message{messageCount !== 1 ? "s" : ""}
@@ -800,13 +800,13 @@ export const SessionChat: React.FC<SessionChatProps> = ({ sessionId }) => {
             onKeyDown={handleKeyDown}
             placeholder="Type a message…"
             maxLength={MAX_MESSAGE_LENGTH + 10}
-            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-shadow placeholder:text-gray-500 dark:placeholder:text-gray-400"
+            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-shadow placeholder:text-gray-500 dark:placeholder:text-gray-400"
             aria-label="Chat message"
           />
           <button
             type="submit"
             disabled={!newMessage.trim() || isOverLimit}
-            className="flex-shrink-0 w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-95"
+            className="flex-shrink-0 w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-95"
             aria-label="Send message"
           >
             <Send className="w-4 h-4" />

@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
 from app.demo_data import seed_demo, SCENARIOS
-from app.models.session import Attendance, GameSession
-from app.models.match import SessionMatch
+from app.models.meetup import Attendance, Meetup
+from app.models.match import MeetupMatch
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.chat import ChatMessage
 from app.models.user import User
@@ -28,8 +28,8 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             15 if scenario in ("full", "broadcast") else 12
         )
         assert manifest["waitlisted"] == (3 if scenario in ("full", "broadcast") else 0)
-        current = await db.get(GameSession, 1)
-        recent = await db.get(GameSession, 2)
+        current = await db.get(Meetup, 1)
+        recent = await db.get(Meetup, 2)
         assert current is not None
         assert recent is not None
         assert current.start_time > anchor
@@ -42,7 +42,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             (
                 await db.scalars(
                     select(Attendance.user_id).where(
-                        Attendance.session_id == 1, Attendance.status == "confirmed"
+                        Attendance.meetup_id == 1, Attendance.status == "confirmed"
                     )
                 )
             ).all()
@@ -52,7 +52,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert set(uid for team in teams for uid in team) == confirmed
         assert sum(len(team) for team in teams) == len(confirmed)
         assert max(map(len, teams)) - min(map(len, teams)) <= 1
-        assert await db.scalar(select(func.count()).select_from(SessionMatch)) == (
+        assert await db.scalar(select(func.count()).select_from(MeetupMatch)) == (
             19 if scenario == "live" else 18
         )
         u20 = await db.get(User, 20)

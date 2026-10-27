@@ -41,7 +41,7 @@ export async function processOutbox(): Promise<{ sent: number; failed: number }>
   for (const item of items) {
     try {
       if (item.type === 'chat') {
-        const r = await apiFetch(`/sessions/${item.sessionId}/chat`, {
+        const r = await apiFetch(`/meetups/${item.meetupId}/chat`, {
           method: 'POST',
           body: JSON.stringify({ message: item.message }),
         });
@@ -55,7 +55,7 @@ export async function processOutbox(): Promise<{ sent: number; failed: number }>
         const r = await apiFetch('/ratings/', {
           method: 'POST',
           body: JSON.stringify({
-            session_id: item.sessionId,
+            meetup_id: item.meetupId,
             ratee_id: item.rateeId,
             score: item.score,
           }),

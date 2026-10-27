@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.models.session import GameSession
+from app.models.meetup import Meetup
 from app.models.user import User
 from app.services import web_push
 
@@ -16,21 +16,21 @@ async def test_signup_notification_body_and_join_action_open_join_flow(monkeypat
     monkeypatch.setattr(web_push.settings, "PUBLIC_APP_URL", "https://example.test")
     send = AsyncMock()
     monkeypatch.setattr(web_push, "_send_push_to_users", send)
-    session = GameSession(
+    meetup = Meetup(
         id=42, start_time=datetime(2026, 9, 14, 16, 30), location="Pitch 2", fee=5
     )
     db = AsyncMock()
 
-    await web_push.notify_new_session_invites(db, session, [User(id=19)])
+    await web_push.notify_new_meetup_invites(db, meetup, [User(id=19)])
 
     send.assert_awaited_once()
     args = send.await_args
     assert args is not None
     assert args.args[:2] == (db, {19})
-    assert args.kwargs["category"] == "session_invite"
+    assert args.kwargs["category"] == "meetup_invite"
     payload = json.loads(args.args[2])
     # iOS can omit notification action buttons, so the default tap must join too.
-    assert payload["url"] == "/session-action?sid=42&act=join"
+    assert payload["url"] == "/meetup-action?mid=42&act=join"
     actions = {action["action"]: action["url"] for action in payload["actions"]}
-    assert actions["join"] == "https://example.test/session-action?sid=42&act=join"
-    assert actions["ignore"] == "https://example.test/session-action?sid=42&act=ignore"
+    assert actions["join"] == "https://example.test/meetup-action?mid=42&act=join"
+    assert actions["ignore"] == "https://example.test/meetup-action?mid=42&act=ignore"

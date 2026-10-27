@@ -60,7 +60,7 @@ def build_teams_from_manual(
     return [[by_id[uid] for uid in team] for team in manual]
 
 
-def resolve_session_teams_nested(
+def resolve_meetup_teams_nested(
     manual_teams_json: str | None,
     team_assignment_mode: str,
     players: list[dict[str, Any]],
@@ -77,9 +77,9 @@ def resolve_session_teams_nested(
     return assign_teams_snake(players, max_teams=max_teams)
 
 
-def get_team_names(session: Any) -> list[str] | None:
-    """Parse team_names_json from a session object."""
-    raw = getattr(session, "team_names_json", None)
+def get_team_names(meetup: Any) -> list[str] | None:
+    """Parse team_names_json from a meetup object."""
+    raw = getattr(meetup, "team_names_json", None)
     if not raw:
         return None
     try:
@@ -88,12 +88,12 @@ def get_team_names(session: Any) -> list[str] | None:
         return None
 
 
-def ensure_team_names(session: Any, num_teams: int | None = None) -> list[str]:
-    """Ensure the session has team names, generating if needed.
+def ensure_team_names(meetup: Any, num_teams: int | None = None) -> list[str]:
+    """Ensure the meetup has team names, generating if needed.
 
     Returns the list of team names. Does NOT persist — caller must flush.
     """
-    existing = get_team_names(session)
+    existing = get_team_names(meetup)
     if existing and len(existing) >= (num_teams or 2):
         return existing
 
@@ -101,7 +101,7 @@ def ensure_team_names(session: Any, num_teams: int | None = None) -> list[str]:
     if num_teams is None:
         num_teams = 2
     names = generate_team_names(num_teams)
-    session.team_names_json = json.dumps(names)
+    meetup.team_names_json = json.dumps(names)
     return names
 
 
@@ -111,7 +111,7 @@ def format_teams_api_payload(
 ) -> list[dict[str, Any]]:
     """Format resolved teams for the API response.
 
-    When *team_names* is provided (from session.team_names_json), uses those
+    When *team_names* is provided (from meetup.team_names_json), uses those
     names. Otherwise falls back to "Team 1", "Team 2", …
     """
     out: list[dict[str, Any]] = []

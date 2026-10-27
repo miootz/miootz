@@ -25,12 +25,12 @@ def _utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None)
 
 
-async def _queued_rows(session_id: int) -> list[JobQueue]:
+async def _queued_rows(meetup_id: int) -> list[JobQueue]:
     async with AsyncSession(engine) as db:
         return list(
             (
                 await db.execute(
-                    select(JobQueue).where(JobQueue.ref_id == session_id)
+                    select(JobQueue).where(JobQueue.ref_id == meetup_id)
                 )
             )
             .scalars()
@@ -50,7 +50,7 @@ async def test_rating_reminder_queued_repointed_and_dropped():
 
         start = datetime.now(UTC) + timedelta(days=1)
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": start.isoformat(),
                 "location": "Pitch",
@@ -61,32 +61,32 @@ async def test_rating_reminder_queued_repointed_and_dropped():
             headers={"Authorization": "Bearer admin"},
         )
         assert resp.status_code == 201
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
-        # Creating the session queues a durable rating-reminder job at end time.
-        rows = await _queued_rows(session_id)
+        # Creating the meetup queues a durable rating-reminder job at end time.
+        rows = await _queued_rows(meetup_id)
         assert len(rows) == 1
         assert rows[0].job_type == "rating_reminder"
         assert rows[0].run_at == _utc(start + timedelta(minutes=60))
 
-        # Moving the session re-points the same job (no duplicate row).
+        # Moving the meetup re-points the same job (no duplicate row).
         new_start = start + timedelta(hours=2)
         resp = await ac.patch(
-            f"/sessions/{session_id}",
+            f"/meetups/{meetup_id}",
             json={"start_time": new_start.isoformat()},
             headers={"Authorization": "Bearer admin"},
         )
         assert resp.status_code == 200
-        rows = await _queued_rows(session_id)
+        rows = await _queued_rows(meetup_id)
         assert len(rows) == 1
         assert rows[0].run_at == _utc(new_start + timedelta(minutes=60))
 
-        # Deleting the session drops the queued job.
+        # Deleting the meetup drops the queued job.
         resp = await ac.delete(
-            f"/sessions/{session_id}", headers={"Authorization": "Bearer admin"}
+            f"/meetups/{meetup_id}", headers={"Authorization": "Bearer admin"}
         )
         assert resp.status_code == 200
-        assert await _queued_rows(session_id) == []
+        assert await _queued_rows(meetup_id) == []
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_run_due_jobs_executes_and_drops_row():
         db.add(
             JobQueue(
                 job_type="rating_reminder",
-                ref_id=99999,  # nonexistent session — handler skips cleanly
+                ref_id=99999,  # nonexistent meetup — handler skips cleanly
                 run_at=now - timedelta(minutes=1),
                 created_at=now,
             )

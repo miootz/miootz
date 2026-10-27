@@ -1,4 +1,4 @@
-"""Weekly templates: next kickoff session + push notifications at a scheduled wall time."""
+"""Weekly templates: next kickoff meetup + push notifications at a scheduled wall time."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from sqlalchemy.exc import IntegrityError
 from app.core.timeutil import to_utc
 from app.core.database import async_session
 from app.models.game_template import GameTemplate
-from app.models.session import GameSession
+from app.models.meetup import Meetup
 from app.models.user import User
 from app.services.template_subscriptions import filter_users_by_template_subscription
-from app.services.web_push import notify_new_session_invites
+from app.services.web_push import notify_new_meetup_invites
 
 logger = logging.getLogger(__name__)
 
 
 def next_occurrence_utc(template: GameTemplate, after_utc: datetime) -> datetime | None:
-    """First session start at or after `after_utc` (UTC) matching the template kickoff wall time."""
+    """First meetup start at or after `after_utc` (UTC) matching the template kickoff wall time."""
     try:
         z = ZoneInfo(template.timezone)
     except ZoneInfoNotFoundError:
@@ -47,7 +47,7 @@ def next_occurrence_utc(template: GameTemplate, after_utc: datetime) -> datetime
 
 
 def prev_occurrence_utc(template: GameTemplate, before_utc: datetime) -> datetime | None:
-    """Most recent session start strictly before `before_utc` (UTC) matching the template kickoff wall time."""
+    """Most recent meetup start strictly before `before_utc` (UTC) matching the template kickoff wall time."""
     try:
         z = ZoneInfo(template.timezone)
     except ZoneInfoNotFoundError:
@@ -100,14 +100,14 @@ def next_announce_occurrence_utc(
     return None
 
 
-async def _create_template_session(
+async def _create_template_meetup(
     db, template: GameTemplate, t: datetime
-) -> "GameSession | None":
-    """Create a session row for kickoff instant `t`; None if one already exists."""
+) -> "Meetup | None":
+    """Create a meetup row for kickoff instant `t`; None if one already exists."""
     # Team count follows the max_players heuristic (see migrations backfill).
     from app.services.manual_teams import ensure_team_names
 
-    session = GameSession(
+    meetup = Meetup(
         start_time=t,
         location=template.location,
         fee=template.fee,
@@ -122,28 +122,28 @@ async def _create_template_session(
         match_duration_minutes=getattr(template, "match_duration_minutes", None)
         or 10,
     )
-    ensure_team_names(session, 3 if (session.max_players or 15) >= 13 else 2)
-    db.add(session)
+    ensure_team_names(meetup, 3 if (meetup.max_players or 15) >= 13 else 2)
+    db.add(meetup)
     try:
         await db.commit()
     except IntegrityError:
-        # uq_session_template_start: a concurrent poller took the slot first.
+        # uq_meetup_template_start: a concurrent poller took the slot first.
         await db.rollback()
         return None
-    await db.refresh(session)
+    await db.refresh(meetup)
 
-    # Queue rating reminder at session end time (durable job queue)
+    # Queue rating reminder at meetup end time (durable job queue)
     from app.services.rating_reminder_scheduler import register_rating_reminder
 
-    await register_rating_reminder(db, session)
-    return session
+    await register_rating_reminder(db, meetup)
+    return meetup
 
 
-async def materialize_next_session_and_notify(template_id: int) -> bool:
+async def materialize_next_meetup_and_notify(template_id: int) -> bool:
     """
-    If the next weekly kickoff slot has no session row yet, create it (details from the template)
+    If the next weekly kickoff slot has no meetup row yet, create it (details from the template)
     and notify users who subscribe to this template. Idempotent for that kickoff instant.
-    Returns True if a new session row was created.
+    Returns True if a new meetup row was created.
     """
     async with async_session() as db:
         template = await db.get(GameTemplate, template_id)
@@ -156,13 +156,13 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             return False
 
         # Missed-week backfill: if the most recent past kickoff has no row
-        # and no newer session exists for this template, recreate it so a
+        # and no newer meetup exists for this template, recreate it so a
         # downed server doesn't silently drop the week. No push — the slot
         # is already in the past.
         last_existing = (
             await db.execute(
-                select(func.max(GameSession.start_time)).where(
-                    GameSession.game_template_id == template.id
+                select(func.max(Meetup.start_time)).where(
+                    Meetup.game_template_id == template.id
                 )
             )
         ).scalar_one_or_none()
@@ -171,15 +171,15 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             prev is not None
             and (last_existing is None or prev > to_utc(last_existing))
         ):
-            if await _create_template_session(db, template, prev) is not None:
+            if await _create_template_meetup(db, template, prev) is not None:
                 logger.info(
-                    "Game template %s: backfilled missed session at %s",
+                    "Game template %s: backfilled missed meetup at %s",
                     template_id,
                     prev.isoformat(),
                 )
 
-        session = await _create_template_session(db, template, t)
-        if session is None:
+        meetup = await _create_template_meetup(db, template, t)
+        if meetup is None:
             return False
 
         result = await db.execute(select(User))
@@ -191,12 +191,12 @@ async def materialize_next_session_and_notify(template_id: int) -> bool:
             )
             recipients = [u for u in all_users if u.id in allowed]
             if recipients:
-                await notify_new_session_invites(db, session, recipients)
+                await notify_new_meetup_invites(db, meetup, recipients)
 
         logger.info(
-            "Game template %s: created session %s at %s",
+            "Game template %s: created meetup %s at %s",
             template_id,
-            session.id,
+            meetup.id,
             t.isoformat(),
         )
         return True

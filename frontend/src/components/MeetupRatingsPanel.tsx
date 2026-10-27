@@ -12,11 +12,11 @@ import { enqueueOutbox, requestBackgroundSync } from "../offline/outbox";
 import { useToast } from "../context/ToastContext";
 import { StarRating } from "./StarRating";
 
-interface SessionRatingsPanelProps {
-  sessionId: number;
+interface MeetupRatingsPanelProps {
+  meetupId: number;
 }
 
-export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
+export function MeetupRatingsPanel({ meetupId }: MeetupRatingsPanelProps) {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,24 +32,24 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const ctx = await fetchRatingContext(sessionId);
+      const ctx = await fetchRatingContext(meetupId);
       setRatees(ctx.ratees);
       setEditable(ctx.ratings_editable);
-      setBeforeEnd(ctx.before_session_end);
+      setBeforeEnd(ctx.before_meetup_end);
       setLocked(ctx.ratings_locked);
       setLockHint(ctx.ratings_lock_at);
       setViewerAttended(ctx.viewer_attended ?? true);
-      await cachePut(cacheKeyRatingContext(sessionId), ctx);
+      await cachePut(cacheKeyRatingContext(meetupId), ctx);
     } catch (e) {
       const cached = await cacheGet<RatingContextResponse>(
-        cacheKeyRatingContext(sessionId),
+        cacheKeyRatingContext(meetupId),
       );
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (cached?.data && offline) {
         const ctx = cached.data;
         setRatees(ctx.ratees);
         setEditable(ctx.ratings_editable);
-        setBeforeEnd(ctx.before_session_end);
+        setBeforeEnd(ctx.before_meetup_end);
         setLocked(ctx.ratings_locked);
         setLockHint(ctx.ratings_lock_at);
         setViewerAttended(ctx.viewer_attended ?? true);
@@ -61,7 +61,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [meetupId]);
 
   useEffect(() => {
     void load();
@@ -75,7 +75,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         await enqueueOutbox({
           type: "rating",
-          sessionId,
+          meetupId,
           rateeId,
           score,
         });
@@ -91,7 +91,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
         );
         return;
       }
-      await submitRating(sessionId, rateeId, score);
+      await submitRating(meetupId, rateeId, score);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -117,7 +117,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
   if (beforeEnd) {
     return (
       <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
-        Ratings open after this session&apos;s start time.
+        Ratings open after this meetup&apos;s start time.
       </p>
     );
   }
@@ -136,12 +136,12 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
             )}
           </>
         ) : (
-          <>View-only — you didn&apos;t attend this session.</>
+          <>View-only — you didn&apos;t attend this meetup.</>
         )}
       </p>
       {viewerAttended && locked && (
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          Ratings for this session are final.
+          Ratings for this meetup are final.
         </p>
       )}
       {error && (
@@ -176,6 +176,7 @@ export function SessionRatingsPanel({ sessionId }: SessionRatingsPanelProps) {
                 onChange={(score) => void onPick(r.user_id, score)}
                 size={20}
                 readonly={!editable || savingId === r.user_id}
+                label="Skill rating"
               />
             ) : null}
           </li>

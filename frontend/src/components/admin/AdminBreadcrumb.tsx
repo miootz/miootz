@@ -21,7 +21,7 @@ export function AdminBreadcrumb({ items }: { items: AdminCrumb[] }) {
             {item.to && !last ? (
               <Link
                 to={item.to}
-                className="hover:text-violet-600 dark:hover:text-violet-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 rounded"
+                className="hover:text-teal-700 dark:hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded"
               >
                 {item.label}
               </Link>

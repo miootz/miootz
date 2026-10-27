@@ -30,7 +30,7 @@ async def test_plus_one_preview_rate_limited(setup_db):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         for _ in range(n + 5):
-            r = await ac.get("/sessions/plus-one/nonexistent-claim-token")
+            r = await ac.get("/meetups/plus-one/nonexistent-claim-token")
             codes.append(r.status_code)
     # Allowed requests reach the endpoint (404 for an unknown token)…
     assert codes[:n] == [404] * n
@@ -47,30 +47,30 @@ async def test_rate_limit_response_is_json_429(setup_db):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         for _ in range(n + 1):
-            responses.append(await ac.get("/sessions/plus-one/another-token"))
+            responses.append(await ac.get("/meetups/plus-one/another-token"))
     r = responses[-1]
     assert r.status_code == 429
     assert "detail" in r.json()
 
 
 @pytest.mark.asyncio
-async def test_old_session_link_route_denied_without_token(setup_db):
+async def test_old_meetup_link_route_denied_without_token(setup_db):
     """The public magic-link route is off the allowlist → default-deny 401."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        r = await ac.post("/session-links/action", json={"t": "whatever"})
+        r = await ac.post("/meetup-links/action", json={"t": "whatever"})
     assert r.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_old_session_link_route_removed_for_authed_users(setup_db):
-    """Even a valid session finds no route — the whole surface is gone."""
+async def test_old_meetup_link_route_removed_for_authed_users(setup_db):
+    """Even a valid meetup finds no route — the whole surface is gone."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         r = await ac.post(
-            "/session-links/action",
+            "/meetup-links/action",
             json={"t": "whatever"},
             headers={"Authorization": "Bearer usertoken"},
         )

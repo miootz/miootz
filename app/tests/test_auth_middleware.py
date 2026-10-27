@@ -15,22 +15,22 @@ async def setup_user():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    async with async_session() as session:
-        session.add(
+    async with async_session() as meetup:
+        meetup.add(
             User(
                 pocket_id_sub="user-uuid",
                 sso_display_name="User",
                 sso_groups=["members"],
             )
         )
-        session.add(
+        meetup.add(
             User(
                 pocket_id_sub="admin-uuid",
                 sso_display_name="Admin",
                 sso_groups=["admins", "members"],
             )
         )
-        await session.commit()
+        await meetup.commit()
     yield
 
 
@@ -128,18 +128,18 @@ async def test_default_deny_on_data_endpoints(setup_user):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         for path in (
-            "/sessions",
-            "/sessions/1",
-            "/sessions/1/teams",
-            "/sessions/1/scores",
-            "/sessions/1/plus-one",
-            "/sessions/1/chat",
-            "/sessions/1/chat/events",
-            "/sessions/1/data/events",
+            "/meetups",
+            "/meetups/1",
+            "/meetups/1/teams",
+            "/meetups/1/scores",
+            "/meetups/1/plus-one",
+            "/meetups/1/chat",
+            "/meetups/1/chat/events",
+            "/meetups/1/data/events",
         ):
             r = await ac.get(path)
             assert r.status_code == 401, f"{path} returned {r.status_code}"
-        r = await ac.post("/sessions/1/weather/refresh")
+        r = await ac.post("/meetups/1/weather/refresh")
         assert r.status_code == 401
 
 
@@ -149,7 +149,7 @@ async def test_invalid_token_rejected_everywhere(setup_user):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        r = await ac.get("/sessions", headers={"Authorization": "Bearer bogus-token"})
+        r = await ac.get("/meetups", headers={"Authorization": "Bearer bogus-token"})
     assert r.status_code == 401
 
 
@@ -159,7 +159,7 @@ async def test_plus_one_preview_stays_public(setup_user):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        r = await ac.get("/sessions/plus-one/nonexistent-token")
+        r = await ac.get("/meetups/plus-one/nonexistent-token")
     assert r.status_code == 404  # endpoint reachable, token unknown
 
 
@@ -173,9 +173,9 @@ async def test_query_token_only_accepted_on_sse_paths(setup_user):
         r = await ac.get("/me?access_token=usertoken")
         assert r.status_code == 401
         # SSE without any token: rejected before streaming starts
-        r = await ac.get("/sessions/1/chat/events")
+        r = await ac.get("/meetups/1/chat/events")
         assert r.status_code == 401
-        r = await ac.get("/sessions/1/chat/events?access_token=bogus")
+        r = await ac.get("/meetups/1/chat/events?access_token=bogus")
         assert r.status_code == 401
 
 

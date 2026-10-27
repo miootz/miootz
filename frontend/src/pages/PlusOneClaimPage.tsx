@@ -5,7 +5,7 @@ import {
   checkPlusOneClaim,
   claimPlusOne,
   type PlusOneClaimCheck,
-} from "../api/sessionsApi";
+} from "../api/meetupsApi";
 import { useAuth } from "../auth/useAuth";
 import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 import { useToast } from "../context/ToastContext";
@@ -79,7 +79,7 @@ export function PlusOneClaimPage() {
   if (busy) claimButtonLabel = "Claiming…";
 
   const buttonClass =
-    "w-full px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50";
+    "w-full px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50";
 
   if (loading || authLoading) {
     return (
@@ -132,7 +132,7 @@ export function PlusOneClaimPage() {
       <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-5 shadow-xl">
         <div className="flex items-center gap-3">
           <UserPlus
-            className="text-violet-600 dark:text-violet-400 shrink-0"
+            className="text-teal-700 dark:text-teal-400 shrink-0"
             size={28}
           />
           <div>

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.user import User
-from app.models.session import Attendance
+from app.models.meetup import Attendance
 from datetime import datetime, timedelta, UTC
 
 
@@ -29,7 +29,7 @@ async def create_test_user(
 
 
 @pytest.mark.asyncio
-async def test_session_lifecycle():
+async def test_meetup_lifecycle():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Setup Users
@@ -39,9 +39,9 @@ async def test_session_lifecycle():
             await create_test_user(db, "p2", "p2-uuid")
             await create_test_user(db, "p3", "p3-uuid")
 
-        # 2. Create Session (admin only)
+        # 2. Create Meetup (admin only)
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -54,27 +54,27 @@ async def test_session_lifecycle():
             headers={"Authorization": "Bearer admin"},
         )
         assert resp.status_code == 201
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
-        # 3. Join Session (P1) - Confirmed
+        # 3. Join Meetup (P1) - Confirmed
         resp = await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p1"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "confirmed"
 
-        # 4. Join Session (P2) - Confirmed
+        # 4. Join Meetup (P2) - Confirmed
         resp = await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p2"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "confirmed"
 
-        # 5. Join Session (P3) - Waitlisted (Capacity 2)
+        # 5. Join Meetup (P3) - Waitlisted (Capacity 2)
         resp = await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p3"},
         )
         assert resp.status_code == 200
@@ -82,7 +82,7 @@ async def test_session_lifecycle():
 
         # 6. P1 Leaves - P3 should be promoted
         resp = await ac.delete(
-            f"/sessions/{session_id}/leave",
+            f"/meetups/{meetup_id}/leave",
             headers={"Authorization": "Bearer p1"},
         )
         assert resp.status_code == 200
@@ -112,7 +112,7 @@ async def test_admin_override():
             await create_test_user(db, "p1_2", "p1_2-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 "location": "Override Pitch",
@@ -123,11 +123,11 @@ async def test_admin_override():
             headers={"Authorization": "Bearer admin2"},
         )
         assert resp.status_code == 201
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
         # P1 joins
         await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p1_2"},
         )
 
@@ -143,7 +143,7 @@ async def test_admin_override():
             user_id = u.id
 
         resp = await ac.post(
-            f"/sessions/{session_id}/admin/move?user_id={user_id}&new_status=waitlisted",
+            f"/meetups/{meetup_id}/admin/move?user_id={user_id}&new_status=waitlisted",
             headers={"Authorization": "Bearer admin2"},
         )
         assert resp.status_code == 200
@@ -158,7 +158,7 @@ async def test_chat_typing_endpoint():
             await create_test_user(db, "admin", "admin-uuid", is_admin=True)
             await create_test_user(db, "typer", "typer-uuid")
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -173,7 +173,7 @@ async def test_chat_typing_endpoint():
         assert resp.status_code == 201
         sid = resp.json()["id"]
         r2 = await ac.post(
-            f"/sessions/{sid}/chat/typing",
+            f"/meetups/{sid}/chat/typing",
             json={"typing": True},
             headers={"Authorization": "Bearer typer"},
         )
@@ -182,7 +182,7 @@ async def test_chat_typing_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_patch_session_teams_admin():
+async def test_patch_meetup_teams_admin():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
@@ -193,7 +193,7 @@ async def test_patch_session_teams_admin():
             await create_test_user(db, "tp4", "tp4-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -206,11 +206,11 @@ async def test_patch_session_teams_admin():
             headers={"Authorization": "Bearer admint"},
         )
         assert resp.status_code == 201
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
         for u in ("tp1", "tp2", "tp3", "tp4"):
             rj = await ac.post(
-                f"/sessions/{session_id}/join",
+                f"/meetups/{meetup_id}/join",
                 headers={"Authorization": f"Bearer {u}"},
             )
             assert rj.status_code == 200
@@ -226,7 +226,7 @@ async def test_patch_session_teams_admin():
                 ids[sub] = str(u.id)
 
         swap = await ac.patch(
-            f"/sessions/{session_id}/teams",
+            f"/meetups/{meetup_id}/teams",
             json={
                 "teams": [
                     [ids["tp1-uuid"], ids["tp3-uuid"]],
@@ -246,7 +246,7 @@ async def test_patch_session_teams_admin():
         }
 
         r403 = await ac.patch(
-            f"/sessions/{session_id}/teams",
+            f"/meetups/{meetup_id}/teams",
             json={
                 "teams": [
                     [ids["tp1-uuid"], ids["tp2-uuid"]],

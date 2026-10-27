@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, Smartphone, X } from "lucide-react";
 import {
   engagementChangedEventName,
-  getSessionViewCount,
+  getMeetupViewCount,
 } from "../offline/engagement";
 import { isDisplayModeStandalone, isIosSafari } from "../utils/pwaDetect";
 import { useOverlayLock } from "../context/OverlayLock";
@@ -16,17 +16,17 @@ interface PwaInstallEvent extends Event {
 /**
  * Full-screen PWA install overlay.
  *
- * Shown every session (not persisted across reloads) to push users toward
+ * Shown every meetup (not persisted across reloads) to push users toward
  * installing the app instead of using it in a browser tab.
- * Dismissing only hides it for the current page session.
+ * Dismissing only hides it for the current page meetup.
  */
 export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   const { tryAcquire, release } = useOverlayLock();
   const [lockAcquired, setLockAcquired] = useState(false);
   const [deferred, setDeferred] = useState<PwaInstallEvent | null>(null);
-  const [_sessionViews, setSessionViews] = useState(getSessionViewCount);
+  const [_meetupViews, setMeetupViews] = useState(getMeetupViewCount);
   const [standalone, setStandalone] = useState(isDisplayModeStandalone);
-  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+  const [dismissedThisSession, setDismissedThisMeetup] = useState(false);
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
@@ -38,7 +38,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   }, []);
 
   useEffect(() => {
-    const sync = () => setSessionViews(getSessionViewCount());
+    const sync = () => setMeetupViews(getMeetupViewCount());
     window.addEventListener(engagementChangedEventName, sync);
     return () => window.removeEventListener(engagementChangedEventName, sync);
   }, []);
@@ -76,7 +76,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   // Don't show if already installed (standalone mode)
   if (standalone) return null;
 
-  // Don't show if user dismissed for this session
+  // Don't show if user dismissed for this meetup
   if (dismissedThisSession) return null;
 
   // Show if we have a Chromium install prompt
@@ -95,11 +95,11 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
       aria-modal="true"
       aria-label="Install Miootz"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-violet-200 bg-white p-6 shadow-2xl dark:border-violet-800 dark:bg-gray-900">
+      <div className="w-full max-w-sm rounded-2xl border border-teal-200 bg-white p-6 shadow-2xl dark:border-teal-800 dark:bg-gray-900">
         <div className="flex items-start justify-between">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-900/40">
             <Smartphone
-              className="h-6 w-6 text-violet-600 dark:text-violet-400"
+              className="h-6 w-6 text-teal-700 dark:text-teal-400"
               aria-hidden
             />
           </div>
@@ -109,7 +109,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
             aria-label="Dismiss"
             onClick={() => {
               release("install");
-              setDismissedThisSession(true);
+              setDismissedThisMeetup(true);
             }}
           >
             <X size={18} />
@@ -125,20 +125,20 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
         </p>
 
         {showSafariHint && (
-          <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-950/30">
-            <p className="text-sm font-medium text-violet-950 dark:text-violet-100">
+          <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 p-3 dark:border-teal-800 dark:bg-teal-950/30">
+            <p className="text-sm font-medium text-teal-950 dark:text-teal-100">
               On iPhone, use the Share button to install:
             </p>
-            <ol className="mt-2 space-y-1.5 text-sm text-violet-800 dark:text-violet-200/90">
+            <ol className="mt-2 space-y-1.5 text-sm text-teal-800 dark:text-teal-200/90">
               <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-800 dark:bg-violet-800 dark:text-violet-200">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-200 text-xs font-bold text-teal-800 dark:bg-teal-800 dark:text-teal-200">
                   1
                 </span>
                 Tap the <span className="font-semibold">Share</span>{" "}
                 <span className="text-lg">⬆</span> button at the bottom
               </li>
               <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-800 dark:bg-violet-800 dark:text-violet-200">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-200 text-xs font-bold text-teal-800 dark:bg-teal-800 dark:text-teal-200">
                   2
                 </span>
                 Scroll and tap{" "}
@@ -152,7 +152,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
           {showChromium && (
             <button
               type="button"
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white hover:bg-violet-700 active:scale-[0.98] transition-colors"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800 active:scale-[0.98] transition-colors"
               onClick={() => {
                 void (async () => {
                   await deferred.prompt();
@@ -160,7 +160,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
                   if (choice.outcome === "accepted") {
                     setDeferred(null);
                   } else {
-                    setDismissedThisSession(true);
+                    setDismissedThisMeetup(true);
                   }
                 })();
               }}
@@ -174,7 +174,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
             className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
             onClick={() => {
               release("install");
-              setDismissedThisSession(true);
+              setDismissedThisMeetup(true);
             }}
           >
             Dismiss

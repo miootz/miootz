@@ -38,9 +38,9 @@ function str(v: unknown, fallback: string): string {
 }
 
 export async function fetchStewardState(
-  sessionId: number,
+  meetupId: number,
 ): Promise<StewardState> {
-  const r = await apiFetch(`/sessions/${sessionId}/steward-state`);
+  const r = await apiFetch(`/meetups/${meetupId}/steward-state`);
   if (!r.ok) throw new Error(await parseApiError(r));
   const j = (await r.json()) as Partial<StewardState>;
   return {
@@ -61,9 +61,9 @@ export async function fetchStewardState(
  * lease is held by someone else (named, never silent).
  */
 export async function acquireLease(
-  sessionId: number,
+  meetupId: number,
 ): Promise<AcquireResult> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/lease/acquire`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/lease/acquire`, {
     method: "POST",
   });
   if (r.status === 409) {
@@ -88,10 +88,10 @@ export async function acquireLease(
 }
 
 export async function renewLease(
-  sessionId: number,
+  meetupId: number,
   leaseToken: string,
 ): Promise<AcquireResult> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/lease/renew`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/lease/renew`, {
     method: "POST",
     body: JSON.stringify({ lease_token: leaseToken }),
   });
@@ -117,11 +117,11 @@ export async function renewLease(
 }
 
 export async function releaseLease(
-  sessionId: number,
+  meetupId: number,
   leaseToken: string,
 ): Promise<void> {
   try {
-    await apiFetch(`/sessions/${sessionId}/matches/lease/release`, {
+    await apiFetch(`/meetups/${meetupId}/matches/lease/release`, {
       method: "POST",
       body: JSON.stringify({ lease_token: leaseToken }),
     });
@@ -188,11 +188,11 @@ function normalizeGoal(v: unknown): GoalRow | null {
 
 /** Public GET — returns the full goal list for a match (already ordered). */
 export async function fetchGoals(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<GoalRow[]> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/goals`,
+    `/meetups/${meetupId}/matches/${matchId}/goals`,
     { skipAuth: true },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -219,11 +219,11 @@ export interface GoalCreateBody {
  * score, releases the lease and broadcasts `goal_added`.
  */
 export async function createGoal(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   body: GoalCreateBody,
 ): Promise<{ goal: GoalRow | null }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/goals`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goals`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -233,12 +233,12 @@ export async function createGoal(
 }
 
 export async function deleteGoal(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   goalId: number,
 ): Promise<void> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/goals/${goalId}`,
+    `/meetups/${meetupId}/matches/${matchId}/goals/${goalId}`,
     { method: "DELETE" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));

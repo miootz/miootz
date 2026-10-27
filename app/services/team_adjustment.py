@@ -8,16 +8,16 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.manual_teams import (
     ensure_team_names,
     format_teams_api_payload,
-    resolve_session_teams_nested,
+    resolve_meetup_teams_nested,
 )
-from app.services.session_revision import (
-    bump_session_revision,
-    notify_session_data_changed,
+from app.services.meetup_revision import (
+    bump_meetup_revision,
+    notify_meetup_data_changed,
 )
 from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, team_counts
 
@@ -27,8 +27,8 @@ def _compute_capacity(n_teams: int) -> int:
     return n_teams * DEFAULT_TEAM_SIZE
 
 
-async def _load_session_players(
-    db: AsyncSession, session_id: int
+async def _load_meetup_players(
+    db: AsyncSession, meetup_id: int
 ) -> tuple[
     list[dict[str, Any]],  # confirmed players
     list[tuple[Attendance, User]],  # waitlisted (attendance, user) ordered by joined_at ASC
@@ -37,7 +37,7 @@ async def _load_session_players(
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
-        .where(Attendance.session_id == session_id)
+        .where(Attendance.meetup_id == meetup_id)
         .order_by(Attendance.joined_at.asc())
     )
     rows = result.all()
@@ -70,7 +70,7 @@ async def _load_session_players(
 
 async def expand_teams(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
     num_teams: int = 1,
 ) -> dict[str, Any]:
     """Add *num_teams* teams and auto-promote waitlisted players (FIFO by joined_at).
@@ -80,9 +80,9 @@ async def expand_teams(
     if num_teams < 1:
         return {"error": "num_teams must be >= 1"}
 
-    confirmed, waitlisted = await _load_session_players(db, session.id)
+    confirmed, waitlisted = await _load_meetup_players(db, meetup.id)
 
-    current_max = session.max_teams
+    current_max = meetup.max_teams
     # Derive current effective team count
     current_n = len(team_counts(len(confirmed), max_teams=current_max))
     new_max_teams = max(current_max or current_n, current_n + num_teams)
@@ -93,7 +93,7 @@ async def expand_teams(
     if spots_open <= 0:
         return {
             "error": "No additional capacity created",
-            "max_teams": session.max_teams,
+            "max_teams": meetup.max_teams,
         }
 
     # Promote waitlisted players (FIFO by joined_at — already sorted)
@@ -104,19 +104,19 @@ async def expand_teams(
         att.status = "confirmed"
         promoted_ids.append(att.user_id)
 
-    # Update session
-    session.max_teams = new_max_teams
-    session.manual_teams_json = None  # force algorithmic re-assignment
+    # Update meetup
+    meetup.max_teams = new_max_teams
+    meetup.manual_teams_json = None  # force algorithmic re-assignment
 
     # Ensure enough team names
-    ensure_team_names(session, new_max_teams)
+    ensure_team_names(meetup, new_max_teams)
 
     # Re-resolve teams with updated confirmed roster
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status == "confirmed",
         )
     )
@@ -136,16 +136,16 @@ async def expand_teams(
         for _, u in result.all()
     ]
 
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    teams_nested = resolve_session_teams_nested(
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    teams_nested = resolve_meetup_teams_nested(
         None, mode, updated_confirmed, max_teams=new_max_teams
     )
-    team_names = json.loads(session.team_names_json) if session.team_names_json else None
+    team_names = json.loads(meetup.team_names_json) if meetup.team_names_json else None
 
-    rev = await bump_session_revision(db, session.id)
+    rev = await bump_meetup_revision(db, meetup.id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session.id, rev)
+        await notify_meetup_data_changed(meetup.id, rev)
 
     return {
         "operation": "expand",
@@ -158,7 +158,7 @@ async def expand_teams(
 
 async def contract_teams(
     db: AsyncSession,
-    session: GameSession,
+    meetup: Meetup,
     num_teams: int = 1,
 ) -> dict[str, Any]:
     """Remove *num_teams* teams and return excess confirmed players to waitlist (LIFO).
@@ -168,12 +168,12 @@ async def contract_teams(
     if num_teams < 1:
         return {"error": "num_teams must be >= 1"}
 
-    if session.max_teams is None:
+    if meetup.max_teams is None:
         return {"error": "Cannot contract — max_teams is not set (auto mode)"}
 
-    confirmed, _waitlisted = await _load_session_players(db, session.id)
+    confirmed, _waitlisted = await _load_meetup_players(db, meetup.id)
 
-    current_max = session.max_teams
+    current_max = meetup.max_teams
     new_max_teams = max(MIN_TEAMS, current_max - num_teams)
 
     if new_max_teams >= current_max:
@@ -190,7 +190,7 @@ async def contract_teams(
     result = await db.execute(
         select(Attendance)
         .where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status == "confirmed",
         )
         .order_by(Attendance.joined_at.desc())
@@ -204,19 +204,19 @@ async def contract_teams(
         att.status = "waitlisted"
         returned_ids.append(att.user_id)
 
-    # Update session
-    session.max_teams = new_max_teams
-    session.manual_teams_json = None  # force algorithmic re-assignment
+    # Update meetup
+    meetup.max_teams = new_max_teams
+    meetup.manual_teams_json = None  # force algorithmic re-assignment
 
     # Ensure enough team names (may have fewer now, which is fine)
-    ensure_team_names(session, new_max_teams)
+    ensure_team_names(meetup, new_max_teams)
 
     # Re-resolve teams with updated confirmed roster
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session.id,
+            Attendance.meetup_id == meetup.id,
             Attendance.status == "confirmed",
         )
     )
@@ -236,16 +236,16 @@ async def contract_teams(
         for _, u in result.all()
     ]
 
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    teams_nested = resolve_session_teams_nested(
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    teams_nested = resolve_meetup_teams_nested(
         None, mode, updated_confirmed, max_teams=new_max_teams
     )
-    team_names = json.loads(session.team_names_json) if session.team_names_json else None
+    team_names = json.loads(meetup.team_names_json) if meetup.team_names_json else None
 
-    rev = await bump_session_revision(db, session.id)
+    rev = await bump_meetup_revision(db, meetup.id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session.id, rev)
+        await notify_meetup_data_changed(meetup.id, rev)
 
     return {
         "operation": "contract",

@@ -174,16 +174,16 @@ async def prepare(
 
         @app.post("/demo/push")
         async def send_demo_push():
-            from app.models.session import GameSession
+            from app.models.meetup import Meetup
             from app.models.user import User
-            from app.services.web_push import notify_new_session_invites
+            from app.services.web_push import notify_new_meetup_invites
 
             async with async_session() as db:
-                session = await db.get(GameSession, 1)
+                meetup = await db.get(Meetup, 1)
                 recipient = await db.get(User, ACTORS["newcomer"])
-                if session is None or recipient is None:
+                if meetup is None or recipient is None:
                     raise HTTPException(status_code=404, detail="Demo data missing")
-                await notify_new_session_invites(db, session, [recipient])
+                await notify_new_meetup_invites(db, meetup, [recipient])
             return RedirectResponse("/api/demo", status_code=303)
 
     @app.get("/demo", response_class=HTMLResponse)
@@ -313,7 +313,7 @@ def main() -> None:
                 check=True,
             )
             # Installed web apps have separate storage from Safari. Start at the
-            # account chooser so they can establish their own demo session.
+            # account chooser so they can establish their own demo meetup.
             web_manifest = Path(output) / "manifest.json"
             web_manifest_data = json.loads(web_manifest.read_text())
             web_manifest_data["start_url"] = "/api/demo"

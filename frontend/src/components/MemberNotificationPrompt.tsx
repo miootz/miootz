@@ -9,8 +9,8 @@ const SHOW_DELAY_MS = 8000; // Show after 8 seconds (after install prompt has ti
 /**
  * Full-screen notification permission overlay.
  *
- * Shown every session to push users toward enabling push notifications.
- * Dismissing only hides it for the current page session.
+ * Shown every meetup to push users toward enabling push notifications.
+ * Dismissing only hides it for the current page meetup.
  */
 export function MemberNotificationPrompt({
   enabled = true,
@@ -21,7 +21,7 @@ export function MemberNotificationPrompt({
   const { tryAcquire, release } = useOverlayLock();
   const lockAcquiredRef = useRef(false);
   const [visible, setVisible] = useState(false);
-  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+  const [dismissedThisSession, setDismissedThisMeetup] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -58,7 +58,7 @@ export function MemberNotificationPrompt({
     release("notifications");
     lockAcquiredRef.current = false;
     setVisible(false);
-    setDismissedThisSession(true);
+    setDismissedThisMeetup(true);
   };
 
   return (
@@ -68,11 +68,11 @@ export function MemberNotificationPrompt({
       aria-modal="true"
       aria-label="Enable notifications"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-violet-200 bg-white p-6 shadow-2xl dark:border-violet-800 dark:bg-gray-900">
+      <div className="w-full max-w-sm rounded-2xl border border-teal-200 bg-white p-6 shadow-2xl dark:border-teal-800 dark:bg-gray-900">
         <div className="flex items-start justify-between">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-900/40">
             <Bell
-              className="h-6 w-6 text-violet-600 dark:text-violet-400"
+              className="h-6 w-6 text-teal-700 dark:text-teal-400"
               aria-hidden
             />
           </div>
@@ -97,7 +97,7 @@ export function MemberNotificationPrompt({
         <div className="mt-5 flex gap-2">
           <button
             type="button"
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white hover:bg-violet-700 active:scale-[0.98] transition-colors"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800 active:scale-[0.98] transition-colors"
             onClick={async () => {
               const result = await subscribeToWebPush();
               dismiss();

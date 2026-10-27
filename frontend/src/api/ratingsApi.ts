@@ -8,10 +8,10 @@ export interface RateeContext {
 }
 
 export interface RatingContextResponse {
-  session_id: number;
-  session_start_time: string;
-  session_end_time: string;
-  before_session_end: boolean;
+  meetup_id: number;
+  meetup_start_time: string;
+  meetup_end_time: string;
+  before_meetup_end: boolean;
   ratings_locked: boolean;
   ratings_editable: boolean;
   ratings_lock_at: string | null;
@@ -20,22 +20,22 @@ export interface RatingContextResponse {
 }
 
 export async function fetchRatingContext(
-  sessionId: number
+  meetupId: number
 ): Promise<RatingContextResponse> {
-  const r = await apiFetch(`/ratings/sessions/${sessionId}/context`);
+  const r = await apiFetch(`/ratings/meetups/${meetupId}/context`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<RatingContextResponse>;
 }
 
 export async function submitRating(
-  sessionId: number,
+  meetupId: number,
   rateeId: number,
   score: number
 ): Promise<void> {
   const r = await apiFetch('/ratings/', {
     method: 'POST',
     body: JSON.stringify({
-      session_id: sessionId,
+      meetup_id: meetupId,
       ratee_id: rateeId,
       score,
     }),

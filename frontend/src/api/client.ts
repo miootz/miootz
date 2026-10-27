@@ -5,7 +5,7 @@ export function apiBase(): string {
   return (import.meta.env.VITE_API_BASE as string | undefined) || "/api";
 }
 
-/** Clear persisted OIDC tokens after a hard 401 (session no longer valid). */
+/** Clear persisted OIDC tokens after a hard 401 (meetup no longer valid). */
 function clearStoredTokens(): void {
   try {
     localStorage.removeItem("miootz_tokens");
@@ -102,8 +102,8 @@ export async function apiFetch(
     },
   });
 
-  // Public endpoints (skipAuth) can 401 without a session — clearing tokens
-  // and bouncing to login would trap an otherwise-valid session.
+  // Public endpoints (skipAuth) can 401 without a meetup — clearing tokens
+  // and bouncing to login would trap an otherwise-valid meetup.
   if (response.status === 401 && !skipAuth) {
     clearStoredTokens();
     redirectToLogin();

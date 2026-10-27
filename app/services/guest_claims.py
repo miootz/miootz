@@ -9,11 +9,11 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession, MatchScore
+from app.models.meetup import Attendance, Meetup, MatchScore
 from app.models.user import User
-from app.services.session_revision import bump_session_revision
+from app.services.meetup_revision import bump_meetup_revision
 from app.services.skill_service import update_user_calculated_skill
 from app.core.timeutil import utcnow
 
@@ -42,11 +42,11 @@ async def claim_reservation(
             detail="Sign in with the guest's account to claim this spot",
         )
 
-    sid = reservation.session_id
+    sid = reservation.meetup_id
     guest_id = reservation.guest_user_id
     attendance = await db.scalar(
         select(Attendance).where(
-            Attendance.session_id == sid,
+            Attendance.meetup_id == sid,
             Attendance.user_id == guest_id,
         )
     )
@@ -56,7 +56,7 @@ async def claim_reservation(
         )
     existing = await db.scalar(
         select(Attendance).where(
-            Attendance.session_id == sid,
+            Attendance.meetup_id == sid,
             Attendance.user_id == member.id,
         )
     )
@@ -89,25 +89,25 @@ async def claim_reservation(
     if member.self_assessed_skill is None:
         member.self_assessed_skill = reservation.self_assessed_skill
 
-    session = await db.get(GameSession, sid)
-    if session is None:
+    meetup = await db.get(Meetup, sid)
+    if meetup is None:
         raise HTTPException(
             status_code=410, detail="This reservation is no longer available"
         )
-    if session.manual_teams_json:
+    if meetup.manual_teams_json:
         try:
-            teams = json.loads(session.manual_teams_json)
+            teams = json.loads(meetup.manual_teams_json)
         except TypeError, ValueError:
             teams = []
         if teams:
-            session.manual_teams_json = json.dumps(
+            meetup.manual_teams_json = json.dumps(
                 [
                     [member.id if uid == guest_id else uid for uid in team]
                     for team in teams
                 ]
             )
     matches = (
-        await db.scalars(select(SessionMatch).where(SessionMatch.session_id == sid))
+        await db.scalars(select(MeetupMatch).where(MeetupMatch.meetup_id == sid))
     ).all()
     for match in matches:
         for field in ("team_a_users", "team_b_users"):
@@ -126,7 +126,7 @@ async def claim_reservation(
     await db.execute(
         update(MatchScore)
         .where(
-            MatchScore.session_id == sid,
+            MatchScore.meetup_id == sid,
             MatchScore.player_id == guest_id,
         )
         .values(player_id=member.id)
@@ -136,7 +136,7 @@ async def claim_reservation(
     ratings = (
         await db.scalars(
             select(Rating).where(
-                Rating.session_id == sid,
+                Rating.meetup_id == sid,
                 or_(Rating.rater_id == guest_id, Rating.ratee_id == guest_id),
             )
         )
@@ -146,7 +146,7 @@ async def claim_reservation(
         ratee = member.id if rating.ratee_id == guest_id else rating.ratee_id
         duplicate = await db.scalar(
             select(Rating.id).where(
-                Rating.session_id == sid,
+                Rating.meetup_id == sid,
                 Rating.rater_id == rater,
                 Rating.ratee_id == ratee,
             )
@@ -158,4 +158,4 @@ async def claim_reservation(
 
     await db.flush()
     await update_user_calculated_skill(db, user_id=member.id, commit=False)
-    return await bump_session_revision(db, sid)
+    return await bump_meetup_revision(db, sid)

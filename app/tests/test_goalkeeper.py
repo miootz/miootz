@@ -38,10 +38,10 @@ async def client() -> AsyncClient:
 
 
 async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int = 0):
-    """Session + joins + two manual teams + match started. Same as live-scoring."""
+    """Meetup + joins + two manual teams + match started. Same as live-scoring."""
     from datetime import datetime, timedelta, UTC
 
-    from app.models.match import SessionMatch
+    from app.models.match import MeetupMatch
     from app.models.user import User
     from sqlalchemy import select
 
@@ -49,7 +49,7 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
         minutes=start_offset_minutes
     )
     r = await ac.post(
-        "/sessions/",
+        "/meetups/",
         json={
             "start_time": start.isoformat(),
             "location": "Live Pitch",
@@ -63,7 +63,7 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
     sid = r.json()["id"]
 
     for t in tokens:
-        rj = await ac.post(f"/sessions/{sid}/join", headers=hdr(t))
+        rj = await ac.post(f"/meetups/{sid}/join", headers=hdr(t))
         assert rj.status_code == 200, rj.text
         assert rj.json()["status"] == "confirmed"
 
@@ -80,18 +80,18 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
         [str(ids[t]) for t in tokens[half:]],
     ]
     rt = await ac.patch(
-        f"/sessions/{sid}/teams",
+        f"/meetups/{sid}/teams",
         json={"teams": teams},
         headers=hdr("admin"),
     )
     assert rt.status_code == 200, rt.text
 
-    rs = await ac.post(f"/sessions/{sid}/matches/start", headers=hdr("admin"))
+    rs = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admin"))
     assert rs.status_code == 201, rs.text
     mid = rs.json()["match"]["id"]
 
     async with AsyncSession(engine) as db:
-        res = await db.execute(select(SessionMatch).where(SessionMatch.id == mid))
+        res = await db.execute(select(MeetupMatch).where(MeetupMatch.id == mid))
         m = res.scalar_one()
         m.timer_started_at = datetime.now(UTC)
         m.timer_seconds_remaining = m.timer_total_seconds
@@ -109,10 +109,10 @@ async def test_goal_with_valid_conceding_keeper():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -129,7 +129,7 @@ async def test_goal_with_valid_conceding_keeper():
         assert "avatar_url" in goal["goalkeeper"]
 
         # Shown in the public goal log too.
-        rp = await ac.get(f"/sessions/{sid}/matches/{mid}/goals")
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
         assert rp.status_code == 200
         rows = rp.json()["goals"]
         assert len(rows) == 1
@@ -147,11 +147,11 @@ async def test_keeper_from_scoring_team_refused():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         # P1 is on the scoring team (A) — cannot be the beaten keeper.
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -163,7 +163,7 @@ async def test_keeper_from_scoring_team_refused():
         assert r.status_code == 400, r.text
         assert "conceding" in r.json()["detail"].lower()
         # Nothing was stored.
-        rp = await ac.get(f"/sessions/{sid}/matches/{mid}/goals")
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
         assert rp.json()["goals"] == []
 
 
@@ -172,11 +172,11 @@ async def test_keeper_equal_scorer_or_assist_refused():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         # Keeper == scorer (scorer is on A, so use an A player as keeper).
         r1 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -190,7 +190,7 @@ async def test_keeper_equal_scorer_or_assist_refused():
 
         # Keeper == assist (assist on B, keeper offered on B too).
         r2 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -210,10 +210,10 @@ async def test_keeper_omitted_stays_null():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={"team": "a", "scorer_id": ids["p2"], "intent_id": "gk-5"},
             headers=hdr("p1"),
         )
@@ -226,10 +226,10 @@ async def test_keeper_unknown_user_refused():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -239,11 +239,11 @@ async def test_keeper_unknown_user_refused():
             headers=hdr("p1"),
         )
         assert r.status_code == 400
-        assert r.json()["detail"] == "Goalkeeper is not in this session"
-        # viewer: provisioned account that never joined this session —
-        # also "not in this session". Hit a JWT-only endpoint first so the
+        assert r.json()["detail"] == "Goalkeeper is not in this meetup"
+        # viewer: provisioned account that never joined this meetup —
+        # also "not in this meetup". Hit a JWT-only endpoint first so the
         # JIT provisioning path creates the user row, then look up its id.
-        probe = await ac.get("/sessions/", headers=hdr("viewer"))
+        probe = await ac.get("/meetups/", headers=hdr("viewer"))
         assert probe.status_code == 200
         async with AsyncSession(engine) as db:
             vrow = (
@@ -252,7 +252,7 @@ async def test_keeper_unknown_user_refused():
                 )
             ).scalar_one()
         r3 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals",
+            f"/meetups/{sid}/matches/{mid}/goals",
             json={
                 "team": "a",
                 "scorer_id": ids["p2"],
@@ -262,7 +262,7 @@ async def test_keeper_unknown_user_refused():
             headers=hdr("p1"),
         )
         assert r3.status_code == 400
-        assert r3.json()["detail"] == "Goalkeeper is not in this session"
+        assert r3.json()["detail"] == "Goalkeeper is not in this meetup"
 
 
 @pytest.mark.asyncio
@@ -270,7 +270,7 @@ async def test_keeper_preserved_on_intent_replay():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
         assert (
-            await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
         body = {
             "team": "a",
@@ -279,7 +279,7 @@ async def test_keeper_preserved_on_intent_replay():
             "intent_id": "gk-replay",
         }
         r1 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals", json=body, headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/goals", json=body, headers=hdr("p1")
         )
         assert r1.status_code == 201
         goal = r1.json()["goal"]
@@ -288,7 +288,7 @@ async def test_keeper_preserved_on_intent_replay():
 
         # Retry with the same intent: replay returns the same row, same keeper.
         r2 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/goals", json=body, headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/goals", json=body, headers=hdr("p1")
         )
         assert r2.status_code == 200
         assert r2.json()["replayed"] is True

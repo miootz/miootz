@@ -1,9 +1,9 @@
-import { parseSessionStart } from "../utils/datetime";
+import { parseMeetupStart } from "../utils/datetime";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   createMatch,
   deleteMatch,
-  fetchSessionMatches,
+  fetchMeetupMatches,
   setScores,
   type MatchSummary,
 } from "../api/matchesApi";
@@ -12,10 +12,10 @@ import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
 
 export function MatchHistoryList({
-  sessionId,
+  meetupId,
   editable = false,
 }: {
-  sessionId: number;
+  meetupId: number;
   /** When true, scores are clickable and editable by admins. */
   editable?: boolean;
 }) {
@@ -32,7 +32,7 @@ export function MatchHistoryList({
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetchSessionMatches(sessionId);
+      const res = await fetchMeetupMatches(meetupId);
       setMatches(res.matches.filter((m) => m.status === "completed"));
     } catch {
       setMatches([]);
@@ -44,7 +44,7 @@ export function MatchHistoryList({
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [meetupId]);
 
   const handleScoreSubmit = async (
     match: MatchSummary,
@@ -71,7 +71,7 @@ export function MatchHistoryList({
     setEditingId(null);
 
     try {
-      await setScores(sessionId, match.id, newScoreA, newScoreB);
+      await setScores(meetupId, match.id, newScoreA, newScoreB);
     } catch (e) {
       // Revert on failure
       setMatches((prev) =>
@@ -90,7 +90,7 @@ export function MatchHistoryList({
 
   const handleDeleteMatch = async (matchId: number) => {
     try {
-      await deleteMatch(sessionId, matchId);
+      await deleteMatch(meetupId, matchId);
       setMatches((prev) => prev.filter((m) => m.id !== matchId));
       setEditingId(null);
       showToast("Match deleted", "success");
@@ -109,7 +109,7 @@ export function MatchHistoryList({
     scoreB: number,
   ) => {
     try {
-      const res = await createMatch(sessionId, {
+      const res = await createMatch(meetupId, {
         team_a_name: teamA.trim(),
         team_b_name: teamB.trim(),
         score_a: scoreA,
@@ -225,7 +225,7 @@ function MatchResultRow({
 
   const timeLabel = (() => {
     if (!match.completed_at) return null;
-    const d = parseSessionStart(match.completed_at);
+    const d = parseMeetupStart(match.completed_at);
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   })();
 
@@ -282,7 +282,7 @@ function MatchResultRow({
                 }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400"
+                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-teal-700 dark:hover:text-teal-400"
                     : "cursor-default text-gray-900 dark:text-gray-100"
                 }`}
               >
@@ -311,7 +311,7 @@ function MatchResultRow({
                 }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-violet-600 dark:hover:text-violet-400"
+                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-teal-700 dark:hover:text-teal-400"
                     : "cursor-default text-gray-900 dark:text-gray-100"
                 }`}
               >
@@ -414,7 +414,7 @@ function EditableScore({
       min={0}
       defaultValue={value}
       data-match-edit={matchId}
-      className="w-12 text-2xl font-bold tabular-nums text-center rounded-lg border-2 border-violet-400 dark:border-violet-500 bg-violet-50 dark:bg-violet-950/40 text-gray-900 dark:text-gray-100 outline-none"
+      className="w-12 text-2xl font-bold tabular-nums text-center rounded-lg border-2 border-teal-400 dark:border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-gray-900 dark:text-gray-100 outline-none"
     />
   );
 }

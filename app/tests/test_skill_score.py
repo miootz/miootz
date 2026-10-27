@@ -4,7 +4,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 
@@ -34,18 +34,18 @@ async def test_skill_score_calculation_logic():
         await db.refresh(player)
         await db.refresh(rater1)
 
-        session1 = GameSession(
+        meetup1 = Meetup(
             start_time=datetime.now(UTC) - timedelta(hours=48),
             location="Park 1",
             max_players=10,
         )
-        db.add(session1)
+        db.add(meetup1)
         await db.commit()
-        await db.refresh(session1)
+        await db.refresh(meetup1)
 
-        s1id = session1.id
+        s1id = meetup1.id
         for uid in (rater1.id, player.id, auth_user.id):
-            db.add(Attendance(session_id=s1id, user_id=uid))
+            db.add(Attendance(meetup_id=s1id, user_id=uid))
         await db.commit()
 
         player_id = player.id
@@ -56,7 +56,7 @@ async def test_skill_score_calculation_logic():
             "/ratings/",
             headers={"Authorization": "Bearer tester"},
             json={
-                "session_id": s1id,
+                "meetup_id": s1id,
                 "ratee_id": player_id,
                 "score": 5,
             },

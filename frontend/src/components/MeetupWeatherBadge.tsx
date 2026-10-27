@@ -55,16 +55,16 @@ interface WeatherResponse {
 // ── Component ────────────────────────────────────────────────
 
 interface MeetupWeatherBadgeProps {
-    sessionId: number;
-    /** @deprecated pass sessionId instead */
+    meetupId: number;
+    /** @deprecated pass meetupId instead */
     latitude?: number;
-    /** @deprecated pass sessionId instead */
+    /** @deprecated pass meetupId instead */
     longitude?: number;
-    /** @deprecated pass sessionId instead */
+    /** @deprecated pass meetupId instead */
     startTime?: string;
 }
 
-export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
+export function MeetupWeatherBadge({ meetupId }: MeetupWeatherBadgeProps) {
     const [data, setData] = useState<WeatherResponse | null>(null);
     const [_loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -72,9 +72,9 @@ export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
 
     const load = useCallback(async () => {
         try {
-            const r = await apiFetch(`/sessions/${sessionId}/weather`);
+            const r = await apiFetch(`/meetups/${meetupId}/weather`);
             if (!r.ok) {
-                if (r.status === 404) return; // session without coords
+                if (r.status === 404) return; // meetup without coords
                 setErr(true);
                 return;
             }
@@ -86,7 +86,7 @@ export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
                 void (async () => {
                     try {
                         const refreshR = await apiFetch(
-                            `/sessions/${sessionId}/weather/refresh`,
+                            `/meetups/${meetupId}/weather/refresh`,
                             {
                                 method: "POST",
                             },
@@ -116,7 +116,7 @@ export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
         } finally {
             setLoading(false);
         }
-    }, [sessionId]);
+    }, [meetupId]);
 
     useEffect(() => {
         void load();
@@ -125,7 +125,7 @@ export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
     const handleRefresh = async () => {
         setRefreshing(true);
         try {
-            const r = await apiFetch(`/sessions/${sessionId}/weather/refresh`, {
+            const r = await apiFetch(`/meetups/${meetupId}/weather/refresh`, {
                 method: "POST",
             });
             if (r.ok) {
@@ -176,7 +176,7 @@ export function MeetupWeatherBadge({ sessionId }: MeetupWeatherBadgeProps) {
                             void handleRefresh();
                         }}
                         disabled={refreshing}
-                        className="p-0.5 rounded text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
+                        className="p-0.5 rounded text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
                         aria-label="Refresh weather forecast"
                         title="Refresh forecast"
                     >

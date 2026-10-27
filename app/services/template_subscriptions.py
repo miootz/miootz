@@ -26,7 +26,7 @@ async def user_wants_template_notifications(
 async def filter_users_by_template_subscription(
     db: AsyncSession, user_ids: list[int], game_template_id: int
 ) -> list[int]:
-    """Return user_ids that should receive new-session notifications for this template."""
+    """Return user_ids that should receive new-meetup notifications for this template."""
     if not user_ids:
         return []
     r = await db.execute(

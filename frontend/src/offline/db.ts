@@ -22,7 +22,7 @@ interface MiootzOfflineSchema extends DBSchema {
 export type OutboxChat = {
   id: string;
   type: 'chat';
-  sessionId: string;
+  meetupId: string;
   message: string;
   createdAt: number;
 };
@@ -30,7 +30,7 @@ export type OutboxChat = {
 export type OutboxRating = {
   id: string;
   type: 'rating';
-  sessionId: number;
+  meetupId: number;
   rateeId: number;
   score: number;
   createdAt: number;

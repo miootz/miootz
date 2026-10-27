@@ -10,7 +10,7 @@ import {
   type TeamAssignmentMode,
   type WaitlistMode,
 } from "../../api/adminApi";
-import { AdminSessionRecurrenceForm } from "../../components/AdminSessionRecurrenceForm";
+import { AdminMeetupRecurrenceForm } from "../../components/AdminMeetupRecurrenceForm";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import {
@@ -69,7 +69,7 @@ export function AdminGameTemplateEditPage() {
   const [announceHour, setAnnounceHour] = useState(9);
   const [announceMinute, setAnnounceMinute] = useState(0);
 
-  const [sessionCount, setSessionCount] = useState<number | null>(null);
+  const [meetupCount, setMeetupCount] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (isNew || Number.isNaN(id)) return;
@@ -100,7 +100,7 @@ export function AdminGameTemplateEditPage() {
       setAnnounceWeekday(t.announce_weekday);
       setAnnounceHour(t.announce_hour);
       setAnnounceMinute(t.announce_minute);
-      setSessionCount(t.materialized_session_count ?? 0);
+      setMeetupCount(t.materialized_meetup_count ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -184,14 +184,14 @@ export function AdminGameTemplateEditPage() {
     return (
       <div className="flex justify-center py-24">
         <Loader2
-          className="w-8 h-8 animate-spin text-violet-600"
+          className="w-8 h-8 animate-spin text-teal-700"
           aria-label="Loading"
         />
       </div>
     );
   }
 
-  const canDelete = !isNew && (sessionCount === 0 || sessionCount === null);
+  const canDelete = !isNew && (meetupCount === 0 || meetupCount === null);
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
@@ -206,12 +206,12 @@ export function AdminGameTemplateEditPage() {
           />
         }
         title={isNew ? "New game template" : "Edit game template"}
-        subtitle="Kickoff schedule, announce time, and defaults copied onto each auto-created session."
+        subtitle="Kickoff schedule, announce time, and defaults copied onto each auto-created meetup."
       />
 
       <Link
         to="/admin/game-templates"
-        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-violet-600"
+        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700"
       >
         <ArrowLeft className="w-4 h-4" />
         All templates
@@ -230,11 +230,11 @@ export function AdminGameTemplateEditPage() {
           </div>
         )}
 
-        {!isNew && sessionCount != null && sessionCount > 0 && (
+        {!isNew && meetupCount != null && meetupCount > 0 && (
           <p className="text-xs text-amber-800 dark:text-amber-200 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
-            {sessionCount} materialized session{sessionCount === 1 ? "" : "s"}{" "}
+            {meetupCount} materialized meetup{meetupCount === 1 ? "" : "s"}{" "}
             reference this template. You can still edit schedule and defaults;
-            delete is disabled until no sessions use this template.
+            delete is disabled until no meetups use this template.
           </p>
         )}
 
@@ -259,7 +259,7 @@ export function AdminGameTemplateEditPage() {
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            placeholder="Copied onto new sessions"
+            placeholder="Copied onto new meetups"
             className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
             required
           />
@@ -376,13 +376,13 @@ export function AdminGameTemplateEditPage() {
           </p>
         </div>
 
-        <AdminSessionRecurrenceForm
+        <AdminMeetupRecurrenceForm
           startLocal={anchorStartLocal}
           enabled={isActive}
           onEnabledChange={setIsActive}
           scheduleToggleLabel="Schedule active"
           hideMatchStartButton={false}
-          kickoffHelperText="Kickoff wall time each week (used when materializing the next session)."
+          kickoffHelperText="Kickoff wall time each week (used when materializing the next meetup)."
           timezone={recurrenceTz}
           onTimezoneChange={setRecurrenceTz}
           weekday={recurrenceWeekday}
@@ -406,7 +406,7 @@ export function AdminGameTemplateEditPage() {
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 disabled:opacity-60"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {isNew ? "Create template" : "Save changes"}
@@ -428,7 +428,7 @@ export function AdminGameTemplateEditPage() {
       <ConfirmDialog
         open={confirmDelete}
         title="Delete template?"
-        description="This cannot be undone. Only allowed when no sessions reference this template."
+        description="This cannot be undone. Only allowed when no meetups reference this template."
         confirmLabel="Delete"
         destructive
         onCancel={() => setConfirmDelete(false)}

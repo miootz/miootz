@@ -4,7 +4,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 
@@ -17,23 +17,23 @@ async def setup_db():
 
 
 @pytest.mark.asyncio
-async def test_rating_constraint_unattended_session():
+async def test_rating_constraint_unattended_meetup():
     async with async_session() as db:
         auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
         db.add(auth_user)
         await db.commit()
         await db.refresh(auth_user)
 
-        session = GameSession(
+        meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
-        db.add(session)
+        db.add(meetup)
         await db.commit()
-        await db.refresh(session)
+        await db.refresh(meetup)
 
-        session_id = session.id
+        meetup_id = meetup.id
         ratee_id = auth_user.id
 
     transport = ASGITransport(app=app)
@@ -42,14 +42,14 @@ async def test_rating_constraint_unattended_session():
             "/ratings/",
             headers={"Authorization": "Bearer tester"},
             json={
-                "session_id": session_id,
+                "meetup_id": meetup_id,
                 "ratee_id": ratee_id,
                 "score": 5,
             },
         )
     assert resp.status_code == 403
     assert (
-        resp.json()["detail"] == "You can only rate players from sessions you attended"
+        resp.json()["detail"] == "You can only rate players from meetups you attended"
     )
 
 
@@ -63,18 +63,18 @@ async def test_anonymity_check():
         await db.refresh(auth_user)
         await db.refresh(player)
 
-        session = GameSession(
+        meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Test Park",
             max_players=10,
         )
-        db.add(session)
+        db.add(meetup)
         await db.commit()
-        await db.refresh(session)
+        await db.refresh(meetup)
 
-        sid = session.id
+        sid = meetup.id
         pid = player.id
-        db.add(Attendance(session_id=sid, user_id=auth_user.id))
+        db.add(Attendance(meetup_id=sid, user_id=auth_user.id))
         await db.commit()
 
     transport = ASGITransport(app=app)
@@ -83,7 +83,7 @@ async def test_anonymity_check():
             "/ratings/",
             headers={"Authorization": "Bearer tester"},
             json={
-                "session_id": sid,
+                "meetup_id": sid,
                 "ratee_id": pid,
                 "score": 5,
             },
@@ -103,7 +103,7 @@ async def test_anonymity_check():
 
 @pytest.mark.asyncio
 async def test_score_update_verification():
-    """Two ratings in different sessions; no earlier session locks the first."""
+    """Two ratings in different meetups; no earlier meetup locks the first."""
     async with async_session() as db:
         auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
         player1 = User(pocket_id_sub="test-p1", sso_display_name="p1")
@@ -112,20 +112,20 @@ async def test_score_update_verification():
         await db.refresh(auth_user)
         await db.refresh(player1)
 
-        session = GameSession(
+        meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3),
             location="Test Park",
             max_players=10,
         )
-        db.add(session)
+        db.add(meetup)
         await db.commit()
-        await db.refresh(session)
+        await db.refresh(meetup)
 
         for uid in (auth_user.id, player1.id):
-            db.add(Attendance(session_id=session.id, user_id=uid))
+            db.add(Attendance(meetup_id=meetup.id, user_id=uid))
         await db.commit()
 
-        sid1 = session.id
+        sid1 = meetup.id
         p1id = player1.id
 
     transport = ASGITransport(app=app)
@@ -134,7 +134,7 @@ async def test_score_update_verification():
             "/ratings/",
             headers={"Authorization": "Bearer tester"},
             json={
-                "session_id": sid1,
+                "meetup_id": sid1,
                 "ratee_id": p1id,
                 "score": 5,
             },
@@ -142,24 +142,24 @@ async def test_score_update_verification():
         assert r1.status_code == 200
 
         async with async_session() as db:
-            session2 = GameSession(
+            meetup2 = Meetup(
                 start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2),
                 location="Test Park 2",
                 max_players=10,
             )
-            db.add(session2)
+            db.add(meetup2)
             await db.commit()
-            await db.refresh(session2)
-            db.add(Attendance(session_id=session2.id, user_id=auth_user.id))
-            db.add(Attendance(session_id=session2.id, user_id=player1.id))
+            await db.refresh(meetup2)
+            db.add(Attendance(meetup_id=meetup2.id, user_id=auth_user.id))
+            db.add(Attendance(meetup_id=meetup2.id, user_id=player1.id))
             await db.commit()
-            sid2 = session2.id
+            sid2 = meetup2.id
 
         r2 = await ac.post(
             "/ratings/",
             headers={"Authorization": "Bearer tester"},
             json={
-                "session_id": sid2,
+                "meetup_id": sid2,
                 "ratee_id": p1id,
                 "score": 3,
             },
@@ -184,30 +184,30 @@ async def test_rating_context_allows_non_attendee_read_only():
         await db.refresh(viewer)
         await db.refresh(player)
 
-        session = GameSession(
+        meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
             location="Pitch A",
             max_players=10,
         )
-        db.add(session)
+        db.add(meetup)
         await db.commit()
-        await db.refresh(session)
+        await db.refresh(meetup)
 
         db.add(
             Attendance(
-                session_id=session.id,
+                meetup_id=meetup.id,
                 user_id=player.id,
                 status="confirmed",
             )
         )
         await db.commit()
-        sid = session.id
+        sid = meetup.id
         pid = player.id
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.get(
-            f"/ratings/sessions/{sid}/context",
+            f"/ratings/meetups/{sid}/context",
             headers={"Authorization": "Bearer viewer"},
         )
     assert resp.status_code == 200

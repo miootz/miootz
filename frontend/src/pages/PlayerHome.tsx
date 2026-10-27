@@ -23,9 +23,9 @@ export function PlayerHome() {
       if (!raw) return;
       const pending = JSON.parse(raw);
       sessionStorage.removeItem(PENDING_ACTION_KEY);
-      const { sessionId, action } = pending;
-      if (sessionId && action) {
-        navigate(`/session-action?sid=${sessionId}&act=${action}`, { replace: true });
+      const { meetupId, action } = pending;
+      if (meetupId && action) {
+        navigate(`/meetup-action?mid=${meetupId}&act=${action}`, { replace: true });
       }
     } catch {
       /* ignore corrupt data */

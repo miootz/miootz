@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { SessionListItem } from "../api/sessionsApi";
-import { fetchSessions, fetchSessionHistorySummary } from "../api/sessionsApi";
-import { parseSessionStart } from "../utils/datetime";
+import type { MeetupListItem } from "../api/meetupsApi";
+import { fetchMeetups, fetchMeetupHistorySummary } from "../api/meetupsApi";
+import { parseMeetupStart } from "../utils/datetime";
 import { ChevronRight, Loader2, Search, Users } from "lucide-react";
 import { format } from "date-fns";
 
@@ -21,9 +21,9 @@ interface MatchSummaryMini {
   ratingAvg: number | null;
 }
 
-/* ── Per-session summary (single request) ─────────────── */
+/* ── Per-meetup summary (single request) ─────────────── */
 
-function useHistorySummary(sessionId: number): MatchSummaryMini {
+function useHistorySummary(meetupId: number): MatchSummaryMini {
   const [summary, setSummary] = useState<MatchSummaryMini>({
     matchCount: 0,
     final: null,
@@ -32,7 +32,7 @@ function useHistorySummary(sessionId: number): MatchSummaryMini {
 
   useEffect(() => {
     let cancelled = false;
-    void fetchSessionHistorySummary(sessionId)
+    void fetchMeetupHistorySummary(meetupId)
       .then((res) => {
         if (cancelled) return;
         setSummary({
@@ -55,15 +55,15 @@ function useHistorySummary(sessionId: number): MatchSummaryMini {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [meetupId]);
 
   return summary;
 }
 
-/* ── Session row ──────────────────────────────────────── */
+/* ── Meetup row ──────────────────────────────────────── */
 
-function HistorySessionRow({ row }: { row: SessionListItem }) {
-  const start = parseSessionStart(row.start_time);
+function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
+  const start = parseMeetupStart(row.start_time);
   const { matchCount, final, ratingAvg } = useHistorySummary(row.id);
 
   return (
@@ -132,7 +132,7 @@ function HistorySessionRow({ row }: { row: SessionListItem }) {
 
 function HistoryRowSkeleton() {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3.5 animate-pulse">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3.5 motion-safe:animate-pulse motion-reduce:animate-none">
       <div className="flex items-start gap-3">
         <div className="w-[52px] h-14 rounded-lg bg-gray-200 dark:bg-gray-700 shrink-0" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -151,7 +151,7 @@ function HistoryRowSkeleton() {
 /* ── Page ──────────────────────────────────────────────── */
 
 export const HistoryPage: React.FC = () => {
-  const [pastSessions, setPastSessions] = useState<SessionListItem[]>([]);
+  const [pastMeetups, setPastMeetups] = useState<MeetupListItem[]>([]);
   const [pastTotal, setPastTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -163,16 +163,16 @@ export const HistoryPage: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const r = await fetchSessions({
+      const r = await fetchMeetups({
         status: "past",
         order: "desc",
         limit: PAGE_SIZE,
         offset: 0,
       });
-      setPastSessions(r.items);
+      setPastMeetups(r.items);
       setPastTotal(r.total);
     } catch (e) {
-      setPastSessions([]);
+      setPastMeetups([]);
       setPastTotal(0);
       setLoadError(e instanceof Error ? e.message : "Failed to load history");
     } finally {
@@ -185,41 +185,41 @@ export const HistoryPage: React.FC = () => {
   }, [loadFirst]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || pastSessions.length >= pastTotal) return;
+    if (loadingMore || pastMeetups.length >= pastTotal) return;
     setLoadingMore(true);
     setLoadError(null);
     try {
-      const r = await fetchSessions({
+      const r = await fetchMeetups({
         status: "past",
         order: "desc",
         limit: PAGE_SIZE,
-        offset: pastSessions.length,
+        offset: pastMeetups.length,
       });
-      setPastSessions((prev) => [...prev, ...r.items]);
+      setPastMeetups((prev) => [...prev, ...r.items]);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load more");
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, pastSessions.length, pastTotal]);
+  }, [loadingMore, pastMeetups.length, pastTotal]);
 
   const sortedFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = q
-      ? pastSessions.filter((s) => s.location.toLowerCase().includes(q))
-      : [...pastSessions];
+      ? pastMeetups.filter((s) => s.location.toLowerCase().includes(q))
+      : [...pastMeetups];
     rows.sort((a, b) => {
       if (sortKey === "location") {
         return a.location.localeCompare(b.location, undefined, {
           sensitivity: "base",
         });
       }
-      const ta = parseSessionStart(a.start_time).getTime();
-      const tb = parseSessionStart(b.start_time).getTime();
+      const ta = parseMeetupStart(a.start_time).getTime();
+      const tb = parseMeetupStart(b.start_time).getTime();
       return sortKey === "date-desc" ? tb - ta : ta - tb;
     });
     return rows;
-  }, [pastSessions, query, sortKey]);
+  }, [pastMeetups, query, sortKey]);
 
   /* ── Sort options ───────────────────────────────────── */
 
@@ -249,7 +249,7 @@ export const HistoryPage: React.FC = () => {
           Match History
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          Past meetups — tap a session for results and ratings.
+          Past meetups — tap a meetup for results and ratings.
         </p>
       </header>
 
@@ -263,7 +263,7 @@ export const HistoryPage: React.FC = () => {
       )}
 
       {/* Search + Sort */}
-      {pastSessions.length > 0 && (
+      {pastMeetups.length > 0 && (
         <div className="flex flex-col gap-2">
           <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
             <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
@@ -273,7 +273,7 @@ export const HistoryPage: React.FC = () => {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by location…"
               className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none dark:text-white"
-              aria-label="Filter sessions by location"
+              aria-label="Filter meetups by location"
             />
           </label>
 
@@ -285,7 +285,7 @@ export const HistoryPage: React.FC = () => {
                 onClick={() => setSortKey(key)}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   sortKey === key
-                    ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                    ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
                     : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                 }`}
               >
@@ -296,22 +296,22 @@ export const HistoryPage: React.FC = () => {
         </div>
       )}
 
-      {/* Session list */}
-      {pastSessions.length === 0 && !loadError ? (
+      {/* Meetup list */}
+      {pastMeetups.length === 0 && !loadError ? (
         <p className="text-center text-gray-500 dark:text-gray-400 py-12">
-          No past sessions yet.
+          No past meetups yet.
         </p>
       ) : sortedFiltered.length === 0 ? (
         <p className="text-center text-gray-500 dark:text-gray-400 py-12">
-          No sessions match your filter.
+          No meetups match your filter.
         </p>
       ) : (
         <div className="space-y-2">
           {sortedFiltered.map((row) => (
-            <HistorySessionRow key={row.id} row={row} />
+            <HistoryMeetupRow key={row.id} row={row} />
           ))}
 
-          {pastSessions.length < pastTotal && (
+          {pastMeetups.length < pastTotal && (
             <div className="flex justify-center pt-2">
               <button
                 type="button"
@@ -322,7 +322,7 @@ export const HistoryPage: React.FC = () => {
                 {loadingMore ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 ) : null}
-                Load more ({pastSessions.length} of {pastTotal})
+                Load more ({pastMeetups.length} of {pastTotal})
               </button>
             </div>
           )}

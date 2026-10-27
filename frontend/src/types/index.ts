@@ -17,7 +17,7 @@ export interface User {
   secondarySpecialty?: Specialty | null;
   /** Assigned pitch position (computed from specialty + skill priority). */
   pitchPosition?: Specialty;
-  /** Computed skill rating from session history (1–5). Preferred display value. */
+  /** Computed skill rating from meetup history (1–5). Preferred display value. */
   calculatedSkill?: number | null;
 }
 
@@ -43,26 +43,28 @@ export type MyAttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 
 export type TeamAssignmentMode = 'balanced' | 'random';
 
-export interface Session {
+export interface Meetup {
   id: string;
   date: string;
-  /** Raw session `start_time` from the API (for countdown, weather). */
+  /** Raw meetup `start_time` from the API (for countdown, weather). */
   startTime?: string;
   attendance: User[];
   teams: Team[];
   location?: string;
-  /** From session detail when coordinates are set (map + precise directions). */
+  /** From meetup detail when coordinates are set (map + precise directions). */
   latitude?: number | null;
   longitude?: number | null;
   fee?: number;
   minPlayers?: number;
   maxPlayers?: number;
-  /** From GET /sessions/:id — how server builds teams. */
+  /** From GET /meetups/:id — how server builds teams. */
   teamAssignmentMode?: TeamAssignmentMode;
-  /** Set when the viewer is logged in (from GET /sessions/:id). */
+  /** Set when the viewer is logged in (from GET /meetups/:id). */
   myAttendance?: MyAttendanceStatus | null;
   /** 1-based waitlist position when the viewer is waitlisted. */
   myWaitlistPosition?: number | null;
+  /** Live match summaries when the viewer is on the matches surface. */
+  matches?: MatchSummary[];
 }
 
 export interface MatchSummary {
@@ -72,8 +74,4 @@ export interface MatchSummary {
   scoreA: number;
   scoreB: number;
   notes: string;
-}
-
-export interface GameSession extends Session {
-  matches: MatchSummary[];
 }

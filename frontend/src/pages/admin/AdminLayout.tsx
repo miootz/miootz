@@ -22,7 +22,7 @@ import { AdminNotificationPrompt } from "../../components/admin/AdminNotificatio
 const navCls = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
     isActive
-      ? "bg-violet-600 text-white shadow-sm"
+      ? "bg-teal-700 text-white shadow-sm"
       : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
   }`;
 
@@ -33,9 +33,9 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
         <LayoutDashboard className="w-4 h-4 shrink-0" />
         Overview
       </NavLink>
-      <NavLink to="/admin/sessions" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/meetups" className={navCls} onClick={onNavigate}>
         <Calendar className="w-4 h-4 shrink-0" />
-        Sessions
+        Meetups
       </NavLink>
       <NavLink
         to="/admin/game-templates"
@@ -116,13 +116,13 @@ export function AdminLayout() {
       }
       if (inField) return;
       if (e.key === "n" || e.key === "N") {
-        if (location.pathname === "/admin/sessions") {
+        if (location.pathname === "/admin/meetups") {
           e.preventDefault();
-          navigate("/admin/sessions/new");
+          navigate("/admin/meetups/new");
         }
       } else if (e.key === "/") {
         e.preventDefault();
-        document.getElementById("admin-sessions-search")?.focus();
+        document.getElementById("admin-meetups-search")?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -134,7 +134,7 @@ export function AdminLayout() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
             aria-hidden
           />
           <p className="text-sm text-gray-600 dark:text-gray-400">Loading…</p>
@@ -151,7 +151,7 @@ export function AdminLayout() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col md:flex-row">
       <a
         href="#admin-main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:bg-gray-900 dark:focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:bg-gray-900 dark:focus:text-white"
       >
         Skip to main content
       </a>
@@ -162,14 +162,14 @@ export function AdminLayout() {
         <button
           type="button"
           onClick={openDrawer}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
           aria-expanded={drawerOpen}
           aria-label="Open admin menu"
         >
           <Menu className="h-5 w-5" />
         </button>
         <div className="min-w-0 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
             Admin
             <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               Viewing as Admin
@@ -188,9 +188,9 @@ export function AdminLayout() {
           <Link
             to="/"
             onClick={() => setPreferMemberView(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-violet-400 hover:bg-white dark:hover:bg-gray-800 transition-colors w-full"
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-teal-400 hover:bg-white dark:hover:bg-gray-800 transition-colors w-full"
           >
-            <Home className="w-4 h-4 shrink-0 text-violet-600" aria-hidden />
+            <Home className="w-4 h-4 shrink-0 text-teal-700" aria-hidden />
             <span className="text-left">
               <span className="block">Member view</span>
               <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
@@ -199,7 +199,7 @@ export function AdminLayout() {
             </span>
           </Link>
           <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <span className="text-violet-600">Admin</span>
+            <span className="text-teal-700">Admin</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               Viewing as Admin
             </span>
@@ -218,7 +218,7 @@ export function AdminLayout() {
           <button
             type="button"
             onClick={() => void refresh()}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
           >
             Refresh session
           </button>
@@ -250,7 +250,7 @@ export function AdminLayout() {
           >
             <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+                <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
                   Admin
                   <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     Viewing as Admin
@@ -263,7 +263,7 @@ export function AdminLayout() {
               <button
                 type="button"
                 onClick={closeDrawer}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -276,10 +276,10 @@ export function AdminLayout() {
                   setPreferMemberView(true);
                   closeDrawer();
                 }}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-violet-400 w-full"
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-teal-400 w-full"
               >
                 <Home
-                  className="w-4 h-4 shrink-0 text-violet-600"
+                  className="w-4 h-4 shrink-0 text-teal-700"
                   aria-hidden
                 />
                 Member view
@@ -292,7 +292,7 @@ export function AdminLayout() {
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
               >
                 Refresh session
               </button>

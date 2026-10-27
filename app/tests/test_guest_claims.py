@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.sessions import claim_plus_one as _claim_plus_one_route
+from app.api.meetups import claim_plus_one as _claim_plus_one_route
 
 # Direct-call unit tests bypass the slowapi wrapper, which insists on a real
 # starlette Request; HTTP-level rate limiting is covered end-to-end in
@@ -17,9 +17,9 @@ from app.api.sessions import claim_plus_one as _claim_plus_one_route
 claim_plus_one = getattr(_claim_plus_one_route, "__wrapped__", _claim_plus_one_route)
 from app.core.database import Base
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession, MatchScore
+from app.models.meetup import Attendance, Meetup, MatchScore
 from app.models.user import User
 from app.services.stats_service import get_user_statistics
 from app.schemas.stats import UserStats
@@ -36,21 +36,21 @@ async def claim_data():
         member = User(
             pocket_id_sub="member", sso_display_name="Mara", self_assessed_skill=2
         )
-        session = GameSession(
+        meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1),
             location="Demo",
         )
-        db.add_all([host, guest, member, session])
+        db.add_all([host, guest, member, meetup])
         await db.flush()
         joined_at = datetime(2026, 1, 1)
         attendance = Attendance(
-            session_id=session.id,
+            meetup_id=meetup.id,
             user_id=guest.id,
             status="confirmed",
             joined_at=joined_at,
         )
         reservation = GuestPlusOne(
-            session_id=session.id,
+            meetup_id=meetup.id,
             inviter_id=host.id,
             guest_user_id=guest.id,
             first_name="Demo",
@@ -59,9 +59,9 @@ async def claim_data():
             claim_token="test-claim",
             status="pending",
         )
-        session.manual_teams_json = json.dumps([[host.id], [guest.id]])
-        match = SessionMatch(
-            session_id=session.id,
+        meetup.manual_teams_json = json.dumps([[host.id], [guest.id]])
+        match = MeetupMatch(
+            meetup_id=meetup.id,
             match_number=1,
             team_a_users=json.dumps([host.id]),
             team_b_users=json.dumps([guest.id]),
@@ -75,10 +75,10 @@ async def claim_data():
                 reservation,
                 match,
                 Rating(
-                    session_id=session.id, rater_id=host.id, ratee_id=guest.id, score=4
+                    meetup_id=meetup.id, rater_id=host.id, ratee_id=guest.id, score=4
                 ),
                 MatchScore(
-                    session_id=session.id, player_id=guest.id, score=2, type="team"
+                    meetup_id=meetup.id, player_id=guest.id, score=2, type="team"
                 ),
             ]
         )
@@ -88,7 +88,7 @@ async def claim_data():
             host=host,
             guest=guest,
             member=member,
-            session=session,
+            meetup=meetup,
             attendance=attendance,
             reservation=reservation,
             match=match,
@@ -118,21 +118,21 @@ async def test_claim_transfers_place_and_results_without_replacing_identity(
     assert d.attendance.user_id == d.member.id
     assert d.attendance.status == status
     assert d.attendance.joined_at == datetime(2026, 1, 1)
-    assert json.loads(d.session.manual_teams_json)[1] == [d.member.id]
+    assert json.loads(d.meetup.manual_teams_json)[1] == [d.member.id]
     assert json.loads(d.match.team_b_users) == [d.member.id]
     assert (await d.db.scalar(select(Rating))).ratee_id == d.member.id
     assert (await d.db.scalar(select(MatchScore))).player_id == d.member.id
-    assert d.session.content_revision == 1
+    assert d.meetup.content_revision == 1
     assert d.reservation.claimed_by_user_id == d.member.id
     assert await claim(d) == result
-    assert d.session.content_revision == 1
+    assert d.meetup.content_revision == 1
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["confirmed", "waitlisted"])
 async def test_existing_attendee_cannot_take_a_second_place(claim_data, status):
     d = claim_data
-    d.db.add(Attendance(session_id=d.session.id, user_id=d.member.id, status=status))
+    d.db.add(Attendance(meetup_id=d.meetup.id, user_id=d.member.id, status=status))
     await d.db.commit()
     with pytest.raises(HTTPException) as error:
         await claim(d)
@@ -146,7 +146,7 @@ async def test_cancelled_attendance_is_replaced_and_missing_skill_is_filled(clai
     d = claim_data
     d.member.self_assessed_skill = None
     d.db.add(
-        Attendance(session_id=d.session.id, user_id=d.member.id, status="cancelled")
+        Attendance(meetup_id=d.meetup.id, user_id=d.member.id, status="cancelled")
     )
     await d.db.commit()
     await claim(d)
@@ -183,10 +183,10 @@ async def test_future_bookings_do_not_count_as_played_and_season_is_serialized(
     d = claim_data
     now = datetime.now(UTC).replace(tzinfo=None)
     for offset, status in [(-2, "confirmed"), (1, "confirmed"), (-1, "waitlisted")]:
-        session = GameSession(start_time=now + timedelta(days=offset), location="Stats")
-        d.db.add(session)
+        meetup = Meetup(start_time=now + timedelta(days=offset), location="Stats")
+        d.db.add(meetup)
         await d.db.flush()
-        d.db.add(Attendance(session_id=session.id, user_id=d.member.id, status=status))
+        d.db.add(Attendance(meetup_id=meetup.id, user_id=d.member.id, status=status))
     await d.db.commit()
     stats = UserStats(**await get_user_statistics(d.db, d.member.id)).model_dump()
     assert stats["games_played"] == 1

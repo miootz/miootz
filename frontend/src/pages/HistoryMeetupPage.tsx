@@ -2,27 +2,27 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { fetchSessionDetail, type SessionDetail } from "../api/sessionsApi";
-import { SessionDetailPanel } from "../components/SessionDetailPanel";
-import { parseSessionStart } from "../utils/datetime";
+import { fetchMeetupDetail, type MeetupDetail } from "../api/meetupsApi";
+import { MeetupDetailPanel } from "../components/MeetupDetailPanel";
+import { parseMeetupStart } from "../utils/datetime";
 
-export function HistorySessionPage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+export function HistoryMeetupPage() {
+  const { meetupId } = useParams<{ meetupId: string }>();
   const navigate = useNavigate();
-  const id = Number(sessionId);
+  const id = Number(meetupId);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [detail, setDetail] = useState<MeetupDetail | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const d = await fetchSessionDetail(id);
+      const d = await fetchMeetupDetail(id);
       setDetail(d);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load session");
+      setError(e instanceof Error ? e.message : "Failed to load meetup");
       setDetail(null);
     } finally {
       setLoading(false);
@@ -49,7 +49,7 @@ export function HistorySessionPage() {
     return (
       <div className="p-4 max-w-2xl mx-auto text-center space-y-4">
         <p className="text-red-600 dark:text-red-400">
-          {error || "Session not found"}
+          {error || "Meetup not found"}
         </p>
         <button
           type="button"
@@ -65,7 +65,7 @@ export function HistorySessionPage() {
 
   /* ── Detail ───────────────────────────────────────── */
 
-  const start = parseSessionStart(detail.start_time);
+  const start = parseMeetupStart(detail.start_time);
   const dateLabel = format(start, "EEEE, d MMMM yyyy");
   const timeLabel = format(start, "HH:mm");
 
@@ -95,11 +95,11 @@ export function HistorySessionPage() {
       </header>
 
       {/* Detail panel */}
-      <SessionDetailPanel
-        sessionId={id}
-        sessionLocation={detail.location}
-        sessionTime={timeLabel}
-        sessionFee={detail.fee}
+      <MeetupDetailPanel
+        meetupId={id}
+        meetupLocation={detail.location}
+        meetupTime={timeLabel}
+        meetupFee={detail.fee}
       />
     </div>
   );

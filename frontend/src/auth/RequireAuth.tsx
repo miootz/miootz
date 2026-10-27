@@ -26,7 +26,7 @@ export function RequireAuth() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
             aria-hidden
           />
           <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -60,7 +60,7 @@ export function RequireAuth() {
                 redirectingRef.current = false;
                 void login();
               }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 text-sm"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-teal-700 text-white hover:bg-teal-800 text-sm"
             >
               <LogIn className="w-4 h-4" />
               Sign in
@@ -76,7 +76,7 @@ export function RequireAuth() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
             aria-hidden
           />
           <p className="text-sm text-gray-600 dark:text-gray-400">

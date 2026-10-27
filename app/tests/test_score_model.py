@@ -14,9 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.match_goal import MatchGoal
-from app.models.session import Attendance
+from app.models.meetup import Attendance
 from app.models.user import User
 
 
@@ -42,12 +42,12 @@ async def user_id_by_sub(db, sub: str) -> int:
 
 
 async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int = 0):
-    """Session + joins + two manual teams + active match. Returns (sid, mid, ids)."""
+    """Meetup + joins + two manual teams + active match. Returns (sid, mid, ids)."""
     start = datetime.now(UTC).replace(tzinfo=None) + timedelta(
         minutes=start_offset_minutes
     )
     r = await ac.post(
-        "/sessions/",
+        "/meetups/",
         json={
             "start_time": start.isoformat(),
             "location": "Pitch",
@@ -61,7 +61,7 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
     sid = r.json()["id"]
 
     for t in tokens:
-        rj = await ac.post(f"/sessions/{sid}/join", headers=hdr(t))
+        rj = await ac.post(f"/meetups/{sid}/join", headers=hdr(t))
         assert rj.status_code == 200, rj.text
 
     async with AsyncSession(engine) as db:
@@ -72,16 +72,16 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
         [str(ids[t]) for t in tokens[half:]],
     ]
     rt = await ac.patch(
-        f"/sessions/{sid}/teams", json={"teams": teams}, headers=hdr("admin")
+        f"/meetups/{sid}/teams", json={"teams": teams}, headers=hdr("admin")
     )
     assert rt.status_code == 200, rt.text
 
-    rs = await ac.post(f"/sessions/{sid}/matches/start", headers=hdr("admin"))
+    rs = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admin"))
     assert rs.status_code == 201, rs.text
     mid = rs.json()["match"]["id"]
 
     async with AsyncSession(engine) as db:
-        res = await db.execute(select(SessionMatch).where(SessionMatch.id == mid))
+        res = await db.execute(select(MeetupMatch).where(MeetupMatch.id == mid))
         m = res.scalar_one()
         m.timer_started_at = datetime.now(UTC)
         m.timer_seconds_remaining = m.timer_total_seconds
@@ -92,13 +92,13 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
 
 async def log_goal(ac, sid, mid, team, scorer_id, intent, *, force=False):
     ra = await ac.post(
-        f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1")
+        f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1")
     )
     # 200: we won the lease. 409: we already hold it (the 409-duplicate path
     # in create_goal does not release the lease) — fine, we're the holder.
     assert ra.status_code in (200, 409), ra.text
     r = await ac.post(
-        f"/sessions/{sid}/matches/{mid}/goals",
+        f"/meetups/{sid}/matches/{mid}/goals",
         json={
             "team": team,
             "scorer_id": scorer_id,
@@ -122,7 +122,7 @@ async def test_manual_offset_composes_with_goals():
 
         # Admin taps +1: the correction lives in the offset, not the count.
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/score",
+            f"/meetups/{sid}/matches/{mid}/score",
             json={"team": "a", "delta": 1},
             headers=hdr("admin"),
         )
@@ -137,11 +137,11 @@ async def test_manual_offset_composes_with_goals():
         # And deleting one goal composes too: 2 goals' count is gone, +1 kept.
         goal_id = (
             await ac.get(
-                f"/sessions/{sid}/matches/{mid}/goals", headers=hdr("admin")
+                f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("admin")
             )
         ).json()["goals"][0]["id"]
         r = await ac.delete(
-            f"/sessions/{sid}/matches/{mid}/goals/{goal_id}", headers=hdr("admin")
+            f"/meetups/{sid}/matches/{mid}/goals/{goal_id}", headers=hdr("admin")
         )
         assert r.status_code == 204
 
@@ -187,7 +187,7 @@ async def test_reset_zeroes_score_and_keeps_it_zero():
         assert r.status_code == 201, r.text
 
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/timer/reset", headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("p1")
         )
         assert r.status_code == 200, r.text
         assert (r.json()["score_a"], r.json()["score_b"]) == (0, 0)
@@ -202,7 +202,7 @@ async def test_reset_zeroes_score_and_keeps_it_zero():
 
         # Restart and log a goal: 1-0, not 2-0.
         r = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/timer/start", headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/timer/start", headers=hdr("p1")
         )
         assert r.status_code == 200, r.text
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-2")
@@ -230,7 +230,7 @@ async def test_delete_user_cleans_child_rows(monkeypatch):
             att = await db.scalar(
                 select(func.count())
                 .select_from(Attendance)
-                .where(Attendance.session_id == sid)
+                .where(Attendance.meetup_id == sid)
             )
             users = await db.scalar(
                 select(func.count()).select_from(User).where(User.id == p1_id)
@@ -241,14 +241,14 @@ async def test_delete_user_cleans_child_rows(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_session_cleans_matches_and_goals():
-    """Session delete cascades to matches, goals and attendance (finding 6)."""
+async def test_delete_meetup_cleans_matches_and_goals():
+    """Meetup delete cascades to matches, goals and attendance (finding 6)."""
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-1")
         assert r.status_code == 201, r.text
 
-        r = await ac.delete(f"/sessions/{sid}", headers=hdr("admin"))
+        r = await ac.delete(f"/meetups/{sid}", headers=hdr("admin"))
         assert r.status_code == 200, r.text
 
         async with AsyncSession(engine) as db:
@@ -259,13 +259,13 @@ async def test_delete_session_cleans_matches_and_goals():
             )
             matches = await db.scalar(
                 select(func.count())
-                .select_from(SessionMatch)
-                .where(SessionMatch.session_id == sid)
+                .select_from(MeetupMatch)
+                .where(MeetupMatch.meetup_id == sid)
             )
             att = await db.scalar(
                 select(func.count())
                 .select_from(Attendance)
-                .where(Attendance.session_id == sid)
+                .where(Attendance.meetup_id == sid)
             )
         assert goals == 0
         assert matches == 0

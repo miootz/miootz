@@ -28,7 +28,7 @@ function SseIndicator({ live }: { live: boolean }) {
     <span className="ml-1.5 inline-flex items-center" aria-hidden>
       {live ? (
         <span className="relative block h-2 w-2">
-          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="absolute inset-0 motion-safe:animate-ping motion-reduce:animate-none rounded-full bg-emerald-400 opacity-75" />
           <span className="relative block h-2 w-2 rounded-full bg-emerald-500" />
         </span>
       ) : (
@@ -80,7 +80,7 @@ function MemberChrome() {
     <div className="flex min-h-screen flex-col bg-gray-50 transition-colors dark:bg-gray-950">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:bg-gray-900 dark:focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:bg-gray-900 dark:focus:text-white"
       >
         Skip to main content
       </a>
@@ -90,7 +90,7 @@ function MemberChrome() {
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-gray-50/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
           <div className="min-w-0 flex-1 text-left">
-            <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
               Miootz
               {isAdmin && (
                 <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
@@ -103,12 +103,12 @@ function MemberChrome() {
             </p>
             {header ? (
               <>
-                <p className="text-base font-semibold text-gray-900 dark:text-white">
+                <h1 className="text-base font-semibold text-gray-900 dark:text-white">
                   {header.line1}
-                </p>
+                </h1>
                 {(header.location != null ||
                   header.fee != null ||
-                  header.sessionId != null) && (
+                  header.meetupId != null) && (
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-gray-600 dark:text-gray-400">
                     {header.location != null && (
                       <span className="truncate max-w-[min(100%,20rem)]">
@@ -116,7 +116,7 @@ function MemberChrome() {
                       </span>
                     )}
                     {header.location != null &&
-                      (header.fee != null || header.sessionId != null) && (
+                      (header.fee != null || header.meetupId != null) && (
                         <span className="shrink-0 text-gray-500 dark:text-gray-400">
                           &middot;
                         </span>
@@ -128,21 +128,21 @@ function MemberChrome() {
                     )}
                     {header.fee != null &&
                       header.fee > 0 &&
-                      header.sessionId != null && (
+                      header.meetupId != null && (
                         <span className="shrink-0 text-gray-500 dark:text-gray-400">
                           &middot;
                         </span>
                       )}
-                    {header.sessionId != null && (
-                      <MeetupWeatherBadge sessionId={header.sessionId} />
+                    {header.meetupId != null && (
+                      <MeetupWeatherBadge meetupId={header.meetupId} />
                     )}
                   </div>
                 )}
               </>
             ) : (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <h1 className="text-sm text-gray-500 dark:text-gray-400">
                 {fallbackTitle}
-              </p>
+              </h1>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -164,7 +164,7 @@ function MemberChrome() {
               <button
                 type="button"
                 onClick={() => setOverflowOpen((o) => !o)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 aria-expanded={overflowOpen}
                 aria-label="More actions"
               >
@@ -256,9 +256,9 @@ function MemberChrome() {
             type="button"
             onClick={goDetails}
             aria-label={chatUnread ? "Meetup, unread chat messages" : "Meetup"}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isPlayerHome
-                ? "text-violet-600 dark:text-violet-400"
+                ? "text-teal-700 dark:text-teal-400"
                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
@@ -275,7 +275,7 @@ function MemberChrome() {
             <span
               className={`h-0.5 w-8 rounded-full ${
                 isPlayerHome
-                  ? "bg-violet-600 dark:bg-violet-400"
+                  ? "bg-teal-700 dark:bg-teal-400"
                   : "bg-transparent"
               }`}
             />
@@ -283,9 +283,9 @@ function MemberChrome() {
           <button
             type="button"
             onClick={goHistory}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isHistory
-                ? "text-violet-600 dark:text-violet-400"
+                ? "text-teal-700 dark:text-teal-400"
                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
@@ -294,16 +294,16 @@ function MemberChrome() {
             <span
               className={`h-0.5 w-8 rounded-full ${
                 isHistory
-                  ? "bg-violet-600 dark:bg-violet-400"
+                  ? "bg-teal-700 dark:bg-teal-400"
                   : "bg-transparent"
               }`}
             />
           </button>
           <Link
             to="/profile"
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
               isProfile
-                ? "text-violet-600 dark:text-violet-400"
+                ? "text-teal-700 dark:text-teal-400"
                 : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
           >
@@ -312,7 +312,7 @@ function MemberChrome() {
             <span
               className={`h-0.5 w-8 rounded-full ${
                 isProfile
-                  ? "bg-violet-600 dark:bg-violet-400"
+                  ? "bg-teal-700 dark:bg-teal-400"
                   : "bg-transparent"
               }`}
             />

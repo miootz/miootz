@@ -1,4 +1,4 @@
-"""Random team name generation for sessions."""
+"""Random team name generation for meetups."""
 
 from __future__ import annotations
 

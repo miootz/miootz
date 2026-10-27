@@ -22,18 +22,18 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         return r.scalar_one_or_none() is not None
 
-    if not await has_column("game_sessions", "min_players"):
+    if not await has_column("meetups", "min_players"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN min_players INTEGER DEFAULT 10")
+            text("ALTER TABLE meetups ADD COLUMN min_players INTEGER DEFAULT 10")
         )
-    if not await has_column("game_sessions", "latitude"):
-        await conn.execute(text("ALTER TABLE game_sessions ADD COLUMN latitude FLOAT"))
-    if not await has_column("game_sessions", "longitude"):
-        await conn.execute(text("ALTER TABLE game_sessions ADD COLUMN longitude FLOAT"))
-    if not await has_column("game_sessions", "waitlist_mode"):
+    if not await has_column("meetups", "latitude"):
+        await conn.execute(text("ALTER TABLE meetups ADD COLUMN latitude FLOAT"))
+    if not await has_column("meetups", "longitude"):
+        await conn.execute(text("ALTER TABLE meetups ADD COLUMN longitude FLOAT"))
+    if not await has_column("meetups", "waitlist_mode"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN waitlist_mode VARCHAR DEFAULT 'auto_promote'"
+                "ALTER TABLE meetups ADD COLUMN waitlist_mode VARCHAR DEFAULT 'auto_promote'"
             )
         )
 
@@ -42,85 +42,24 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE attendance ADD COLUMN previous_status VARCHAR")
         )
 
-    if not await has_column("game_sessions", "content_revision"):
+    if not await has_column("meetups", "content_revision"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN content_revision INTEGER DEFAULT 0"
+                "ALTER TABLE meetups ADD COLUMN content_revision INTEGER DEFAULT 0"
             )
         )
 
-    if not await has_column("game_sessions", "recurrence_rule_id"):
-        await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN recurrence_rule_id INTEGER")
-        )
+    if not await has_column("meetups", "team_assignment_mode"):
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_game_sessions_recurrence_rule_id "
-                "ON game_sessions (recurrence_rule_id)"
+                "ALTER TABLE meetups ADD COLUMN team_assignment_mode VARCHAR DEFAULT 'balanced'"
             )
         )
 
-    if await has_table("session_recurrence_rules"):
-        _added_announce = False
-        if not await has_column("session_recurrence_rules", "announce_timezone"):
-            await conn.execute(
-                text(
-                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_timezone VARCHAR DEFAULT 'UTC'"
-                )
-            )
-            _added_announce = True
-        if not await has_column("session_recurrence_rules", "announce_weekday"):
-            await conn.execute(
-                text(
-                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_weekday INTEGER DEFAULT 0"
-                )
-            )
-            _added_announce = True
-        if not await has_column("session_recurrence_rules", "announce_hour"):
-            await conn.execute(
-                text(
-                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_hour INTEGER DEFAULT 9"
-                )
-            )
-            _added_announce = True
-        if not await has_column("session_recurrence_rules", "announce_minute"):
-            await conn.execute(
-                text(
-                    "ALTER TABLE session_recurrence_rules ADD COLUMN announce_minute INTEGER DEFAULT 0"
-                )
-            )
-            _added_announce = True
-        if _added_announce:
-            await conn.execute(
-                text(
-                    """UPDATE session_recurrence_rules SET
-                    announce_timezone = timezone,
-                    announce_weekday = weekday,
-                    announce_hour = hour,
-                    announce_minute = minute"""
-                )
-            )
-
-    if not await has_column("game_sessions", "team_assignment_mode"):
+    if not await has_column("meetups", "kickoff_reminder_sent_at"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN team_assignment_mode VARCHAR DEFAULT 'balanced'"
-            )
-        )
-
-    if not await has_column("game_sessions", "kickoff_reminder_sent_at"):
-        await conn.execute(
-            text(
-                "ALTER TABLE game_sessions ADD COLUMN kickoff_reminder_sent_at TIMESTAMP"
-            )
-        )
-
-    if await has_table("session_recurrence_rules") and not await has_column(
-        "session_recurrence_rules", "team_assignment_mode"
-    ):
-        await conn.execute(
-            text(
-                "ALTER TABLE session_recurrence_rules ADD COLUMN team_assignment_mode VARCHAR DEFAULT 'balanced'"
+                "ALTER TABLE meetups ADD COLUMN kickoff_reminder_sent_at TIMESTAMP"
             )
         )
 
@@ -136,26 +75,26 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         ridx = await conn.execute(
             text(
-                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_rating_session_rater_ratee' LIMIT 1"
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_rating_meetup_rater_ratee' LIMIT 1"
             )
         )
         if ridx.scalar_one_or_none() is None:
             await conn.execute(
                 text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_rating_session_rater_ratee "
-                    "ON ratings (session_id, rater_id, ratee_id)"
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_rating_meetup_rater_ratee "
+                    "ON ratings (meetup_id, rater_id, ratee_id)"
                 )
             )
 
-    if not await has_column("game_sessions", "manual_teams_json"):
+    if not await has_column("meetups", "manual_teams_json"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN manual_teams_json TEXT")
+            text("ALTER TABLE meetups ADD COLUMN manual_teams_json TEXT")
         )
 
     # (legacy) profile_pic columns are now removed - Pocket ID serves avatars.
     # Keep this migration for databases that still have the old columns.
 
-    # Game templates: FK on sessions + copy legacy session_recurrence_rules → game_templates
+    # Game templates: FK on meetups + copy legacy meetup_recurrence_rules → game_templates
     if not await has_column("users", "pocket_id_sub"):
         await conn.execute(text("ALTER TABLE users ADD COLUMN pocket_id_sub VARCHAR"))
         await conn.execute(
@@ -165,69 +104,16 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
-    if not await has_column("game_sessions", "game_template_id"):
+    if not await has_column("meetups", "game_template_id"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN game_template_id INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN game_template_id INTEGER")
         )
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_game_sessions_game_template_id "
-                "ON game_sessions (game_template_id)"
+                "CREATE INDEX IF NOT EXISTS ix_meetups_game_template_id "
+                "ON meetups (game_template_id)"
             )
         )
-
-    if await has_table("session_recurrence_rules") and await has_table(
-        "game_templates"
-    ):
-        r_gt = await conn.execute(text("SELECT COUNT(*) FROM game_templates"))
-        n_gt = r_gt.scalar_one()
-        r_sr = await conn.execute(text("SELECT COUNT(*) FROM session_recurrence_rules"))
-        n_sr = r_sr.scalar_one()
-        if n_sr > 0 and n_gt == 0:
-            await conn.execute(
-                text(
-                    """
-                    INSERT INTO game_templates (
-                        id, name, timezone, weekday, hour, minute,
-                        announce_timezone, announce_weekday, announce_hour, announce_minute,
-                        location, fee, min_players, max_players, latitude, longitude,
-                        waitlist_mode, team_assignment_mode, is_active
-                    )
-                    SELECT
-                        id,
-                        'Meetup',
-                        timezone,
-                        weekday,
-                        hour,
-                        minute,
-                        announce_timezone,
-                        announce_weekday,
-                        announce_hour,
-                        announce_minute,
-                        location,
-                        fee,
-                        min_players,
-                        max_players,
-                        latitude,
-                        longitude,
-                        waitlist_mode,
-                        COALESCE(team_assignment_mode, 'balanced'),
-                        is_active
-                    FROM session_recurrence_rules
-                    """
-                )
-            )
-        if await has_column("game_sessions", "recurrence_rule_id"):
-            await conn.execute(
-                text(
-                    """
-                    UPDATE game_sessions
-                    SET game_template_id = recurrence_rule_id
-                    WHERE recurrence_rule_id IS NOT NULL
-                      AND (game_template_id IS NULL OR game_template_id = 0)
-                    """
-                )
-            )
 
     if not await has_column("users", "primary_specialty"):
         await conn.execute(
@@ -238,14 +124,14 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE users ADD COLUMN secondary_specialty VARCHAR")
         )
 
-    if not await has_column("game_sessions", "duration_minutes"):
+    if not await has_column("meetups", "duration_minutes"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN duration_minutes INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN duration_minutes INTEGER")
         )
-    if not await has_column("game_sessions", "rating_reminder_sent_at"):
+    if not await has_column("meetups", "rating_reminder_sent_at"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN rating_reminder_sent_at TIMESTAMP"
+                "ALTER TABLE meetups ADD COLUMN rating_reminder_sent_at TIMESTAMP"
             )
         )
 
@@ -353,7 +239,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 """
                 CREATE TABLE guest_plus_ones (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id INTEGER NOT NULL REFERENCES game_sessions(id),
+                    meetup_id INTEGER NOT NULL REFERENCES meetups(id),
                     inviter_id INTEGER NOT NULL REFERENCES users(id),
                     guest_user_id INTEGER NOT NULL REFERENCES users(id),
                     first_name VARCHAR NOT NULL,
@@ -370,8 +256,8 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_guest_plus_ones_session_id "
-                "ON guest_plus_ones (session_id)"
+                "CREATE INDEX IF NOT EXISTS ix_guest_plus_ones_meetup_id "
+                "ON guest_plus_ones (meetup_id)"
             )
         )
         await conn.execute(
@@ -582,64 +468,64 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 "ALTER TABLE game_templates ADD COLUMN match_duration_minutes INTEGER DEFAULT 10"
             )
         )
-    if not await has_column("game_sessions", "match_duration_minutes"):
+    if not await has_column("meetups", "match_duration_minutes"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN match_duration_minutes INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN match_duration_minutes INTEGER")
         )
 
     # ── Weather: cached forecast + recorded actuals ───────────────────
-    if not await has_column("game_sessions", "weather_forecast_temp_c"):
+    if not await has_column("meetups", "weather_forecast_temp_c"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_temp_c FLOAT")
+            text("ALTER TABLE meetups ADD COLUMN weather_forecast_temp_c FLOAT")
         )
-    if not await has_column("game_sessions", "weather_forecast_code"):
+    if not await has_column("meetups", "weather_forecast_code"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_code INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN weather_forecast_code INTEGER")
         )
-    if not await has_column("game_sessions", "weather_forecast_label"):
+    if not await has_column("meetups", "weather_forecast_label"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_forecast_label VARCHAR")
+            text("ALTER TABLE meetups ADD COLUMN weather_forecast_label VARCHAR")
         )
-    if not await has_column("game_sessions", "weather_forecast_fetched_at"):
+    if not await has_column("meetups", "weather_forecast_fetched_at"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN weather_forecast_fetched_at TIMESTAMP"
+                "ALTER TABLE meetups ADD COLUMN weather_forecast_fetched_at TIMESTAMP"
             )
         )
-    if not await has_column("game_sessions", "weather_actual_temp_c"):
+    if not await has_column("meetups", "weather_actual_temp_c"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_temp_c FLOAT")
+            text("ALTER TABLE meetups ADD COLUMN weather_actual_temp_c FLOAT")
         )
-    if not await has_column("game_sessions", "weather_actual_code"):
+    if not await has_column("meetups", "weather_actual_code"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_code INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN weather_actual_code INTEGER")
         )
-    if not await has_column("game_sessions", "weather_actual_label"):
+    if not await has_column("meetups", "weather_actual_label"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN weather_actual_label VARCHAR")
+            text("ALTER TABLE meetups ADD COLUMN weather_actual_label VARCHAR")
         )
-    if not await has_column("game_sessions", "weather_actual_recorded_at"):
+    if not await has_column("meetups", "weather_actual_recorded_at"):
         await conn.execute(
             text(
-                "ALTER TABLE game_sessions ADD COLUMN weather_actual_recorded_at TIMESTAMP"
+                "ALTER TABLE meetups ADD COLUMN weather_actual_recorded_at TIMESTAMP"
             )
         )
 
-    # ── Team names: persisted random names per session ─────────────────
-    if not await has_column("game_sessions", "team_names_json"):
+    # ── Team names: persisted random names per meetup ─────────────────
+    if not await has_column("meetups", "team_names_json"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN team_names_json TEXT")
+            text("ALTER TABLE meetups ADD COLUMN team_names_json TEXT")
         )
 
-    # Backfill team_names_json from existing session_matches (idempotent).
-    if await has_table("session_matches"):
+    # Backfill team_names_json from existing meetup_matches (idempotent).
+    if await has_table("meetup_matches"):
         _r = await conn.execute(
             text(
                 """
                 SELECT gs.id, GROUP_CONCAT(DISTINCT sn.team_a_name) || ',' ||
                        GROUP_CONCAT(DISTINCT sn.team_b_name) AS all_names
-                FROM game_sessions gs
-                JOIN session_matches sn ON sn.session_id = gs.id
+                FROM meetups gs
+                JOIN meetup_matches sn ON sn.meetup_id = gs.id
                 WHERE gs.team_names_json IS NULL
                 GROUP BY gs.id
                 """
@@ -661,17 +547,17 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             if _unique:
                 await conn.execute(
                     text(
-                        "UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"
+                        "UPDATE meetups SET team_names_json = :val WHERE id = :sid"
                     ),
                     {"val": _json.dumps(_unique), "sid": _sid},
                 )
 
-    # Generate team names for sessions that still have NULL (no matches yet).
+    # Generate team names for meetups that still have NULL (no matches yet).
     _needs_names = await conn.execute(
         text(
             """
             SELECT id, COALESCE(max_players, 15) AS mp
-            FROM game_sessions
+            FROM meetups
             WHERE team_names_json IS NULL
             """
         )
@@ -733,7 +619,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     # Collect already-used names to avoid repeats
     _existing = await conn.execute(
         text(
-            "SELECT team_names_json FROM game_sessions WHERE team_names_json IS NOT NULL"
+            "SELECT team_names_json FROM meetups WHERE team_names_json IS NOT NULL"
         )
     )
     for _erow in _existing.fetchall():
@@ -755,14 +641,14 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         for _p in _picked:
             _used_names.add(_p)
         await conn.execute(
-            text("UPDATE game_sessions SET team_names_json = :val WHERE id = :sid"),
+            text("UPDATE meetups SET team_names_json = :val WHERE id = :sid"),
             {"val": _json.dumps(_picked), "sid": _nsid},
         )
 
     # ── max_teams: upper bound on team count for dynamic expansion ──
-    if not await has_column("game_sessions", "max_teams"):
+    if not await has_column("meetups", "max_teams"):
         await conn.execute(
-            text("ALTER TABLE game_sessions ADD COLUMN max_teams INTEGER")
+            text("ALTER TABLE meetups ADD COLUMN max_teams INTEGER")
         )
 
     # ── match_goals.goalkeeper_id: the keeper who conceded (optional) ──
@@ -785,17 +671,17 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
 
     # ── Manual score offsets: score = live goal COUNT + offset ──
-    if not await has_column("session_matches", "score_offset_a"):
+    if not await has_column("meetup_matches", "score_offset_a"):
         await conn.execute(
             text(
-                "ALTER TABLE session_matches ADD COLUMN score_offset_a "
+                "ALTER TABLE meetup_matches ADD COLUMN score_offset_a "
                 "INTEGER DEFAULT 0"
             )
         )
-    if not await has_column("session_matches", "score_offset_b"):
+    if not await has_column("meetup_matches", "score_offset_b"):
         await conn.execute(
             text(
-                "ALTER TABLE session_matches ADD COLUMN score_offset_b "
+                "ALTER TABLE meetup_matches ADD COLUMN score_offset_b "
                 "INTEGER DEFAULT 0"
             )
         )
@@ -804,26 +690,26 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     # same-minute goal by the same player — the 90 s soft check is enough.
     await conn.execute(text("DROP INDEX IF EXISTS uq_match_goals_dedupe"))
 
-    # ── One "next" match per (session, number): guarded end_match ──
-    if await has_table("session_matches"):
+    # ── One "next" match per (meetup, number): guarded end_match ──
+    if await has_table("meetup_matches"):
         await conn.execute(
             text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_match_number "
-                "ON session_matches (session_id, match_number)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_meetup_match_number "
+                "ON meetup_matches (meetup_id, match_number)"
             )
         )
 
-    # ── One materialized session per template kickoff instant ──
+    # ── One materialized meetup per template kickoff instant ──
     # Fresh DBs get it from the model constraint; this covers existing DBs.
-    # (game_template_id is NULL for ad-hoc sessions — SQLite treats NULLs as
+    # (game_template_id is NULL for ad-hoc meetups — SQLite treats NULLs as
     # distinct, so they are exempt.)
-    if await has_table("game_sessions") and await has_column(
-        "game_sessions", "game_template_id"
+    if await has_table("meetups") and await has_column(
+        "meetups", "game_template_id"
     ):
         await conn.execute(
             text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_template_start "
-                "ON game_sessions (game_template_id, start_time)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_meetup_template_start "
+                "ON meetups (game_template_id, start_time)"
             )
         )
 

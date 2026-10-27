@@ -18,21 +18,19 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import type { User } from "../../types";
+import type { Meetup, Team, User } from "../../types";
 import {
-  fetchSessionDetail,
-  fetchSessionScores,
-  fetchSessionTeams,
-  submitMatchScore,
-  type MatchScoreItem,
-  type SessionDetail,
+  fetchMeetupDetail,
+  fetchMeetupTeams,
+  patchMeetupTeams,
+  type MeetupDetail,
   type TeamsResponse,
-} from "../../api/sessionsApi";
+} from "../../api/meetupsApi";
 import {
   adminAdjustTeams,
   adminMoveAttendance,
   adminReshuffleTeams,
-  adminUpdateSession,
+  adminUpdateMeetup,
   type TeamAssignmentMode,
   type WaitlistMode,
 } from "../../api/adminApi";
@@ -40,16 +38,15 @@ import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { MatchHistoryList } from "../../components/MatchHistoryList";
 import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
 import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
-import { TeamRoster } from "../../components/TeamRoster";
+import { DraggableTeams } from "../../components/DraggableTeams";
+import { rebalanceTeams } from "../../services/teamService";
 import { useToast } from "../../context/ToastContext";
 import {
-  parseSessionStart,
-  sessionStartToDatetimeLocalValue,
+  parseMeetupStart,
+  meetupStartToDatetimeLocalValue,
 } from "../../utils/datetime";
 import { hapticLight } from "../../utils/haptics";
 import { shareMeetup } from "../../utils/share";
-
-const TEAM_COLORS = ["#0ea5e9", "#f43f5e", "#8b5cf6", "#22c55e", "#eab308"];
 
 const SPECIALTY_LABELS: Record<string, string> = {
   ATT: "Attacker",
@@ -76,16 +73,53 @@ function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
   }));
 }
 
-function getTeamName(team: TeamsResponse["teams"][0], index: number): string {
-  return team.name ?? `Team ${index + 1}`;
+/**
+ * Build the local, drag-editable team state that DraggableTeams consumes.
+ * `isLocked` is sourced from the server team payload; attendance carries the
+ * rest of the player info.
+ */
+function buildTeamMeetup(
+  detail: MeetupDetail | null,
+  teams: TeamsResponse | null,
+  numericId: number,
+): Meetup | null {
+  if (!teams) return null;
+  const lockById = new Map<string, boolean>();
+  teams.teams.forEach((t) =>
+    t.players.forEach((p) => lockById.set(p.id, p.isLocked)),
+  );
+  const attendance: User[] = (detail?.attendees ?? [])
+    .filter((a) => a.status === "confirmed")
+    .map((a) => ({
+      id: String(a.user_id),
+      name: a.display_name,
+      skillScore: a.skill,
+      isLocked: lockById.get(String(a.user_id)) ?? false,
+      avatarUrl: a.avatar_url ?? undefined,
+      primarySpecialty: a.primary_specialty ?? undefined,
+      secondarySpecialty: a.secondary_specialty ?? undefined,
+      isPlusOne: a.is_plus_one,
+      calculatedSkill: a.calculated_skill ?? null,
+    }));
+  const teamList: Team[] = teams.teams.map((t) => ({
+    id: t.id,
+    name: t.name,
+    players: mapTeamPlayers(t),
+  }));
+  return {
+    id: String(numericId),
+    date: "",
+    attendance,
+    teams: teamList,
+  };
 }
 
-export function AdminSessionDetailPage() {
+export function AdminMeetupDetailPage() {
   const { showToast } = useToast();
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const id = sessionId ? parseInt(sessionId, 10) : NaN;
+  const { meetupId } = useParams<{ meetupId: string }>();
+  const id = meetupId ? parseInt(meetupId, 10) : NaN;
 
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [detail, setDetail] = useState<MeetupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,12 +143,10 @@ export function AdminSessionDetailPage() {
   >("all");
   const [attSearch, setAttSearch] = useState("");
   const [teamsData, setTeamsData] = useState<TeamsResponse | null>(null);
+  const [teamMeetup, setTeamMeetup] = useState<Meetup | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
   const [reshuffling, setReshuffling] = useState(false);
-  const [playerScores, setPlayerScores] = useState<
-    Record<string, number | null>
-  >({});
   const [adjustingTeam, setAdjustingTeam] = useState<
     "expand" | "contract" | null
   >(null);
@@ -123,9 +155,9 @@ export function AdminSessionDetailPage() {
     if (Number.isNaN(id)) return;
     setError(null);
     try {
-      const d = await fetchSessionDetail(id);
+      const d = await fetchMeetupDetail(id);
       setDetail(d);
-      setStartLocal(sessionStartToDatetimeLocalValue(d.start_time));
+      setStartLocal(meetupStartToDatetimeLocalValue(d.start_time));
       setLocation(d.location);
       setFee(String(d.fee));
       setMinPlayers(String(d.min_players));
@@ -158,7 +190,7 @@ export function AdminSessionDetailPage() {
     setSavingMeta(true);
     setError(null);
     try {
-      await adminUpdateSession(id, {
+      await adminUpdateMeetup(id, {
         start_time: new Date(startLocal).toISOString(),
         location: location.trim(),
         fee: Number(fee) || 0,
@@ -168,7 +200,7 @@ export function AdminSessionDetailPage() {
         team_assignment_mode: teamMode,
       });
       await load();
-      showToast("Session updated.", "success");
+      showToast("Meetup updated.", "success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
     } finally {
@@ -265,21 +297,11 @@ export function AdminSessionDetailPage() {
     if (tab !== "teams" || Number.isNaN(id)) return;
     let cancelled = false;
     setTeamsLoading(true);
-    setPlayerScores({});
-    void Promise.all([
-      fetchSessionTeams(id),
-      fetchSessionScores(id).catch(() => [] as MatchScoreItem[]),
-    ])
-      .then(([t, rawScores]) => {
+    void fetchMeetupTeams(id)
+      .then((t) => {
         if (cancelled) return;
         setTeamsData(t);
-        const scoreMap: Record<string, number | null> = {};
-        for (const s of rawScores) {
-          if (s.type === "individual") {
-            scoreMap[String(s.player_id)] = s.score;
-          }
-        }
-        setPlayerScores(scoreMap);
+        setTeamMeetup(buildTeamMeetup(detail, t, id));
       })
       .catch(() => {
         if (!cancelled) setTeamsData(null);
@@ -292,24 +314,48 @@ export function AdminSessionDetailPage() {
     };
   }, [tab, id, detail?.content_revision]);
 
-  const handlePlayerRating = useCallback(
-    async (playerId: string, score: number) => {
-      if (Number.isNaN(id)) return;
-      const key = String(playerId);
+  const handleToggleLock = useCallback((userId: string) => {
+    setTeamMeetup((m) => {
+      if (!m) return m;
+      const attendance = m.attendance.map((u) =>
+        u.id === userId ? { ...u, isLocked: !u.isLocked } : u,
+      );
+      return {
+        ...m,
+        attendance,
+        teams: rebalanceTeams({ attendance, teams: m.teams }),
+      };
+    });
+  }, []);
+
+  const handleMovePlayer = useCallback(
+    async (playerId: string, sourceTeamId: string, destTeamId: string) => {
+      if (Number.isNaN(id) || !teamMeetup) return;
+      const nextTeams = teamMeetup.teams.map((team) => {
+        if (team.id === sourceTeamId) {
+          return {
+            ...team,
+            players: team.players.filter((p) => p.id !== playerId),
+          };
+        }
+        if (team.id === destTeamId) {
+          const player = teamMeetup.attendance.find((p) => p.id === playerId);
+          return player ? { ...team, players: [...team.players, player] } : team;
+        }
+        return team;
+      });
+      setTeamMeetup({ ...teamMeetup, teams: nextTeams });
+      const payload = nextTeams.map((t) => t.players.map((p) => p.id));
       try {
-        await submitMatchScore({
-          session_id: id,
-          player_id: parseInt(key, 10),
-          score,
-          type: "individual",
-        });
-        setPlayerScores((prev) => ({ ...prev, [key]: score }));
-        hapticLight();
+        const res = await patchMeetupTeams(id, payload);
+        setTeamsData(res);
+        setTeamMeetup(buildTeamMeetup(detail, res, id));
       } catch (e) {
-        showToast(e instanceof Error ? e.message : "Rating failed", "error");
+        showToast(e instanceof Error ? e.message : "Could not save team lineup", "error");
+        void load();
       }
     },
-    [id, showToast],
+    [id, teamMeetup, detail, load, showToast],
   );
 
   const filteredAttendees = useMemo(() => {
@@ -363,13 +409,13 @@ export function AdminSessionDetailPage() {
 
   if (Number.isNaN(id)) {
     return (
-      <p className="text-red-600 dark:text-red-400">Invalid session id.</p>
+      <p className="text-red-600 dark:text-red-400">Invalid meetup id.</p>
     );
   }
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto space-y-4 animate-pulse">
+      <div className="max-w-3xl mx-auto space-y-4 motion-safe:animate-pulse motion-reduce:animate-none">
         <div className="h-4 w-48 rounded bg-gray-200 dark:bg-gray-700" />
         <div className="h-7 w-3/4 max-w-md rounded bg-gray-200 dark:bg-gray-700" />
         <div className="h-4 w-56 rounded bg-gray-200 dark:bg-gray-700" />
@@ -388,14 +434,14 @@ export function AdminSessionDetailPage() {
 
   if (!detail) return null;
 
-  const startDate = parseSessionStart(detail.start_time);
+  const startDate = parseMeetupStart(detail.start_time);
   const kickoffFuture = startDate.getTime() > Date.now();
   const countdown = kickoffFuture
     ? formatDistanceToNow(startDate, { addSuffix: true })
     : null;
-  const sessionActive = !kickoffFuture;
-  // SAFETY: the sessions API may include an undeclared `current_match` object
-  // ({ status, match_number }) in the session-detail payload; it is absent,
+  const meetupActive = !kickoffFuture;
+  // SAFETY: the meetups API may include an undeclared `current_match` object
+  // ({ status, match_number }) in the meetup-detail payload; it is absent,
   // null, or that shape — never another type. The TS type lags behind the API.
   const currentMatch = (detail as unknown as Record<string, unknown>)
     .current_match as
@@ -430,7 +476,7 @@ export function AdminSessionDetailPage() {
       <AdminBreadcrumb
         items={[
           { label: "Admin", to: "/admin" },
-          { label: "Sessions", to: "/admin/sessions" },
+          { label: "Meetups", to: "/admin/meetups" },
           { label: detail.location },
         ]}
       />
@@ -439,11 +485,11 @@ export function AdminSessionDetailPage() {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Link
-            to="/admin/sessions"
-            className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 mb-2 transition-colors"
+            to="/admin/meetups"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-teal-700 mb-2 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            All sessions
+            All meetups
           </Link>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">
             {detail.location}
@@ -459,7 +505,7 @@ export function AdminSessionDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!Number.isNaN(id) && <MeetupWeatherBadge sessionId={id} />}
+          {!Number.isNaN(id) && <MeetupWeatherBadge meetupId={id} />}
         </div>
       </header>
 
@@ -467,16 +513,16 @@ export function AdminSessionDetailPage() {
       <div className="flex flex-wrap items-center gap-2">
         {matchActive && (
           <Link
-            to={`/session-matches/${id}`}
+            to={`/meetup-matches/${id}`}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 active:scale-[0.98] transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
             Manage match {currentMatch?.match_number ?? ""}
           </Link>
         )}
-        {sessionActive && !currentMatch && (
+        {meetupActive && !currentMatch && (
           <Link
-            to={`/session-matches/${id}`}
+            to={`/meetup-matches/${id}`}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 active:scale-[0.98] transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
@@ -512,7 +558,7 @@ export function AdminSessionDetailPage() {
       <div
         className="sm:hidden flex flex-col gap-2"
         role="tablist"
-        aria-label="Session sections"
+        aria-label="Meetup sections"
       >
         {tabs.map(({ key, label, icon: Icon, badge }) => (
           <button
@@ -523,7 +569,7 @@ export function AdminSessionDetailPage() {
             onClick={() => setTab(key)}
             className={`w-full flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-colors active:scale-[0.99] ${
               tab === key
-                ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
                 : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600"
             }`}
           >
@@ -535,7 +581,7 @@ export function AdminSessionDetailPage() {
               <span
                 className={`text-2xs tabular-nums ${
                   tab === key
-                    ? "text-violet-500 dark:text-violet-400"
+                    ? "text-teal-500 dark:text-teal-400"
                     : "text-gray-500 dark:text-gray-400"
                 }`}
               >
@@ -549,7 +595,7 @@ export function AdminSessionDetailPage() {
       <div
         className="hidden sm:flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="tablist"
-        aria-label="Session sections"
+        aria-label="Meetup sections"
       >
         {tabs.map(({ key, label, icon: Icon, badge }) => (
           <button
@@ -560,7 +606,7 @@ export function AdminSessionDetailPage() {
             onClick={() => setTab(key)}
             className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3.5 py-2 text-xs font-medium transition-colors active:scale-[0.97] ${
               tab === key
-                ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
                 : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
             }`}
           >
@@ -570,7 +616,7 @@ export function AdminSessionDetailPage() {
               <span
                 className={`text-2xs tabular-nums ${
                   tab === key
-                    ? "text-violet-500 dark:text-violet-400"
+                    ? "text-teal-500 dark:text-teal-400"
                     : "text-gray-500 dark:text-gray-400"
                 }`}
               >
@@ -661,7 +707,7 @@ export function AdminSessionDetailPage() {
                     </span>
                     <Link
                       to={`/admin/game-templates/${detail.game_template_id}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline ml-1"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline ml-1"
                     >
                       &quot;{detail.game_template.name}&quot;
                       <ExternalLink className="w-3 h-3" />
@@ -672,7 +718,7 @@ export function AdminSessionDetailPage() {
               <button
                 type="button"
                 onClick={() => setDetailsExpanded(true)}
-                className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium text-violet-700 dark:text-violet-300 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium text-teal-800 dark:text-teal-300 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <Settings2 className="w-3.5 h-3.5" />
                 Edit details
@@ -800,18 +846,18 @@ export function AdminSessionDetailPage() {
               </div>
 
               {detail.game_template_id && detail.game_template && (
-                <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/20 p-3 sm:p-4 space-y-1.5">
+                <div className="rounded-xl border border-teal-200 dark:border-teal-900/50 bg-teal-50/50 dark:bg-teal-950/20 p-3 sm:p-4 space-y-1.5">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    Weekly template
+                    Template
                   </p>
                   <p className="text-xs text-gray-600 dark:text-gray-400">
                     This meetup was created from the template below. Edit
                     schedule and defaults under Templates — this page is only
-                    for this session instance.
+                    for this meetup instance.
                   </p>
                   <Link
                     to={`/admin/game-templates/${detail.game_template_id}`}
-                    className="inline-flex text-sm font-medium text-violet-700 dark:text-violet-300 hover:underline"
+                    className="inline-flex text-sm font-medium text-teal-800 dark:text-teal-300 hover:underline"
                   >
                     Open &quot;{detail.game_template.name}&quot;
                   </Link>
@@ -822,7 +868,7 @@ export function AdminSessionDetailPage() {
                 <button
                   type="submit"
                   disabled={savingMeta}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-60 active:scale-[0.98]"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-60 active:scale-[0.98]"
                 >
                   {savingMeta ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -874,7 +920,7 @@ export function AdminSessionDetailPage() {
                     onClick={() => setAttFilter(key)}
                     className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                       attFilter === key
-                        ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                        ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
                         : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                     }`}
                   >
@@ -882,7 +928,7 @@ export function AdminSessionDetailPage() {
                     <span
                       className={`ml-1 text-2xs tabular-nums ${
                         attFilter === key
-                          ? "text-violet-500 dark:text-violet-400"
+                          ? "text-teal-500 dark:text-teal-400"
                           : "text-gray-500 dark:text-gray-400"
                       }`}
                     >
@@ -1243,41 +1289,12 @@ export function AdminSessionDetailPage() {
               </p>
             </div>
           ) : (
-            <>
-              {/* Team lists — side by side on sm+, stacked on mobile */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {teamsData.teams.map((team, idx) => {
-                  const players = mapTeamPlayers(team);
-                  const teamName = getTeamName(team, idx);
-                  const color = TEAM_COLORS[idx % TEAM_COLORS.length];
-                  return (
-                    <div key={team.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between px-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0"
-                            style={{ backgroundColor: color }}
-                          />
-                          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {teamName}
-                          </h3>
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {players.length} player
-                          {players.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      <TeamRoster
-                        players={players}
-                        ratingMode="inline"
-                        ratingScores={playerScores}
-                        onRatingChange={handlePlayerRating}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+            <DraggableTeams
+              meetup={teamMeetup ?? { id: String(id), date: "", attendance: [], teams: [] }}
+              onMovePlayer={handleMovePlayer}
+              onToggleLock={handleToggleLock}
+              canDragTeams={Boolean(teamMeetup)}
+            />
           )}
         </section>
       )}
@@ -1286,7 +1303,7 @@ export function AdminSessionDetailPage() {
 
       {tab === "scores" && (
         <section className="space-y-3">
-          <MatchHistoryList sessionId={id} editable />
+          <MatchHistoryList meetupId={id} editable />
         </section>
       )}
 

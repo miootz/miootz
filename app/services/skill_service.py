@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 _MAX_MISS_DECAY = 1.0
@@ -23,22 +23,22 @@ def _to_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-async def _get_locked_session_ids(db: AsyncSession, limit: int = 20) -> list[int]:
-    """Return session IDs for past sessions with closed rating windows,
+async def _get_locked_meetup_ids(db: AsyncSession, limit: int = 20) -> list[int]:
+    """Return meetup IDs for past meetups with closed rating windows,
     ordered newest-first.
 
-    A session's rating window closes when the next session starts (or 48 h after
-    the session for the very latest one)."""
+    A meetup's rating window closes when the next meetup starts (or 48 h after
+    the meetup for the very latest one)."""
     now = _utc_now()
 
     result = await db.execute(
-        select(GameSession.start_time)
-        .where(GameSession.start_time <= now)
-        .order_by(GameSession.start_time.desc())
+        select(Meetup.start_time)
+        .where(Meetup.start_time <= now)
+        .order_by(Meetup.start_time.desc())
     )
     all_starts = [row[0] for row in result.fetchall()]
 
-    # Build a map: session_start -> lock_time (next session start, or start+48h)
+    # Build a map: meetup_start -> lock_time (next meetup start, or start+48h)
     lock_map: dict[datetime, datetime] = {}
     for i, st in enumerate(all_starts):
         aware = _to_utc(st)
@@ -53,26 +53,26 @@ async def _get_locked_session_ids(db: AsyncSession, limit: int = 20) -> list[int
         return []
 
     result = await db.execute(
-        select(GameSession.id)
-        .where(GameSession.start_time.in_(locked_starts))
-        .order_by(GameSession.start_time.desc())
+        select(Meetup.id)
+        .where(Meetup.start_time.in_(locked_starts))
+        .order_by(Meetup.start_time.desc())
     )
     return [row[0] for row in result.fetchall()]
 
 
 async def get_consecutive_miss_streak(db: AsyncSession, user_id: int) -> int:
-    """Count of consecutive locked past sessions where the player has no
+    """Count of consecutive locked past meetups where the player has no
     confirmed attendance.  A miss is simply the absence of a confirmed
     attendance row -- rating activity is irrelevant."""
-    locked_ids = await _get_locked_session_ids(db)
+    locked_ids = await _get_locked_meetup_ids(db)
     if not locked_ids:
         return 0
 
     result = await db.execute(
-        select(Attendance.session_id).where(
+        select(Attendance.meetup_id).where(
             Attendance.user_id == user_id,
             Attendance.status == "confirmed",
-            Attendance.session_id.in_(locked_ids),
+            Attendance.meetup_id.in_(locked_ids),
         )
     )
     confirmed_ids = {row[0] for row in result.fetchall()}
@@ -89,13 +89,13 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
     """Compute the peer-rating average for a user with recency weighting.
 
     Ratings from the user's N most recent confirmed attendances carry full
-    weight (1.0).  Ratings from older sessions carry reduced weight (0.5).
-    Ratings from sessions the user never attended also carry reduced weight.
+    weight (1.0).  Ratings from older meetups carry reduced weight (0.5).
+    Ratings from meetups the user never attended also carry reduced weight.
     Returns None if there are no ratings at all.
     """
-    # Fetch the user's most recent confirmed session IDs
+    # Fetch the user's most recent confirmed meetup IDs
     result = await db.execute(
-        select(Attendance.session_id)
+        select(Attendance.meetup_id)
         .where(
             Attendance.user_id == user_id,
             Attendance.status == "confirmed",
@@ -103,11 +103,11 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
         .order_by(Attendance.joined_at.desc())
         .limit(_RECENT_ATTENDANCE_CUTOFF)
     )
-    recent_session_ids = {row[0] for row in result.fetchall()}
+    recent_meetup_ids = {row[0] for row in result.fetchall()}
 
     # Fetch all ratings for this user
     result = await db.execute(
-        select(Rating.session_id, Rating.score).where(Rating.ratee_id == user_id)
+        select(Rating.meetup_id, Rating.score).where(Rating.ratee_id == user_id)
     )
     ratings = result.fetchall()
     if not ratings:
@@ -115,8 +115,8 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
 
     weighted_sum = 0.0
     total_weight = 0.0
-    for session_id, score in ratings:
-        weight = _WEIGHT_RECENT if session_id in recent_session_ids else _WEIGHT_OLD
+    for meetup_id, score in ratings:
+        weight = _WEIGHT_RECENT if meetup_id in recent_meetup_ids else _WEIGHT_OLD
         weighted_sum += score * weight
         total_weight += weight
 
@@ -135,7 +135,7 @@ async def update_user_calculated_skill(
     Peer ratings are recency-weighted: ratings from the user's 4 most recent
     confirmed attendances carry full weight; older ratings carry half weight.
 
-    Miss decay: for consecutive locked sessions where the player has no
+    Miss decay: for consecutive locked meetups where the player has no
     confirmed attendance, subtract 0.1 per miss beyond the first,
     capped at 1.0.  One miss is forgiven; the penalty compounds from the second.
     """
@@ -175,11 +175,11 @@ async def update_user_calculated_skill(
 
 
 async def recalculate_skills_for_attendance_change(
-    db: AsyncSession, session_id: int, changed_user_id: int
+    db: AsyncSession, meetup_id: int, changed_user_id: int
 ) -> None:
     """Recalculate calculated_skill for players affected by an attendance change.
 
-    When a user joins or leaves a session, their own attendance history shifts,
+    When a user joins or leaves a meetup, their own attendance history shifts,
     which changes the recency weighting of their peer ratings.  Only the changed
     user needs recalculation (other attendees' histories are unaffected).
     """
@@ -187,7 +187,7 @@ async def recalculate_skills_for_attendance_change(
     # affect the "most recent confirmed" ranking when they rejoin later)
     result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.user_id == changed_user_id,
         )
     )

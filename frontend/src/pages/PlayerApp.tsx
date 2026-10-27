@@ -2,38 +2,38 @@ import { useState, useEffect, useCallback } from "react";
 import { useToast } from "../context/ToastContext";
 import { format, parseISO } from "date-fns";
 import { MeetupDetails } from "./MeetupDetails";
-import type { Session, User, Team } from "../types";
+import type { Meetup, User, Team } from "../types";
 import { rebalanceTeams } from "../services/teamService";
 import {
-  fetchSessions,
-  fetchSessionDetail,
-  fetchSessionTeams,
-  patchSessionTeams,
-  type SessionDetail,
-} from "../api/sessionsApi";
+  fetchMeetups,
+  fetchMeetupDetail,
+  fetchMeetupTeams,
+  patchMeetupTeams,
+  type MeetupDetail,
+} from "../api/meetupsApi";
 import { mediaUrl } from "../api/meApi";
-import { clearSessionChatCache } from "../stores/sessionChatCache";
-import { recordSessionView } from "../offline/engagement";
+import { clearMeetupChatCache } from "../stores/meetupChatCache";
+import { recordMeetupView } from "../offline/engagement";
 import {
-  loadSessionSnapshot,
-  saveSessionSnapshot,
-} from "../offline/sessionSnapshot";
-import { parseSessionStart } from "../utils/datetime";
-import { subscribeSessionData } from "../utils/sessionDataBus";
+  loadMeetupSnapshot,
+  saveMeetupSnapshot,
+} from "../offline/meetupSnapshot";
+import { parseMeetupStart } from "../utils/datetime";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useMemberShell } from "../context/MemberShellContext";
 import { MeetupDetailsSkeleton } from "../components/MeetupDetailsSkeleton";
 import { OnboardingCard } from "../components/OnboardingCard";
 import { useAuth } from "../auth/useAuth";
 
-function mapDetailToSession(detail: SessionDetail, teams: Team[]): Session {
+function mapDetailToMeetup(detail: MeetupDetail, teams: Team[]): Meetup {
   const start = detail.start_time;
   const date =
     start.length >= 10
       ? start.slice(0, 10)
-      : parseSessionStart(start).toISOString().slice(0, 10);
+      : parseMeetupStart(start).toISOString().slice(0, 10);
   const attendance: User[] = detail.attendees
-    .filter((a: SessionDetail["attendees"][number]) => a.status !== "cancelled")
-    .map((a: SessionDetail["attendees"][number]) => ({
+    .filter((a: MeetupDetail["attendees"][number]) => a.status !== "cancelled")
+    .map((a: MeetupDetail["attendees"][number]) => ({
       id: String(a.user_id),
       name: a.display_name,
       skillScore: Math.round(a.skill),
@@ -74,8 +74,8 @@ export function PlayerApp() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [activeSessionNumericId, setActiveSessionNumericId] = useState<
+  const [meetup, setMeetup] = useState<Meetup | null>(null);
+  const [activeMeetupNumericId, setActiveMeetupNumericId] = useState<
     number | null
   >(null);
   const [rosterChannelLive, setRosterChannelLive] = useState(false);
@@ -85,10 +85,10 @@ export function PlayerApp() {
     null,
   );
 
-  const loadSession = useCallback(async (sessionId: number) => {
+  const loadMeetup = useCallback(async (meetupId: number) => {
     const [detail, teamsRes] = await Promise.all([
-      fetchSessionDetail(sessionId),
-      fetchSessionTeams(sessionId),
+      fetchMeetupDetail(meetupId),
+      fetchMeetupTeams(meetupId),
     ]);
     const t = teamsRes.teams.map((x) => ({
       id: x.id,
@@ -103,37 +103,37 @@ export function PlayerApp() {
         secondarySpecialty: p.secondarySpecialty ?? null,
       })),
     }));
-    const mapped = mapDetailToSession(detail, t);
-    setSession(mapped);
-    setActiveSessionNumericId(sessionId);
+    const mapped = mapDetailToMeetup(detail, t);
+    setMeetup(mapped);
+    setActiveMeetupNumericId(meetupId);
     setLastRosterSync(new Date());
     setOfflineDataUpdatedAt(null);
-    void saveSessionSnapshot(mapped);
+    void saveMeetupSnapshot(mapped);
   }, []);
 
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const upcomingRes = await fetchSessions({
+      const upcomingRes = await fetchMeetups({
         status: "upcoming",
         order: "asc",
         limit: 50,
       });
       const upcoming = upcomingRes.items;
       if (upcoming.length === 0) {
-        await clearSessionChatCache();
-        setSession(null);
-        setActiveSessionNumericId(null);
+        await clearMeetupChatCache();
+        setMeetup(null);
+        setActiveMeetupNumericId(null);
         setOfflineDataUpdatedAt(null);
         setNextAnnounceAt(null);
-        const anyRes = await fetchSessions({
+        const anyRes = await fetchMeetups({
           status: "all",
           order: "desc",
           limit: 5,
         });
         if (anyRes.total === 0) {
-          setError("No sessions yet. Create one in Admin.");
+          setError("No meetups yet. Create one in Admin.");
         } else {
           setNextAnnounceAt(
             anyRes.items.find((s) => s.game_template?.next_announce_at)
@@ -143,15 +143,15 @@ export function PlayerApp() {
         }
         return;
       }
-      await loadSession(upcoming[0].id);
-      recordSessionView();
+      await loadMeetup(upcoming[0].id);
+      recordMeetupView();
     } catch (e) {
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (offline) {
-        const snap = await loadSessionSnapshot();
+        const snap = await loadMeetupSnapshot();
         if (snap) {
-          setSession(snap.session);
-          setActiveSessionNumericId(Number.parseInt(snap.session.id, 10));
+          setMeetup(snap.meetup);
+          setActiveMeetupNumericId(Number.parseInt(snap.meetup.id, 10));
           setOfflineDataUpdatedAt(new Date(snap.updatedAt));
           setError(null);
         } else {
@@ -163,83 +163,83 @@ export function PlayerApp() {
     } finally {
       setLoading(false);
     }
-  }, [loadSession]);
+  }, [loadMeetup]);
 
   useEffect(() => {
     void loadInitialData();
   }, [loadInitialData]);
 
-  // Existing session-data SSE plumbing, now behind the shared hub
-  // (utils/sessionDataBus): LiveMatchBanner (scoreboard/goals) subscribes
+  // Existing meetup-data SSE plumbing, now behind the shared hub
+  // (utils/meetupDataBus): LiveMatchBanner (scoreboard/goals) subscribes
   // through the SAME physical connection — no second EventSource.
   useEffect(() => {
-    if (activeSessionNumericId == null) {
+    if (activeMeetupNumericId == null) {
       setRosterChannelLive(false);
       return;
     }
-    return subscribeSessionData(
-      activeSessionNumericId,
+    return subscribeMeetupData(
+      activeMeetupNumericId,
       tokens?.accessToken,
       (data) => {
         if (
-          data.type === "session_updated" &&
-          data.session_id === activeSessionNumericId
+          data.type === "meetup_updated" &&
+          data.meetup_id === activeMeetupNumericId
         ) {
-          void loadSession(activeSessionNumericId);
+          void loadMeetup(activeMeetupNumericId);
         }
         if (
-          data.type === "session_deleted" &&
-          data.session_id === activeSessionNumericId
+          data.type === "meetup_deleted" &&
+          data.meetup_id === activeMeetupNumericId
         ) {
-          void clearSessionChatCache().then(() => loadInitialData());
+          void clearMeetupChatCache().then(() => loadInitialData());
         }
       },
       setRosterChannelLive,
     );
-  }, [activeSessionNumericId, loadSession, loadInitialData, tokens?.accessToken]);
+  }, [activeMeetupNumericId, loadMeetup, loadInitialData, tokens?.accessToken]);
 
   useEffect(() => {
-    if (loading || !session) {
+    if (loading || !meetup) {
       setHeader(null);
       return;
     }
     let line1: string;
-    if (session.startTime) {
-      const k = parseSessionStart(session.startTime);
+    if (meetup.startTime) {
+      const k = parseMeetupStart(meetup.startTime);
       line1 = Number.isNaN(k.getTime())
-        ? session.date
+        ? meetup.date
         : format(k, "EEE d MMM · HH:mm");
     } else {
       try {
-        const d = parseISO(session.date);
+        const d = parseISO(meetup.date);
         line1 = Number.isNaN(d.getTime())
-          ? session.date
+          ? meetup.date
           : format(d, "EEE d MMM");
       } catch {
-        line1 = session.date;
+        line1 = meetup.date;
       }
     }
     setHeader({
       line1,
-      location: session.location || undefined,
-      fee: session.fee ?? undefined,
-      sessionId: activeSessionNumericId ?? undefined,
+      location: meetup.location || undefined,
+      fee: meetup.fee ?? undefined,
+      meetupId: activeMeetupNumericId ?? undefined,
       sseLive: rosterChannelLive,
     });
     return () => setHeader(null);
-  }, [session, loading, setHeader, activeSessionNumericId, rosterChannelLive]);
+  }, [meetup, loading, setHeader, activeMeetupNumericId, rosterChannelLive]);
 
   const handleToggleLock = (userId: string) => {
-    if (!session) return;
-    const newAttendance = session.attendance.map((u) =>
+    if (!meetup) return;
+    const newAttendance = meetup.attendance.map((u) =>
       u.id === userId ? { ...u, isLocked: !u.isLocked } : u,
     );
     const newTeams = rebalanceTeams({
       attendance: newAttendance,
-      teams: session.teams,
+      teams: meetup.teams,
     });
-    setSession({
-      ...session,
+    setMeetup({
+      ...meetup,
       attendance: newAttendance,
       teams: newTeams,
     });
@@ -247,9 +247,9 @@ export function PlayerApp() {
 
   const handleMovePlayer = useCallback(
     async (playerId: string, sourceTeamId: string, destTeamId: string) => {
-      if (!session || activeSessionNumericId == null) return;
+      if (!meetup || activeMeetupNumericId == null) return;
 
-      const nextTeams = session.teams.map((team) => {
+      const nextTeams = meetup.teams.map((team) => {
         if (team.id === sourceTeamId) {
           return {
             ...team,
@@ -257,27 +257,27 @@ export function PlayerApp() {
           };
         }
         if (team.id === destTeamId) {
-          const player = session.attendance.find((p) => p.id === playerId);
+          const player = meetup.attendance.find((p) => p.id === playerId);
           if (!player) return team;
           return { ...team, players: [...team.players, player] };
         }
         return team;
       });
-      const nextSession = { ...session, teams: nextTeams };
-      setSession(nextSession);
+      const nextMeetup = { ...meetup, teams: nextTeams };
+      setMeetup(nextMeetup);
 
-      const payload = nextSession.teams.map((t) => t.players.map((p) => p.id));
+      const payload = nextMeetup.teams.map((t) => t.players.map((p) => p.id));
       try {
-        await patchSessionTeams(activeSessionNumericId, payload);
+        await patchMeetupTeams(activeMeetupNumericId, payload);
       } catch (e) {
         showToast(
           e instanceof Error ? e.message : "Could not save team lineup",
           "error",
         );
-        void loadSession(activeSessionNumericId);
+        void loadMeetup(activeMeetupNumericId);
       }
     },
-    [session, activeSessionNumericId, loadSession, showToast],
+    [meetup, activeMeetupNumericId, loadMeetup, showToast],
   );
 
   return (
@@ -288,7 +288,7 @@ export function PlayerApp() {
           {error}
         </p>
       )}
-      {!loading && !session && !error && (
+      {!loading && !meetup && !error && (
         <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
           {me?.is_admin
             ? "No upcoming meetup. Create one in Admin."
@@ -297,16 +297,16 @@ export function PlayerApp() {
                   new Date(nextAnnounceAt),
                   "EEEE, HH:mm",
                 )}`
-              : "No upcoming meetup. Past sessions are in History."}
+              : "No upcoming meetup. Past meetups are in History."}
         </p>
       )}
-      {!loading && session && (
+      {!loading && meetup && (
         <>
           <div className="mx-auto max-w-6xl px-4 pt-4">
             <OnboardingCard userId={me?.user.pocket_id_sub ?? "anon"} />
           </div>
           <MeetupDetails
-            session={session}
+            meetup={meetup}
             onToggleLock={handleToggleLock}
             onMovePlayer={handleMovePlayer}
             canDragTeams={Boolean(me?.is_admin)}
@@ -314,8 +314,8 @@ export function PlayerApp() {
             lastRosterSync={lastRosterSync}
             offlineDataUpdatedAt={offlineDataUpdatedAt}
             onRosterUpdated={() =>
-              activeSessionNumericId != null &&
-              void loadSession(activeSessionNumericId)
+              activeMeetupNumericId != null &&
+              void loadMeetup(activeMeetupNumericId)
             }
           />
         </>

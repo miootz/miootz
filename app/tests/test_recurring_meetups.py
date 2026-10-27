@@ -1,4 +1,4 @@
-"""Game templates + materialize + sessions API (weekly templates + notify)."""
+"""Game templates + materialize + meetups API (weekly templates + notify)."""
 
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.game_template import GameTemplate
-from app.models.session import GameSession
+from app.models.meetup import Meetup
 from app.models.user import User
 
 
@@ -24,7 +24,7 @@ async def setup_db():
 
 
 def test_next_occurrence_skips_same_week_if_time_passed():
-    from app.services.recurring_sessions import next_occurrence_utc
+    from app.services.recurring_meetups import next_occurrence_utc
 
     rule = GameTemplate(
         name="Test",
@@ -51,7 +51,7 @@ def test_next_occurrence_skips_same_week_if_time_passed():
 
 @pytest.mark.asyncio
 async def test_materialize_next_idempotent():
-    from app.services.recurring_sessions import materialize_next_session_and_notify
+    from app.services.recurring_meetups import materialize_next_meetup_and_notify
 
     async with AsyncSession(engine) as db:
         rule = GameTemplate(
@@ -76,7 +76,7 @@ async def test_materialize_next_idempotent():
         rule_id = rule.id
 
         anchor = datetime(2030, 1, 1, 12, 0, tzinfo=UTC)
-        first = GameSession(
+        first = Meetup(
             start_time=anchor,
             location="Pitch",
             fee=0.0,
@@ -89,11 +89,11 @@ async def test_materialize_next_idempotent():
         await db.commit()
 
     with patch(
-        "app.services.recurring_sessions.notify_new_session_invites",
+        "app.services.recurring_meetups.notify_new_meetup_invites",
         new_callable=AsyncMock,
     ):
-        a1 = await materialize_next_session_and_notify(rule_id)
-        a2 = await materialize_next_session_and_notify(rule_id)
+        a1 = await materialize_next_meetup_and_notify(rule_id)
+        a2 = await materialize_next_meetup_and_notify(rule_id)
     assert a1 in (True, False)
     assert a2 is False
 
@@ -101,8 +101,8 @@ async def test_materialize_next_idempotent():
 @pytest.mark.asyncio
 async def test_materialize_backfills_missed_week():
     """Tail I: a server that was down across a kickoff recreates that week's
-    session (the most recent past slot) in addition to the next one."""
-    from app.services.recurring_sessions import materialize_next_session_and_notify
+    meetup (the most recent past slot) in addition to the next one."""
+    from app.services.recurring_meetups import materialize_next_meetup_and_notify
 
     async with AsyncSession(engine) as db:
         rule = GameTemplate(
@@ -127,15 +127,15 @@ async def test_materialize_backfills_missed_week():
         rule_id = rule.id
         await db.commit()
 
-    ok = await materialize_next_session_and_notify(rule_id)
+    ok = await materialize_next_meetup_and_notify(rule_id)
     assert ok is True
 
     async with AsyncSession(engine) as db:
         rows = (
             (
                 await db.execute(
-                    select(GameSession.start_time).where(
-                        GameSession.game_template_id == rule_id
+                    select(Meetup.start_time).where(
+                        Meetup.game_template_id == rule_id
                     )
                 )
             )
@@ -148,7 +148,7 @@ async def test_materialize_backfills_missed_week():
 
 
 @pytest.mark.asyncio
-async def test_session_template_start_is_unique():
+async def test_meetup_template_start_is_unique():
     """Tail J: the (template, kickoff) unique index is what makes the
     materializer race-safe."""
     from sqlalchemy.exc import IntegrityError
@@ -176,11 +176,11 @@ async def test_session_template_start_is_unique():
         rule_id = rule.id
         await db.commit()
         t = datetime(2031, 5, 5, 9, 0, tzinfo=UTC)
-        db.add(GameSession(start_time=t, location="Pitch", game_template_id=rule_id))
+        db.add(Meetup(start_time=t, location="Pitch", game_template_id=rule_id))
         await db.commit()
 
     async with AsyncSession(engine) as db:
-        db.add(GameSession(start_time=t, location="Pitch", game_template_id=rule_id))
+        db.add(Meetup(start_time=t, location="Pitch", game_template_id=rule_id))
         with pytest.raises(IntegrityError):
             await db.commit()
 

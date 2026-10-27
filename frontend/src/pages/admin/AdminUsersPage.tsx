@@ -234,7 +234,7 @@ export function AdminUsersPage() {
 			{/* Create user form */}
 			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
 				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Plus className="h-4 w-4 sm:h-5 sm:w-5 text-violet-600" aria-hidden />
+					<Plus className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
 					New user
 				</h2>
 
@@ -253,7 +253,7 @@ export function AdminUsersPage() {
 							value={firstName}
 							onChange={(e) => setFirstName(e.target.value)}
 							placeholder="e.g. John"
-							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 dark:text-white transition-colors"
+							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white transition-colors"
 						/>
 					</div>
 					<div>
@@ -270,7 +270,7 @@ export function AdminUsersPage() {
 							value={lastName}
 							onChange={(e) => setLastName(e.target.value)}
 							placeholder="e.g. Smith"
-							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 dark:text-white transition-colors"
+							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white transition-colors"
 						/>
 					</div>
 				</div>
@@ -286,7 +286,7 @@ export function AdminUsersPage() {
 						type="button"
 						disabled={userLoading}
 						onClick={() => void createUser()}
-						className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98] transition-colors"
+						className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98] transition-colors"
 					>
 						{userLoading ? (
 							<Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -299,7 +299,7 @@ export function AdminUsersPage() {
 			{/* Users list */}
 			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
 				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Users className="h-4 w-4 sm:h-5 sm:w-5 text-violet-600" aria-hidden />
+					<Users className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
 					Players
 				</h2>
 
@@ -394,6 +394,7 @@ export function AdminUsersPage() {
 													value={editSkill}
 													onChange={(v) => setEditSkill(v)}
 													size={28}
+													label="Skill rating"
 												/>
 											</div>
 
@@ -442,7 +443,7 @@ export function AdminUsersPage() {
 														type="checkbox"
 														checked={editIsAdmin}
 														onChange={(e) => setEditIsAdmin(e.target.checked)}
-														className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+														className="rounded border-gray-300 text-teal-700 focus:ring-teal-500"
 													/>
 													<span className="text-sm text-gray-700 dark:text-gray-300">
 														Admin
@@ -463,7 +464,7 @@ export function AdminUsersPage() {
 													type="button"
 													disabled={isSaving}
 													onClick={() => void saveEdit(user)}
-													className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98]"
+													className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98]"
 												>
 													{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
 													Save
@@ -521,7 +522,7 @@ export function AdminUsersPage() {
 													</span>
 												)}
 												{user.is_admin && (
-													<span className="inline-flex items-center rounded-md bg-violet-100 dark:bg-violet-950/50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
+													<span className="inline-flex items-center rounded-md bg-teal-100 dark:bg-teal-950/50 px-2 py-0.5 text-xs font-medium text-teal-800 dark:text-teal-300">
 														Admin
 													</span>
 												)}
@@ -617,7 +618,7 @@ export function AdminUsersPage() {
 			{/* Invite history */}
 			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
 				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Mail className="h-4 w-4 sm:h-5 sm:w-5 text-violet-600" aria-hidden />
+					<Mail className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
 					Invite history
 				</h2>
 

@@ -9,7 +9,7 @@ from app.api.main import app
 from app.api.users_stats import get_current_authenticated_user
 from app.core.database import Base, get_db
 from app.models.user import User
-from app.models.session import GameSession, Attendance
+from app.models.meetup import Meetup, Attendance
 from datetime import datetime, UTC
 
 # Keep test artifacts out of the repo root (was ./test_stats_final.db).
@@ -30,18 +30,18 @@ def engine():
         os.remove(_DB_PATH)
 
 
-@pytest.fixture(name="async_session_factory")
-def async_session_factory(engine):
+@pytest.fixture(name="async_meetup_factory")
+def async_meetup_factory(engine):
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
 @pytest.fixture(name="db")
-async def db_session(engine, async_session_factory):
+async def db_session(engine, async_meetup_factory):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with async_session_factory() as session:
-        yield session
+    async with async_meetup_factory() as meetup:
+        yield meetup
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -77,19 +77,19 @@ async def auth_user(db: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_games_played_count_matches_confirmed_sessions(
+async def test_games_played_count_matches_confirmed_meetups(
     client: AsyncClient, auth_user: User, db: AsyncSession
 ):
-    session1 = GameSession(start_time=datetime.now(UTC), location="Park 1")
-    session2 = GameSession(start_time=datetime.now(UTC), location="Park 2")
-    session3 = GameSession(start_time=datetime.now(UTC), location="Park 3")
-    db.add_all([session1, session2, session3])
+    meetup1 = Meetup(start_time=datetime.now(UTC), location="Park 1")
+    meetup2 = Meetup(start_time=datetime.now(UTC), location="Park 2")
+    meetup3 = Meetup(start_time=datetime.now(UTC), location="Park 3")
+    db.add_all([meetup1, meetup2, meetup3])
     await db.commit()
 
-    db.add(Attendance(session_id=session1.id, user_id=auth_user.id, status="confirmed"))
-    db.add(Attendance(session_id=session2.id, user_id=auth_user.id, status="confirmed"))
+    db.add(Attendance(meetup_id=meetup1.id, user_id=auth_user.id, status="confirmed"))
+    db.add(Attendance(meetup_id=meetup2.id, user_id=auth_user.id, status="confirmed"))
     db.add(
-        Attendance(session_id=session3.id, user_id=auth_user.id, status="waitlisted")
+        Attendance(meetup_id=meetup3.id, user_id=auth_user.id, status="waitlisted")
     )
     await db.commit()
 
@@ -113,10 +113,10 @@ async def test_dashboard_load_zero_vs_many_games(client: AsyncClient, db: AsyncS
     await db.commit()
 
     for i in range(10):
-        s = GameSession(start_time=datetime.now(UTC), location=f"Park {i}")
+        s = Meetup(start_time=datetime.now(UTC), location=f"Park {i}")
         db.add(s)
         await db.commit()
-        db.add(Attendance(session_id=s.id, user_id=user_many.id, status="confirmed"))
+        db.add(Attendance(meetup_id=s.id, user_id=user_many.id, status="confirmed"))
     await db.commit()
 
     app.dependency_overrides[get_current_authenticated_user] = lambda: user_many

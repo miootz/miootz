@@ -54,8 +54,8 @@ const NOTIF_CATEGORY_META: Record<
   NotificationCategory,
   { display_name: string; description: string }
 > = {
-  session_invite: {
-    display_name: "New session announcements",
+  meetup_invite: {
+    display_name: "New meetup announcements",
     description: "When a new meetup is added to the schedule",
   },
   waitlist: {
@@ -64,10 +64,10 @@ const NOTIF_CATEGORY_META: Record<
   },
   chat: {
     display_name: "Chat messages",
-    description: "New messages in sessions you attend",
+    description: "New messages in meetups you attend",
   },
-  session_cancelled: {
-    display_name: "Session cancelled",
+  meetup_cancelled: {
+    display_name: "Meetup cancelled",
     description: "When an admin removes a meetup",
   },
   kickoff_reminder: {
@@ -76,7 +76,7 @@ const NOTIF_CATEGORY_META: Record<
   },
   rating_reminder: {
     display_name: "Rating reminder",
-    description: "Prompt to rate teammates after the session ends",
+    description: "Prompt to rate teammates after the meetup ends",
   },
 };
 
@@ -155,8 +155,8 @@ function ToggleSwitch({
       type="button"
       disabled={disabled}
       onClick={onChange}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
-        enabled ? "bg-violet-600" : "bg-gray-200 dark:bg-gray-600"
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${
+        enabled ? "bg-teal-700" : "bg-gray-200 dark:bg-gray-600"
       } disabled:opacity-50`}
       role="switch"
       aria-checked={enabled}
@@ -399,7 +399,7 @@ export function ProfilePage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       <div className="max-w-lg mx-auto p-6 space-y-6">
         {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
-        <section className="rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 text-white shadow-lg">
+        <section className="rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 p-5 text-white shadow-lg">
           <div className="flex items-center gap-4">
             <PlayerAvatarFace
               name={displayName}
@@ -410,7 +410,7 @@ export function ProfilePage() {
               <h1 className="text-xl font-bold text-white truncate">
                 {displayName}
               </h1>
-              <p className="text-sm text-violet-100 truncate">
+              <p className="text-sm text-teal-100 truncate">
                 {u.pocket_id_sub ?? ""}
               </p>
             </div>
@@ -463,7 +463,7 @@ export function ProfilePage() {
               </h2>
               <div className="grid grid-cols-2 gap-3">
                 <StatCard
-                  label="Sessions played"
+                  label="Meetups played"
                   value={String(stats.games_played)}
                 />
                 <StatCard
@@ -500,7 +500,7 @@ export function ProfilePage() {
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                     <div
-                      className="h-full rounded-full bg-violet-500"
+                      className="h-full rounded-full bg-teal-500"
                       style={{ width: `${(selfSkill / 5) * 100}%` }}
                     />
                   </div>
@@ -535,6 +535,7 @@ export function ProfilePage() {
               <StarRating
                 value={selfAssessed === "" ? 0 : selfAssessed}
                 onChange={onSkillChange}
+                label="Skill rating"
               />
               <span className="text-2xs text-gray-500 dark:text-gray-400">
                 {SKILL_SCALE_BLURB}
@@ -567,7 +568,7 @@ export function ProfilePage() {
                       setPrimarySpecialty,
                     );
                   }}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                 >
                   <option value="">— Select —</option>
                   {SPECIALTY_OPTIONS.map((opt) => (
@@ -595,7 +596,7 @@ export function ProfilePage() {
                       setSecondarySpecialty,
                     );
                   }}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                 >
                   <option value="">— Select —</option>
                   {SPECIALTY_OPTIONS.map((opt) => (
@@ -634,9 +635,9 @@ export function ProfilePage() {
                 key={value}
                 type="button"
                 onClick={() => setPreference(value)}
-                className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
+                className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
                   preference === value
-                    ? "border-violet-500 bg-violet-50 text-violet-700 dark:border-violet-400 dark:bg-violet-950/50 dark:text-violet-300"
+                    ? "border-teal-500 bg-teal-50 text-teal-800 dark:border-teal-400 dark:bg-teal-950/50 dark:text-teal-300"
                     : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600"
                 }`}
               >
@@ -653,7 +654,7 @@ export function ProfilePage() {
           <CollapsibleSection title="Push notifications">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
               Receive in-app notifications on registered devices. Tap a
-              notification to open the relevant session.
+              notification to open the relevant meetup.
             </p>
 
             {/* Device list */}
@@ -758,7 +759,7 @@ export function ProfilePage() {
                       }
                     })();
                   }}
-                  className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  className="rounded-xl bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
                 >
                   {pushBusy ? "Registering…" : "Register this device"}
                 </button>
@@ -840,7 +841,7 @@ export function ProfilePage() {
 
         {!pushEnabled && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            This browser session cannot receive push notifications. Your
+            This browser meetup cannot receive push notifications. Your
             preferences still apply to registered devices.
           </p>
         )}
@@ -930,7 +931,7 @@ export function ProfilePage() {
                     {me.auth_groups.map((g) => (
                       <span
                         key={g}
-                        className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
+                        className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-200"
                       >
                         {g}
                       </span>

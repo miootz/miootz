@@ -24,9 +24,9 @@ JobHandler = Callable[[int], Awaitable[None]]
 
 def _rating_reminder_handler() -> JobHandler:
     # lazy import to avoid a cycle with app.services.jobs
-    from app.services.jobs import send_rating_reminder_for_session
+    from app.services.jobs import send_rating_reminder_for_meetup
 
-    return send_rating_reminder_for_session
+    return send_rating_reminder_for_meetup
 
 
 # job_type -> lazy handler factory

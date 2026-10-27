@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
 import {
@@ -9,7 +9,7 @@ import {
   renewLease,
   type GoalRow,
 } from "../api/stewardApi";
-import { fetchSessionDetail } from "../api/sessionsApi";
+import { fetchMeetupDetail } from "../api/meetupsApi";
 import type { MatchSummary } from "../api/matchesApi";
 import { PlayerSelect, type SelectablePlayer } from "./PlayerSelect";
 import {
@@ -22,7 +22,7 @@ import {
 } from "../utils/lease";
 
 interface GoalEntrySheetProps {
-  sessionId: number;
+  meetupId: number;
   match: MatchSummary;
   onClose: () => void;
   onLogged: (goal: GoalRow) => void;
@@ -42,7 +42,7 @@ interface GoalEntrySheetProps {
  *   re-requested on submit (never lose data).
  */
 export function GoalEntrySheet({
-  sessionId,
+  meetupId,
   match,
   onClose,
   onLogged,
@@ -51,7 +51,7 @@ export function GoalEntrySheet({
   const { me } = useAuth();
   const isAdmin = !!me?.is_admin;
 
-  // ── Idempotency: one intent per sheet session ──────────────────
+  // ── Idempotency: one intent per sheet meetup ──────────────────
   const intentIdRef = useRef<string>(crypto.randomUUID());
 
   // ── Lease state ──────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export function GoalEntrySheet({
     let cancelled = false;
     void (async () => {
       try {
-        const detail = await fetchSessionDetail(sessionId);
+        const detail = await fetchMeetupDetail(meetupId);
         if (cancelled) return;
         const teamOf = new Map<number, string>();
         for (const u of match.team_a.users) teamOf.set(u.id, "A");
@@ -104,7 +104,7 @@ export function GoalEntrySheet({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, match]);
+  }, [meetupId, match]);
 
   const matchPlayers = useMemo(
     () =>
@@ -118,7 +118,7 @@ export function GoalEntrySheet({
   const tryAcquire = useCallback(async (): Promise<boolean> => {
     setAcquiring(true);
     try {
-      const res = await acquireLease(sessionId);
+      const res = await acquireLease(meetupId);
       if (res.ok) {
         tokenRef.current = res.lease.lease_token;
         setHolding(true);
@@ -140,7 +140,7 @@ export function GoalEntrySheet({
     } finally {
       setAcquiring(false);
     }
-  }, [sessionId, showToast]);
+  }, [meetupId, showToast]);
 
   // Acquire immediately on open; keep renewed while open; release on unmount.
   useEffect(() => {
@@ -148,7 +148,7 @@ export function GoalEntrySheet({
     const renewTimer = setInterval(() => {
       if (!tokenRef.current) return;
       void (async () => {
-        const res = await renewLease(sessionId, tokenRef.current!);
+        const res = await renewLease(meetupId, tokenRef.current!);
         if (res.ok) {
           setLease(null);
           setHolding(true);
@@ -162,10 +162,10 @@ export function GoalEntrySheet({
     }, 20_000);
     return () => {
       clearInterval(renewTimer);
-      if (tokenRef.current) void releaseLease(sessionId, tokenRef.current);
+      if (tokenRef.current) void releaseLease(meetupId, tokenRef.current);
       tokenRef.current = null;
     };
-  }, [sessionId, tryAcquire]);
+  }, [meetupId, tryAcquire]);
 
   // ── Minute pre-fill from the server clock, ticking until edited ──
   useEffect(() => {
@@ -198,7 +198,7 @@ export function GoalEntrySheet({
           const won = await tryAcquire();
           if (!won) return; // busy label now visible; fields preserved
         }
-        const res = await createGoal(sessionId, match.id, {
+        const res = await createGoal(meetupId, match.id, {
           team,
           scorer_id: scorer.id,
           assist_id: assist?.id ?? null,
@@ -239,7 +239,7 @@ export function GoalEntrySheet({
       onClose,
       onLogged,
       scorer,
-      sessionId,
+      meetupId,
       showToast,
       team,
       tryAcquire,
@@ -308,9 +308,10 @@ export function GoalEntrySheet({
             <button
               type="button"
               onClick={close}
-              className="text-xs px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              aria-label="Close goal entry"
             >
-              Close
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>

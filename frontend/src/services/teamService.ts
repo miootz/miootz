@@ -60,16 +60,16 @@ export const assignTeams = (players: User[]): Team[] => {
   return assignSnakeWithCaps(players, counts);
 };
 
-export const rebalanceTeams = (currentSession: {
+export const rebalanceTeams = (currentMeetup: {
   attendance: User[];
   teams: Team[];
 }): Team[] => {
-  const attById = new Map(currentSession.attendance.map((u) => [u.id, u]));
+  const attById = new Map(currentMeetup.attendance.map((u) => [u.id, u]));
 
   /** Lock state lives on attendance; team copies may be stale after toggling. */
   const lockedPlayersMap = new Map<string, { teamId: string; player: User }>();
 
-  currentSession.teams.forEach((team) => {
+  currentMeetup.teams.forEach((team) => {
     team.players.forEach((player) => {
       const att = attById.get(player.id);
       if (att?.isLocked) {
@@ -81,8 +81,8 @@ export const rebalanceTeams = (currentSession: {
     });
   });
 
-  const unlockedPlayers = currentSession.attendance.filter((p) => !p.isLocked);
-  const totalCount = currentSession.attendance.length;
+  const unlockedPlayers = currentMeetup.attendance.filter((p) => !p.isLocked);
+  const totalCount = currentMeetup.attendance.length;
   const counts = teamCounts(totalCount);
   const teamCount = counts.length;
 

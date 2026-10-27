@@ -11,13 +11,13 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Lock, Scale, Star, Unlock } from "lucide-react";
-import type { Session, User } from "../types";
+import { Lock, Scale, Star, Unlock } from "lucide-react";
+import type { Meetup, User } from "../types";
 import { teamSkillBalanceSummary } from "../services/teamService";
 import { PlayerAvatarFace } from "./PlayerAvatar";
 
 interface DraggableTeamsProps {
-  session: Session;
+  meetup: Meetup;
   onMovePlayer: (
     playerId: string,
     sourceTeamId: string,
@@ -29,8 +29,8 @@ interface DraggableTeamsProps {
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
-function mergePlayerWithAttendance(session: Session, player: User): User {
-  const att = session.attendance.find((a) => a.id === player.id);
+function mergePlayerWithAttendance(meetup: Meetup, player: User): User {
+  const att = meetup.attendance.find((a) => a.id === player.id);
   const merged = { ...player, ...att };
   merged.isLocked = att?.isLocked ?? player.isLocked;
   return merged;
@@ -71,7 +71,7 @@ function DroppableZone({
       data-droppable-id={id}
       className={`transition-all duration-200 ${
         isOver
-          ? "ring-2 ring-violet-400 ring-offset-2 dark:ring-violet-500"
+          ? "ring-2 ring-teal-400 ring-offset-2 dark:ring-teal-500"
           : ""
       }`}
     >
@@ -93,7 +93,7 @@ function PlayerRow({
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
 }) {
-  const rating = formatRating(player);
+  const ratingValue = formatRating(player);
   const positions = formatPositions(player);
 
   const { attributes, listeners, setNodeRef, transform, isDragging } =
@@ -113,6 +113,32 @@ function PlayerRow({
       }
     : {};
 
+  const rating = (
+    <span className="inline-flex items-center gap-1 text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
+      <Star className="h-3.5 w-3.5 text-amber-500" aria-hidden />
+      {ratingValue}
+    </span>
+  );
+
+  const lockButton =
+    canDrag && onToggleLock ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleLock(player.id);
+        }}
+        className={`p-1 rounded transition-colors shrink-0 ${
+          player.isLocked
+            ? "text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-950/30"
+            : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        }`}
+        aria-label={player.isLocked ? "Unlock" : "Lock"}
+      >
+        {player.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+      </button>
+    ) : null;
+
   return (
     <div
       ref={canDrag ? setNodeRef : undefined}
@@ -121,20 +147,12 @@ function PlayerRow({
       {...(canDrag ? attributes : {})}
       className={`group flex items-center gap-2.5 rounded-xl border px-3 py-2 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 transition-colors ${
         canDrag && !player.isLocked
-          ? "cursor-grab active:cursor-grabbing hover:border-violet-300 dark:hover:border-violet-600 [-webkit-tap-highlight-color:transparent]"
+          ? "cursor-grab active:cursor-grabbing hover:border-teal-300 dark:hover:border-teal-700 [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]"
           : player.isLocked
             ? "opacity-60"
             : ""
       }`}
     >
-      {/* Drag handle (admin only, not locked) */}
-      {canDrag && !player.isLocked && (
-        <GripVertical
-          className="h-4 w-4 shrink-0 text-gray-300 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400"
-          aria-hidden
-        />
-      )}
-
       {/* Avatar */}
       <div className="relative shrink-0">
         <PlayerAvatarFace
@@ -144,69 +162,56 @@ function PlayerRow({
           isPlusOne={player.isPlusOne}
         />
         {player.isLocked && (
-          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-violet-500 flex items-center justify-center shadow">
+          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-teal-500 flex items-center justify-center shadow">
             <Lock size={9} className="text-white" />
           </div>
         )}
       </div>
 
-      {/* Name + position */}
       <div className="min-w-0 flex-1">
+        {/* Row 1 — name (full on mobile); positions + rating inline on sm+ */}
         <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+          <span className="min-w-0 text-sm font-medium text-gray-900 dark:text-gray-100 break-words sm:truncate">
             {player.name}
           </span>
           {positions && (
-            <span className="text-2xs text-gray-500 dark:text-gray-400 shrink-0">
+            <span className="hidden text-2xs text-gray-500 dark:text-gray-400 sm:inline sm:shrink-0">
               {positions}
             </span>
           )}
+          <span className="hidden sm:inline-flex sm:shrink-0">{rating}</span>
+          <span className="hidden sm:inline-block sm:shrink-0">{lockButton}</span>
+        </div>
+        {/* Row 2 — mobile only: same info so the name owns the whole row */}
+        <div className="mt-0.5 flex items-center gap-1.5 sm:hidden">
+          {positions && (
+            <span className="text-2xs text-gray-500 dark:text-gray-400">
+              {positions}
+            </span>
+          )}
+          {rating}
+          {lockButton}
         </div>
       </div>
-
-      {/* Computed rating */}
-      <span className="inline-flex items-center gap-1 text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
-        <Star className="h-3.5 w-3.5 text-amber-500" aria-hidden />
-        {rating}
-      </span>
-
-      {/* Lock toggle (admin only) */}
-      {canDrag && onToggleLock && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleLock(player.id);
-          }}
-          className={`p-1 rounded transition-colors shrink-0 ${
-            player.isLocked
-              ? "text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-950/30"
-              : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-          }`}
-          aria-label={player.isLocked ? "Unlock" : "Lock"}
-        >
-          {player.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
-        </button>
-      )}
     </div>
   );
 }
 
 /* ── Skill banner ────────────────────────────────────────────────── */
 
-function SkillBanner({ session }: { session: Session }) {
-  const { totals, balanced, maxDiff } = teamSkillBalanceSummary(session.teams);
+function SkillBanner({ meetup }: { meetup: Meetup }) {
+  const { totals, balanced, maxDiff } = teamSkillBalanceSummary(meetup.teams);
   if (totals.length === 0) return null;
 
   const parts = totals.map((total, i) => {
-    const teamName = session.teams[i]?.name ?? `Team ${i + 1}`;
+    const teamName = meetup.teams[i]?.name ?? `Team ${i + 1}`;
     return `${teamName}: ${total.toFixed(1)}`;
   });
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
       <Scale
-        className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400"
+        className="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-400"
         aria-hidden
       />
       <span className="font-medium text-gray-800 dark:text-gray-200">
@@ -215,7 +220,7 @@ function SkillBanner({ session }: { session: Session }) {
       <span className="text-gray-600 dark:text-gray-400">
         {parts.join(" \u00B7 ")}
         {maxDiff > 0 && (
-          <span className="text-gray-500 dark:text-gray-500">
+          <span className="text-gray-500 dark:text-gray-400">
             {" "}
             (spread {maxDiff.toFixed(1)})
           </span>
@@ -252,7 +257,7 @@ function TeamColumn({
   const content = (
     <div className="space-y-2">
       <div className="flex justify-between items-center px-1">
-        <h3 className="font-bold text-base text-purple-600 dark:text-purple-400">
+        <h3 className="font-bold text-base text-teal-700 dark:text-teal-400">
           {team.name ?? `Team ${index + 1}`}
         </h3>
         <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -290,7 +295,7 @@ function TeamColumn({
 /* ── Main component ──────────────────────────────────────────────── */
 
 export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
-  session,
+  meetup,
   onMovePlayer,
   onToggleLock,
   canDragTeams,
@@ -309,16 +314,16 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
     const playerId = active.id as string;
     const overId = String(over.id);
 
-    const sourceTeam = session.teams.find((t) =>
+    const sourceTeam = meetup.teams.find((t) =>
       t.players.some((p) => p.id === playerId),
     );
     if (!sourceTeam) return;
 
     let destTeamId: string | undefined;
-    if (session.teams.some((t) => t.id === overId)) {
+    if (meetup.teams.some((t) => t.id === overId)) {
       destTeamId = overId;
     } else {
-      destTeamId = session.teams.find((t) =>
+      destTeamId = meetup.teams.find((t) =>
         t.players.some((p) => p.id === overId),
       )?.id;
     }
@@ -330,7 +335,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
 
   return (
     <>
-      <SkillBanner session={session} />
+      <SkillBanner meetup={meetup} />
       {canDragTeams ? (
         <DndContext
           sensors={sensors}
@@ -338,9 +343,9 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
           onDragEnd={handleDragEnd}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {session.teams.map((team, index) => {
+            {meetup.teams.map((team, index) => {
               const players = team.players.map((p) =>
-                mergePlayerWithAttendance(session, p),
+                mergePlayerWithAttendance(meetup, p),
               );
               return (
                 <TeamColumn
@@ -357,9 +362,9 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
         </DndContext>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {session.teams.map((team, index) => {
+          {meetup.teams.map((team, index) => {
             const players = team.players.map((p) =>
-              mergePlayerWithAttendance(session, p),
+              mergePlayerWithAttendance(meetup, p),
             );
             return (
               <TeamColumn

@@ -3,10 +3,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { PlusOneClaimPage } from './PlusOneClaimPage';
 import { useAuth } from '../auth/useAuth';
-import { checkPlusOneClaim, claimPlusOne } from '../api/sessionsApi';
+import { checkPlusOneClaim, claimPlusOne } from '../api/meetupsApi';
 
 vi.mock('../auth/useAuth');
-vi.mock('../api/sessionsApi');
+vi.mock('../api/meetupsApi');
 vi.mock('../context/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../utils/haptics', () => ({ hapticError: vi.fn(), hapticSuccess: vi.fn() }));
 const login = vi.fn();
@@ -17,7 +17,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState({}, '', '/plus-one/test-claim');
   vi.mocked(useAuth).mockReturnValue(signedOut);
-  vi.mocked(checkPlusOneClaim).mockResolvedValue({ id: 1, status: 'pending', first_name: 'Ioana', last_name: 'Radu', self_assessed_skill: 3, session_id: 1, inviter_display_name: 'Mara', guest_display_name: 'Ioana Radu' });
+  vi.mocked(checkPlusOneClaim).mockResolvedValue({ id: 1, status: 'pending', first_name: 'Ioana', last_name: 'Radu', self_assessed_skill: 3, meetup_id: 1, inviter_display_name: 'Mara', guest_display_name: 'Ioana Radu' });
 });
 
 function openClaim() {

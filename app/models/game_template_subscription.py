@@ -29,7 +29,7 @@ class GameTemplateSubscription(Base):
     game_template_id: Mapped[int] = mapped_column(
         ForeignKey("game_templates.id"), index=True
     )
-    #: False = user opted out of new-session push notifications for this template.
+    #: False = user opted out of new-meetup push notifications for this template.
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     user: Mapped[User] = relationship(

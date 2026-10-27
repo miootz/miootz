@@ -22,7 +22,7 @@ class MatchEditorLease(Base):
     __tablename__ = "match_editor_lease"
 
     match_id: Mapped[int] = mapped_column(
-        ForeignKey("session_matches.id"), primary_key=True
+        ForeignKey("meetup_matches.id"), primary_key=True
     )
     #: NULL = free. Only the holder may renew/release (token checked).
     holder_id: Mapped[int | None] = mapped_column(

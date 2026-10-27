@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RatingCreate(BaseModel):
-    session_id: int
+    meetup_id: int
     ratee_id: int
     score: int = Field(..., ge=1, le=5)
 
@@ -13,7 +13,7 @@ class RatingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    session_id: int
+    meetup_id: int
     ratee_id: int
     score: int
     created_at: datetime
@@ -28,10 +28,10 @@ class RateeContext(BaseModel):
 
 
 class RatingContextResponse(BaseModel):
-    session_id: int
-    session_start_time: datetime
-    session_end_time: datetime
-    before_session_end: bool
+    meetup_id: int
+    meetup_start_time: datetime
+    meetup_end_time: datetime
+    before_meetup_end: bool
     ratings_locked: bool
     ratings_editable: bool
     ratings_lock_at: str | None = None

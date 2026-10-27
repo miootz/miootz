@@ -1,27 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Check, Clock, XCircle } from "lucide-react";
-import { joinSession, leaveSession } from "../api/sessionsApi";
+import { Check, Loader2, XCircle } from "lucide-react";
+import { joinMeetup, leaveMeetup } from "../api/meetupsApi";
 import { useAuth } from "../auth/useAuth";
 import { useToast } from "../context/ToastContext";
 
 type ActionKind = "join" | "cancel" | "ignore" | "view" | "rate";
 
 const ACTION_LABELS: Record<ActionKind, string> = {
-  join: "Join session",
-  cancel: "Leave session",
+  join: "Join meetup",
+  cancel: "Leave meetup",
   ignore: "Ignore invite",
-  view: "View session",
+  view: "View meetup",
   rate: "Rate teammates",
 };
 
-export function SessionActionPage() {
+export function MeetupActionPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { loading: authLoading } = useAuth();
   const { showToast } = useToast();
 
-  const sessionId = Number.parseInt(searchParams.get("sid") ?? "", 10);
+  const meetupId = Number.parseInt(searchParams.get("mid") ?? "", 10);
   const action = (searchParams.get("act") ?? "view") as ActionKind;
 
   const [status, setStatus] = useState<
@@ -30,27 +30,27 @@ export function SessionActionPage() {
   const [message, setMessage] = useState("");
 
   const execute = useCallback(async () => {
-    if (Number.isNaN(sessionId)) {
+    if (Number.isNaN(meetupId)) {
       setStatus("error");
-      setMessage("Invalid session link.");
+      setMessage("Invalid meetup link.");
       return;
     }
 
     setStatus("acting");
     try {
       if (action === "join") {
-        const attendance = await joinSession(sessionId);
+        const attendance = await joinMeetup(meetupId);
         setStatus("done");
         const joinedMessage = attendance.status === "waitlisted"
           ? "You're on the waitlist."
-          : "You've joined the session!";
+          : "You've joined the meetup!";
         setMessage(joinedMessage);
         showToast(joinedMessage, "success");
       } else if (action === "cancel") {
-        await leaveSession(sessionId);
+        await leaveMeetup(meetupId);
         setStatus("done");
-        setMessage("You've left the session.");
-        showToast("Left session", "success");
+        setMessage("You've left the meetup.");
+        showToast("Left meetup", "success");
       } else if (action === "ignore") {
         setStatus("done");
         setMessage("Invite ignored.");
@@ -59,12 +59,12 @@ export function SessionActionPage() {
         setMessage("Opening ratings…");
       } else {
         setStatus("done");
-        setMessage("Opening session…");
+        setMessage("Opening meetup…");
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Action failed";
       // Reopening an invitation should lead to the existing signup.
-      if (action === "join" && errMsg === "Already joined session") {
+      if (action === "join" && errMsg === "Already joined meetup") {
         setStatus("done");
         setMessage("You're already signed up. Opening the meetup…");
         return;
@@ -73,7 +73,7 @@ export function SessionActionPage() {
       setMessage(errMsg);
       showToast(errMsg, "error");
     }
-  }, [sessionId, action, showToast]);
+  }, [meetupId, action, showToast]);
 
   // Execute action once auth resolves (RequireAuth guarantees `me` is set here)
   useEffect(() => {
@@ -93,11 +93,11 @@ export function SessionActionPage() {
       if (action === "rate") {
         navigate("/?tab=history");
       } else {
-        navigate(`/sessions/${sessionId}`);
+        navigate(`/meetups/${meetupId}`);
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [status, action, sessionId, navigate]);
+  }, [status, action, meetupId, navigate]);
 
   const icon =
     status === "done" ? (
@@ -105,7 +105,7 @@ export function SessionActionPage() {
     ) : status === "error" ? (
       <XCircle className="h-16 w-16 text-red-500" />
     ) : (
-      <Clock className="h-16 w-16 text-violet-500 animate-spin" />
+      <Loader2 className="h-16 w-16 animate-spin text-teal-600" />
     );
 
   return (
@@ -125,10 +125,10 @@ export function SessionActionPage() {
         {status === "error" && (
           <button
             type="button"
-            onClick={() => navigate("/sessions")}
-            className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700"
+            onClick={() => navigate("/meetups")}
+            className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800"
           >
-            Go to sessions
+            Go to meetups
           </button>
         )}
       </div>

@@ -10,7 +10,7 @@ from app.api import (
     game_templates,
     invites,
     matches,
-    sessions,
+    meetups,
     ratings,
     users_stats,
     users,
@@ -19,9 +19,9 @@ from app.api.middleware import PocketIdAuthMiddleware
 from app.api.rate_limit import limiter
 from app.core.config import settings
 from app.core.database import Base, engine, init_db
-from app.models import game_template  # noqa: F401 — GameTemplate + GameSession FK
+from app.models import game_template  # noqa: F401 — GameTemplate + Meetup FK
 from app.models import game_template_subscription  # noqa: F401
-from app.models import match  # noqa: F401 — SessionMatch
+from app.models import match  # noqa: F401 — MeetupMatch
 from app.models import match_editor_lease  # noqa: F401 — MatchEditorLease
 from app.models import match_goal  # noqa: F401 — MatchGoal
 from app.models import web_push_subscription  # noqa: F401
@@ -88,7 +88,7 @@ app.add_middleware(PocketIdAuthMiddleware)
 
 app.include_router(invites.router)
 app.include_router(game_templates.router)
-app.include_router(sessions.router)
+app.include_router(meetups.router)
 app.include_router(matches.router)
 app.include_router(users.router)
 app.include_router(ratings.router)

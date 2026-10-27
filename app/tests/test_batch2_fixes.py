@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
-from app.models.match import SessionMatch
-from app.models.session import Attendance
+from app.models.match import MeetupMatch
+from app.models.meetup import Attendance
 from app.models.user import User
 
 
@@ -31,7 +31,7 @@ async def client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
-async def make_session(
+async def make_meetup(
     ac: AsyncClient,
     *,
     tokens,
@@ -41,7 +41,7 @@ async def make_session(
 ):
     start = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=0)
     r = await ac.post(
-        "/sessions/",
+        "/meetups/",
         json={
             "start_time": start.isoformat(),
             "location": "Pitch",
@@ -54,7 +54,7 @@ async def make_session(
     assert r.status_code == 201, r.text
     sid = r.json()["id"]
     for t in tokens:
-        rj = await ac.post(f"/sessions/{sid}/join", headers=hdr(t))
+        rj = await ac.post(f"/meetups/{sid}/join", headers=hdr(t))
         assert rj.status_code == 200, rj.text
 
     if not with_match:
@@ -75,16 +75,16 @@ async def make_session(
         [str(ids[t]) for t in tokens[half:]],
     ]
     rt = await ac.patch(
-        f"/sessions/{sid}/teams", json={"teams": teams}, headers=hdr("admin")
+        f"/meetups/{sid}/teams", json={"teams": teams}, headers=hdr("admin")
     )
     assert rt.status_code == 200, rt.text
 
-    rs = await ac.post(f"/sessions/{sid}/matches/start", headers=hdr("admin"))
+    rs = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admin"))
     assert rs.status_code == 201, rs.text
     mid = rs.json()["match"]["id"]
     async with AsyncSession(engine) as db:
         m = (
-            await db.execute(select(SessionMatch).where(SessionMatch.id == mid))
+            await db.execute(select(MeetupMatch).where(MeetupMatch.id == mid))
         ).scalar_one()
         m.timer_started_at = datetime.now(UTC)
         m.timer_seconds_remaining = m.timer_total_seconds
@@ -98,15 +98,15 @@ async def test_new_pending_match_requires_both_team_indices():
     """Tail B: exactly one of team_a_idx/team_b_idx is a client bug, not a
     silent 'pick the rest' decision."""
     async with await client() as ac:
-        sid = await make_session(ac, tokens=["p1", "p2"], max_players=4)
+        sid = await make_meetup(ac, tokens=["p1", "p2"], max_players=4)
         r = await ac.post(
-            f"/sessions/{sid}/matches/new",
+            f"/meetups/{sid}/matches/new",
             json={"team_a_idx": 0},
             headers=hdr("admin"),
         )
         assert r.status_code == 400, r.text
         r2 = await ac.post(
-            f"/sessions/{sid}/matches/new",
+            f"/meetups/{sid}/matches/new",
             json={"team_b_idx": 1},
             headers=hdr("admin"),
         )
@@ -117,7 +117,7 @@ async def test_new_pending_match_requires_both_team_indices():
 async def test_admin_move_demoting_confirmed_promotes_waitlist():
     """Finding 8: a demoted confirmed spot is an open spot."""
     async with await client() as ac:
-        sid = await make_session(ac, tokens=["p1", "p2", "p3"], max_players=2)
+        sid = await make_meetup(ac, tokens=["p1", "p2", "p3"], max_players=2)
 
         async def statuses() -> dict[int, str]:
             async with AsyncSession(engine) as db:
@@ -125,7 +125,7 @@ async def test_admin_move_demoting_confirmed_promotes_waitlist():
                     (
                         await db.execute(
                             select(Attendance).where(
-                                Attendance.session_id == sid
+                                Attendance.meetup_id == sid
                             )
                         )
                     )
@@ -142,7 +142,7 @@ async def test_admin_move_demoting_confirmed_promotes_waitlist():
         )
         waitlisted_before = [u for u, s in before.items() if s == "waitlisted"]
         r = await ac.post(
-            f"/sessions/{sid}/admin/move?user_id={demote_target}&new_status=waitlisted",
+            f"/meetups/{sid}/admin/move?user_id={demote_target}&new_status=waitlisted",
             headers=hdr("admin"),
         )
         assert r.status_code == 200, r.text
@@ -158,19 +158,19 @@ async def test_admin_move_demoting_confirmed_promotes_waitlist():
 
 
 @pytest.mark.asyncio
-async def test_update_session_rejects_max_below_min():
+async def test_update_meetup_rejects_max_below_min():
     """Finding 9: the patch endpoint enforces the same cross-field rule."""
     async with await client() as ac:
-        sid = await make_session(ac, tokens=["p1"], max_players=10, min_players=5)
+        sid = await make_meetup(ac, tokens=["p1"], max_players=10, min_players=5)
         r = await ac.patch(
-            f"/sessions/{sid}",
+            f"/meetups/{sid}",
             json={"max_players": 4},
             headers=hdr("admin"),
         )
         assert r.status_code == 400
         # And a consistent update still works.
         r = await ac.patch(
-            f"/sessions/{sid}",
+            f"/meetups/{sid}",
             json={"max_players": 6},
             headers=hdr("admin"),
         )
@@ -181,21 +181,21 @@ async def test_update_session_rejects_max_below_min():
 async def test_lease_holder_reclaim_gets_fresh_token():
     """Finding 12: re-claiming your own lease is not a 409 naming yourself."""
     async with await client() as ac:
-        sid, m = await make_session(
+        sid, m = await make_meetup(
             ac, tokens=["p1", "p2"], max_players=4, with_match=True
         )
 
-        r1 = await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+        r1 = await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         assert r1.status_code == 200
         tok1 = r1.json()["lease_token"]
 
         # Same holder, double-open of the sheet: fresh token, not a 409.
-        r2 = await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p1"))
+        r2 = await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         assert r2.status_code == 200, r2.text
         assert r2.json()["lease_token"] != tok1
 
         # Someone else still loses the race: 409 naming the holder.
-        r3 = await ac.post(f"/sessions/{sid}/matches/lease/acquire", headers=hdr("p2"))
+        r3 = await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p2"))
         assert r3.status_code == 409
         assert r3.json()["holder_name"] == "P1"
 
@@ -204,20 +204,20 @@ async def test_lease_holder_reclaim_gets_fresh_token():
 async def test_double_pause_appends_one_interval():
     """Finding 13: a racing/second pause tap cannot open a second interval."""
     async with await client() as ac:
-        sid, mid = await make_session(
+        sid, mid = await make_meetup(
             ac, tokens=["p1", "p2"], max_players=4, with_match=True
         )
 
-        r1 = await ac.post(f"/sessions/{sid}/matches/{mid}/timer/pause", headers=hdr("p1"))
+        r1 = await ac.post(f"/meetups/{sid}/matches/{mid}/timer/pause", headers=hdr("p1"))
         assert r1.status_code == 200, r1.text
         assert r1.json()["already"] is False
-        r2 = await ac.post(f"/sessions/{sid}/matches/{mid}/timer/pause", headers=hdr("p1"))
+        r2 = await ac.post(f"/meetups/{sid}/matches/{mid}/timer/pause", headers=hdr("p1"))
         assert r2.status_code == 200, r2.text
         assert r2.json()["already"] is True
 
         async with AsyncSession(engine) as db:
             res = await db.execute(
-                select(SessionMatch).where(SessionMatch.id == mid)
+                select(MeetupMatch).where(MeetupMatch.id == mid)
             )
             m2 = res.scalar_one()
             import json
@@ -231,25 +231,25 @@ async def test_double_pause_appends_one_interval():
 async def test_end_match_twice_is_409():
     """Finding 11: the completion guard makes a second /end a 409."""
     async with await client() as ac:
-        sid, mid = await make_session(
+        sid, mid = await make_meetup(
             ac, tokens=["p1", "p2"], max_players=4, with_match=True
         )
         async with AsyncSession(engine) as db:
             res = await db.execute(
-                select(SessionMatch).where(SessionMatch.id == mid)
+                select(MeetupMatch).where(MeetupMatch.id == mid)
             )
             mm = res.scalar_one()
             mm.score_a = 1
             await db.commit()
 
         r1 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/end",
+            f"/meetups/{sid}/matches/{mid}/end",
             json={},
             headers=hdr("admin"),
         )
         assert r1.status_code == 200, r1.text
         r2 = await ac.post(
-            f"/sessions/{sid}/matches/{mid}/end",
+            f"/meetups/{sid}/matches/{mid}/end",
             json={},
             headers=hdr("admin"),
         )

@@ -1,7 +1,7 @@
 import { apiBase, apiFetch, parseApiError } from "./client";
 
 /**
- * Same-origin URL for session roster/detail SSE (join, leave, admin moves,
+ * Same-origin URL for meetup roster/detail SSE (join, leave, admin moves,
  * team reshuffle).
  *
  * EventSource cannot set Authorization headers, so the access token travels
@@ -11,21 +11,21 @@ import { apiBase, apiFetch, parseApiError } from "./client";
  * the app becomes internet-facing (then switch to fetch-streaming or
  * short-lived SSE tickets).
  */
-export function sessionDataEventsUrl(
-  sessionId: number,
+export function meetupDataEventsUrl(
+  meetupId: number,
   accessToken: string | undefined,
 ): string {
-  const base = `${apiBase()}/sessions/${sessionId}/data/events`;
+  const base = `${apiBase()}/meetups/${meetupId}/data/events`;
   return accessToken
     ? `${base}?access_token=${encodeURIComponent(accessToken)}`
     : base;
 }
 
-export function sessionChatEventsUrl(
-  sessionId: string | number,
+export function meetupChatEventsUrl(
+  meetupId: string | number,
   accessToken: string | undefined,
 ): string {
-  const base = `${apiBase()}/sessions/${sessionId}/chat/events`;
+  const base = `${apiBase()}/meetups/${meetupId}/chat/events`;
   return accessToken
     ? `${base}?access_token=${encodeURIComponent(accessToken)}`
     : base;
@@ -48,7 +48,7 @@ export interface GameTemplateInfo {
   next_announce_at?: string | null;
 }
 
-export interface SessionListItem {
+export interface MeetupListItem {
   id: number;
   start_time: string;
   location: string;
@@ -59,7 +59,7 @@ export interface SessionListItem {
   longitude: number | null;
   waitlist_mode: string;
   team_assignment_mode?: string;
-  /** Server bump when roster or session fields change; use to invalidate cached UI. */
+  /** Server bump when roster or meetup fields change; use to invalidate cached UI. */
   content_revision: number;
   game_template_id?: number | null;
   game_template?: GameTemplateInfo | null;
@@ -67,8 +67,8 @@ export interface SessionListItem {
   confirmed_count?: number;
 }
 
-export interface SessionListResponse {
-  items: SessionListItem[];
+export interface MeetupListResponse {
+  items: MeetupListItem[];
   total: number;
   limit: number | null;
   offset: number;
@@ -76,10 +76,10 @@ export interface SessionListResponse {
 
 export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
 
-export interface SessionDetail extends SessionListItem {
+export interface MeetupDetail extends MeetupListItem {
   team_assignment_mode?: string;
   game_template?: GameTemplateInfo | null;
-  /** Session duration in minutes (null defaults to 120). */
+  /** Meetup duration in minutes (null defaults to 120). */
   duration_minutes?: number | null;
   /** Upper bound on team count. Null = algorithmic. */
   max_teams?: number | null;
@@ -97,13 +97,13 @@ export interface SessionDetail extends SessionListItem {
     primary_specialty?: "ATT" | "MID" | "DEF" | "GK" | null;
     secondary_specialty?: "ATT" | "MID" | "DEF" | "GK" | null;
   }[];
-  /** Present when the request is authenticated; caller's registration for this session. */
+  /** Present when the request is authenticated; caller's registration for this meetup. */
   my_attendance: AttendanceStatus | null;
   /** 1-based position in the waitlist when `my_attendance === 'waitlisted'`. */
   my_waitlist_position?: number | null;
 }
 
-export interface SessionHistorySummary {
+export interface MeetupHistorySummary {
   match_count: number;
   final: {
     team_a_name: string;
@@ -114,10 +114,10 @@ export interface SessionHistorySummary {
   my_rating_avg: number | null;
 }
 
-export async function fetchSessionHistorySummary(
-  sessionId: number,
-): Promise<SessionHistorySummary> {
-  const r = await apiFetch(`/sessions/${sessionId}/history-summary`);
+export async function fetchMeetupHistorySummary(
+  meetupId: number,
+): Promise<MeetupHistorySummary> {
+  const r = await apiFetch(`/meetups/${meetupId}/history-summary`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -147,13 +147,13 @@ export interface PlusOneClaimCheck {
   first_name: string;
   last_name: string;
   self_assessed_skill: number;
-  session_id: number;
+  meetup_id: number;
   inviter_display_name: string;
   guest_display_name: string;
 }
 
 export interface TeamsResponse {
-  session_id: number;
+  meetup_id: number;
   content_revision: number;
   teams: {
     id: string;
@@ -171,14 +171,14 @@ export interface TeamsResponse {
   }[];
 }
 
-export async function fetchSessions(options?: {
+export async function fetchMeetups(options?: {
   limit?: number;
   offset?: number;
   /** Server-side location contains filter */
   q?: string;
   status?: "past" | "upcoming" | "all";
   order?: "asc" | "desc";
-}): Promise<SessionListResponse> {
+}): Promise<MeetupListResponse> {
   const p = new URLSearchParams();
   if (options?.limit != null) p.set("limit", String(options.limit));
   if (options?.offset != null) p.set("offset", String(options.offset));
@@ -186,19 +186,19 @@ export async function fetchSessions(options?: {
   if (options?.status) p.set("status", options.status);
   if (options?.order) p.set("order", options.order);
   const qs = p.toString();
-  const r = await apiFetch(`/sessions/${qs ? `?${qs}` : ""}`);
+  const r = await apiFetch(`/meetups/${qs ? `?${qs}` : ""}`);
   if (!r.ok) throw new Error(await parseApiError(r));
-  return r.json() as Promise<SessionListResponse>;
+  return r.json() as Promise<MeetupListResponse>;
 }
 
-export async function fetchSessionDetail(id: number): Promise<SessionDetail> {
-  const r = await apiFetch(`/sessions/${id}`);
+export async function fetchMeetupDetail(id: number): Promise<MeetupDetail> {
+  const r = await apiFetch(`/meetups/${id}`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
-export async function fetchSessionTeams(id: number): Promise<TeamsResponse> {
-  const r = await apiFetch(`/sessions/${id}/teams`);
+export async function fetchMeetupTeams(id: number): Promise<TeamsResponse> {
+  const r = await apiFetch(`/meetups/${id}/teams`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -214,16 +214,16 @@ export interface MatchScoreItem {
   type: string;
 }
 
-export async function fetchSessionScores(
-  sessionId: number,
+export async function fetchMeetupScores(
+  meetupId: number,
 ): Promise<MatchScoreItem[]> {
-  const r = await apiFetch(`/sessions/${sessionId}/scores`);
+  const r = await apiFetch(`/meetups/${meetupId}/scores`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<MatchScoreItem[]>;
 }
 
 export interface MatchScoreSubmit {
-  session_id: number;
+  meetup_id: number;
   player_id: number;
   score: number;
   type: "team" | "individual";
@@ -241,11 +241,11 @@ export async function submitMatchScore(
 }
 
 /** Persist admin team lineups (confirmed roster only). */
-export async function patchSessionTeams(
+export async function patchMeetupTeams(
   id: number,
   teams: string[][],
 ): Promise<TeamsResponse> {
-  const r = await apiFetch(`/sessions/${id}/teams`, {
+  const r = await apiFetch(`/meetups/${id}/teams`, {
     method: "PATCH",
     body: JSON.stringify({ teams }),
   });
@@ -253,26 +253,26 @@ export async function patchSessionTeams(
   return r.json();
 }
 
-export async function joinSession(id: number): Promise<{
+export async function joinMeetup(id: number): Promise<{
   status: string;
   attendance_id?: number;
 }> {
-  const r = await apiFetch(`/sessions/${id}/join`, { method: "POST" });
+  const r = await apiFetch(`/meetups/${id}/join`, { method: "POST" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string; attendance_id?: number }>;
 }
 
-export async function leaveSession(id: number): Promise<{ status: string }> {
-  const r = await apiFetch(`/sessions/${id}/leave`, { method: "DELETE" });
+export async function leaveMeetup(id: number): Promise<{ status: string }> {
+  const r = await apiFetch(`/meetups/${id}/leave`, { method: "DELETE" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string }>;
 }
 
-export async function postSessionChatTyping(
-  sessionId: string | number,
+export async function postMeetupChatTyping(
+  meetupId: string | number,
   typing: boolean,
 ): Promise<void> {
-  const r = await apiFetch(`/sessions/${sessionId}/chat/typing`, {
+  const r = await apiFetch(`/meetups/${meetupId}/chat/typing`, {
     method: "POST",
     body: JSON.stringify({ typing }),
   });
@@ -282,7 +282,7 @@ export async function postSessionChatTyping(
 // ── Plus-one guest reservations ──────────────────────────────────
 
 export async function addPlusOne(
-  sessionId: number,
+  meetupId: number,
   body: PlusOneCreate,
 ): Promise<{
   id: number;
@@ -294,7 +294,7 @@ export async function addPlusOne(
   claim_url: string;
   attendance_status: string;
 }> {
-  const r = await apiFetch(`/sessions/${sessionId}/plus-one`, {
+  const r = await apiFetch(`/meetups/${meetupId}/plus-one`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -303,18 +303,18 @@ export async function addPlusOne(
 }
 
 export async function fetchPlusOnes(
-  sessionId: number,
+  meetupId: number,
 ): Promise<PlusOneRecord[]> {
-  const r = await apiFetch(`/sessions/${sessionId}/plus-one`);
+  const r = await apiFetch(`/meetups/${meetupId}/plus-one`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function cancelPlusOne(
-  sessionId: number,
+  meetupId: number,
   plusOneId: number,
 ): Promise<{ status: string }> {
-  const r = await apiFetch(`/sessions/${sessionId}/plus-one/${plusOneId}`, {
+  const r = await apiFetch(`/meetups/${meetupId}/plus-one/${plusOneId}`, {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -324,7 +324,7 @@ export async function cancelPlusOne(
 export async function checkPlusOneClaim(
   claimToken: string,
 ): Promise<PlusOneClaimCheck> {
-  const r = await apiFetch(`/sessions/plus-one/${claimToken}`);
+  const r = await apiFetch(`/meetups/plus-one/${claimToken}`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
@@ -335,7 +335,7 @@ export async function claimPlusOne(claimToken: string): Promise<{
   display_name: string;
   self_assessed_skill: number;
 }> {
-  const r = await apiFetch(`/sessions/plus-one/${claimToken}/claim`, {
+  const r = await apiFetch(`/meetups/plus-one/${claimToken}/claim`, {
     method: "POST",
   });
   if (!r.ok) throw new Error(await parseApiError(r));

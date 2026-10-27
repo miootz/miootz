@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
 import {
-  adminCreateSession,
-  type SessionCreateBody,
+  adminCreateMeetup,
+  type MeetupCreateBody,
   type TeamAssignmentMode,
   type WaitlistMode,
 } from '../../api/adminApi';
@@ -14,9 +14,9 @@ import {
   ADMIN_LAST_LOCATION_KEY,
   ADMIN_LAST_MAX_PLAYERS_KEY,
   ADMIN_LAST_MIN_PLAYERS_KEY,
-  clearSessionDraft,
-  readSessionDraft,
-  writeSessionDraft,
+  clearMeetupDraft,
+  readMeetupDraft,
+  writeMeetupDraft,
 } from '../../utils/adminPrefs';
 
 function defaultStartLocal(): string {
@@ -28,7 +28,7 @@ function defaultStartLocal(): string {
 
 type Step = 1 | 2;
 
-export function AdminSessionNewPage() {
+export function AdminMeetupNewPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
@@ -54,7 +54,7 @@ export function AdminSessionNewPage() {
     } catch {
       /* ignore */
     }
-    const draft = readSessionDraft();
+    const draft = readMeetupDraft();
     if (draft && typeof draft === 'object') {
       if (typeof draft.startLocal === 'string') setStartLocal(draft.startLocal);
       if (typeof draft.location === 'string') setLocation(draft.location);
@@ -78,7 +78,7 @@ export function AdminSessionNewPage() {
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      writeSessionDraft({
+      writeMeetupDraft({
         startLocal,
         location,
         latitude: coords?.lat ?? null,
@@ -132,7 +132,7 @@ export function AdminSessionNewPage() {
     }
     setSaving(true);
     try {
-      const body: SessionCreateBody = {
+      const body: MeetupCreateBody = {
         start_time: new Date(startLocal).toISOString(),
         location: location.trim(),
         latitude: coords?.lat ?? null,
@@ -149,7 +149,7 @@ export function AdminSessionNewPage() {
         setSaving(false);
         return;
       }
-      const created = await adminCreateSession(body);
+      const created = await adminCreateMeetup(body);
       const sid = (created as { id: number }).id;
       try {
         localStorage.setItem(ADMIN_LAST_LOCATION_KEY, location.trim());
@@ -158,10 +158,10 @@ export function AdminSessionNewPage() {
       } catch {
         /* ignore */
       }
-      clearSessionDraft();
-      navigate(`/admin/sessions/${sid}`, { replace: true });
+      clearMeetupDraft();
+      navigate(`/admin/meetups/${sid}`, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create session');
+      setError(err instanceof Error ? err.message : 'Could not create meetup');
     } finally {
       setSaving(false);
     }
@@ -176,7 +176,7 @@ export function AdminSessionNewPage() {
             onClick={() => setStep(n as Step)}
             className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
               step === n
-                ? 'bg-violet-600 text-white'
+                ? 'bg-teal-700 text-white'
                 : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
             }`}
           >
@@ -198,21 +198,21 @@ export function AdminSessionNewPage() {
           <AdminBreadcrumb
             items={[
               { label: 'Admin', to: '/admin' },
-              { label: 'Sessions', to: '/admin/sessions' },
-              { label: 'New session' },
+              { label: 'Meetups', to: '/admin/meetups' },
+              { label: 'One-off meetup' },
             ]}
           />
         }
-        title="New session"
-        subtitle="One meetup instance. For weekly auto-sessions, use Templates in the admin menu."
+        title="One-off meetup"
+        subtitle="A single meetup outside the template schedule. Regular meetups are scheduled automatically by the active template."
       />
 
       <Link
-        to="/admin/sessions"
-        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-violet-600 mb-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 rounded transition-colors"
+        to="/admin/meetups"
+        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700 mb-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        All sessions
+        All meetups
       </Link>
 
       {stepper}
@@ -261,7 +261,7 @@ export function AdminSessionNewPage() {
                 required
                 value={startLocal}
                 onChange={(e) => setStartLocal(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-violet-500 transition-colors"
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 transition-colors"
               />
             </div>
             <div>
@@ -278,7 +278,7 @@ export function AdminSessionNewPage() {
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Pitch address or venue name"
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-violet-500 transition-colors"
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 transition-colors"
               />
             </div>
             <div>
@@ -380,7 +380,7 @@ export function AdminSessionNewPage() {
             </div>
             <button
               type="button"
-              className="w-full min-h-[44px] rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 active:scale-[0.98] transition-colors"
+              className="w-full min-h-[44px] rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 active:scale-[0.98] transition-colors"
               onClick={() => setStep(2)}
             >
               Next: review
@@ -409,7 +409,7 @@ export function AdminSessionNewPage() {
                 type="checkbox"
                 checked={sendPushNotifs}
                 onChange={(e) => setSendPushNotifs(e.target.checked)}
-                className="mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                className="mt-0.5 rounded border-gray-300 text-teal-700 focus:ring-teal-500"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 <span className="font-medium text-gray-900 dark:text-gray-100">
@@ -431,15 +431,15 @@ export function AdminSessionNewPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 text-white font-medium hover:bg-violet-700 disabled:opacity-60 transition-colors"
+                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 disabled:opacity-60 transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Create session
+                Create meetup
               </button>
             </div>
             <Link
-              to="/admin/sessions"
-              className="block text-center text-sm text-gray-600 dark:text-gray-400 hover:text-violet-600"
+              to="/admin/meetups"
+              className="block text-center text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700"
             >
               Cancel
             </Link>

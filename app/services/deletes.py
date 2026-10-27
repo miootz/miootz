@@ -16,11 +16,11 @@ from app.models.game_template import GameTemplate  # noqa: F401  (FK target)
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.invite import InviteToken
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
-from app.models.session import Attendance, MatchScore
+from app.models.meetup import Attendance, MatchScore
 from app.models.chat import ChatMessage
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
@@ -64,20 +64,20 @@ async def delete_user_children(db: AsyncSession, user_id: int) -> None:
     await db.flush()
 
 
-async def delete_session_children(db: AsyncSession, session_id: int) -> None:
-    """Remove every row that references the session (including matches)."""
-    session_match_ids = select(SessionMatch.id).where(
-        SessionMatch.session_id == session_id
+async def delete_meetup_children(db: AsyncSession, meetup_id: int) -> None:
+    """Remove every row that references the meetup (including matches)."""
+    meetup_match_ids = select(MeetupMatch.id).where(
+        MeetupMatch.meetup_id == meetup_id
     )
     for stmt in (
-        delete(Attendance).where(Attendance.session_id == session_id),
-        delete(MatchScore).where(MatchScore.session_id == session_id),
-        delete(Rating).where(Rating.session_id == session_id),
-        delete(ChatMessage).where(ChatMessage.session_id == session_id),
-        delete(GuestPlusOne).where(GuestPlusOne.session_id == session_id),
-        delete(MatchGoal).where(MatchGoal.match_id.in_(session_match_ids)),
-        delete(MatchEditorLease).where(MatchEditorLease.match_id.in_(session_match_ids)),
-        delete(SessionMatch).where(SessionMatch.session_id == session_id),
+        delete(Attendance).where(Attendance.meetup_id == meetup_id),
+        delete(MatchScore).where(MatchScore.meetup_id == meetup_id),
+        delete(Rating).where(Rating.meetup_id == meetup_id),
+        delete(ChatMessage).where(ChatMessage.meetup_id == meetup_id),
+        delete(GuestPlusOne).where(GuestPlusOne.meetup_id == meetup_id),
+        delete(MatchGoal).where(MatchGoal.match_id.in_(meetup_match_ids)),
+        delete(MatchEditorLease).where(MatchEditorLease.match_id.in_(meetup_match_ids)),
+        delete(MeetupMatch).where(MeetupMatch.meetup_id == meetup_id),
     ):
         await db.execute(stmt)
     await db.flush()

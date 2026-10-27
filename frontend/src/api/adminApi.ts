@@ -4,7 +4,7 @@ export type WaitlistMode = 'broadcast' | 'auto_promote';
 
 export type TeamAssignmentMode = 'balanced' | 'random';
 
-export interface SessionCreateBody {
+export interface MeetupCreateBody {
   start_time: string;
   location: string;
   fee?: number;
@@ -18,7 +18,7 @@ export interface SessionCreateBody {
   send_push_notifications?: boolean;
 }
 
-export interface SessionUpdateBody {
+export interface MeetupUpdateBody {
   start_time?: string;
   location?: string;
   fee?: number;
@@ -55,7 +55,9 @@ export interface GameTemplatePayload {
 
 export type GameTemplateRow = GameTemplatePayload & {
   id: number;
-  materialized_session_count?: number;
+  materialized_meetup_count?: number;
+  /** Next scheduled announce run (UTC ISO), null when template inactive. */
+  next_announce_at?: string | null;
 };
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {
@@ -63,36 +65,36 @@ async function jsonOrThrow<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export async function adminCreateSession(
-  body: SessionCreateBody
+export async function adminCreateMeetup(
+  body: MeetupCreateBody
 ): Promise<{ id: number } & Record<string, unknown>> {
-  const r = await apiFetch('/sessions/', {
+  const r = await apiFetch('/meetups/', {
     method: 'POST',
     body: JSON.stringify(body),
   });
   return jsonOrThrow(r);
 }
 
-export async function adminUpdateSession(
+export async function adminUpdateMeetup(
   id: number,
-  body: SessionUpdateBody
+  body: MeetupUpdateBody
 ): Promise<{ status: string }> {
-  const r = await apiFetch(`/sessions/${id}`, {
+  const r = await apiFetch(`/meetups/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
   });
   return jsonOrThrow(r);
 }
 
-export async function adminDeleteSession(id: number): Promise<{ status: string }> {
-  const r = await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+export async function adminDeleteMeetup(id: number): Promise<{ status: string }> {
+  const r = await apiFetch(`/meetups/${id}`, { method: 'DELETE' });
   return jsonOrThrow(r);
 }
 
 export async function adminReshuffleTeams(
-  sessionId: number
+  meetupId: number
 ): Promise<{ status: string; content_revision?: number }> {
-  const r = await apiFetch(`/sessions/${sessionId}/teams/reshuffle`, {
+  const r = await apiFetch(`/meetups/${meetupId}/teams/reshuffle`, {
     method: 'POST',
   });
   return jsonOrThrow(r);
@@ -121,11 +123,11 @@ export interface AdjustTeamsResponse {
 }
 
 export async function adminAdjustTeams(
-  sessionId: number,
+  meetupId: number,
   operation: 'expand' | 'contract',
   numTeams: number = 1
 ): Promise<AdjustTeamsResponse> {
-  const r = await apiFetch(`/sessions/${sessionId}/teams/adjust`, {
+  const r = await apiFetch(`/meetups/${meetupId}/teams/adjust`, {
     method: 'POST',
     body: JSON.stringify({ operation, num_teams: numTeams }),
   });
@@ -144,7 +146,7 @@ export async function adminSetUserSelfAssessedSkill(
 }
 
 export async function adminMoveAttendance(
-  sessionId: number,
+  meetupId: number,
   userId: number,
   newStatus: 'confirmed' | 'waitlisted'
 ): Promise<{ status: string }> {
@@ -152,7 +154,7 @@ export async function adminMoveAttendance(
     user_id: String(userId),
     new_status: newStatus,
   });
-  const r = await apiFetch(`/sessions/${sessionId}/admin/move?${q}`, {
+  const r = await apiFetch(`/meetups/${meetupId}/admin/move?${q}`, {
     method: 'POST',
   });
   return jsonOrThrow(r);
@@ -201,9 +203,9 @@ export async function adminDeleteGameTemplate(
 export async function adminRunRecurringNow(): Promise<{
   status: string;
   templates_checked: number;
-  sessions_created: number;
+  meetups_created: number;
 }> {
-  const r = await apiFetch('/sessions/recurring/run-now', { method: 'POST' });
+  const r = await apiFetch('/meetups/recurring/run-now', { method: 'POST' });
   return jsonOrThrow(r);
 }
 

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.user import User
-from app.models.session import GameSession, Attendance
+from app.models.meetup import Meetup, Attendance
 from app.models.rating import Rating
 from app.schemas.rating import (
     RatingContextResponse,
@@ -14,9 +14,9 @@ from app.schemas.rating import (
 )
 from app.services.rating_windows import (
     may_rate_or_edit,
-    next_session_start_after,
+    next_meetup_start_after,
     ratings_locked,
-    session_end_time,
+    meetup_end_time,
     to_utc_aware,
     utc_now,
 )
@@ -42,21 +42,21 @@ async def upsert_rating(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(GameSession).where(GameSession.id == rating_data.session_id)
+        select(Meetup).where(Meetup.id == rating_data.meetup_id)
     )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     now = utc_now()
-    nxt = await next_session_start_after(db, session)
-    ok, reason = may_rate_or_edit(now, session, nxt)
+    nxt = await next_meetup_start_after(db, meetup)
+    ok, reason = may_rate_or_edit(now, meetup, nxt)
     if not ok:
         raise HTTPException(status_code=400, detail=reason or "Cannot rate")
 
     result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == rating_data.session_id,
+            Attendance.meetup_id == rating_data.meetup_id,
             Attendance.user_id == current_user.id,
             Attendance.status == "confirmed",
         )
@@ -64,7 +64,7 @@ async def upsert_rating(
     if not result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only rate players from sessions you attended",
+            detail="You can only rate players from meetups you attended",
         )
 
     if rating_data.ratee_id == current_user.id:
@@ -74,7 +74,7 @@ async def upsert_rating(
 
     result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == rating_data.session_id,
+            Attendance.meetup_id == rating_data.meetup_id,
             Attendance.user_id == rating_data.ratee_id,
             Attendance.status == "confirmed",
         )
@@ -86,7 +86,7 @@ async def upsert_rating(
 
     result = await db.execute(
         select(Rating).where(
-            Rating.session_id == rating_data.session_id,
+            Rating.meetup_id == rating_data.meetup_id,
             Rating.rater_id == current_user.id,
             Rating.ratee_id == rating_data.ratee_id,
         )
@@ -101,7 +101,7 @@ async def upsert_rating(
         return existing
 
     new_rating = Rating(
-        session_id=rating_data.session_id,
+        meetup_id=rating_data.meetup_id,
         rater_id=current_user.id,
         ratee_id=rating_data.ratee_id,
         score=rating_data.score,
@@ -115,26 +115,26 @@ async def upsert_rating(
     return new_rating
 
 
-@router.get("/sessions/{session_id}/context", response_model=RatingContextResponse)
+@router.get("/meetups/{meetup_id}/context", response_model=RatingContextResponse)
 async def get_rating_context(
-    session_id: int,
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     now = utc_now()
-    nxt = await next_session_start_after(db, session)
-    ok, _ = may_rate_or_edit(now, session, nxt)
-    before_end = now < session_end_time(session)
-    locked = ratings_locked(now, session, nxt) and not before_end
+    nxt = await next_meetup_start_after(db, meetup)
+    ok, _ = may_rate_or_edit(now, meetup, nxt)
+    before_end = now < meetup_end_time(meetup)
+    locked = ratings_locked(now, meetup, nxt) and not before_end
 
     result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.user_id == current_user.id,
             Attendance.status == "confirmed",
         )
@@ -147,7 +147,7 @@ async def get_rating_context(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
             Attendance.user_id != current_user.id,
         )
@@ -160,7 +160,7 @@ async def get_rating_context(
     if viewer_attended and ratee_ids:
         r2 = await db.execute(
             select(Rating).where(
-                Rating.session_id == session_id,
+                Rating.meetup_id == meetup_id,
                 Rating.rater_id == current_user.id,
                 Rating.ratee_id.in_(ratee_ids),
             )
@@ -179,12 +179,12 @@ async def get_rating_context(
     ]
 
     locks_at = to_utc_aware(nxt) if nxt else None
-    end = session_end_time(session)
+    end = meetup_end_time(meetup)
     return RatingContextResponse(
-        session_id=session_id,
-        session_start_time=session.start_time,
-        session_end_time=end,
-        before_session_end=before_end,
+        meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
+        meetup_end_time=end,
+        before_meetup_end=before_end,
         ratings_locked=locked,
         ratings_editable=ok,
         ratings_lock_at=locks_at.isoformat() if locks_at else None,

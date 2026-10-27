@@ -11,9 +11,9 @@ from app.models.chat import ChatMessage
 from app.models.game_template import GameTemplate
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.services.team_assignment import assign_teams_snake
@@ -37,7 +37,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         raise ValueError(f'Unknown demo scenario: {scenario}')
     if anchor.tzinfo is not None:
         raise ValueError('Use a naive UTC anchor')
-    for model in (User, GameSession, GameTemplate):
+    for model in (User, Meetup, GameTemplate):
         if await db.scalar(select(func.count()).select_from(model)):
             raise ValueError('Demo fixtures require an empty database; existing data is never reset')
 
@@ -68,8 +68,8 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     db.add(template)
     await db.flush()
 
-    def session(sid: int, start: datetime) -> GameSession:
-        return GameSession(
+    def meetup(sid: int, start: datetime) -> Meetup:
+        return Meetup(
             id=sid, game_template_id=1, start_time=start, location=template.location,
             fee=5, min_players=10, max_players=15, latitude=template.latitude, longitude=template.longitude,
             waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
@@ -78,7 +78,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             team_names_json=json.dumps(TEAM_NAMES),
         )
 
-    upcoming = session(1, kickoff)
+    upcoming = meetup(1, kickoff)
     upcoming.weather_forecast_temp_c = 22
     upcoming.weather_forecast_code = 1
     upcoming.weather_forecast_label = 'Mainly clear'
@@ -88,12 +88,12 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     confirmed = list(range(1, 15 if full else 12)) + [21]
     waitlisted = [16, 17, 18] if full else []
     for index, uid in enumerate(confirmed + waitlisted):
-        db.add(Attendance(session_id=1, user_id=uid,
+        db.add(Attendance(meetup_id=1, user_id=uid,
                           status='confirmed' if uid in confirmed else 'waitlisted',
                           joined_at=anchor - timedelta(hours=24) + timedelta(minutes=index)))
-    db.add(Attendance(session_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
+    db.add(Attendance(meetup_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
     db.add(GuestPlusOne(
-        session_id=1, inviter_id=2, guest_user_id=21, first_name='Marco', last_name='van Basten',
+        meetup_id=1, inviter_id=2, guest_user_id=21, first_name='Marco', last_name='van Basten',
         self_assessed_skill=3, claim_token='showcase-guest-reservation', status='pending', created_at=anchor,
     ))
     db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))
@@ -101,19 +101,19 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
 
     # Recent ratings stay open until the upcoming kickoff; older weeks are locked.
     for sid, start in [(2, anchor - timedelta(hours=4)), (3, anchor - timedelta(days=7)), (4, anchor - timedelta(days=14))]:
-        past = session(sid, start)
+        past = meetup(sid, start)
         past.weather_actual_temp_c = 19 + sid
         past.weather_actual_code = 2
         past.weather_actual_label = 'Partly cloudy'
         past.weather_actual_recorded_at = start + timedelta(hours=2)
         db.add(past)
         for uid in range(1, 16):
-            db.add(Attendance(session_id=sid, user_id=uid, status='confirmed', joined_at=start - timedelta(days=1)))
+            db.add(Attendance(meetup_id=sid, user_id=uid, status='confirmed', joined_at=start - timedelta(days=1)))
         teams = [list(range(1, 6)), list(range(6, 11)), list(range(11, 16))]
         past.manual_teams_json = json.dumps(teams)
         for index, (a, b) in enumerate([(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)], 1):
-            db.add(SessionMatch(
-                session_id=sid, match_number=index, team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
+            db.add(MeetupMatch(
+                meetup_id=sid, match_number=index, team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
                 team_a_name=TEAM_NAMES[a], team_b_name=TEAM_NAMES[b],
                 score_a=1 + index % 3, score_b=index % 2, status='completed',
                 timer_total_seconds=600, timer_seconds_remaining=0,
@@ -124,7 +124,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                 continue  # Member has an editable rating task to demonstrate.
             for ratee in range(1, 16):
                 if rater != ratee:
-                    db.add(Rating(session_id=sid, rater_id=rater, ratee_id=ratee,
+                    db.add(Rating(meetup_id=sid, rater_id=rater, ratee_id=ratee,
                                   score=3 + (rater + ratee + sid) % 3,
                                   created_at=start + timedelta(hours=2), updated_at=start + timedelta(hours=2)))
 
@@ -134,8 +134,8 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         (3, 'I have the ball and a pump.', 19),
         (4, 'See you there! The entrance is beside the café.', 12),
     ]:
-        db.add(ChatMessage(session_id=1, user_id=uid, message=message, created_at=anchor - timedelta(minutes=minutes)))
-    db.add(ChatMessage(session_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
+        db.add(ChatMessage(meetup_id=1, user_id=uid, message=message, created_at=anchor - timedelta(minutes=minutes)))
+    db.add(ChatMessage(meetup_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
     await db.flush()
     for member in members[:15]:
         await update_user_calculated_skill(db, member.id, commit=False)
@@ -151,8 +151,8 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     if scenario == 'live':
         # A rehearsal started ahead of kickoff; paused so the initial capture is repeatable.
         paused = anchor - timedelta(seconds=10)
-        db.add(SessionMatch(
-            session_id=1, match_number=1, team_a_users=json.dumps(teams[0]), team_b_users=json.dumps(teams[1]),
+        db.add(MeetupMatch(
+            meetup_id=1, match_number=1, team_a_users=json.dumps(teams[0]), team_b_users=json.dumps(teams[1]),
             team_a_name=TEAM_NAMES[0], team_b_name=TEAM_NAMES[1], score_a=2, score_b=1, status='active',
             timer_total_seconds=600, timer_seconds_remaining=402,
             timer_started_at=paused - timedelta(seconds=198),
@@ -161,6 +161,6 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         ))
     await db.commit()
     return {'scenario': scenario, 'anchor_utc': anchor.isoformat(), 'actors': ACTORS,
-            'upcoming_session_id': 1, 'ratings_session_id': 2,
+            'upcoming_meetup_id': 1, 'ratings_meetup_id': 2,
             'guest_claim_path': '/plus-one/showcase-guest-reservation',
             'confirmed': len(confirmed), 'waitlisted': len(waitlisted)}

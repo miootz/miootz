@@ -1,6 +1,6 @@
-"""MatchGoal: one scored goal within a SessionMatch.
+"""MatchGoal: one scored goal within a MeetupMatch.
 
-Goals are the source of truth; ``score_a`` / ``score_b`` on SessionMatch are
+Goals are the source of truth; ``score_a`` / ``score_b`` on MeetupMatch are
 derived counters recomputed by COUNT on this table inside the same transaction
 as every insert / soft-delete (plan §2.1). ``intent_id`` is the network-retry
 idempotency key (plan §2.5); duplicate entry of the same event within 90 s is
@@ -36,7 +36,7 @@ class MatchGoal(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(ForeignKey("session_matches.id"), index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("meetup_matches.id"), index=True)
     #: 'a' | 'b' — which team scored.
     team: Mapped[str] = mapped_column(String(1))
     scorer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

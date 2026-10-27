@@ -1,4 +1,4 @@
-"""Admin CRUD for recurring game templates (schedules + defaults for materialized sessions)."""
+"""Admin CRUD for recurring game templates (schedules + defaults for materialized meetups)."""
 
 from __future__ import annotations
 
@@ -12,12 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_admin
 from app.core.database import get_db
 from app.models.game_template import GameTemplate
-from app.models.session import GameSession
+from app.models.meetup import Meetup
 from app.models.user import User
 from app.services.recurrence_scheduler import (
     register_game_template_job,
     unregister_game_template_job,
 )
+from app.services.recurring_meetups import next_announce_occurrence_utc
+from app.core.timeutil import utcnow
 
 router = APIRouter(prefix="/game-templates", tags=["game-templates"])
 
@@ -31,7 +33,7 @@ def _normalize_team_mode(v: str) -> str:
     return x
 
 
-def _template_json(t: GameTemplate, *, session_count: int | None = None) -> dict:
+def _template_json(t: GameTemplate, *, meetup_count: int | None = None) -> dict:
     out = {
         "id": t.id,
         "name": t.name,
@@ -55,9 +57,14 @@ def _template_json(t: GameTemplate, *, session_count: int | None = None) -> dict
         "is_active": t.is_active,
         "match_duration_minutes": getattr(t, "match_duration_minutes", None)
         or 10,
+        "next_announce_at": (
+            next_announce_occurrence_utc(t, utcnow()).isoformat()
+            if t.is_active
+            else None
+        ),
     }
-    if session_count is not None:
-        out["materialized_session_count"] = session_count
+    if meetup_count is not None:
+        out["materialized_meetup_count"] = meetup_count
     return out
 
 
@@ -178,10 +185,10 @@ async def list_game_templates(
     for t in templates:
         n = await db.scalar(
             select(func.count())
-            .select_from(GameSession)
-            .where(GameSession.game_template_id == t.id)
+            .select_from(Meetup)
+            .where(Meetup.game_template_id == t.id)
         )
-        items.append(_template_json(t, session_count=int(n or 0)))
+        items.append(_template_json(t, meetup_count=int(n or 0)))
     return {"items": items}
 
 
@@ -217,7 +224,7 @@ async def create_game_template(
     await db.refresh(t)
     if t.is_active:
         register_game_template_job(t)
-    return _template_json(t, session_count=0)
+    return _template_json(t, meetup_count=0)
 
 
 @router.get("/{template_id}")
@@ -231,10 +238,10 @@ async def get_game_template(
         raise HTTPException(status_code=404, detail="Template not found")
     n = await db.scalar(
         select(func.count())
-        .select_from(GameSession)
-        .where(GameSession.game_template_id == template_id)
+        .select_from(Meetup)
+        .where(Meetup.game_template_id == template_id)
     )
-    return _template_json(t, session_count=int(n or 0))
+    return _template_json(t, meetup_count=int(n or 0))
 
 
 @router.patch("/{template_id}")
@@ -264,10 +271,10 @@ async def update_game_template(
         unregister_game_template_job(t.id)
     n = await db.scalar(
         select(func.count())
-        .select_from(GameSession)
-        .where(GameSession.game_template_id == template_id)
+        .select_from(Meetup)
+        .where(Meetup.game_template_id == template_id)
     )
-    return _template_json(t, session_count=int(n or 0))
+    return _template_json(t, meetup_count=int(n or 0))
 
 
 @router.delete("/{template_id}")
@@ -281,13 +288,13 @@ async def delete_game_template(
         raise HTTPException(status_code=404, detail="Template not found")
     n = await db.scalar(
         select(func.count())
-        .select_from(GameSession)
-        .where(GameSession.game_template_id == template_id)
+        .select_from(Meetup)
+        .where(Meetup.game_template_id == template_id)
     )
     if n and int(n) > 0:
         raise HTTPException(
             status_code=409,
-            detail="This template has materialized sessions. Deactivate it instead, or remove sessions first.",
+            detail="This template has materialized meetups. Deactivate it instead, or remove meetups first.",
         )
     unregister_game_template_job(template_id)
     from sqlalchemy import delete

@@ -1,7 +1,7 @@
 """Plus-one guest attendance reservations.
 
 When a confirmed attendee adds a plus-one, a placeholder User is created
-and an Attendance row links them to the session.  The GuestPlusOne record
+and an Attendance row links them to the meetup.  The GuestPlusOne record
 holds the claim token so the guest can later claim the account.
 """
 
@@ -17,7 +17,7 @@ from app.core.database import Base
 from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
-    from app.models.session import GameSession
+    from app.models.meetup import Meetup
     from app.models.user import User
 
 
@@ -26,9 +26,9 @@ class GuestPlusOne(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    #: Session the guest is attending.
-    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
-    session: Mapped[GameSession] = relationship("GameSession")
+    #: Meetup the guest is attending.
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
+    meetup: Mapped[Meetup] = relationship("Meetup")
 
     #: User who invited the guest.
     inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

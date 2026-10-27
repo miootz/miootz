@@ -31,6 +31,11 @@ const OIDC_ISSUER =
       const p = port ? `:${port}` : "";
       return `${protocol}//${host}${p}`;
     }
+    // Standalone `npm run dev` (localhost): the OIDC issuer is the local dev
+    // stack's Pocket ID, not the page's own origin (which serves the SPA).
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return "https://auth.miootz.local:8443";
+    }
     return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
   })();
 
@@ -76,7 +81,16 @@ export async function discoverEndpoints(): Promise<OidcEndpoints> {
     );
   });
   if (!r.ok) throw new Error(`OIDC discovery failed: ${r.status} ${url}`);
-  const data = (await r.json()) as Record<string, unknown>;
+  const body = await r.text();
+  // Same-origin fallback hit the SPA: Vite/traefik serves index.html (200)
+  // for /.well-known/..., which r.json() would reject with a cryptic
+  // "Unexpected token '<'". Say what actually needs configuring.
+  if (body.trimStart().startsWith("<")) {
+    throw new Error(
+      `OIDC discovery at ${url} returned HTML, not JSON. Set VITE_POCKET_ID_ISSUER to your Pocket ID issuer (e.g. https://auth.miootz.local:8443) and restart the dev server.`,
+    );
+  }
+  const data = JSON.parse(body) as Record<string, unknown>;
   _endpoints = {
     authorization_endpoint: _assertIssuerOrigin(
       String(data.authorization_endpoint),

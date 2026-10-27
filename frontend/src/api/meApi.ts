@@ -75,10 +75,10 @@ export async function patchGameTemplateSubscription(
 // ── Notification preferences ───────────────────────────────────────
 
 export type NotificationCategory =
-    | "session_invite"
+    | "meetup_invite"
     | "waitlist"
     | "chat"
-    | "session_cancelled"
+    | "meetup_cancelled"
     | "kickoff_reminder"
     | "rating_reminder";
 

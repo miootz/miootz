@@ -2,7 +2,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.core.timeutil import utcnow
 
@@ -11,25 +11,25 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
     now = utcnow()
     result = await db.execute(
         select(func.count(Attendance.id))
-        .join(GameSession, GameSession.id == Attendance.session_id)
+        .join(Meetup, Meetup.id == Attendance.meetup_id)
         .where(
             Attendance.user_id == user_id,
             Attendance.status == "confirmed",
-            GameSession.start_time <= now,
+            Meetup.start_time <= now,
         )
     )
     games_played = result.scalar() or 0
 
-    # Sessions attended in the current calendar year
+    # Meetups attended in the current calendar year
     year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(Attendance.id))
-        .join(GameSession, GameSession.id == Attendance.session_id)
+        .join(Meetup, Meetup.id == Attendance.meetup_id)
         .where(
             Attendance.user_id == user_id,
             Attendance.status == "confirmed",
-            GameSession.start_time >= year_start,
-            GameSession.start_time <= now,
+            Meetup.start_time >= year_start,
+            Meetup.start_time <= now,
         )
     )
     season_games = result.scalar() or 0

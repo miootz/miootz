@@ -8,28 +8,28 @@ from app.models.user import User
 from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
-    from app.models.session import GameSession
+    from app.models.meetup import Meetup
 
 
 class Rating(Base):
     __tablename__ = "ratings"
     __table_args__ = (
         UniqueConstraint(
-            "session_id",
+            "meetup_id",
             "rater_id",
             "ratee_id",
-            name="uq_rating_session_rater_ratee",
+            name="uq_rating_meetup_rater_ratee",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
     rater_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     ratee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     score: Mapped[int] = mapped_column(Integer)  # 1-5
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    session: Mapped[GameSession] = relationship("GameSession", back_populates="ratings")
+    meetup: Mapped[Meetup] = relationship("Meetup", back_populates="ratings")
     rater: Mapped[User] = relationship("User", foreign_keys=[rater_id])
     ratee: Mapped[User] = relationship("User", foreign_keys=[ratee_id])

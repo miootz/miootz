@@ -1,4 +1,4 @@
-"""Tests for Phase 2 Sub-task 1: Session CRUD, attendance, and admin actions."""
+"""Tests for Phase 2 Sub-task 1: Meetup CRUD, attendance, and admin actions."""
 
 from datetime import datetime, timedelta, UTC
 
@@ -32,15 +32,15 @@ async def _create_user(
 
 
 @pytest.mark.asyncio
-async def test_create_session_as_admin():
-    """Admin can create a session."""
+async def test_create_meetup_as_admin():
+    """Admin can create a meetup."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
             await _create_user(db, "adminadm", "adminadm-uuid", is_admin=True)
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -53,13 +53,13 @@ async def test_create_session_as_admin():
             headers={"Authorization": "Bearer adminadm"},
         )
         assert resp.status_code == 201, resp.text
-        session = resp.json()
-        assert session["location"] == "Test Pitch"
+        meetup = resp.json()
+        assert meetup["location"] == "Test Pitch"
 
 
 @pytest.mark.asyncio
-async def test_join_session_as_player():
-    """Player can join a session."""
+async def test_join_meetup_as_player():
+    """Player can join a meetup."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
@@ -67,7 +67,7 @@ async def test_join_session_as_player():
             await _create_user(db, "p1", "p1-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -79,10 +79,10 @@ async def test_join_session_as_player():
             },
             headers={"Authorization": "Bearer adminadm"},
         )
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
         join_resp = await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p1"},
         )
         assert join_resp.status_code == 200, join_resp.text
@@ -90,8 +90,8 @@ async def test_join_session_as_player():
 
 
 @pytest.mark.asyncio
-async def test_leave_session():
-    """Player can leave a session."""
+async def test_leave_meetup():
+    """Player can leave a meetup."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
@@ -99,7 +99,7 @@ async def test_leave_session():
             await _create_user(db, "p1", "p1-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -111,15 +111,15 @@ async def test_leave_session():
             },
             headers={"Authorization": "Bearer adminadm"},
         )
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
         await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p1"},
         )
 
         leave_resp = await ac.delete(
-            f"/sessions/{session_id}/leave",
+            f"/meetups/{meetup_id}/leave",
             headers={"Authorization": "Bearer p1"},
         )
         assert leave_resp.status_code == 200, leave_resp.text
@@ -135,7 +135,7 @@ async def test_admin_can_manage_attendance():
             p1 = await _create_user(db, "p1", "p1-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -147,15 +147,15 @@ async def test_admin_can_manage_attendance():
             },
             headers={"Authorization": "Bearer adminadm"},
         )
-        session_id = resp.json()["id"]
+        meetup_id = resp.json()["id"]
 
         await ac.post(
-            f"/sessions/{session_id}/join",
+            f"/meetups/{meetup_id}/join",
             headers={"Authorization": "Bearer p1"},
         )
 
         move_resp = await ac.post(
-            f"/sessions/{session_id}/admin/move?user_id={p1.id}&new_status=waitlisted",
+            f"/meetups/{meetup_id}/admin/move?user_id={p1.id}&new_status=waitlisted",
             headers={"Authorization": "Bearer adminadm"},
         )
         assert move_resp.status_code == 200, move_resp.text
@@ -163,15 +163,15 @@ async def test_admin_can_manage_attendance():
 
 
 @pytest.mark.asyncio
-async def test_non_admin_cannot_create_session():
-    """Non-admin users cannot create sessions."""
+async def test_non_admin_cannot_create_meetup():
+    """Non-admin users cannot create meetups."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
             await _create_user(db, "p1", "p1-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -187,8 +187,8 @@ async def test_non_admin_cannot_create_session():
 
 
 @pytest.mark.asyncio
-async def test_session_list_shows_active_sessions():
-    """GET /sessions/ returns active sessions."""
+async def test_meetup_list_shows_active_meetups():
+    """GET /meetups/ returns active meetups."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         async with AsyncSession(engine) as db:
@@ -196,7 +196,7 @@ async def test_session_list_shows_active_sessions():
             await _create_user(db, "p1", "p1-uuid")
 
         resp = await ac.post(
-            "/sessions/",
+            "/meetups/",
             json={
                 "start_time": (
                     datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
@@ -211,10 +211,10 @@ async def test_session_list_shows_active_sessions():
         assert resp.status_code == 201
 
         list_resp = await ac.get(
-            "/sessions/?status=upcoming",
+            "/meetups/?status=upcoming",
             headers={"Authorization": "Bearer p1"},
         )
         assert list_resp.status_code == 200, list_resp.text
         data = list_resp.json()
-        sessions = data.get("items", [])
-        assert any(s["location"] == "Test Pitch" for s in sessions)
+        meetups = data.get("items", [])
+        assert any(s["location"] == "Test Pitch" for s in meetups)

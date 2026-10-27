@@ -13,8 +13,8 @@ behind Traefik with Web Push notifications.
     `Authorization: Bearer` header. **Default-deny**: every route returns
     `401` unless a valid token resolves a user, except a small explicit
     allowlist in `app/api/middleware.py` (`/health`, `/docs`,
-    `/openapi.json`, `/redoc`, the `/sessions/plus-one/` guest-claim
-    preview, and `GET /sessions/<id>/matches/<id>/goals`, which carry their
+    `/openapi.json`, `/redoc`, the `/meetups/plus-one/` guest-claim
+    preview, and `GET /meetups/<id>/matches/<id>/goals`, which carry their
     own capability tokens).
   - JWT validation: `app/services/pocket_id_jwt.py` (RS256, JWKS caching).
   - Pocket ID admin client: `app/services/pocket_id_client.py` (static API

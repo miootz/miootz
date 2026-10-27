@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Download, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
 import { adminRunRecurringNow } from "../../api/adminApi";
-import { fetchSessions } from "../../api/sessionsApi";
-import { parseSessionStart } from "../../utils/datetime";
+import { fetchMeetups } from "../../api/meetupsApi";
+import { parseMeetupStart } from "../../utils/datetime";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import { useToast } from "../../context/ToastContext";
@@ -31,12 +31,12 @@ export function AdminToolsPage() {
     setMessage(null);
     try {
       const res = await adminRunRecurringNow();
-      const msg = `Checked ${res.templates_checked} template(s); created ${res.sessions_created} new session(s).`;
+      const msg = `Checked ${res.templates_checked} template(s); created ${res.meetups_created} new meetup(s).`;
       setMessage(msg);
       showToast(msg, "success");
       appendJobHistory({
         label: "Run recurring jobs now",
-        detail: `${res.templates_checked} templates · ${res.sessions_created} session(s) created`,
+        detail: `${res.templates_checked} templates · ${res.meetups_created} meetup(s) created`,
       });
       setHistory(readJobHistory());
     } catch (e) {
@@ -46,11 +46,11 @@ export function AdminToolsPage() {
     }
   }
 
-  async function exportSessionsCsv() {
+  async function exportMeetupsCsv() {
     setExporting(true);
     setError(null);
     try {
-      const { items: sessions } = await fetchSessions({ limit: 500 });
+      const { items: meetups } = await fetchMeetups({ limit: 500 });
       const headers = [
         "id",
         "start_time",
@@ -63,10 +63,10 @@ export function AdminToolsPage() {
       ];
       const lines = [
         headers.join(","),
-        ...sessions.map((s) =>
+        ...meetups.map((s) =>
           [
             s.id,
-            JSON.stringify(parseSessionStart(s.start_time).toISOString()),
+            JSON.stringify(parseMeetupStart(s.start_time).toISOString()),
             JSON.stringify(s.location),
             s.fee,
             s.min_players,
@@ -82,7 +82,7 @@ export function AdminToolsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `miootz-sessions-${format(new Date(), "yyyy-MM-dd-HHmm")}.csv`;
+      a.download = `miootz-meetups-${format(new Date(), "yyyy-MM-dd-HHmm")}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       showToast("CSV downloaded.", "success");
@@ -107,7 +107,7 @@ export function AdminToolsPage() {
 
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm transition-colors">
         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
-          Recurring sessions
+          Recurring meetups
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
           Runs the same logic as each template’s weekly job: create the next
@@ -152,20 +152,20 @@ export function AdminToolsPage() {
           Export data
         </h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Download all sessions as CSV (opens in Excel / Sheets).
+          Download all meetups as CSV (opens in Excel / Sheets).
         </p>
         <button
           type="button"
-          onClick={() => void exportSessionsCsv()}
+          onClick={() => void exportMeetupsCsv()}
           disabled={exporting}
-          className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl border border-violet-300 dark:border-violet-700 text-violet-900 dark:text-violet-100 font-medium hover:bg-violet-50 dark:hover:bg-violet-950/40 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-xl border border-teal-300 dark:border-teal-800 text-teal-900 dark:text-teal-100 font-medium hover:bg-teal-50 dark:hover:bg-teal-950/40 disabled:opacity-50 transition-colors"
         >
           {exporting ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Download className="w-4 h-4" />
           )}
-          Export sessions (CSV)
+          Export meetups (CSV)
         </button>
       </div>
 

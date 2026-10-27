@@ -11,9 +11,9 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { fetchSessions, type SessionListItem } from "../../api/sessionsApi";
-import { parseSessionStart } from "../../utils/datetime";
-import { adminDeleteSession } from "../../api/adminApi";
+import { fetchMeetups, type MeetupListItem } from "../../api/meetupsApi";
+import { parseMeetupStart } from "../../utils/datetime";
+import { adminDeleteMeetup } from "../../api/adminApi";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
@@ -22,7 +22,7 @@ import { hapticLight } from "../../utils/haptics";
 
 const PAGE_SIZE = 50;
 
-type SessionFilter = "all" | "upcoming" | "past" | "weekly" | "next7";
+type MeetupFilter = "all" | "upcoming" | "past" | "weekly" | "next7";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -35,7 +35,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 /* ── Skeleton ─────────────────────────────────────────── */
 
-function SessionRowSkeleton() {
+function MeetupRowSkeleton() {
   return (
     <li className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 animate-pulse">
       <div className="flex items-start gap-3">
@@ -80,9 +80,9 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
 
 /* ── Page ─────────────────────────────────────────────── */
 
-export function AdminSessionsPage() {
+export function AdminMeetupsPage() {
   const { showToast } = useToast();
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [meetups, setMeetups] = useState<MeetupListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -90,29 +90,29 @@ export function AdminSessionsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounced(query, 300);
-  const [filter, setFilter] = useState<SessionFilter>("all");
+  const [filter, setFilter] = useState<MeetupFilter>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(25);
 
   const reloadFirstPage = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetchSessions({
+      const res = await fetchMeetups({
         limit: PAGE_SIZE,
         offset: 0,
         q: debouncedQuery.trim() || undefined,
       });
       const list = res.items;
-      setSessions(
+      setMeetups(
         [...list].sort(
           (a, b) =>
-            parseSessionStart(a.start_time).getTime() -
-            parseSessionStart(b.start_time).getTime(),
+            parseMeetupStart(a.start_time).getTime() -
+            parseMeetupStart(b.start_time).getTime(),
         ),
       );
       setHasMore(res.offset + res.items.length < res.total);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load sessions");
+      setError(e instanceof Error ? e.message : "Failed to load meetups");
     } finally {
       setLoading(false);
     }
@@ -128,17 +128,17 @@ export function AdminSessionsPage() {
     setLoadingMore(true);
     setError(null);
     try {
-      const next = await fetchSessions({
+      const next = await fetchMeetups({
         limit: PAGE_SIZE,
-        offset: sessions.length,
+        offset: meetups.length,
         q: debouncedQuery.trim() || undefined,
       });
-      setSessions((prev) => {
+      setMeetups((prev) => {
         const merged = [...prev, ...next.items];
         merged.sort(
           (a, b) =>
-            parseSessionStart(a.start_time).getTime() -
-            parseSessionStart(b.start_time).getTime(),
+            parseMeetupStart(a.start_time).getTime() -
+            parseMeetupStart(b.start_time).getTime(),
         );
         return merged;
       });
@@ -148,13 +148,13 @@ export function AdminSessionsPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [debouncedQuery, sessions.length, hasMore, loadingMore]);
+  }, [debouncedQuery, meetups.length, hasMore, loadingMore]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
     const weekMs = 7 * 24 * 60 * 60 * 1000;
-    return sessions.filter((s) => {
-      const start = parseSessionStart(s.start_time).getTime();
+    return meetups.filter((s) => {
+      const start = parseMeetupStart(s.start_time).getTime();
       const upcoming = start >= now;
       const weekly = s.game_template_id != null;
       const inNext7 = start >= now && start <= now + weekMs;
@@ -164,7 +164,7 @@ export function AdminSessionsPage() {
       if (filter === "next7" && !inNext7) return false;
       return true;
     });
-  }, [sessions, filter]);
+  }, [meetups, filter]);
 
   const visibleRows = useMemo(() => {
     return filtered.slice(0, pageSize);
@@ -173,9 +173,9 @@ export function AdminSessionsPage() {
   async function performDelete(id: number) {
     setDeletingId(id);
     try {
-      await adminDeleteSession(id);
+      await adminDeleteMeetup(id);
       hapticLight();
-      showToast("Session deleted.", "success");
+      showToast("Meetup deleted.", "success");
       await reloadFirstPage();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Delete failed", "error");
@@ -187,7 +187,7 @@ export function AdminSessionsPage() {
 
   /* ── Filter chips data ──────────────────────────────── */
 
-  const filters: { key: SessionFilter; label: string; count?: number }[] =
+  const filters: { key: MeetupFilter; label: string; count?: number }[] =
     useMemo(() => {
       const now = Date.now();
       const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -196,32 +196,32 @@ export function AdminSessionsPage() {
         {
           key: "upcoming" as const,
           label: "Upcoming",
-          count: sessions.filter(
-            (s) => parseSessionStart(s.start_time).getTime() >= now,
+          count: meetups.filter(
+            (s) => parseMeetupStart(s.start_time).getTime() >= now,
           ).length,
         },
         {
           key: "past" as const,
           label: "Past",
-          count: sessions.filter(
-            (s) => parseSessionStart(s.start_time).getTime() < now,
+          count: meetups.filter(
+            (s) => parseMeetupStart(s.start_time).getTime() < now,
           ).length,
         },
         {
           key: "next7" as const,
           label: "Next 7d",
-          count: sessions.filter((s) => {
-            const t = parseSessionStart(s.start_time).getTime();
+          count: meetups.filter((s) => {
+            const t = parseMeetupStart(s.start_time).getTime();
             return t >= now && t <= now + weekMs;
           }).length,
         },
         {
           key: "weekly" as const,
           label: "Weekly",
-          count: sessions.filter((s) => s.game_template_id != null).length,
+          count: meetups.filter((s) => s.game_template_id != null).length,
         },
       ];
-    }, [sessions]);
+    }, [meetups]);
 
   /* ── Render ─────────────────────────────────────────── */
 
@@ -230,18 +230,18 @@ export function AdminSessionsPage() {
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
-            items={[{ label: "Admin", to: "/admin" }, { label: "Sessions" }]}
+            items={[{ label: "Admin", to: "/admin" }, { label: "Meetups" }]}
           />
         }
-        title="Sessions"
-        subtitle="Create and manage meetups, attendance, and waitlists."
+        title="Meetups"
+        subtitle="Meetups are scheduled automatically by the active template. Manage attendance, teams, and one-offs here."
         action={
           <Link
-            to="/admin/sessions/new"
-            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors shrink-0 active:scale-[0.98]"
+            to="/admin/meetups/new"
+            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 py-2 text-sm font-medium text-teal-800 dark:text-teal-300 hover:text-teal-900 dark:hover:text-teal-100 transition-colors shrink-0"
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">New session</span>
+            One-off
           </Link>
         }
       />
@@ -257,19 +257,19 @@ export function AdminSessionsPage() {
 
       {/* ── Search + Filters ──────────────────────────── */}
 
-      {!loading && sessions.length > 0 && (
+      {!loading && meetups.length > 0 && (
         <div className="flex flex-col gap-3 mb-4">
           {/* Search */}
           <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
             <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
             <input
-              id="admin-sessions-search"
+              id="admin-meetups-search"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by location…"
               className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none focus:ring-0 dark:text-white"
-              aria-label="Filter sessions by location"
+              aria-label="Filter meetups by location"
             />
           </label>
 
@@ -282,7 +282,7 @@ export function AdminSessionsPage() {
                 onClick={() => setFilter(key)}
                 className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   filter === key
-                    ? "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                    ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
                     : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
                 }`}
               >
@@ -291,7 +291,7 @@ export function AdminSessionsPage() {
                   <span
                     className={
                       filter === key
-                        ? "text-violet-500 dark:text-violet-400"
+                        ? "text-teal-500 dark:text-teal-400"
                         : "text-gray-500 dark:text-gray-400"
                     }
                   >
@@ -317,41 +317,50 @@ export function AdminSessionsPage() {
         </div>
       )}
 
-      {/* ── Session list ──────────────────────────────── */}
+      {/* ── Meetup list ──────────────────────────────── */}
 
       {loading ? (
         <ul
           className="space-y-2"
           aria-busy="true"
-          aria-label="Loading sessions"
+          aria-label="Loading meetups"
         >
-          <SessionRowSkeleton />
-          <SessionRowSkeleton />
-          <SessionRowSkeleton />
+          <MeetupRowSkeleton />
+          <MeetupRowSkeleton />
+          <MeetupRowSkeleton />
         </ul>
-      ) : sessions.length === 0 ? (
+      ) : meetups.length === 0 ? (
         <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-12 text-center">
           <Calendar className="w-12 h-12 mx-auto text-gray-400 mb-4" />
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            No sessions yet. Create the first one.
+            No meetups yet. Create an active template and meetups are scheduled
+            automatically.
           </p>
           <Link
-            to="/admin/sessions/new"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 active:scale-[0.98]"
+            to="/admin/game-templates"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
-            Create session
+            Create template
           </Link>
+          <p className="mt-4 text-sm">
+            <Link
+              to="/admin/meetups/new"
+              className="text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
+            >
+              Or create a one-off meetup
+            </Link>
+          </p>
         </div>
       ) : filtered.length === 0 ? (
         <p className="text-center text-gray-500 dark:text-gray-400 py-12 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
-          No sessions match your filters.
+          No meetups match your filters.
         </p>
       ) : (
         <>
           <ul className="space-y-2">
             {visibleRows.map((s) => {
-              const start = parseSessionStart(s.start_time);
+              const start = parseMeetupStart(s.start_time);
               const upcoming = start.getTime() >= Date.now();
               const confirmed = s.confirmed_count ?? 0;
               const cap = Math.max(1, s.max_players);
@@ -368,7 +377,7 @@ export function AdminSessionsPage() {
                   <div className="flex">
                     {/* Clickable card body */}
                     <Link
-                      to={`/admin/sessions/${s.id}`}
+                      to={`/admin/meetups/${s.id}`}
                       className="flex-1 min-w-0 p-3.5 active:bg-gray-50/50 dark:active:bg-gray-800/30 transition-colors"
                     >
                       {/* Date + time row */}
@@ -416,7 +425,7 @@ export function AdminSessionsPage() {
                           {s.waitlist_mode.replace("_", " ")}
                         </span>
                         {s.game_template_id != null && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 text-2xs font-medium text-violet-700 dark:text-violet-300">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 text-2xs font-medium text-teal-800 dark:text-teal-300">
                             <Repeat className="w-3 h-3" />
                             Weekly
                           </span>
@@ -439,7 +448,7 @@ export function AdminSessionsPage() {
                         }}
                         disabled={deletingId === s.id}
                         className="min-h-[44px] w-11 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 dark:hover:text-red-400 disabled:opacity-50 transition-colors"
-                        aria-label={`Delete session at ${s.location}`}
+                        aria-label={`Delete meetup at ${s.location}`}
                       >
                         {deletingId === s.id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -481,7 +490,7 @@ export function AdminSessionsPage() {
 
       <ConfirmDialog
         open={confirmDeleteId != null}
-        title="Delete this session?"
+        title="Delete this meetup?"
         description="This permanently removes the meetup and its attendance. This cannot be undone."
         confirmLabel="Delete"
         cancelLabel="Cancel"

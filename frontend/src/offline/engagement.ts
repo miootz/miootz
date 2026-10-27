@@ -1,13 +1,13 @@
-const SESSION_VIEWS_KEY = 'miootz:session-views';
+const MEETUP_VIEWS_KEY = 'miootz:meetup-views';
 
 const ENGAGEMENT_EVENT = 'miootz-engagement';
 
-/** Increment after a successful meetup session load; returns new count. */
-export function recordSessionView(): number {
+/** Increment after a successful meetup meetup load; returns new count. */
+export function recordMeetupView(): number {
   try {
-    const n = Number.parseInt(localStorage.getItem(SESSION_VIEWS_KEY) || '0', 10) || 0;
+    const n = Number.parseInt(localStorage.getItem(MEETUP_VIEWS_KEY) || '0', 10) || 0;
     const next = n + 1;
-    localStorage.setItem(SESSION_VIEWS_KEY, String(next));
+    localStorage.setItem(MEETUP_VIEWS_KEY, String(next));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event(ENGAGEMENT_EVENT));
     }
@@ -17,9 +17,9 @@ export function recordSessionView(): number {
   }
 }
 
-export function getSessionViewCount(): number {
+export function getMeetupViewCount(): number {
   try {
-    return Number.parseInt(localStorage.getItem(SESSION_VIEWS_KEY) || '0', 10) || 0;
+    return Number.parseInt(localStorage.getItem(MEETUP_VIEWS_KEY) || '0', 10) || 0;
   } catch {
     return 0;
   }

@@ -1,15 +1,15 @@
 import pytest
 from sqlalchemy import func, select
 
-import app.models.game_template  # noqa: F401 — GameSession FK metadata
+import app.models.game_template  # noqa: F401 — Meetup FK metadata
 from app.bootstrap_data import (
     DEMO_POCKET_ID_PREFIX,
-    DEMO_SESSION_LOCATION_PREFIX,
+    DEMO_MEETUP_LOCATION_PREFIX,
     run_bootstrap,
 )
 from app.core.database import Base, async_session, engine
 from app.models.rating import Rating
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 
@@ -22,7 +22,7 @@ async def setup_db():
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_creates_members_sessions_ratings():
+async def test_bootstrap_creates_members_meetups_ratings():
     assert await run_bootstrap(force=False) == 0
 
     async with async_session() as db:
@@ -35,14 +35,14 @@ async def test_bootstrap_creates_members_sessions_ratings():
         ).scalar_one()
         assert n_users >= 20
 
-        n_sessions = (
+        n_meetups = (
             await db.execute(
-                select(func.count()).select_from(GameSession).where(
-                    GameSession.location.like(f"{DEMO_SESSION_LOCATION_PREFIX}%")
+                select(func.count()).select_from(Meetup).where(
+                    Meetup.location.like(f"{DEMO_MEETUP_LOCATION_PREFIX}%")
                 )
             )
         ).scalar_one()
-        assert n_sessions == 5
+        assert n_meetups == 5
 
         n_att = (await db.execute(select(func.count()).select_from(Attendance))).scalar_one()
         assert 5 * 10 <= n_att <= 5 * 15

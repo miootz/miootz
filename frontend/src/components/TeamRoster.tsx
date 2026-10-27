@@ -54,7 +54,7 @@ function PlayerRow({
                 />
                 {/* Locked badge */}
                 {player.isLocked && (
-                    <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-violet-500 flex items-center justify-center shadow">
+                    <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-teal-500 flex items-center justify-center shadow">
                         <Lock size={9} className="text-white" />
                     </div>
                 )}
@@ -79,6 +79,7 @@ function PlayerRow({
                         value={currentRating ?? 0}
                         onChange={onRatingChange}
                         size={14}
+                        label="Skill rating"
                     />
                 </div>
             )}
@@ -134,7 +135,7 @@ export function TeamRoster({
             ref={droppable?.setNodeRef}
             className={`rounded-xl overflow-hidden border transition-colors bg-white dark:bg-gray-900 ${
                 droppable?.isOver
-                    ? "border-violet-400 ring-2 ring-violet-400/40 dark:ring-violet-500/40"
+                    ? "border-teal-400 ring-2 ring-teal-400/40 dark:ring-teal-500/40"
                     : "border-gray-200 dark:border-gray-800"
             }`}
         >

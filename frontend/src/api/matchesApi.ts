@@ -7,7 +7,7 @@ export interface MatchTeamInfo {
 
 export interface MatchSummary {
   id: number;
-  session_id: number;
+  meetup_id: number;
   match_number: number;
   team_a: MatchTeamInfo;
   team_b: MatchTeamInfo;
@@ -23,7 +23,7 @@ export interface MatchSummary {
   completed_at: string | null;
 }
 
-export interface SessionMatchesResponse {
+export interface MeetupMatchesResponse {
   matches: MatchSummary[];
   match_duration_minutes: number;
 }
@@ -36,10 +36,10 @@ export interface MatchCreateBody {
 }
 
 export async function createMatch(
-  sessionId: number,
+  meetupId: number,
   body: MatchCreateBody,
 ): Promise<{ status: string; match: MatchSummary }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/create`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/create`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -47,28 +47,28 @@ export async function createMatch(
   return r.json();
 }
 
-export async function fetchSessionMatches(
-  sessionId: number,
-): Promise<SessionMatchesResponse> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches`);
+export async function fetchMeetupMatches(
+  meetupId: number,
+): Promise<MeetupMatchesResponse> {
+  const r = await apiFetch(`/meetups/${meetupId}/matches`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function fetchMatch(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<MatchSummary> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}`);
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
 }
 
 export async function startMatches(
-  sessionId: number,
+  meetupId: number,
   body?: { team_a_idx?: number; team_b_idx?: number },
 ): Promise<{ status: string; match: MatchSummary }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/start`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/start`, {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -77,10 +77,10 @@ export async function startMatches(
 }
 
 export async function createNewPendingMatch(
-  sessionId: number,
+  meetupId: number,
   body?: { team_a_idx?: number; team_b_idx?: number },
 ): Promise<{ status: string; match: MatchSummary }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/new`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/new`, {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -89,11 +89,11 @@ export async function createNewPendingMatch(
 }
 
 export async function swapMatchTeams(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   body: { team_a_users: number[]; team_b_users: number[] },
 ): Promise<MatchSummary> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/teams`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/teams`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });
@@ -102,11 +102,11 @@ export async function swapMatchTeams(
 }
 
 export async function startTimer(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/timer/start`,
+    `/meetups/${meetupId}/matches/${matchId}/timer/start`,
     { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -114,11 +114,11 @@ export async function startTimer(
 }
 
 export async function pauseTimer(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/timer/pause`,
+    `/meetups/${meetupId}/matches/${matchId}/timer/pause`,
     { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -126,11 +126,11 @@ export async function pauseTimer(
 }
 
 export async function resumeTimer(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<{ status: string; seconds_remaining: number }> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/timer/resume`,
+    `/meetups/${meetupId}/matches/${matchId}/timer/resume`,
     { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -138,11 +138,11 @@ export async function resumeTimer(
 }
 
 export async function resetMatch(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<MatchSummary> {
   const r = await apiFetch(
-    `/sessions/${sessionId}/matches/${matchId}/timer/reset`,
+    `/meetups/${meetupId}/matches/${matchId}/timer/reset`,
     { method: "POST" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
@@ -150,12 +150,12 @@ export async function resetMatch(
 }
 
 export async function incrementScore(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   team: "a" | "b",
   delta = 1,
 ): Promise<{ score_a: number; score_b: number }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/score`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/score`, {
     method: "POST",
     body: JSON.stringify({ team, delta }),
   });
@@ -164,12 +164,12 @@ export async function incrementScore(
 }
 
 export async function setScores(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   score_a: number,
   score_b: number,
 ): Promise<{ score_a: number; score_b: number }> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/score`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/score`, {
     method: "PATCH",
     body: JSON.stringify({ score_a, score_b }),
   });
@@ -178,7 +178,7 @@ export async function setScores(
 }
 
 export async function endMatch(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
   winner_team?: "a" | "b",
 ): Promise<{
@@ -191,7 +191,7 @@ export async function endMatch(
 }> {
   const body: Record<string, unknown> = {};
   if (winner_team) body.winner_team = winner_team;
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}/end`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/end`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -200,10 +200,10 @@ export async function endMatch(
 }
 
 export async function deleteMatch(
-  sessionId: number,
+  meetupId: number,
   matchId: number,
 ): Promise<void> {
-  const r = await apiFetch(`/sessions/${sessionId}/matches/${matchId}`, {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}`, {
     method: "DELETE",
   });
   if (!r.ok) throw new Error(await parseApiError(r));

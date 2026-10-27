@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
-import { parseSessionStart } from "../utils/datetime";
+import { parseMeetupStart } from "../utils/datetime";
 import {
-  fetchSessionMatches,
+  fetchMeetupMatches,
   startMatches,
   createMatch,
   createNewPendingMatch,
@@ -19,12 +19,12 @@ import {
   type MatchSummary,
 } from "../api/matchesApi";
 import {
-  fetchSessionDetail,
-  fetchSessionTeams,
-  type SessionDetail,
+  fetchMeetupDetail,
+  fetchMeetupTeams,
+  type MeetupDetail,
   type TeamsResponse,
-} from "../api/sessionsApi";
-import { subscribeSessionData } from "../utils/sessionDataBus";
+} from "../api/meetupsApi";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -167,7 +167,7 @@ function ManualMatchForm({
             maxLength={60}
             disabled={isEdit}
             list={isEdit ? undefined : "miootz-team-names"}
-            className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
+            className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-60"
           />
         </div>
         <div className="space-y-1.5">
@@ -182,7 +182,7 @@ function ManualMatchForm({
             maxLength={60}
             disabled={isEdit}
             list={isEdit ? undefined : "miootz-team-names"}
-            className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60"
+            className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-60"
           />
         </div>
       </div>
@@ -264,7 +264,7 @@ function ManualMatchForm({
             })
           }
           disabled={!canSubmit}
-          className="flex-1 py-3 rounded-xl bg-violet-600 text-white font-semibold hover:bg-violet-700 disabled:opacity-40 active:scale-[0.98] transition-transform"
+          className="flex-1 py-3 rounded-xl bg-teal-700 text-white font-semibold hover:bg-teal-800 disabled:opacity-40 active:scale-[0.98] transition-transform"
         >
           Save result
         </button>
@@ -355,11 +355,11 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
 // ── Main Page ────────────────────────────────────────────────────
 
 export function RefereePage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { meetupId } = useParams<{ meetupId: string }>();
   const navigate = useNavigate();
   const { tokens } = useAuth();
   const { showToast } = useToast();
-  const sid = sessionId ? parseInt(sessionId, 10) : NaN;
+  const sid = meetupId ? parseInt(meetupId, 10) : NaN;
 
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
@@ -383,7 +383,7 @@ export function RefereePage() {
   const [showManualForm, setShowManualForm] = useState(false);
   const [editingMatch, setEditingMatch] = useState<MatchSummary | null>(null);
   const [halfTimeFlash, setHalfTimeFlash] = useState(false);
-  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(
+  const [meetupDetail, setMeetupDetail] = useState<MeetupDetail | null>(
     null,
   );
   const [teamsData, setTeamsData] = useState<TeamsResponse["teams"] | null>(
@@ -393,7 +393,7 @@ export function RefereePage() {
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
 
-  // Steward gate / goal log — fed by the ONE shared session-data feed
+  // Steward gate / goal log — fed by the ONE shared meetup-data feed
   // (see the hub subscription below). Any present member may use the
   // controls when the backend gate opens, not only admins.
   const { steward, goals, applyEvent, removeGoal, refreshGoals } =
@@ -403,11 +403,11 @@ export function RefereePage() {
   // Drives deadline re-evaluation without waiting for SSE (see effect below).
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  // Deadline: 15 min after scheduled session end (computed from detail).
+  // Deadline: 15 min after scheduled meetup end (computed from detail).
   const deadline = (() => {
-    if (!sessionDetail?.start_time) return null;
-    const start = parseSessionStart(sessionDetail.start_time).getTime();
-    const durationMin = sessionDetail.duration_minutes ?? 120;
+    if (!meetupDetail?.start_time) return null;
+    const start = parseMeetupStart(meetupDetail.start_time).getTime();
+    const durationMin = meetupDetail.duration_minutes ?? 120;
     const end = start + durationMin * 60_000;
     return end + 15 * 60_000; // 15 min grace
   })();
@@ -429,7 +429,7 @@ export function RefereePage() {
 
   const loadMatches = useCallback(async () => {
     try {
-      const res = await fetchSessionMatches(sid);
+      const res = await fetchMeetupMatches(sid);
       setMatches(res.matches);
       const active = res.matches.find(
         (m) => m.status === "active" || m.status === "time_up",
@@ -467,22 +467,22 @@ export function RefereePage() {
 
   useEffect(() => {
     if (isNaN(sid)) return;
-    fetchSessionDetail(sid)
-      .then(setSessionDetail)
+    fetchMeetupDetail(sid)
+      .then(setMeetupDetail)
       .catch(() => {});
-    fetchSessionTeams(sid)
+    fetchMeetupTeams(sid)
       .then((r) => setTeamsData(r.teams))
       .catch(() => {});
   }, [sid]);
 
-  // SSE — rides the ONE existing session-data connection through the shared
-  // hub (utils/sessionDataBus); no second EventSource here anymore.
+  // SSE — rides the ONE existing meetup-data connection through the shared
+  // hub (utils/meetupDataBus); no second EventSource here anymore.
   // Scoring types (goal_added / goal_removed / lease_acquired /
   // lease_released) go through the steward hook; timer types drive the
   // clock; on link (re)connect we refetch snapshots, never replay events.
   useEffect(() => {
     let wasLive = false; // hub pushes current status on subscribe
-    return subscribeSessionData(
+    return subscribeMeetupData(
       sid,
       tokens?.accessToken,
       (data) => {
@@ -778,7 +778,7 @@ export function RefereePage() {
         : steward.reason === "not_attending"
           ? "You're not marked as attending."
           : steward.reason === "outside_window"
-            ? "Scoring is closed — you're outside the session window."
+            ? "Scoring is closed — you're outside the meetup window."
             : "Scoring controls unavailable.";
     return (
       <div className="p-6 text-center text-red-600 dark:text-red-400">
@@ -790,7 +790,7 @@ export function RefereePage() {
   if (loading) {
     return (
       <div className="flex justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-violet-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-teal-700" />
       </div>
     );
   }
@@ -811,7 +811,7 @@ export function RefereePage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-gradient-to-r from-violet-600 to-purple-600 dark:from-violet-700 dark:to-purple-800 shadow-lg">
+      <div className="sticky top-0 z-40 bg-gradient-to-r from-teal-700 to-teal-900 dark:from-teal-800 dark:to-teal-950 shadow-lg">
         <div className="max-w-lg mx-auto flex items-center gap-3 px-4 py-3.5">
           <button
             type="button"
@@ -825,7 +825,7 @@ export function RefereePage() {
             <h1 className="text-lg font-bold text-white leading-tight">
               Match Control
             </h1>
-            <p className="text-xs text-violet-200">
+            <p className="text-xs text-teal-200">
               {currentMatch
                 ? `Match ${currentMatch.match_number} · ${currentMatch.team_a.name} vs ${currentMatch.team_b.name}`
                 : allComplete
@@ -860,10 +860,10 @@ export function RefereePage() {
               </div>
               <div>
                 <h2 className="text-lg font-bold text-gray-500 dark:text-gray-400">
-                  Session closed
+                  Meetup closed
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Locked 15 min after session end
+                  Locked 15 min after meetup end
                 </p>
               </div>
             </div>
@@ -920,7 +920,7 @@ export function RefereePage() {
                   <select
                     value={selectedTeamA}
                     onChange={(e) => setSelectedTeamA(Number(e.target.value))}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
                     {teamsData?.map((t, i) => (
                       <option
@@ -943,7 +943,7 @@ export function RefereePage() {
                   <select
                     value={selectedTeamB}
                     onChange={(e) => setSelectedTeamB(Number(e.target.value))}
-                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
                     {teamsData?.map((t, i) => (
                       <option
@@ -981,9 +981,9 @@ export function RefereePage() {
         ) : allComplete ? (
           /* All matches done but deadline not passed — offer to add more */
           <div className="text-center space-y-6 py-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-violet-100 dark:bg-violet-900/40">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-teal-100 dark:bg-teal-900/40">
               <CheckCircle2
-                className="h-7 w-7 text-violet-600 dark:text-violet-400"
+                className="h-7 w-7 text-teal-700 dark:text-teal-400"
                 aria-hidden
               />
             </div>
@@ -1012,7 +1012,7 @@ export function RefereePage() {
                   setEditingMatch(null);
                   setShowManualForm(true);
                 }}
-                className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-violet-600 text-white text-lg font-bold hover:bg-violet-700 active:scale-[0.98] transition-transform min-h-[56px]"
+                className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-teal-700 text-white text-lg font-bold hover:bg-teal-800 active:scale-[0.98] transition-transform min-h-[56px]"
               >
                 <Plus className="h-5 w-5" />
                 Add match result
@@ -1046,7 +1046,7 @@ export function RefereePage() {
                         onChange={(e) =>
                           setSelectedTeamA(Number(e.target.value))
                         }
-                        className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
                       >
                         {teamsData.map((t, i) => (
                           <option
@@ -1071,7 +1071,7 @@ export function RefereePage() {
                         onChange={(e) =>
                           setSelectedTeamB(Number(e.target.value))
                         }
-                        className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        className="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 pr-8 text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
                       >
                         {teamsData.map((t, i) => (
                           <option
@@ -1096,7 +1096,7 @@ export function RefereePage() {
                     })
                   }
                   disabled={busy !== null || selectedTeamA === selectedTeamB}
-                  className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-violet-600 text-white text-lg font-bold hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
+                  className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-teal-700 text-white text-lg font-bold hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
                 >
                   {busy ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -1111,7 +1111,7 @@ export function RefereePage() {
                 type="button"
                 onClick={() => void handleStartAll()}
                 disabled={busy !== null}
-                className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-violet-600 text-white text-lg font-bold hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
+                className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-teal-700 text-white text-lg font-bold hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
               >
                 {busy ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -1297,11 +1297,11 @@ export function RefereePage() {
 
             {/* Next match preview */}
             {nextMatch && (
-              <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 p-4 space-y-2">
-                <p className="text-sm font-semibold text-violet-700 dark:text-violet-300">
+              <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/20 p-4 space-y-2">
+                <p className="text-sm font-semibold text-teal-800 dark:text-teal-300">
                   Next match
                 </p>
-                <p className="text-base text-violet-600 dark:text-violet-400">
+                <p className="text-base text-teal-700 dark:text-teal-400">
                   {nextMatch.team_a.name} vs {nextMatch.team_b.name}
                 </p>
               </div>

@@ -8,11 +8,11 @@ type Props = {
   startLocal: string;
   enabled: boolean;
   onEnabledChange: (v: boolean) => void;
-  /** e.g. "Schedule active" on template pages vs "Repeat weekly" on sessions */
+  /** e.g. "Schedule active" on template pages vs "Repeat weekly" on meetups */
   scheduleToggleLabel?: string;
-  /** Hide "Match start time above" (no session start field on template admin). */
+  /** Hide "Match start time above" (no meetup start field on template admin). */
   hideMatchStartButton?: boolean;
-  /** Replaces the note under meetup time (session vs template copy). */
+  /** Replaces the note under meetup time (meetup vs template copy). */
   kickoffHelperText?: string;
   /** Kickoff (meetup) each week */
   timezone: string;
@@ -23,7 +23,7 @@ type Props = {
   onHourChange: (v: number) => void;
   minute: number;
   onMinuteChange: (v: number) => void;
-  /** When each week to create the next session + send join-link pushes */
+  /** When each week to create the next meetup + send join-link pushes */
   announceTimezone: string;
   onAnnounceTimezoneChange: (v: string) => void;
   announceWeekday: number;
@@ -35,13 +35,13 @@ type Props = {
   showDisabledHint?: boolean;
 };
 
-export function AdminSessionRecurrenceForm({
+export function AdminMeetupRecurrenceForm({
   startLocal,
   enabled,
   onEnabledChange,
   scheduleToggleLabel = 'Repeat weekly',
   hideMatchStartButton = false,
-  kickoffHelperText = 'Must match the session start time field.',
+  kickoffHelperText = 'Must match the meetup start time field.',
   timezone,
   onTimezoneChange,
   weekday,
@@ -76,14 +76,14 @@ export function AdminSessionRecurrenceForm({
   }
 
   return (
-    <div className="rounded-xl border border-violet-200 dark:border-violet-900/60 bg-violet-50/50 dark:bg-violet-950/20 p-4 space-y-6">
+    <div className="rounded-xl border border-teal-200 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/20 p-4 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="inline-flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => onEnabledChange(e.target.checked)}
-            className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+            className="rounded border-gray-300 text-teal-700 focus:ring-teal-500"
           />
           <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
             {scheduleToggleLabel}
@@ -93,7 +93,7 @@ export function AdminSessionRecurrenceForm({
 
       {showDisabledHint && !enabled ? (
         <p className="text-xs text-gray-600 dark:text-gray-400">
-          The first session sets location, fees, and roster size. When repeat is on,
+          The first meetup sets location, fees, and roster size. When repeat is on,
           you define the weekly kickoff time and a separate weekly moment when the
           next meetup is created and invite notifications (with join links) are sent.
         </p>
@@ -110,7 +110,7 @@ export function AdminSessionRecurrenceForm({
                 <button
                   type="button"
                   onClick={syncKickoffFromStart}
-                  className="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline"
+                  className="text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
                 >
                   Match start time above
                 </button>
@@ -185,15 +185,15 @@ export function AdminSessionRecurrenceForm({
             </div>
           </div>
 
-          <div className="border-t border-violet-200/80 dark:border-violet-900/50 pt-4">
+          <div className="border-t border-teal-200/80 dark:border-teal-900/50 pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                Create next session & send invites (each week)
+                Create next meetup & send invites (each week)
               </h3>
               <button
                 type="button"
                 onClick={copyAnnounceFromKickoff}
-                className="text-xs font-medium text-violet-700 dark:text-violet-300 hover:underline"
+                className="text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
               >
                 Same as meetup time
               </button>

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 type AdminPageHeaderProps = {
   title: string;
   subtitle?: string;
-  /** Primary action (e.g. “New session” link) */
+  /** Primary action (e.g. “New meetup” link) */
   action?: ReactNode;
   /** Breadcrumb row above the title */
   breadcrumb?: ReactNode;

@@ -1,10 +1,10 @@
 /**
- * Refcounted hub over the ONE session-data SSE channel
- * (`GET /sessions/{id}/data/events`, see api/sessionsApi.sessionDataEventsUrl).
+ * Refcounted hub over the ONE meetup-data SSE channel
+ * (`GET /meetups/{id}/data/events`, see api/meetupsApi.meetupDataEventsUrl).
  *
- * Every surface that cares about a session's live data (PlayerApp roster,
+ * Every surface that cares about a meetup's live data (PlayerApp roster,
  * LiveMatchBanner scoreboard/goals, RefereePage console) subscribes here
- * instead of opening its own EventSource: for a given sessionId there is at
+ * instead of opening its own EventSource: for a given meetupId there is at
  * most ONE physical connection shared by all handlers, and it is closed when
  * the last subscriber unmounts.
  *
@@ -14,33 +14,33 @@
  * snapshot refetch heals state — we never replay missed events here; callers
  * refetch by id when they receive an event or when the link comes back.
  */
-import { sessionDataEventsUrl } from "../api/sessionsApi";
+import { meetupDataEventsUrl } from "../api/meetupsApi";
 
-export type SessionDataMessage = Record<string, unknown>;
-export type SessionDataHandler = (data: SessionDataMessage) => void;
-export type SessionLiveHandler = (live: boolean) => void;
+export type MeetupDataMessage = Record<string, unknown>;
+export type MeetupDataHandler = (data: MeetupDataMessage) => void;
+export type MeetupLiveHandler = (live: boolean) => void;
 
 interface Channel {
   es: EventSource | null;
   token: string | undefined;
   live: boolean;
-  messageHandlers: Set<SessionDataHandler>;
-  liveHandlers: Set<SessionLiveHandler>;
+  messageHandlers: Set<MeetupDataHandler>;
+  liveHandlers: Set<MeetupLiveHandler>;
   attached: boolean; // window online/offline listeners wired
 }
 
 const channels = new Map<number, Channel>();
 
-function connect(ch: Channel, sessionId: number): void {
+function connect(ch: Channel, meetupId: number): void {
   if (ch.es) return;
-  const es = new EventSource(sessionDataEventsUrl(sessionId, ch.token));
+  const es = new EventSource(meetupDataEventsUrl(meetupId, ch.token));
   ch.es = es;
   es.onopen = () => setLive(ch, true);
   es.onerror = () => setLive(ch, false);
   es.onmessage = (ev) => {
-    let data: SessionDataMessage;
+    let data: MeetupDataMessage;
     try {
-      data = JSON.parse(ev.data) as SessionDataMessage;
+      data = JSON.parse(ev.data) as MeetupDataMessage;
     } catch {
       console.error("SSE: ignoring malformed message");
       return;
@@ -67,7 +67,7 @@ function setLive(ch: Channel, live: boolean): void {
   }
 }
 
-function forceReconnect(ch: Channel, sessionId: number): void {
+function forceReconnect(ch: Channel, meetupId: number): void {
   // EventSource does not always recover after the network flaps (e.g.
   // DevTools Offline Mode); when the browser comes back, rebuild the link.
   if (ch.es) {
@@ -75,23 +75,23 @@ function forceReconnect(ch: Channel, sessionId: number): void {
     ch.es = null;
   }
   setLive(ch, false);
-  connect(ch, sessionId);
+  connect(ch, meetupId);
 }
 
 /**
- * Subscribe to the shared session-data feed. Returns an unsubscribe function.
+ * Subscribe to the shared meetup-data feed. Returns an unsubscribe function.
  * `accessToken` may change (refresh); the hub reconnects with the new token
  * when the subscription is re-established.
  */
-export function subscribeSessionData(
-  sessionId: number,
+export function subscribeMeetupData(
+  meetupId: number,
   accessToken: string | undefined,
-  onMessage: SessionDataHandler,
-  onLiveChange?: SessionLiveHandler,
+  onMessage: MeetupDataHandler,
+  onLiveChange?: MeetupLiveHandler,
 ): () => void {
-  if (!Number.isFinite(sessionId)) return () => {};
+  if (!Number.isFinite(meetupId)) return () => {};
 
-  let ch = channels.get(sessionId);
+  let ch = channels.get(meetupId);
   if (!ch) {
     ch = {
       es: null,
@@ -101,7 +101,7 @@ export function subscribeSessionData(
       liveHandlers: new Set(),
       attached: false,
     };
-    channels.set(sessionId, ch);
+    channels.set(meetupId, ch);
   }
 
   const tokenChanged = ch.token !== accessToken;
@@ -112,12 +112,12 @@ export function subscribeSessionData(
     onLiveChange(ch.live);
   }
 
-  if (tokenChanged) forceReconnect(ch, sessionId);
-  else connect(ch, sessionId);
+  if (tokenChanged) forceReconnect(ch, meetupId);
+  else connect(ch, meetupId);
 
   if (!ch.attached) {
     ch.attached = true;
-    const goOnline = () => forceReconnect(ch!, sessionId);
+    const goOnline = () => forceReconnect(ch!, meetupId);
     window.addEventListener("online", goOnline);
     // Stashed on the channel so teardown can detach it (single listener).
     (ch as Channel & { _onlineCleanup?: () => void })._onlineCleanup =
@@ -134,7 +134,7 @@ export function subscribeSessionData(
       if (ch!.es) ch!.es.close();
       const cleanup = (ch as Channel & { _onlineCleanup?: () => void })._onlineCleanup;
       cleanup?.();
-      channels.delete(sessionId);
+      channels.delete(meetupId);
     }
   };
 }

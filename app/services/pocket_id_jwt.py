@@ -155,7 +155,7 @@ def _validate_claims(claims: dict[str, Any]) -> bool:
     """Validate iss/aud/exp/nbf against configured expectations.
 
     Without these checks any token signed by the same Pocket ID key for a
-    *different* client would be accepted as a miootz session.
+    *different* client would be accepted as a miootz meetup.
     Skipped (with a warning) when the corresponding setting is empty —
     preserves dev flexibility but production must set both.
     """

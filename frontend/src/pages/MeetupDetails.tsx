@@ -1,22 +1,15 @@
 import React, { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-	MapPin,
-	MessageSquare,
-	Play,
-	Share,
-	Trophy,
-	Users,
-} from "lucide-react";
-import type { Session } from "../types";
+import { MapPin, MessageSquare, PartyPopper, Play, Share, Trophy, Users } from "lucide-react";
+import type { Meetup } from "../types";
 import { AuthContext } from "../auth/auth-context";
 import { DraggableTeams } from "../components/DraggableTeams";
 import { MatchHistoryList } from "../components/MatchHistoryList";
-import { SessionChat } from "../components/SessionChat";
+import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
-import { addPlusOne, joinSession, leaveSession } from "../api/sessionsApi";
+import { addPlusOne, joinMeetup, leaveMeetup } from "../api/meetupsApi";
 import { startMatches } from "../api/matchesApi";
 import { useToast } from "../context/ToastContext";
 import { hapticError, hapticSuccess } from "../utils/haptics";
@@ -26,7 +19,7 @@ import { StarRating } from "../components/StarRating";
 import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 
 interface MeetupDetailsProps {
-	session: Session;
+	meetup: Meetup;
 	onToggleLock: (userId: string) => void;
 	onMovePlayer: (
 		playerId: string,
@@ -45,15 +38,30 @@ interface MeetupDetailsProps {
 }
 
 function PlusOneModal({
-	sessionId,
+	meetupId,
 	onClose,
 	onSuccess,
 }: {
-	sessionId: string;
+	meetupId: string;
 	onClose: () => void;
 	onSuccess: () => void;
 }) {
 	const { showToast } = useToast();
+	const titleId = React.useId();
+
+	// Close on Escape and lock page scroll while open (parity with ConfirmDialog).
+	React.useEffect(() => {
+		const prev = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => {
+			document.body.style.overflow = prev;
+			window.removeEventListener("keydown", onKey);
+		};
+	}, [onClose]);
 
 	const handleSharePlusOne = async () => {
 		if (!result) return;
@@ -76,7 +84,7 @@ function PlusOneModal({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [result, setResult] = useState<{ claim_url: string } | null>(null);
-	const sid = Number.parseInt(sessionId, 10);
+	const sid = Number.parseInt(meetupId, 10);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -111,11 +119,20 @@ function PlusOneModal({
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-			onClick={onClose}
+			className="fixed inset-0 z-50 flex items-center justify-center p-4"
+			role="presentation"
 		>
+			<button
+				type="button"
+				className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+				aria-label="Dismiss"
+				onClick={onClose}
+			/>
 			<div
-				className="relative w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-4 shadow-xl"
+				className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-4 shadow-xl"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={titleId}
 				onClick={(e) => e.stopPropagation()}
 			>
 				<button
@@ -129,8 +146,11 @@ function PlusOneModal({
 
 				{result ? (
 					<div className="text-center space-y-4">
-						<div className="text-4xl">🎉</div>
-						<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+						<PartyPopper className="mx-auto h-10 w-10 text-teal-600" aria-hidden />
+						<h3
+							id={titleId}
+							className="text-lg font-semibold text-gray-900 dark:text-white"
+						>
 							Plus-one added!
 						</h3>
 						<p className="text-sm text-gray-600 dark:text-gray-400">
@@ -152,7 +172,7 @@ function PlusOneModal({
 							<button
 								type="button"
 								onClick={onClose}
-								className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
+								className="flex-1 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800"
 							>
 								Done
 							</button>
@@ -161,8 +181,11 @@ function PlusOneModal({
 				) : (
 					<>
 						<div className="flex items-center gap-2">
-							<UserPlus className="text-violet-600 dark:text-violet-400" size={20} />
-							<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+							<UserPlus className="text-teal-700 dark:text-teal-400" size={20} />
+							<h3
+								id={titleId}
+								className="text-lg font-semibold text-gray-900 dark:text-white"
+							>
 								Add a plus-one
 							</h3>
 						</div>
@@ -182,7 +205,7 @@ function PlusOneModal({
 										value={firstName}
 										onChange={(e) => setFirstName(e.target.value)}
 										placeholder="John"
-										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
 										maxLength={80}
 									/>
 								</div>
@@ -195,7 +218,7 @@ function PlusOneModal({
 										value={lastName}
 										onChange={(e) => setLastName(e.target.value)}
 										placeholder="Doe"
-										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
 										maxLength={80}
 									/>
 								</div>
@@ -205,7 +228,7 @@ function PlusOneModal({
 								<label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
 									Skill level
 								</label>
-								<StarRating value={skill} onChange={setSkill} size={28} />
+								<StarRating value={skill} onChange={setSkill} size={28} label="Skill level" />
 								<p className="mt-1 text-2xs text-gray-500 dark:text-gray-400">
 									{SKILL_SCALE_BLURB}
 								</p>
@@ -228,7 +251,7 @@ function PlusOneModal({
 								<button
 									type="submit"
 									disabled={busy}
-									className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+									className="flex-1 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50"
 								>
 									{busy ? "Adding…" : "Add plus-one"}
 								</button>
@@ -242,23 +265,23 @@ function PlusOneModal({
 }
 
 function MeetupAttendanceActions({
-	sessionId,
+	meetupId,
 	myAttendance,
 	onUpdated,
 	myWaitlistPosition,
 }: {
-	sessionId: string;
-	myAttendance: Session["myAttendance"];
+	meetupId: string;
+	myAttendance: Meetup["myAttendance"];
 	onUpdated: () => void;
 	myWaitlistPosition?: number | null;
 }) {
 	const { showToast } = useToast();
 	const [busy, setBusy] = useState(false);
 	const [feedback, setFeedback] = useState<string | null>(null);
-	const [opt, setOpt] = useState<Session["myAttendance"] | undefined>();
+	const [opt, setOpt] = useState<Meetup["myAttendance"] | undefined>();
 	const [celebrate, setCelebrate] = useState(false);
 	const [showPlusOne, setShowPlusOne] = useState(false);
-	const sid = Number.parseInt(sessionId, 10);
+	const sid = Number.parseInt(meetupId, 10);
 
 	const status = opt !== undefined ? opt : myAttendance;
 
@@ -271,7 +294,7 @@ function MeetupAttendanceActions({
 		setBusy(true);
 		setOpt("confirmed");
 		try {
-			const res = await joinSession(sid);
+			const res = await joinMeetup(sid);
 			const next = res.status === "waitlisted" ? "waitlisted" : "confirmed";
 			setOpt(next);
 			hapticSuccess();
@@ -301,7 +324,7 @@ function MeetupAttendanceActions({
 		const wasWait = status === "waitlisted";
 		setOpt(null);
 		try {
-			await leaveSession(sid);
+			await leaveMeetup(sid);
 			hapticSuccess();
 			showToast(
 				wasWait ? `You've left the waitlist.` : `You've left this meetup.`,
@@ -352,7 +375,7 @@ function MeetupAttendanceActions({
 						type="button"
 						disabled={busy}
 						onClick={() => void runJoin()}
-						className="px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50 active:scale-[0.98]"
+						className="px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98]"
 					>
 						{status === "cancelled" ? "Join again" : "Join meetup"}
 					</button>
@@ -373,7 +396,7 @@ function MeetupAttendanceActions({
 							type="button"
 							disabled={busy}
 							onClick={() => void runLeave()}
-							className="px-4 py-2 rounded-lg border border-pink-300 dark:border-pink-700 text-sm text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 disabled:opacity-50 active:scale-[0.98]"
+							className="px-4 py-2 rounded-lg border border-red-200 dark:border-red-900/50 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50 active:scale-[0.98]"
 						>
 							{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
 						</button>
@@ -382,7 +405,7 @@ function MeetupAttendanceActions({
 			</div>
 			{showPlusOne && (
 				<PlusOneModal
-					sessionId={sessionId}
+					meetupId={meetupId}
 					onClose={() => setShowPlusOne(false)}
 					onSuccess={() => {
 						setShowPlusOne(false);
@@ -395,7 +418,7 @@ function MeetupAttendanceActions({
 }
 
 export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
-	session,
+	meetup,
 	onToggleLock,
 	onMovePlayer,
 	canDragTeams = false,
@@ -405,18 +428,18 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	const isAdmin = auth?.me?.is_admin ?? false;
 	const navigate = useNavigate();
 	const { showToast } = useToast();
-	const sessionIdNum = Number.parseInt(session.id, 10);
+	const meetupIdNum = Number.parseInt(meetup.id, 10);
 
 	const [startingMatch, setStartingMatch] = useState(false);
 
 	const handleStartMatches = async () => {
 		setStartingMatch(true);
 		try {
-			const res = await startMatches(sessionIdNum);
+			const res = await startMatches(meetupIdNum);
 			hapticSuccess();
 			if (res.status === "already_started") {
 				// Matches already exist — navigate to referee view to start timer.
-				navigate(`/session-matches/${sessionIdNum}`);
+				navigate(`/meetup-matches/${meetupIdNum}`);
 			} else {
 				showToast("Matches started!", "success");
 				onRosterUpdated?.();
@@ -435,9 +458,9 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 			{/* 1. Join / Leave / Plus-one */}
 			{onRosterUpdated && (
 				<MeetupAttendanceActions
-					sessionId={session.id}
-					myAttendance={session.myAttendance}
-					myWaitlistPosition={session.myWaitlistPosition}
+					meetupId={meetup.id}
+					myAttendance={meetup.myAttendance}
+					myWaitlistPosition={meetup.myWaitlistPosition}
 					onUpdated={onRosterUpdated}
 				/>
 			)}
@@ -449,7 +472,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					Teams
 				</h2>
 				<DraggableTeams
-					session={session}
+					meetup={meetup}
 					onMovePlayer={onMovePlayer}
 					onToggleLock={onToggleLock}
 					canDragTeams={canDragTeams}
@@ -457,7 +480,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 			</section>
 
 			{/* 3. Match results */}
-			{!isNaN(sessionIdNum) && (
+			{!isNaN(meetupIdNum) && (
 				<>
 					<hr className="border-gray-200 dark:border-gray-800" />
 					<section className="space-y-3">
@@ -478,8 +501,8 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 								</button>
 							)}
 						</div>
-						<LiveMatchBanner sessionId={session.id} />
-						<MatchHistoryList sessionId={sessionIdNum} editable={isAdmin} />
+						<LiveMatchBanner meetupId={meetup.id} />
+						<MatchHistoryList meetupId={meetupIdNum} editable={isAdmin} />
 					</section>
 				</>
 			)}
@@ -492,7 +515,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					Chat
 				</h2>
 			</>
-			<SessionChat sessionId={session.id} />
+			<MeetupChat meetupId={meetup.id} />
 
 			{/* 5. Location */}
 			<>
@@ -503,9 +526,9 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 				</h2>
 			</>
 			<MeetupLocationSection
-				location={session.location}
-				latitude={session.latitude}
-				longitude={session.longitude}
+				location={meetup.location}
+				latitude={meetup.latitude}
+				longitude={meetup.longitude}
 			/>
 		</div>
 	);

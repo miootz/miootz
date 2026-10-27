@@ -70,5 +70,5 @@ async def init_db():
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:
-    async with async_session() as session:
-        yield session
+    async with async_session() as meetup:
+        yield meetup

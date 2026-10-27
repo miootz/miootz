@@ -229,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           tokensToUse = refreshed;
         }
-        // Keep the session alive past the access-token lifetime (finding 5).
+        // Keep the meetup alive past the access-token lifetime (finding 5).
         scheduleRefresh(tokensToUse);
 
         try {

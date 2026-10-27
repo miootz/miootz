@@ -18,7 +18,7 @@ export const TeamPlayerRow: React.FC<TeamPlayerRowProps> = ({
   <div
     className={`flex justify-between items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700 transition-colors ${
       draggable
-        ? 'cursor-grab active:cursor-grabbing hover:border-purple-400 dark:hover:border-purple-500'
+        ? 'cursor-grab active:cursor-grabbing hover:border-teal-300 dark:hover:border-teal-600'
         : 'cursor-default'
     }`}
   >
@@ -42,7 +42,7 @@ export const TeamPlayerRow: React.FC<TeamPlayerRowProps> = ({
           }}
           className={`p-2 rounded-full transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center ${
             player.isLocked
-              ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
+              ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
               : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500'
           }`}
           aria-label={player.isLocked ? 'Unlock player' : 'Lock player to this team'}

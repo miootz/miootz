@@ -21,17 +21,17 @@ from app.core.timeutil import utcnow
 
 if TYPE_CHECKING:
     from app.models.game_template import GameTemplate
-    from app.models.match import SessionMatch
+    from app.models.match import MeetupMatch
     from app.models.rating import Rating
 
 
-class GameSession(Base):
-    __tablename__ = "game_sessions"
+class Meetup(Base):
+    __tablename__ = "meetups"
     __table_args__ = (
-        # One materialized session per template kickoff instant (missed-week
+        # One materialized meetup per template kickoff instant (missed-week
         # backfill + concurrent pollers both race on the same slot).
         UniqueConstraint(
-            "game_template_id", "start_time", name="uq_session_template_start"
+            "game_template_id", "start_time", name="uq_meetup_template_start"
         ),
     )
 
@@ -50,28 +50,28 @@ class GameSession(Base):
     team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
     #: JSON list of lists of user ids per team (admin lineups); None = use algorithm on read.
     manual_teams_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Incremented when attendance, session fields, or other player-visible data changes.
+    # Incremented when attendance, meetup fields, or other player-visible data changes.
     content_revision: Mapped[int] = mapped_column(Integer, default=0)
-    #: Set when the 1-hour kickoff Web Push reminder has been sent (one per session).
+    #: Set when the 1-hour kickoff Web Push reminder has been sent (one per meetup).
     kickoff_reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
-    #: Expected session length in minutes (used for end-time calculations, rating reminders).
+    #: Expected meetup length in minutes (used for end-time calculations, rating reminders).
     duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: Set when the post-session rating reminder has been sent (one per session).
+    #: Set when the post-meetup rating reminder has been sent (one per meetup).
     rating_reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
     #: Match duration in minutes for live team-vs-team matches (copied from template).
     match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: JSON array of team names generated at session creation (e.g. ["Red Devils", "Blue Stars"]).
+    #: JSON array of team names generated at meetup creation (e.g. ["Red Devils", "Blue Stars"]).
     team_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Upper bound on number of teams. When None, team count is purely algorithmic (≤10→2, 11–15→3).
     #: When set, the admin can expand/contract teams and waitlisted players are auto-promoted/returned.
     max_teams: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Weather ────────────────────────────────────────────────────
-    #: Cached forecast temperature (°C) for the session date.
+    #: Cached forecast temperature (°C) for the meetup date.
     weather_forecast_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: WMO weather code for the forecast (0 = clear, 1-3 = cloudy, etc.).
     weather_forecast_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -81,7 +81,7 @@ class GameSession(Base):
     weather_forecast_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
-    #: Actual temperature recorded at session end (°C).
+    #: Actual temperature recorded at meetup end (°C).
     weather_actual_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: WMO weather code for actual conditions.
     weather_actual_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -92,7 +92,7 @@ class GameSession(Base):
         DateTime, nullable=True
     )
 
-    #: Source template when this session was created from a recurring template (nullable for one-offs).
+    #: Source template when this meetup was created from a recurring template (nullable for one-offs).
     game_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("game_templates.id"),
         nullable=True,
@@ -100,23 +100,23 @@ class GameSession(Base):
     )
     game_template: Mapped[GameTemplate | None] = relationship(
         "GameTemplate",
-        back_populates="sessions",
+        back_populates="meetups",
     )
 
     attendees: Mapped[list[Attendance]] = relationship(
-        "Attendance", back_populates="session", cascade="all, delete-orphan"
+        "Attendance", back_populates="meetup", cascade="all, delete-orphan"
     )
     ratings: Mapped[list[Rating]] = relationship(
-        "Rating", back_populates="session", cascade="all, delete-orphan"
+        "Rating", back_populates="meetup", cascade="all, delete-orphan"
     )
     messages: Mapped[list[ChatMessage]] = relationship(
-        "ChatMessage", back_populates="session", cascade="all, delete-orphan"
+        "ChatMessage", back_populates="meetup", cascade="all, delete-orphan"
     )
     scores: Mapped[list[MatchScore]] = relationship(
-        "MatchScore", back_populates="session", cascade="all, delete-orphan"
+        "MatchScore", back_populates="meetup", cascade="all, delete-orphan"
     )
-    matches: Mapped[list[SessionMatch]] = relationship(
-        "SessionMatch", back_populates="session", cascade="all, delete-orphan"
+    matches: Mapped[list[MeetupMatch]] = relationship(
+        "MeetupMatch", back_populates="meetup", cascade="all, delete-orphan"
     )
 
 
@@ -124,12 +124,12 @@ class MatchScore(Base):
     __tablename__ = "match_scores"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     score: Mapped[int] = mapped_column(Integer)
     type: Mapped[str] = mapped_column(String)
 
-    session: Mapped[GameSession] = relationship("GameSession", back_populates="scores")
+    meetup: Mapped[Meetup] = relationship("Meetup", back_populates="scores")
     player: Mapped[User] = relationship("User")
 
 
@@ -137,14 +137,14 @@ class Attendance(Base):
     __tablename__ = "attendance"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("game_sessions.id"), index=True)
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     # confirmed | waitlisted | cancelled
     status: Mapped[str] = mapped_column(String, default="confirmed")
     joined_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     previous_status: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    session: Mapped[GameSession] = relationship(
-        "GameSession", back_populates="attendees"
+    meetup: Mapped[Meetup] = relationship(
+        "Meetup", back_populates="attendees"
     )
     user: Mapped[User] = relationship("User")

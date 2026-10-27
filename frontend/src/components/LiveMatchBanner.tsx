@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  fetchSessionMatches,
+  fetchMeetupMatches,
   pauseTimer,
   resetMatch,
   resumeTimer,
   startTimer,
   type MatchSummary,
 } from "../api/matchesApi";
-import { subscribeSessionData } from "../utils/sessionDataBus";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useAuth } from "../auth/useAuth";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalEntrySheet } from "./GoalEntrySheet";
 import { GoalList } from "./GoalList";
 import { leaseBusyLabel } from "../utils/lease";
-import { Timer } from "lucide-react";
+import { Timer, Zap } from "lucide-react";
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(Math.max(0, seconds) / 60);
@@ -41,14 +41,14 @@ function getTimerBg(seconds: number, total: number): string {
 function stewardReasonLine(reason: string | undefined): string {
   if (reason === "not_attending") return "You're not marked as attending.";
   if (reason === "outside_window")
-    return "Scoring is closed — you're outside the session window.";
+    return "Scoring is closed — you're outside the meetup window.";
   return "";
 }
 
-export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
+export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
   const { me, tokens } = useAuth();
   const sid =
-    typeof sessionId === "string" ? parseInt(sessionId, 10) : sessionId;
+    typeof meetupId === "string" ? parseInt(meetupId, 10) : meetupId;
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -67,7 +67,7 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
 
   const loadMatch = useCallback(async () => {
     try {
-      const res = await fetchSessionMatches(sid);
+      const res = await fetchMeetupMatches(sid);
       const active = res.matches.find(
         (m) =>
           m.status === "active" ||
@@ -106,15 +106,15 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     return () => clearTimeout(t);
   }, [halfTimeFlash]);
 
-  // SSE — rides the ONE existing session-data connection via the shared
-  // hub (utils/sessionDataBus); does not open a second EventSource.
+  // SSE — rides the ONE existing meetup-data connection via the shared
+  // hub (utils/meetupDataBus); does not open a second EventSource.
   // Scoring events (goal_added / goal_removed / lease_acquired /
   // lease_released) flow through the hook's applyEvent (snapshot refetch,
   // never replay); timer events update the clock here; on link (re)connect
   // we refetch snapshots so a gap self-heals.
   useEffect(() => {
     let wasLive = false; // hub pushes current status on subscribe
-    return subscribeSessionData(
+    return subscribeMeetupData(
       sid,
       tokens?.accessToken,
       (data) => {
@@ -248,8 +248,9 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
     >
       {/* Half-time flash */}
       {halfTimeFlash && (
-        <div className="text-center py-1 px-3 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-sm font-bold animate-pulse">
-          ⚡ Half-time!
+        <div className="flex items-center justify-center gap-1.5 text-center py-1 px-3 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-sm font-bold motion-safe:animate-pulse motion-reduce:animate-none">
+          <Zap className="h-4 w-4 shrink-0" aria-hidden />
+          Half-time!
         </div>
       )}
 
@@ -273,8 +274,8 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
         </div>
         {canControl && (
           <a
-            href={`/session-matches/${sid}`}
-            className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium"
+            href={`/meetup-matches/${sid}`}
+            className="text-xs text-teal-700 dark:text-teal-400 hover:underline font-medium"
           >
             Manage match →
           </a>
@@ -379,7 +380,7 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
             type="button"
             disabled={leaseHeld || busy}
             onClick={() => setSheetOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-60 active:scale-[0.98] transition-transform"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-700 text-white text-sm font-bold hover:bg-teal-800 disabled:opacity-60 active:scale-[0.98] transition-transform"
           >
             {leaseHeld
               ? leaseBusyLabel(lease!.holderName, leaseLeft)
@@ -411,7 +412,7 @@ export function LiveMatchBanner({ sessionId }: { sessionId: string | number }) {
 
       {sheetOpen && (
         <GoalEntrySheet
-          sessionId={sid}
+          meetupId={sid}
           match={currentMatch}
           onClose={() => setSheetOpen(false)}
           onLogged={() => {

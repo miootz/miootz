@@ -28,8 +28,8 @@ from app.api.rate_limit import (
 from app.core.database import get_db
 from app.core.json_column import loads_int_list
 from app.models.game_template import GameTemplate
-from app.models.session import GameSession, Attendance, MatchScore
-from app.models.match import SessionMatch
+from app.models.meetup import Meetup, Attendance, MatchScore
+from app.models.match import MeetupMatch
 from app.models.user import User
 from app.models.chat import ChatMessage
 from app.models.guest_plus_one import GuestPlusOne
@@ -38,35 +38,35 @@ from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
 )
-from app.core.session_data_manager import session_data_manager
-from app.services.session_promotion import handle_leave_or_cancel
-from app.services.session_revision import (
-    bump_session_revision,
-    notify_session_data_changed,
-    notify_session_deleted,
+from app.core.meetup_data_manager import meetup_data_manager
+from app.services.meetup_promotion import handle_leave_or_cancel
+from app.services.meetup_revision import (
+    bump_meetup_revision,
+    notify_meetup_data_changed,
+    notify_meetup_deleted,
 )
 from app.services.manual_teams import (
     ensure_team_names,
     format_teams_api_payload,
     get_team_names,
-    resolve_session_teams_nested,
+    resolve_meetup_teams_nested,
     validate_team_partition,
     build_teams_from_manual,
 )
 from app.services.team_adjustment import expand_teams, contract_teams
 from app.services.web_push import (
-    notify_new_session_invites,
-    notify_session_cancelled_recipients,
-    notify_session_chat_recipients,
+    notify_new_meetup_invites,
+    notify_meetup_cancelled_recipients,
+    notify_meetup_chat_recipients,
 )
-from app.services.recurring_sessions import (
-    materialize_next_session_and_notify,
+from app.services.recurring_meetups import (
+    materialize_next_meetup_and_notify,
     next_announce_occurrence_utc,
 )
 from app.services import weather_service
 from app.core.timeutil import to_utc, utcnow
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(prefix="/meetups", tags=["meetups"])
 
 TEAM_ASSIGNMENT_MODES = frozenset({"balanced", "random"})
 
@@ -78,7 +78,7 @@ def _normalize_team_mode(v: str) -> str:
     return x
 
 
-class SessionCreate(BaseModel):
+class MeetupCreate(BaseModel):
     start_time: datetime
     location: str
     fee: float = 0.0
@@ -112,7 +112,7 @@ class SessionCreate(BaseModel):
         return self
 
 
-class SessionUpdate(BaseModel):
+class MeetupUpdate(BaseModel):
     start_time: datetime | None = None
     location: str | None = None
     fee: float | None = None
@@ -176,12 +176,12 @@ def _name_color(name: str) -> str:
     return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
 
 
-async def _confirmed_count(db: AsyncSession, session_id: int) -> int:
+async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
     """Scalar COUNT of confirmed attendees (avoids hydrating ORM rows)."""
     count = await db.scalar(
         select(func.count())
         .select_from(Attendance)
-        .where(Attendance.session_id == session_id, Attendance.status == "confirmed")
+        .where(Attendance.meetup_id == meetup_id, Attendance.status == "confirmed")
     )
     return count or 0
 
@@ -219,52 +219,52 @@ def _game_template_json(t: GameTemplate | None) -> dict | None:
 
 
 @router.post("/", status_code=201)
-async def create_session(
-    session_data: SessionCreate,
+async def create_meetup(
+    meetup_data: MeetupCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    payload = session_data.model_dump(exclude={"send_push_notifications"})
-    new_session = GameSession(**payload, game_template_id=None)
+    payload = meetup_data.model_dump(exclude={"send_push_notifications"})
+    new_meetup = Meetup(**payload, game_template_id=None)
     # Team count follows the same heuristic as the migrations backfill:
-    # 3 teams for full-fifths-sized sessions (max_players >= 13), else 2.
-    ensure_team_names(new_session, 3 if (new_session.max_players or 15) >= 13 else 2)
-    db.add(new_session)
+    # 3 teams for full-fifths-sized meetups (max_players >= 13), else 2.
+    ensure_team_names(new_meetup, 3 if (new_meetup.max_players or 15) >= 13 else 2)
+    db.add(new_meetup)
     await db.flush()
     await db.commit()
-    await db.refresh(new_session)
+    await db.refresh(new_meetup)
 
-    if session_data.send_push_notifications:
+    if meetup_data.send_push_notifications:
         result = await db.execute(select(User))
         all_users = result.scalars().all()
         if all_users:
-            await notify_new_session_invites(db, new_session, list(all_users))
+            await notify_new_meetup_invites(db, new_meetup, list(all_users))
 
-    # Queue rating reminder at session end time (durable job queue)
+    # Queue rating reminder at meetup end time (durable job queue)
     from app.services.rating_reminder_scheduler import register_rating_reminder
 
-    await register_rating_reminder(db, new_session)
+    await register_rating_reminder(db, new_meetup)
 
     return {
-        "id": new_session.id,
-        "start_time": new_session.start_time,
-        "location": new_session.location,
-        "fee": new_session.fee,
-        "min_players": new_session.min_players,
-        "max_players": new_session.max_players,
-        "latitude": new_session.latitude,
-        "longitude": new_session.longitude,
-        "waitlist_mode": new_session.waitlist_mode,
-        "team_assignment_mode": getattr(new_session, "team_assignment_mode", None)
+        "id": new_meetup.id,
+        "start_time": new_meetup.start_time,
+        "location": new_meetup.location,
+        "fee": new_meetup.fee,
+        "min_players": new_meetup.min_players,
+        "max_players": new_meetup.max_players,
+        "latitude": new_meetup.latitude,
+        "longitude": new_meetup.longitude,
+        "waitlist_mode": new_meetup.waitlist_mode,
+        "team_assignment_mode": getattr(new_meetup, "team_assignment_mode", None)
         or "balanced",
-        "content_revision": new_session.content_revision or 0,
-        "game_template_id": new_session.game_template_id,
+        "content_revision": new_meetup.content_revision or 0,
+        "game_template_id": new_meetup.game_template_id,
         "game_template": None,
     }
 
 
 @router.get("/")
-async def list_sessions(
+async def list_meetups(
     db: AsyncSession = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -281,26 +281,26 @@ async def list_sessions(
 
     # Order direction via explicit allowlist (no dynamic identifiers).
     order_exprs = {
-        "asc": GameSession.start_time.asc(),
-        "desc": GameSession.start_time.desc(),
+        "asc": Meetup.start_time.asc(),
+        "desc": Meetup.start_time.desc(),
     }
     o = order.lower()
     if o not in order_exprs:
         raise HTTPException(status_code=400, detail="Invalid order")
 
     # Build both queries with the same parameterized filters.
-    count_stmt = select(func.count()).select_from(GameSession)
-    stmt = select(GameSession).options(selectinload(GameSession.game_template))
+    count_stmt = select(func.count()).select_from(Meetup)
+    stmt = select(Meetup).options(selectinload(Meetup.game_template))
 
     if q and (q := q.strip()):
-        count_stmt = count_stmt.where(GameSession.location.contains(q))
-        stmt = stmt.where(GameSession.location.contains(q))
+        count_stmt = count_stmt.where(Meetup.location.contains(q))
+        stmt = stmt.where(Meetup.location.contains(q))
     if status == "past":
-        count_stmt = count_stmt.where(GameSession.start_time < now)
-        stmt = stmt.where(GameSession.start_time < now)
+        count_stmt = count_stmt.where(Meetup.start_time < now)
+        stmt = stmt.where(Meetup.start_time < now)
     elif status == "upcoming":
-        count_stmt = count_stmt.where(GameSession.start_time >= now)
-        stmt = stmt.where(GameSession.start_time >= now)
+        count_stmt = count_stmt.where(Meetup.start_time >= now)
+        stmt = stmt.where(Meetup.start_time >= now)
     elif status not in (None, "all"):
         raise HTTPException(status_code=400, detail="Invalid status filter")
 
@@ -310,8 +310,8 @@ async def list_sessions(
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await db.execute(stmt)
-    sessions = result.scalars().all()
-    if not sessions:
+    meetups = result.scalars().all()
+    if not meetups:
         return {
             "items": [],
             "total": total,
@@ -319,16 +319,16 @@ async def list_sessions(
             "offset": offset,
         }
 
-    session_ids = [s.id for s in sessions]
+    meetup_ids = [s.id for s in meetups]
     counts_result = await db.execute(
-        select(Attendance.session_id, func.count(Attendance.id))
+        select(Attendance.meetup_id, func.count(Attendance.id))
         .where(
-            Attendance.session_id.in_(session_ids),
+            Attendance.meetup_id.in_(meetup_ids),
             Attendance.status == "confirmed",
         )
-        .group_by(Attendance.session_id)
+        .group_by(Attendance.meetup_id)
     )
-    confirmed_by_session = {row[0]: row[1] for row in counts_result.all()}
+    confirmed_by_meetup = {row[0]: row[1] for row in counts_result.all()}
 
     items = [
         {
@@ -346,9 +346,9 @@ async def list_sessions(
             "content_revision": s.content_revision or 0,
             "game_template_id": s.game_template_id,
             "game_template": _game_template_json(s.game_template),
-            "confirmed_count": confirmed_by_session.get(s.id, 0),
+            "confirmed_count": confirmed_by_meetup.get(s.id, 0),
         }
-        for s in sessions
+        for s in meetups
     ]
     return {
         "items": items,
@@ -358,23 +358,23 @@ async def list_sessions(
     }
 
 
-@router.get("/{session_id}")
-async def get_session(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+@router.get("/{meetup_id}")
+async def get_meetup(
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
-        select(GameSession)
-        .options(selectinload(GameSession.game_template))
-        .where(GameSession.id == session_id)
+        select(Meetup)
+        .options(selectinload(Meetup.game_template))
+        .where(Meetup.id == meetup_id)
     )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
-        .where(Attendance.session_id == session_id)
+        .where(Attendance.meetup_id == meetup_id)
         .order_by(Attendance.joined_at.asc())
     )
     rows = result.all()
@@ -385,7 +385,7 @@ async def get_session(
         user_ids = [u.id for _, u in rows]
         po_result = await db.execute(
             select(GuestPlusOne.guest_user_id).where(
-                GuestPlusOne.session_id == session_id,
+                GuestPlusOne.meetup_id == meetup_id,
                 GuestPlusOne.guest_user_id.in_(user_ids),
             )
         )
@@ -425,10 +425,10 @@ async def get_session(
     # Current active/pending match
     current_match = None
     result = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .where(SessionMatch.status.in_(["active", "time_up", "pending"]))
-        .order_by(SessionMatch.match_number.desc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .where(MeetupMatch.status.in_(["active", "time_up", "pending"]))
+        .order_by(MeetupMatch.match_number.desc())
         .limit(1)
     )
     active_match = result.scalar_one_or_none()
@@ -477,22 +477,22 @@ async def get_session(
         }
 
     return {
-        "id": session.id,
-        "start_time": session.start_time,
-        "location": session.location,
-        "fee": session.fee,
-        "min_players": session.min_players,
-        "max_players": session.max_players,
-        "latitude": session.latitude,
-        "longitude": session.longitude,
-        "waitlist_mode": session.waitlist_mode,
-        "team_assignment_mode": getattr(session, "team_assignment_mode", None)
+        "id": meetup.id,
+        "start_time": meetup.start_time,
+        "location": meetup.location,
+        "fee": meetup.fee,
+        "min_players": meetup.min_players,
+        "max_players": meetup.max_players,
+        "latitude": meetup.latitude,
+        "longitude": meetup.longitude,
+        "waitlist_mode": meetup.waitlist_mode,
+        "team_assignment_mode": getattr(meetup, "team_assignment_mode", None)
         or "balanced",
-        "content_revision": session.content_revision or 0,
-        "game_template_id": session.game_template_id,
-        "game_template": _game_template_json(session.game_template),
-        "duration_minutes": session.duration_minutes,
-        "max_teams": session.max_teams,
+        "content_revision": meetup.content_revision or 0,
+        "game_template_id": meetup.game_template_id,
+        "game_template": _game_template_json(meetup.game_template),
+        "duration_minutes": meetup.duration_minutes,
+        "max_teams": meetup.max_teams,
         "attendees": attendees,
         "my_attendance": my_attendance,
         "my_waitlist_position": my_waitlist_position,
@@ -500,18 +500,18 @@ async def get_session(
     }
 
 
-@router.get("/{session_id}/history-summary")
-async def get_session_history_summary(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+@router.get("/{meetup_id}/history-summary")
+async def get_meetup_history_summary(
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """Lightweight per-session summary for the History list: match count, final
+    """Lightweight per-meetup summary for the History list: match count, final
     result, and the viewer's average rating. One request instead of N+1."""
     user = getattr(request.state, "user", None)
     result = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .where(SessionMatch.status == "completed")
-        .order_by(SessionMatch.completed_at.asc(), SessionMatch.match_number.asc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .where(MeetupMatch.status == "completed")
+        .order_by(MeetupMatch.completed_at.asc(), MeetupMatch.match_number.asc())
     )
     matches = result.scalars().all()
     final = None
@@ -527,7 +527,7 @@ async def get_session_history_summary(
     if user is not None:
         r = await db.execute(
             select(Rating.score)
-            .where(Rating.session_id == session_id)
+            .where(Rating.meetup_id == meetup_id)
             .where(Rating.rater_id == user.id)
         )
         scores = [row[0] for row in r.all() if row[0] and row[0] > 0]
@@ -540,18 +540,18 @@ async def get_session_history_summary(
     }
 
 
-@router.get("/{session_id}/teams")
-async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+@router.get("/{meetup_id}/teams")
+async def get_meetup_teams(meetup_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
         )
     )
@@ -569,29 +569,29 @@ async def get_session_teams(session_id: int, db: AsyncSession = Depends(get_db))
         }
         for _, user in rows
     ]
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    teams_nested = resolve_session_teams_nested(
-        getattr(session, "manual_teams_json", None),
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    teams_nested = resolve_meetup_teams_nested(
+        getattr(meetup, "manual_teams_json", None),
         mode,
         players,
-        max_teams=getattr(session, "max_teams", None),
+        max_teams=getattr(meetup, "max_teams", None),
     )
-    team_names = get_team_names(session)
+    team_names = get_team_names(meetup)
     out = format_teams_api_payload(teams_nested, team_names)
     return {
-        "session_id": session_id,
-        "content_revision": session.content_revision or 0,
+        "meetup_id": meetup_id,
+        "content_revision": meetup.content_revision or 0,
         "teams": out,
     }
 
 
-@router.get("/{session_id}/scores")
-async def get_session_scores(session_id: int, db: AsyncSession = Depends(get_db)):
-    """Get all match scores for a session."""
+@router.get("/{meetup_id}/scores")
+async def get_meetup_scores(meetup_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all match scores for a meetup."""
     result = await db.execute(
         select(MatchScore, User)
         .join(User, MatchScore.player_id == User.id)
-        .where(MatchScore.session_id == session_id)
+        .where(MatchScore.meetup_id == meetup_id)
         .order_by(User.sso_display_name.asc(), User.pocket_id_sub.asc())
     )
     rows = result.all()
@@ -607,24 +607,24 @@ async def get_session_scores(session_id: int, db: AsyncSession = Depends(get_db)
     ]
 
 
-@router.patch("/{session_id}/teams")
-async def patch_session_teams(
-    session_id: int,
+@router.patch("/{meetup_id}/teams")
+async def patch_meetup_teams(
+    meetup_id: int,
     body: TeamsUpdateBody,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     """Persist admin team lineups (confirmed roster only)."""
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
         )
     )
@@ -648,56 +648,56 @@ async def patch_session_teams(
         ) from None
 
     if not validate_team_partition(
-        int_teams, confirmed_ids, max_teams=session.max_teams
+        int_teams, confirmed_ids, max_teams=meetup.max_teams
     ):
         raise HTTPException(
             status_code=400,
             detail="Teams must partition all confirmed players with valid team sizes",
         )
 
-    session.manual_teams_json = json.dumps(int_teams)
-    rev = await bump_session_revision(db, session_id)
+    meetup.manual_teams_json = json.dumps(int_teams)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
+        await notify_meetup_data_changed(meetup_id, rev)
 
     teams_nested = build_teams_from_manual(players, int_teams)
     out = format_teams_api_payload(teams_nested)
     return {
-        "session_id": session_id,
+        "meetup_id": meetup_id,
         "content_revision": rev or 0,
         "teams": out,
     }
 
 
-@router.post("/{session_id}/teams/reshuffle")
-async def reshuffle_session_teams(
-    session_id: int,
+@router.post("/{meetup_id}/teams/reshuffle")
+async def reshuffle_meetup_teams(
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     """Re-randomize teams (only when `team_assignment_mode` is `random`)."""
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
     if mode != "random":
         raise HTTPException(
             status_code=400,
             detail="Reshuffle only applies when team_assignment_mode is random",
         )
-    session.manual_teams_json = None
-    rev = await bump_session_revision(db, session_id)
+    meetup.manual_teams_json = None
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
+        await notify_meetup_data_changed(meetup_id, rev)
     return {"status": "reshuffled", "content_revision": rev}
 
 
-@router.post("/{session_id}/teams/adjust")
-async def adjust_session_teams(
-    session_id: int,
+@router.post("/{meetup_id}/teams/adjust")
+async def adjust_meetup_teams(
+    meetup_id: int,
     body: TeamsAdjustBody,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
@@ -707,10 +707,10 @@ async def adjust_session_teams(
     - **expand**: adds *num_teams* teams and promotes waitlisted players (FIFO by joined_at).
     - **contract**: removes *num_teams* teams and returns excess confirmed players to waitlist (LIFO).
     """
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     op = body.operation.lower().strip()
     if op not in ("expand", "contract"):
@@ -721,9 +721,9 @@ async def adjust_session_teams(
         raise HTTPException(status_code=400, detail="num_teams must be >= 1")
 
     if op == "expand":
-        outcome = await expand_teams(db, session, body.num_teams)
+        outcome = await expand_teams(db, meetup, body.num_teams)
     else:
-        outcome = await contract_teams(db, session, body.num_teams)
+        outcome = await contract_teams(db, meetup, body.num_teams)
 
     if "error" in outcome:
         raise HTTPException(status_code=400, detail=outcome["error"])
@@ -731,23 +731,23 @@ async def adjust_session_teams(
     return outcome
 
 
-@router.patch("/{session_id}")
-async def update_session(
-    session_id: int,
-    update_data: SessionUpdate,
+@router.patch("/{meetup_id}")
+async def update_meetup(
+    meetup_id: int,
+    update_data: MeetupUpdate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     data = update_data.model_dump(exclude_unset=True)
 
     # Cross-field check against the CURRENT values (the same rule create enforces).
-    eff_min = data.get("min_players", session.min_players)
-    eff_max = data.get("max_players", session.max_players)
+    eff_min = data.get("min_players", meetup.min_players)
+    eff_max = data.get("max_players", meetup.max_players)
     if eff_min is not None and eff_max is not None and eff_max < eff_min:
         raise HTTPException(
             status_code=400, detail="max_players must be >= min_players"
@@ -763,42 +763,42 @@ async def update_session(
         return {"status": "updated"}
 
     for key, value in data.items():
-        setattr(session, key, value)
+        setattr(meetup, key, value)
 
     if "team_assignment_mode" in data:
-        session.manual_teams_json = None
+        meetup.manual_teams_json = None
 
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
+        await notify_meetup_data_changed(meetup_id, rev)
     if "start_time" in data or "duration_minutes" in data:
         # Re-point the durable rating-reminder job at the new end time
         from app.services.rating_reminder_scheduler import register_rating_reminder
 
-        await register_rating_reminder(db, session)
+        await register_rating_reminder(db, meetup)
     return {"status": "updated"}
 
 
-@router.post("/{session_id}/join")
-async def join_session(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+@router.post("/{meetup_id}/join")
+async def join_meetup(
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user_id = request.state.user.id
 
-    result_session = await db.execute(
-        select(GameSession).where(GameSession.id == session_id)
+    result_meetup = await db.execute(
+        select(Meetup).where(Meetup.id == meetup_id)
     )
-    session = result_session.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = result_meetup.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     result_attendance = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id, Attendance.user_id == user_id
+            Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
         )
     )
     attendance = result_attendance.scalar_one_or_none()
@@ -807,53 +807,53 @@ async def join_session(
         if attendance.status == "cancelled":
             # Atomic reactivation: the CASE subquery sees the latest committed
             # state at statement time, so a concurrent join cannot silently
-            # over-fill the session (SQLite serializes writers).
+            # over-fill the meetup (SQLite serializes writers).
             await db.execute(
                 text(
                     """
                     UPDATE attendance
                        SET status = CASE WHEN (
                                SELECT COUNT(*) FROM attendance a2
-                                WHERE a2.session_id = :sid
+                                WHERE a2.meetup_id = :sid
                                   AND a2.status = 'confirmed'
                                   AND a2.id <> :aid
                            ) < :maxp
                            THEN 'confirmed' ELSE 'waitlisted' END,
                            joined_at = :now,
                            previous_status = NULL
-                     WHERE id = :aid AND session_id = :sid
+                     WHERE id = :aid AND meetup_id = :sid
                     """
                 ),
                 {
-                    "sid": session_id,
+                    "sid": meetup_id,
                     "aid": attendance.id,
-                    "maxp": session.max_players,
+                    "maxp": meetup.max_players,
                     "now": utcnow(),
                 },
             )
-            rev = await bump_session_revision(db, session_id)
+            rev = await bump_meetup_revision(db, meetup_id)
             await db.commit()
             if rev is not None:
-                await notify_session_data_changed(session_id, rev)
-            await recalculate_skills_for_attendance_change(db, session_id, user_id)
+                await notify_meetup_data_changed(meetup_id, rev)
+            await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
             await db.refresh(attendance)
             return {"status": attendance.status, "attendance_id": attendance.id}
-        raise HTTPException(status_code=400, detail="Already joined session")
+        raise HTTPException(status_code=400, detail="Already joined meetup")
 
-    confirmed_count = await _confirmed_count(db, session_id)
+    confirmed_count = await _confirmed_count(db, meetup_id)
 
-    status_new = "confirmed" if confirmed_count < session.max_players else "waitlisted"
+    status_new = "confirmed" if confirmed_count < meetup.max_players else "waitlisted"
 
     new_attendance = Attendance(
-        session_id=session_id, user_id=user_id, status=status_new
+        meetup_id=meetup_id, user_id=user_id, status=status_new
     )
     db.add(new_attendance)
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.flush()
     if status_new == "confirmed":
         # Close the TOCTOU window between the COUNT above and this INSERT:
         # a concurrent join may have committed in between. This single UPDATE
-        # sees the latest committed data and demotes *our* row if the session
+        # sees the latest committed data and demotes *our* row if the meetup
         # is now over capacity (SQLite serializes writers, so exactly one
         # join loses and self-demotes).
         await db.execute(
@@ -864,24 +864,24 @@ async def join_session(
                  WHERE id = :aid
                    AND status = 'confirmed'
                    AND (SELECT COUNT(*) FROM attendance a2
-                         WHERE a2.session_id = :sid
+                         WHERE a2.meetup_id = :sid
                            AND a2.status = 'confirmed') > :maxp
                 """
             ),
-            {"aid": new_attendance.id, "sid": session_id, "maxp": session.max_players},
+            {"aid": new_attendance.id, "sid": meetup_id, "maxp": meetup.max_players},
         )
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
-    await recalculate_skills_for_attendance_change(db, session_id, user_id)
+        await notify_meetup_data_changed(meetup_id, rev)
+    await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
     await db.refresh(new_attendance)
 
     return {"status": new_attendance.status, "attendance_id": new_attendance.id}
 
 
-@router.delete("/{session_id}/leave")
-async def leave_session(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+@router.delete("/{meetup_id}/leave")
+async def leave_meetup(
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -890,7 +890,7 @@ async def leave_session(
 
     result_attendance = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id, Attendance.user_id == user_id
+            Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
         )
     )
     attendance = result_attendance.scalar_one_or_none()
@@ -900,31 +900,31 @@ async def leave_session(
     if attendance.status == "cancelled":
         return {"status": "already_cancelled"}
 
-    result_session = await db.execute(
-        select(GameSession).where(GameSession.id == session_id)
+    result_meetup = await db.execute(
+        select(Meetup).where(Meetup.id == meetup_id)
     )
-    session = result_session.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = result_meetup.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     prev = attendance.status
     attendance.previous_status = prev
     attendance.status = "cancelled"
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
-    await recalculate_skills_for_attendance_change(db, session_id, user_id)
+        await notify_meetup_data_changed(meetup_id, rev)
+    await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
 
     if prev == "confirmed":
-        await handle_leave_or_cancel(db, session, prev)
+        await handle_leave_or_cancel(db, meetup, prev)
 
     return {"status": "left"}
 
 
-@router.post("/{session_id}/admin/move")
+@router.post("/{meetup_id}/admin/move")
 async def move_attendance(
-    session_id: int,
+    meetup_id: int,
     user_id: int,
     new_status: str,
     db: AsyncSession = Depends(get_db),
@@ -935,7 +935,7 @@ async def move_attendance(
 
     result_attendance = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id, Attendance.user_id == user_id
+            Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
         )
     )
     attendance = result_attendance.scalar_one_or_none()
@@ -950,24 +950,24 @@ async def move_attendance(
         # join time — otherwise the promotion below would promote them right
         # back into the spot the admin just freed.
         attendance.joined_at = utcnow()
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
-    await recalculate_skills_for_attendance_change(db, session_id, user_id)
+        await notify_meetup_data_changed(meetup_id, rev)
+    await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
     if prev == "confirmed" and new_status == "waitlisted":
         # Same rule as leave/cancel: demoting a confirmed player opens the spot.
-        session_res = await db.execute(
-            select(GameSession).where(GameSession.id == session_id)
+        meetup_res = await db.execute(
+            select(Meetup).where(Meetup.id == meetup_id)
         )
-        session = session_res.scalar_one_or_none()
-        if session:
-            await handle_leave_or_cancel(db, session, prev)
+        meetup = meetup_res.scalar_one_or_none()
+        if meetup:
+            await handle_leave_or_cancel(db, meetup, prev)
     return {"status": "moved"}
 
 
 @router.post("/recurring/run-now")
-async def run_recurring_sessions_now(
+async def run_recurring_meetups_now(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -978,48 +978,48 @@ async def run_recurring_sessions_now(
     templates = result.scalars().all()
     created = 0
     for tmpl in templates:
-        if await materialize_next_session_and_notify(tmpl.id):
+        if await materialize_next_meetup_and_notify(tmpl.id):
             created += 1
     return {
         "status": "ok",
         "templates_checked": len(templates),
-        "sessions_created": created,
+        "meetups_created": created,
     }
 
 
-@router.delete("/{session_id}")
-async def delete_session(
-    session_id: int,
+@router.delete("/{meetup_id}")
+async def delete_meetup(
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
-    await notify_session_cancelled_recipients(db, session)
-    await notify_session_deleted(session_id)
+    await notify_meetup_cancelled_recipients(db, meetup)
+    await notify_meetup_deleted(meetup_id)
 
     # Unqueue rating reminder job
     from app.services.rating_reminder_scheduler import unregister_rating_reminder
 
-    await unregister_rating_reminder(db, session_id)
+    await unregister_rating_reminder(db, meetup_id)
 
-    from app.services.deletes import delete_session_children
+    from app.services.deletes import delete_meetup_children
 
-    await delete_session_children(db, session_id)
-    await db.delete(session)
+    await delete_meetup_children(db, meetup_id)
+    await db.delete(meetup)
     await db.commit()
     return {"status": "deleted"}
 
 
-@router.get("/{session_id}/data/events")
+@router.get("/{meetup_id}/data/events")
 @limiter.limit(LIMIT_SSE)
-async def session_data_events(session_id: int, request: Request):
-    """SSE: roster/session field changes (`session_updated` / `session_deleted`)."""
+async def meetup_data_events(meetup_id: int, request: Request):
+    """SSE: roster/meetup field changes (`meetup_updated` / `meetup_deleted`)."""
 
     async def event_generator():
-        queue = await session_data_manager.subscribe(session_id)
+        queue = await meetup_data_manager.subscribe(meetup_id)
         try:
             while True:
                 if await request.is_disconnected():
@@ -1030,7 +1030,7 @@ async def session_data_events(session_id: int, request: Request):
                 except TimeoutError:
                     yield ": ping\n\n"  # keep-alive, ignored by EventSource
         finally:
-            await session_data_manager.unsubscribe(session_id, queue)
+            await meetup_data_manager.unsubscribe(meetup_id, queue)
 
     return StreamingResponse(
         event_generator(),
@@ -1043,11 +1043,11 @@ async def session_data_events(session_id: int, request: Request):
     )
 
 
-@router.get("/{session_id}/chat/events")
+@router.get("/{meetup_id}/chat/events")
 @limiter.limit(LIMIT_SSE)
-async def chat_events(session_id: int, request: Request):
+async def chat_events(meetup_id: int, request: Request):
     async def event_generator():
-        queue = await chat_manager.subscribe(session_id)
+        queue = await chat_manager.subscribe(meetup_id)
         try:
             while True:
                 if await request.is_disconnected():
@@ -1058,7 +1058,7 @@ async def chat_events(session_id: int, request: Request):
                 except TimeoutError:
                     yield ": ping\n\n"  # keep-alive, ignored by EventSource
         finally:
-            await chat_manager.unsubscribe(session_id, queue)
+            await chat_manager.unsubscribe(meetup_id, queue)
 
     return StreamingResponse(
         event_generator(),
@@ -1071,9 +1071,9 @@ async def chat_events(session_id: int, request: Request):
     )
 
 
-@router.get("/{session_id}/chat")
-async def get_session_chat(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+@router.get("/{meetup_id}/chat")
+async def get_meetup_chat(
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """Chat history. Authenticated only — messages can contain personal plans."""
     if not request.state.user:
@@ -1081,7 +1081,7 @@ async def get_session_chat(
 
     result = await db.execute(
         select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
+        .where(ChatMessage.meetup_id == meetup_id)
         .options(selectinload(ChatMessage.user))
         .order_by(ChatMessage.created_at.asc())
     )
@@ -1101,9 +1101,9 @@ async def get_session_chat(
     ]
 
 
-@router.post("/{session_id}/chat/typing")
+@router.post("/{meetup_id}/chat/typing")
 async def chat_typing_indicator(
-    session_id: int,
+    meetup_id: int,
     body: ChatTypingBody,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1112,16 +1112,16 @@ async def chat_typing_indicator(
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    result_session = await db.execute(
-        select(GameSession).where(GameSession.id == session_id)
+    result_meetup = await db.execute(
+        select(Meetup).where(Meetup.id == meetup_id)
     )
-    if not result_session.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Session not found")
+    if not result_meetup.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     u = request.state.user
     _display_name = u.display_name if hasattr(u, "display_name") else "Unknown"
     await chat_manager.broadcast(
-        session_id,
+        meetup_id,
         {
             "type": "typing",
             "user_id": u.id,
@@ -1132,9 +1132,9 @@ async def chat_typing_indicator(
     return {"status": "ok"}
 
 
-@router.post("/{session_id}/chat")
+@router.post("/{meetup_id}/chat")
 async def send_message(
-    session_id: int,
+    meetup_id: int,
     msg_data: ChatMessageCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1142,14 +1142,14 @@ async def send_message(
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    result_session = await db.execute(
-        select(GameSession).where(GameSession.id == session_id)
+    result_meetup = await db.execute(
+        select(Meetup).where(Meetup.id == meetup_id)
     )
-    if not result_session.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Session not found")
+    if not result_meetup.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     new_msg = ChatMessage(
-        session_id=session_id, user_id=request.state.user.id, message=msg_data.message
+        meetup_id=meetup_id, user_id=request.state.user.id, message=msg_data.message
     )
     db.add(new_msg)
     await db.commit()
@@ -1171,11 +1171,11 @@ async def send_message(
         "avatar_url": getattr(request.state.user, "avatar_url", None),
         "username_color": _name_color(_display_name),
     }
-    await chat_manager.broadcast(session_id, broadcast_data)
+    await chat_manager.broadcast(meetup_id, broadcast_data)
 
-    await notify_session_chat_recipients(
+    await notify_meetup_chat_recipients(
         db,
-        session_id,
+        meetup_id,
         request.state.user.id,
         _display_name,
         new_msg.message,
@@ -1196,15 +1196,15 @@ def _make_guest_pocket_id_sub() -> str:
     return f"guest.{secrets.token_hex(8)}"
 
 
-@router.post("/{session_id}/plus-one", status_code=201)
+@router.post("/{meetup_id}/plus-one", status_code=201)
 @limiter.limit(LIMIT_MUTATION)
 async def add_plus_one(
-    session_id: int,
+    meetup_id: int,
     body: PlusOneCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Add a plus-one guest to a session.
+    """Add a plus-one guest to a meetup.
 
     Creates a placeholder User account and an Attendance row.
     Returns a claim link the guest can use to claim the account.
@@ -1214,16 +1214,16 @@ async def add_plus_one(
 
     inviter = request.state.user
 
-    # Verify session exists
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Verify meetup exists
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
-    # Check inviter is confirmed for this session
+    # Check inviter is confirmed for this meetup
     att_result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.user_id == inviter.id,
             Attendance.status == "confirmed",
         )
@@ -1231,13 +1231,13 @@ async def add_plus_one(
     if not att_result.scalar_one_or_none():
         raise HTTPException(
             status_code=403,
-            detail="You must be confirmed for this session to add a plus-one",
+            detail="You must be confirmed for this meetup to add a plus-one",
         )
 
-    # Check if inviter already has a plus-one for this session
+    # Check if inviter already has a plus-one for this meetup
     existing = await db.execute(
         select(GuestPlusOne).where(
-            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.meetup_id == meetup_id,
             GuestPlusOne.inviter_id == inviter.id,
             GuestPlusOne.status == "pending",
         )
@@ -1245,7 +1245,7 @@ async def add_plus_one(
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="You already have a plus-one for this session",
+            detail="You already have a plus-one for this meetup",
         )
 
     first_name = body.first_name.strip()
@@ -1264,11 +1264,11 @@ async def add_plus_one(
     await db.flush()
 
     # Create Attendance for the guest
-    confirmed_count = await _confirmed_count(db, session_id)
-    att_status = "confirmed" if confirmed_count < session.max_players else "waitlisted"
+    confirmed_count = await _confirmed_count(db, meetup_id)
+    att_status = "confirmed" if confirmed_count < meetup.max_players else "waitlisted"
 
     attendance = Attendance(
-        session_id=session_id,
+        meetup_id=meetup_id,
         user_id=guest_user.id,
         status=att_status,
     )
@@ -1277,7 +1277,7 @@ async def add_plus_one(
     # Create GuestPlusOne record
     claim_token = _generate_claim_token()
     plus_one = GuestPlusOne(
-        session_id=session_id,
+        meetup_id=meetup_id,
         inviter_id=inviter.id,
         guest_user_id=guest_user.id,
         first_name=first_name,
@@ -1290,7 +1290,7 @@ async def add_plus_one(
     await db.flush()
 
     if att_status == "confirmed":
-        # Same self-demote backstop as join_session: a concurrent join may have
+        # Same self-demote backstop as join_meetup: a concurrent join may have
         # filled the last spot between the COUNT above and this INSERT.
         await db.execute(
             text(
@@ -1300,18 +1300,18 @@ async def add_plus_one(
                  WHERE id = :aid
                    AND status = 'confirmed'
                    AND (SELECT COUNT(*) FROM attendance a2
-                         WHERE a2.session_id = :sid
+                         WHERE a2.meetup_id = :sid
                            AND a2.status = 'confirmed') > :maxp
                 """
             ),
-            {"aid": attendance.id, "sid": session_id, "maxp": session.max_players},
+            {"aid": attendance.id, "sid": meetup_id, "maxp": meetup.max_players},
         )
         await db.refresh(attendance)
 
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
+        await notify_meetup_data_changed(meetup_id, rev)
 
     # Build claim URL (frontend handles the claim page)
     claim_url = f"/plus-one/{claim_token}"
@@ -1328,9 +1328,9 @@ async def add_plus_one(
     }
 
 
-@router.get("/{session_id}/plus-one")
+@router.get("/{meetup_id}/plus-one")
 async def list_plus_ones(
-    session_id: int, request: Request, db: AsyncSession = Depends(get_db)
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
     """Pending plus-one reservations — the inviter sees their own, admins all.
 
@@ -1341,7 +1341,7 @@ async def list_plus_ones(
     stmt = (
         select(GuestPlusOne)
         .where(
-            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.meetup_id == meetup_id,
             GuestPlusOne.status == "pending",
         )
         .options(
@@ -1370,10 +1370,10 @@ async def list_plus_ones(
     ]
 
 
-@router.delete("/{session_id}/plus-one/{plus_one_id}")
+@router.delete("/{meetup_id}/plus-one/{plus_one_id}")
 @limiter.limit(LIMIT_WRITE)
 async def cancel_plus_one(
-    session_id: int,
+    meetup_id: int,
     plus_one_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -1386,7 +1386,7 @@ async def cancel_plus_one(
         select(GuestPlusOne)
         .where(
             GuestPlusOne.id == plus_one_id,
-            GuestPlusOne.session_id == session_id,
+            GuestPlusOne.meetup_id == meetup_id,
             GuestPlusOne.inviter_id == request.state.user.id,
             GuestPlusOne.status == "pending",
         )
@@ -1399,7 +1399,7 @@ async def cancel_plus_one(
     # Cancel the guest's attendance
     att_result = await db.execute(
         select(Attendance).where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.user_id == plus_one.guest_user_id,
         )
     )
@@ -1408,14 +1408,14 @@ async def cancel_plus_one(
         prev = attendance.status
         attendance.status = "cancelled"
         if prev == "confirmed":
-            from app.services.session_promotion import handle_leave_or_cancel
+            from app.services.meetup_promotion import handle_leave_or_cancel
 
-            session_result = await db.execute(
-                select(GameSession).where(GameSession.id == session_id)
+            meetup_result = await db.execute(
+                select(Meetup).where(Meetup.id == meetup_id)
             )
-            session = session_result.scalar_one_or_none()
-            if session:
-                await handle_leave_or_cancel(db, session, prev)
+            meetup = meetup_result.scalar_one_or_none()
+            if meetup:
+                await handle_leave_or_cancel(db, meetup, prev)
 
     # Delete the placeholder user (children first: its attendance row from
     # above would block the FK now that SQLite enforces them).
@@ -1429,10 +1429,10 @@ async def cancel_plus_one(
     # Delete the plus-one record
     await db.delete(plus_one)
 
-    rev = await bump_session_revision(db, session_id)
+    rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
-        await notify_session_data_changed(session_id, rev)
+        await notify_meetup_data_changed(meetup_id, rev)
 
     return {"status": "cancelled"}
 
@@ -1461,7 +1461,7 @@ async def check_plus_one_claim(
         "first_name": plus_one.first_name,
         "last_name": plus_one.last_name,
         "self_assessed_skill": plus_one.self_assessed_skill,
-        "session_id": plus_one.session_id,
+        "meetup_id": plus_one.meetup_id,
         "inviter_display_name": plus_one.inviter.display_name,
         "guest_display_name": plus_one.guest_user.display_name,
     }
@@ -1489,7 +1489,7 @@ async def claim_plus_one(
         )
         .options(
             selectinload(GuestPlusOne.guest_user),
-            selectinload(GuestPlusOne.session),
+            selectinload(GuestPlusOne.meetup),
         )
     )
     plus_one = result.scalar_one_or_none()
@@ -1504,7 +1504,7 @@ async def claim_plus_one(
     revision = await claim_reservation(db, plus_one, member)
     await db.commit()
     if revision is not None:
-        await notify_session_data_changed(plus_one.session_id, revision)
+        await notify_meetup_data_changed(plus_one.meetup_id, revision)
 
     return {
         "status": "claimed",
@@ -1517,47 +1517,47 @@ async def claim_plus_one(
 # ── Weather ─────────────────────────────────────────────────────
 
 
-@router.get("/{session_id}/weather")
-async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db)):
-    """Get weather forecast for a session (cached 1 h) or recorded conditions.
+@router.get("/{meetup_id}/weather")
+async def get_meetup_weather(meetup_id: int, db: AsyncSession = Depends(get_db)):
+    """Get weather forecast for a meetup (cached 1 h) or recorded conditions.
 
     Returns:
-    - ``recorded``: actual conditions captured at session end (if available)
-    - ``forecast``: cached forecast for the session date (if available, < 1 h old)
+    - ``recorded``: actual conditions captured at meetup end (if available)
+    - ``forecast``: cached forecast for the meetup date (if available, < 1 h old)
     - ``can_refresh``: whether the client may request a fresh forecast
     """
     from datetime import timedelta
 
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     response: dict = {}
 
     # Recorded actuals (always include if present)
-    if session.weather_actual_temp_c is not None:
+    if meetup.weather_actual_temp_c is not None:
         response["recorded"] = {
-            "temperature_c": session.weather_actual_temp_c,
-            "weather_code": session.weather_actual_code,
-            "label": session.weather_actual_label,
-            "recorded_at": session.weather_actual_recorded_at.isoformat()
-            if session.weather_actual_recorded_at
+            "temperature_c": meetup.weather_actual_temp_c,
+            "weather_code": meetup.weather_actual_code,
+            "label": meetup.weather_actual_label,
+            "recorded_at": meetup.weather_actual_recorded_at.isoformat()
+            if meetup.weather_actual_recorded_at
             else None,
         }
 
     # Cached forecast
     now = utcnow()
-    fetched_at = session.weather_forecast_fetched_at
+    fetched_at = meetup.weather_forecast_fetched_at
     if (
         fetched_at is not None
         and fetched_at > now - timedelta(hours=1)
-        and session.weather_forecast_temp_c is not None
+        and meetup.weather_forecast_temp_c is not None
     ):
         response["forecast"] = {
-            "temperature_c": session.weather_forecast_temp_c,
-            "weather_code": session.weather_forecast_code,
-            "label": session.weather_forecast_label,
+            "temperature_c": meetup.weather_forecast_temp_c,
+            "weather_code": meetup.weather_forecast_code,
+            "label": meetup.weather_forecast_label,
             "cached_at": fetched_at.isoformat(),
         }
         response["can_refresh"] = False
@@ -1567,10 +1567,10 @@ async def get_session_weather(session_id: int, db: AsyncSession = Depends(get_db
     return response
 
 
-@router.post("/{session_id}/weather/refresh")
+@router.post("/{meetup_id}/weather/refresh")
 @limiter.limit(LIMIT_WRITE)
-async def refresh_session_weather(
-    session_id: int,
+async def refresh_meetup_weather(
+    meetup_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
@@ -1584,36 +1584,36 @@ async def refresh_session_weather(
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if session.latitude is None or session.longitude is None:
-        raise HTTPException(status_code=400, detail="Session has no coordinates")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    if meetup.latitude is None or meetup.longitude is None:
+        raise HTTPException(status_code=400, detail="Meetup has no coordinates")
 
     # Serve warm cache — never forward the request upstream.
-    fetched_at = session.weather_forecast_fetched_at
+    fetched_at = meetup.weather_forecast_fetched_at
     if (
         fetched_at is not None
         and fetched_at > utcnow() - timedelta(hours=1)
-        and session.weather_forecast_temp_c is not None
+        and meetup.weather_forecast_temp_c is not None
     ):
         return {
             "status": "cached",
-            "temperature_c": session.weather_forecast_temp_c,
-            "weather_code": session.weather_forecast_code,
-            "label": session.weather_forecast_label,
+            "temperature_c": meetup.weather_forecast_temp_c,
+            "weather_code": meetup.weather_forecast_code,
+            "label": meetup.weather_forecast_label,
             "cached_at": fetched_at.isoformat(),
         }
 
     # Naive start_time is UTC: tag it explicitly. .astimezone() would tag it
     # with the *server's* local tz, shifting the requested window on any
     # non-UTC box.
-    start_time = to_utc(session.start_time)
-    duration = session.duration_minutes or 120
+    start_time = to_utc(meetup.start_time)
+    duration = meetup.duration_minutes or 120
     end_time = start_time + timedelta(minutes=duration)
     forecast = await weather_service.fetch_forecast(
-        session.latitude, session.longitude, start_time, end_time
+        meetup.latitude, meetup.longitude, start_time, end_time
     )
     if forecast is None:
         # Forecast failed — fall back to current conditions.
@@ -1622,14 +1622,14 @@ async def refresh_session_weather(
             start_time.strftime("%Y-%m-%d %H:%M"),
         )
         current = await weather_service.fetch_current(
-            session.latitude, session.longitude
+            meetup.latitude, meetup.longitude
         )
         if current is None:
             raise HTTPException(status_code=502, detail="Weather service unavailable")
-        session.weather_forecast_temp_c = current["temp_c"]
-        session.weather_forecast_code = current["weather_code"]
-        session.weather_forecast_label = current["label"]
-        session.weather_forecast_fetched_at = utcnow()
+        meetup.weather_forecast_temp_c = current["temp_c"]
+        meetup.weather_forecast_code = current["weather_code"]
+        meetup.weather_forecast_label = current["label"]
+        meetup.weather_forecast_fetched_at = utcnow()
         await db.commit()
         return {
             "status": "ok",
@@ -1638,10 +1638,10 @@ async def refresh_session_weather(
             "label": current["label"],
         }
 
-    session.weather_forecast_temp_c = forecast["temp_c"]
-    session.weather_forecast_code = forecast["weather_code"]
-    session.weather_forecast_label = forecast["label"]
-    session.weather_forecast_fetched_at = utcnow()
+    meetup.weather_forecast_temp_c = forecast["temp_c"]
+    meetup.weather_forecast_code = forecast["weather_code"]
+    meetup.weather_forecast_label = forecast["label"]
+    meetup.weather_forecast_fetched_at = utcnow()
 
     await db.commit()
 
@@ -1653,31 +1653,31 @@ async def refresh_session_weather(
     }
 
 
-@router.post("/{session_id}/weather/record")
-async def record_session_weather(
-    session_id: int,
+@router.post("/{meetup_id}/weather/record")
+async def record_meetup_weather(
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Capture current conditions and save as the session's recorded weather.
+    """Capture current conditions and save as the meetup's recorded weather.
 
-    Admin-only. Typically called after the session ends.
+    Admin-only. Typically called after the meetup ends.
     """
-    result = await db.execute(select(GameSession).where(GameSession.id == session_id))
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if session.latitude is None or session.longitude is None:
-        raise HTTPException(status_code=400, detail="Session has no coordinates")
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    if meetup.latitude is None or meetup.longitude is None:
+        raise HTTPException(status_code=400, detail="Meetup has no coordinates")
 
-    current = await weather_service.fetch_current(session.latitude, session.longitude)
+    current = await weather_service.fetch_current(meetup.latitude, meetup.longitude)
     if current is None:
         raise HTTPException(status_code=502, detail="Weather service unavailable")
 
-    session.weather_actual_temp_c = current["temp_c"]
-    session.weather_actual_code = current["weather_code"]
-    session.weather_actual_label = current["label"]
-    session.weather_actual_recorded_at = utcnow()
+    meetup.weather_actual_temp_c = current["temp_c"]
+    meetup.weather_actual_code = current["weather_code"]
+    meetup.weather_actual_label = current["label"]
+    meetup.weather_actual_recorded_at = utcnow()
 
     await db.commit()
 

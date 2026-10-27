@@ -16,29 +16,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import cast
 
 from app.api.deps import (
-    presence_for_session,
+    presence_for_meetup,
     require_admin,
     require_present_member,
 )
 from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
-from app.core.session_data_manager import session_data_manager
+from app.core.meetup_data_manager import meetup_data_manager
 from app.core.timeutil import utcnow
-from app.models.match import SessionMatch
+from app.models.match import MeetupMatch
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
-from app.models.session import Attendance, GameSession
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.manual_teams import (
     ensure_team_names,
     get_team_names,
-    resolve_session_teams_nested,
+    resolve_meetup_teams_nested,
 )
-from app.services.session_revision import bump_and_notify
+from app.services.meetup_revision import bump_and_notify
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/sessions", tags=["matches"])
+router = APIRouter(prefix="/meetups", tags=["matches"])
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────
@@ -102,7 +102,7 @@ class GoalCreate(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────
 
 
-def _compute_timer_remaining(match: SessionMatch) -> int:
+def _compute_timer_remaining(match: MeetupMatch) -> int:
     """Compute server-authoritative remaining seconds."""
     if match.timer_started_at is None:
         return match.timer_total_seconds
@@ -140,7 +140,7 @@ def _compute_timer_remaining(match: SessionMatch) -> int:
     return max(remaining, 0)
 
 
-def _timer_ends_at_iso(match: SessionMatch) -> str | None:
+def _timer_ends_at_iso(match: MeetupMatch) -> str | None:
     """Server-authoritative end time (UTC ISO) while the timer runs; None when
     not started, finished, or currently paused. Lets clients render the
     remaining time from a shared timestamp instead of free-running counters."""
@@ -169,7 +169,7 @@ def _timer_ends_at_iso(match: SessionMatch) -> str | None:
     return ends.isoformat()
 
 
-async def _check_timer_expiry(match: SessionMatch, db: AsyncSession) -> bool:
+async def _check_timer_expiry(match: MeetupMatch, db: AsyncSession) -> bool:
     """If timer has expired, auto-transition to 'time_up' and broadcast.
     Returns True if the match was transitioned.
 
@@ -182,9 +182,9 @@ async def _check_timer_expiry(match: SessionMatch, db: AsyncSession) -> bool:
     if remaining <= 0:
         match.status = "time_up"
         match.timer_seconds_remaining = 0
-        await bump_and_notify(db, match.session_id)
+        await bump_and_notify(db, match.meetup_id)
         await _broadcast_match_event(
-            match.session_id,
+            match.meetup_id,
             {
                 "type": "match_timer_expired",
                 "match_id": match.id,
@@ -196,8 +196,8 @@ async def _check_timer_expiry(match: SessionMatch, db: AsyncSession) -> bool:
     return False
 
 
-def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
-    """Serialize a SessionMatch with user details."""
+def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
+    """Serialize a MeetupMatch with user details."""
     team_a_users: list[int] = _loads_int_list(match.team_a_users)
     team_b_users: list[int] = _loads_int_list(match.team_b_users)
 
@@ -215,7 +215,7 @@ def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
 
     out = {
         "id": match.id,
-        "session_id": match.session_id,
+        "meetup_id": match.meetup_id,
         "match_number": match.match_number,
         "team_a": {
             "name": match.team_a_name,
@@ -239,7 +239,7 @@ def _match_json(match: SessionMatch, users_by_id: dict[int, dict]) -> dict:
     return out
 
 
-def _is_currently_paused(match: SessionMatch) -> bool:
+def _is_currently_paused(match: MeetupMatch) -> bool:
     """Check if the last pause interval has no resumed_at (currently paused)."""
     if not match.timer_pause_intervals:
         return False
@@ -252,14 +252,14 @@ def _is_currently_paused(match: SessionMatch) -> bool:
     return False
 
 
-async def _load_users_for_session(db: AsyncSession, session_id: int) -> dict[int, dict]:
-    """Load all users who have any attendance for this session."""
-    from app.models.session import Attendance
+async def _load_users_for_meetup(db: AsyncSession, meetup_id: int) -> dict[int, dict]:
+    """Load all users who have any attendance for this meetup."""
+    from app.models.meetup import Attendance
 
     result = await db.execute(
         select(User, Attendance)
         .join(Attendance, Attendance.user_id == User.id)
-        .where(Attendance.session_id == session_id)
+        .where(Attendance.meetup_id == meetup_id)
     )
     users: dict[int, dict] = {}
     for user, _ in result:
@@ -271,28 +271,28 @@ async def _load_users_for_session(db: AsyncSession, session_id: int) -> dict[int
     return users
 
 
-async def _broadcast_match_event(session_id: int, event: dict) -> None:
-    """Broadcast a match event via the session data SSE channel."""
-    await session_data_manager.broadcast(session_id, event)
+async def _broadcast_match_event(meetup_id: int, event: dict) -> None:
+    """Broadcast a match event via the meetup data SSE channel."""
+    await meetup_data_manager.broadcast(meetup_id, event)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
 
 
-@router.get("/{session_id}/matches")
-async def list_session_matches(
-    session_id: int,
+@router.get("/{meetup_id}/matches")
+async def list_meetup_matches(
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all matches for a session (public)."""
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    """List all matches for a meetup (public)."""
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     result = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .order_by(SessionMatch.match_number.asc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number.asc())
     )
     matches = result.scalars().all()
 
@@ -300,55 +300,55 @@ async def list_session_matches(
     for m in matches:
         await _check_timer_expiry(m, db)
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {
         "matches": [_match_json(m, users_by_id) for m in matches],
-        "match_duration_minutes": session.match_duration_minutes or 10,
+        "match_duration_minutes": meetup.match_duration_minutes or 10,
     }
 
 
-@router.get("/{session_id}/matches/{match_id}")
+@router.get("/{meetup_id}/matches/{match_id}")
 async def get_match(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single match with timer state (public)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
 
     # Auto-transition expired timer
     await _check_timer_expiry(match, db)
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return _match_json(match, users_by_id)
 
 
-@router.post("/{session_id}/matches/start", status_code=201)
+@router.post("/{meetup_id}/matches/start", status_code=201)
 async def start_matches(
-    session_id: int,
+    meetup_id: int,
     body: StartMatchesBody | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    """Start the match session. Creates the first match (Team 1 vs Team 2 by default,
+    """Start the match meetup. Creates the first match (Team 1 vs Team 2 by default,
     or the given team indices when provided)."""
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     # Check if matches already exist
     existing = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .order_by(SessionMatch.match_number.asc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number.asc())
         .limit(1)
     )
     first = existing.scalar_one_or_none()
     if first:
         # Return existing first match (idempotent)
-        users_by_id = await _load_users_for_session(db, session_id)
+        users_by_id = await _load_users_for_meetup(db, meetup_id)
         return {"status": "already_started", "match": _match_json(first, users_by_id)}
 
     # Load confirmed players
@@ -356,7 +356,7 @@ async def start_matches(
         select(User)
         .join(Attendance, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
         )
     )
@@ -376,9 +376,9 @@ async def start_matches(
     ]
 
     # Resolve teams
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    teams_nested = resolve_session_teams_nested(
-        getattr(session, "manual_teams_json", None),
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    teams_nested = resolve_meetup_teams_nested(
+        getattr(meetup, "manual_teams_json", None),
         mode,
         players,
     )
@@ -389,7 +389,7 @@ async def start_matches(
         )
 
     # Ensure team names exist
-    team_names = ensure_team_names(session, len(teams_nested))
+    team_names = ensure_team_names(meetup, len(teams_nested))
     await db.flush()
 
     team_a_idx = body.team_a_idx if body and body.team_a_idx is not None else 0
@@ -407,10 +407,10 @@ async def start_matches(
     team_a = teams_nested[team_a_idx]
     team_b = teams_nested[team_b_idx]
 
-    match_duration = session.match_duration_minutes or 10
+    match_duration = meetup.match_duration_minutes or 10
 
-    match = SessionMatch(
-        session_id=session_id,
+    match = MeetupMatch(
+        meetup_id=meetup_id,
         match_number=1,
         team_a_users=json.dumps([p["user_id"] for p in team_a]),
         team_b_users=json.dumps([p["user_id"] for p in team_b]),
@@ -431,9 +431,9 @@ async def start_matches(
     await db.refresh(match)
 
     # Notify
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_created",
             "match_id": match.id,
@@ -441,13 +441,13 @@ async def start_matches(
         },
     )
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {"status": "started", "match": _match_json(match, users_by_id)}
 
 
-@router.post("/{session_id}/matches/new", status_code=201)
+@router.post("/{meetup_id}/matches/new", status_code=201)
 async def create_new_pending_match(
-    session_id: int,
+    meetup_id: int,
     body: CreatePendingMatchBody | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
@@ -458,9 +458,9 @@ async def create_new_pending_match(
     If not provided, picks the last match winner as team A and the next
     unplayed (or any available) team as team B.
     """
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     body = body or CreatePendingMatchBody()
     if (body.team_a_idx is None) != (body.team_b_idx is None):
@@ -471,9 +471,9 @@ async def create_new_pending_match(
 
     # Find the last match to determine match number
     existing = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .order_by(SessionMatch.match_number.desc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number.desc())
         .limit(1)
     )
     last_match = existing.scalar_one_or_none()
@@ -488,7 +488,7 @@ async def create_new_pending_match(
         select(User)
         .join(Attendance, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
         )
     )
@@ -507,13 +507,13 @@ async def create_new_pending_match(
         for u in confirmed_users
     ]
 
-    mode = getattr(session, "team_assignment_mode", None) or "balanced"
-    teams_nested = resolve_session_teams_nested(
-        getattr(session, "manual_teams_json", None),
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    teams_nested = resolve_meetup_teams_nested(
+        getattr(meetup, "manual_teams_json", None),
         mode,
         players,
     )
-    team_names = get_team_names(session)
+    team_names = get_team_names(meetup)
 
     if body.team_a_idx is not None and body.team_b_idx is not None:
         # User-selected teams
@@ -552,9 +552,9 @@ async def create_new_pending_match(
 
         # Find which teams have already entered
         all_matches = await db.execute(
-            select(SessionMatch)
-            .where(SessionMatch.session_id == session_id)
-            .order_by(SessionMatch.match_number.asc())
+            select(MeetupMatch)
+            .where(MeetupMatch.meetup_id == meetup_id)
+            .order_by(MeetupMatch.match_number.asc())
         )
         played_matches = all_matches.scalars().all()
 
@@ -597,10 +597,10 @@ async def create_new_pending_match(
         )
         team_b_users_list = [p["user_id"] for p in team_b]
 
-    match_duration = session.match_duration_minutes or 10
+    match_duration = meetup.match_duration_minutes or 10
 
-    new_match = SessionMatch(
-        session_id=session_id,
+    new_match = MeetupMatch(
+        meetup_id=meetup_id,
         match_number=last_match.match_number + 1,
         team_a_users=json.dumps(team_a_users_list),
         team_b_users=json.dumps(team_b_users_list),
@@ -615,48 +615,48 @@ async def create_new_pending_match(
     await db.commit()
     await db.refresh(new_match)
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {"status": "created", "match": _match_json(new_match, users_by_id)}
 
 
-@router.delete("/{session_id}/matches/{match_id}", status_code=204)
+@router.delete("/{meetup_id}/matches/{match_id}", status_code=204)
 async def delete_match(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Delete a match (admin only)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     from app.services.deletes import delete_match_children
 
     await delete_match_children(db, match_id)
     await db.delete(match)
     await db.commit()
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
 
-@router.post("/{session_id}/matches/create", status_code=201)
+@router.post("/{meetup_id}/matches/create", status_code=201)
 async def create_match(
-    session_id: int,
+    meetup_id: int,
     body: MatchCreateBody,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Create a completed match directly (admin, for retroactive score entry)."""
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
 
     # Find the next match number
     existing = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .order_by(SessionMatch.match_number.desc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number.desc())
         .limit(1)
     )
     last = existing.scalar_one_or_none()
@@ -669,8 +669,8 @@ async def create_match(
             detail="Team A and Team B must be different.",
         )
 
-    match = SessionMatch(
-        session_id=session_id,
+    match = MeetupMatch(
+        meetup_id=meetup_id,
         match_number=next_num,
         team_a_users=json.dumps([]),
         team_b_users=json.dumps([]),
@@ -687,23 +687,23 @@ async def create_match(
     await db.commit()
     await db.refresh(match)
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     users_by_id: dict[int, dict] = {}
     return {"status": "created", "match": _match_json(match, users_by_id)}
 
 
-@router.patch("/{session_id}/matches/{match_id}/teams")
+@router.patch("/{meetup_id}/matches/{match_id}/teams")
 async def swap_match_teams(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     body: MatchTeamSwap,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Swap/edit team composition before match starts."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status != "pending":
         raise HTTPException(
@@ -716,21 +716,21 @@ async def swap_match_teams(
     await db.commit()
     await db.refresh(match)
 
-    await bump_and_notify(db, session_id)
-    users_by_id = await _load_users_for_session(db, session_id)
+    await bump_and_notify(db, meetup_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return _match_json(match, users_by_id)
 
 
-@router.post("/{session_id}/matches/{match_id}/timer/start")
+@router.post("/{meetup_id}/matches/{match_id}/timer/start")
 async def start_timer(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Start the match timer (any present member, idempotent)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status == "completed":
         raise HTTPException(status_code=409, detail="This match is completed.")
@@ -757,7 +757,7 @@ async def start_timer(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_timer_started",
             "match_id": match.id,
@@ -767,7 +767,7 @@ async def start_timer(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "status": "started",
@@ -779,16 +779,16 @@ async def start_timer(
     }
 
 
-@router.post("/{session_id}/matches/{match_id}/timer/pause")
+@router.post("/{meetup_id}/matches/{match_id}/timer/pause")
 async def pause_timer(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Pause the match timer (any present member, idempotent)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active",):
         raise HTTPException(status_code=409, detail="Timer is not running.")
@@ -822,7 +822,7 @@ async def pause_timer(
     res = await db.execute(
         text(
             """
-            UPDATE session_matches
+            UPDATE meetup_matches
                SET timer_pause_intervals = :iv,
                    timer_seconds_remaining = :rem
              WHERE id = :mid
@@ -830,7 +830,7 @@ async def pause_timer(
                  timer_pause_intervals IS NULL
                  OR timer_pause_intervals = ''
                  OR NOT EXISTS (
-                    SELECT 1 FROM json_each(session_matches.timer_pause_intervals)
+                    SELECT 1 FROM json_each(meetup_matches.timer_pause_intervals)
                     WHERE json_extract(json_each.value, '$.resumed_at') IS NULL
                  )
                )
@@ -853,7 +853,7 @@ async def pause_timer(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_timer_paused",
             "match_id": match.id,
@@ -862,7 +862,7 @@ async def pause_timer(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "status": "paused",
@@ -874,16 +874,16 @@ async def pause_timer(
     }
 
 
-@router.post("/{session_id}/matches/{match_id}/timer/resume")
+@router.post("/{meetup_id}/matches/{match_id}/timer/resume")
 async def resume_timer(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Resume the match timer (any present member, idempotent)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active",) or match.timer_started_at is None:
         raise HTTPException(status_code=409, detail="Timer is not running.")
@@ -918,7 +918,7 @@ async def resume_timer(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_timer_resumed",
             "match_id": match.id,
@@ -927,7 +927,7 @@ async def resume_timer(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "status": "resumed",
@@ -939,16 +939,16 @@ async def resume_timer(
     }
 
 
-@router.post("/{session_id}/matches/{match_id}/timer/reset")
+@router.post("/{meetup_id}/matches/{match_id}/timer/reset")
 async def reset_timer(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Reset timer and scores for a match (present member, idempotent)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status == "pending":
         return {
@@ -986,30 +986,30 @@ async def reset_timer(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_reset",
             "match_id": match.id,
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return _match_json(match, users_by_id)
 
 
-@router.post("/{session_id}/matches/{match_id}/score")
+@router.post("/{meetup_id}/matches/{match_id}/score")
 async def increment_score(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     body: MatchScoreDelta,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Increment score for a team (+1 by default)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status not in ("active", "time_up"):
         raise HTTPException(
@@ -1018,10 +1018,10 @@ async def increment_score(
 
     # Atomic read-modify-write at the SQL level: two devices tapping +1
     # can't lose each other's update (no read-modify-write in Python).
-    col = SessionMatch.score_a if body.team == "a" else SessionMatch.score_b
+    col = MeetupMatch.score_a if body.team == "a" else MeetupMatch.score_b
     await db.execute(
-        update(SessionMatch)
-        .where(SessionMatch.id == match.id)
+        update(MeetupMatch)
+        .where(MeetupMatch.id == match.id)
         .values({col.name: func.max(0, col + body.delta)})
     )
     await db.flush()
@@ -1035,7 +1035,7 @@ async def increment_score(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_score_updated",
             "match_id": match.id,
@@ -1045,7 +1045,7 @@ async def increment_score(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "score_a": match.score_a,
@@ -1053,17 +1053,17 @@ async def increment_score(
     }
 
 
-@router.patch("/{session_id}/matches/{match_id}/score")
+@router.patch("/{meetup_id}/matches/{match_id}/score")
 async def set_score(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     body: MatchScoreSet,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """Set scores directly (bulk correction)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     count_a, count_b = await _goal_counts(db, match)
     match.score_a = body.score_a
@@ -1073,7 +1073,7 @@ async def set_score(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_score_updated",
             "match_id": match.id,
@@ -1082,7 +1082,7 @@ async def set_score(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "score_a": match.score_a,
@@ -1090,17 +1090,17 @@ async def set_score(
     }
 
 
-@router.post("/{session_id}/matches/{match_id}/end")
+@router.post("/{meetup_id}/matches/{match_id}/end")
 async def end_match(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     body: MatchEndBody,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
     """End the current match. Winner stays on pitch; next team enters."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     if match.status in ("completed",):
         raise HTTPException(status_code=409, detail="Match already completed.")
@@ -1123,10 +1123,10 @@ async def end_match(
     # devices, exactly one request flips the row; the loser gets 409.
     now = datetime.now(UTC)
     res = await db.execute(
-        update(SessionMatch)
+        update(MeetupMatch)
         .where(
-            SessionMatch.id == match.id,
-            SessionMatch.status != "completed",
+            MeetupMatch.id == match.id,
+            MeetupMatch.status != "completed",
         )
         .values(status="completed", completed_at=now)
     )
@@ -1142,13 +1142,13 @@ async def end_match(
     )
     winner_name = match.team_a_name if winner_team == "a" else match.team_b_name
 
-    # Get all teams for this session to find next team
-    _session = await db.get(GameSession, session_id)
+    # Get all teams for this meetup to find next team
+    _meetup = await db.get(Meetup, meetup_id)
     _result = await db.execute(
         select(User)
         .join(Attendance, Attendance.user_id == User.id)
         .where(
-            Attendance.session_id == session_id,
+            Attendance.meetup_id == meetup_id,
             Attendance.status == "confirmed",
         )
     )
@@ -1161,20 +1161,20 @@ async def end_match(
         }
         for u in _result.scalars().all()
     ]
-    _mode = getattr(_session, "team_assignment_mode", None) or "balanced"
-    teams = resolve_session_teams_nested(
-        getattr(_session, "manual_teams_json", None),
+    _mode = getattr(_meetup, "team_assignment_mode", None) or "balanced"
+    teams = resolve_meetup_teams_nested(
+        getattr(_meetup, "manual_teams_json", None),
         _mode,
         _players,
     )
-    team_names = get_team_names(_session)
+    team_names = get_team_names(_meetup)
 
     # Find which teams have already been used as the "entering" side
     all_matches = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .where(SessionMatch.match_number <= match.match_number)
-        .order_by(SessionMatch.match_number.asc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .where(MeetupMatch.match_number <= match.match_number)
+        .order_by(MeetupMatch.match_number.asc())
     )
     played_matches = all_matches.scalars().all()
 
@@ -1205,8 +1205,8 @@ async def end_match(
             if team_names and next_team_idx < len(team_names)
             else f"Team {next_team_idx + 1}"
         )
-        next_match = SessionMatch(
-            session_id=session_id,
+        next_match = MeetupMatch(
+            meetup_id=meetup_id,
             match_number=match.match_number + 1,
             team_a_users=json.dumps(winner_users),
             team_b_users=json.dumps([p["user_id"] for p in next_team]),
@@ -1215,20 +1215,20 @@ async def end_match(
             score_a=0,
             score_b=0,
             status="pending",
-            # The session's configured duration, NOT the ended match's:
+            # The meetup's configured duration, NOT the ended match's:
             # retroactive matches carry timer_total_seconds=0 and would
             # poison every following match.
-            timer_total_seconds=(_session.match_duration_minutes or 10) * 60,
+            timer_total_seconds=(_meetup.match_duration_minutes or 10) * 60,
         )
         db.add(next_match)
         await db.flush()
-        users_by_id = await _load_users_for_session(db, session_id)
+        users_by_id = await _load_users_for_meetup(db, meetup_id)
         next_match_data = _match_json(next_match, users_by_id)
 
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "match_ended",
             "match_id": match.id,
@@ -1238,9 +1238,9 @@ async def end_match(
         },
     )
 
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     result: dict = {
         "status": "completed",
         "match": _match_json(match, users_by_id),
@@ -1269,23 +1269,23 @@ def _seconds_left(expires_at: datetime, now: datetime) -> int:
     return max(int((expires_at - now).total_seconds()), 0)
 
 
-async def _current_match(db: AsyncSession, session_id: int) -> SessionMatch | None:
-    """The session's current match: the highest-numbered one still open
+async def _current_match(db: AsyncSession, meetup_id: int) -> MeetupMatch | None:
+    """The meetup's current match: the highest-numbered one still open
     (pending / active / time_up), else the highest-numbered overall."""
     res = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .where(SessionMatch.status.in_(("pending", "active", "time_up")))
-        .order_by(SessionMatch.match_number.desc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .where(MeetupMatch.status.in_(("pending", "active", "time_up")))
+        .order_by(MeetupMatch.match_number.desc())
         .limit(1)
     )
     match = res.scalar_one_or_none()
     if match is not None:
         return match
     res = await db.execute(
-        select(SessionMatch)
-        .where(SessionMatch.session_id == session_id)
-        .order_by(SessionMatch.match_number.desc())
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number.desc())
         .limit(1)
     )
     return res.scalar_one_or_none()
@@ -1328,9 +1328,9 @@ async def _lease_busy_response(
     )
 
 
-@router.post("/{session_id}/matches/lease/acquire")
+@router.post("/{meetup_id}/matches/lease/acquire")
 async def acquire_lease(
-    session_id: int,
+    meetup_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -1340,9 +1340,9 @@ async def acquire_lease(
     (``holder_id IS NULL OR expires_at <= now``). ``rowcount == 0`` means
     somebody else holds it — they are named in the 409.
     """
-    match = await _current_match(db, session_id)
+    match = await _current_match(db, meetup_id)
     if match is None:
-        raise HTTPException(status_code=404, detail="No match in this session yet")
+        raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
     now = utcnow()
     await _ensure_lease_row(db, match.id, now)
@@ -1372,7 +1372,7 @@ async def acquire_lease(
         return await _lease_busy_response(db, match.id, utcnow())
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "lease_acquired",
             "match_id": match.id,
@@ -1383,17 +1383,17 @@ async def acquire_lease(
     return {"lease_token": token, "expires_in": LEASE_TTL_SECONDS}
 
 
-@router.post("/{session_id}/matches/lease/renew")
+@router.post("/{meetup_id}/matches/lease/renew")
 async def renew_lease(
-    session_id: int,
+    meetup_id: int,
     body: LeaseTokenBody,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Extend the lease by another 45 s — token checked, holder only."""
-    match = await _current_match(db, session_id)
+    match = await _current_match(db, meetup_id)
     if match is None:
-        raise HTTPException(status_code=404, detail="No match in this session yet")
+        raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
     now = utcnow()
     res = await db.execute(
@@ -1413,17 +1413,17 @@ async def renew_lease(
     return {"lease_token": body.lease_token, "expires_in": LEASE_TTL_SECONDS}
 
 
-@router.post("/{session_id}/matches/lease/release")
+@router.post("/{meetup_id}/matches/lease/release")
 async def release_lease(
-    session_id: int,
+    meetup_id: int,
     body: LeaseTokenBody,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
     """Give the lease up immediately — token checked, then broadcast."""
-    match = await _current_match(db, session_id)
+    match = await _current_match(db, meetup_id)
     if match is None:
-        raise HTTPException(status_code=404, detail="No match in this session yet")
+        raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
     now = utcnow()
     res = await db.execute(
@@ -1441,7 +1441,7 @@ async def release_lease(
         return await _lease_busy_response(db, match.id, utcnow())
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {"type": "lease_released", "match_id": match.id},
     )
     return {"released": True}
@@ -1476,7 +1476,7 @@ def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
     }
 
 
-async def _goal_counts(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
+async def _goal_counts(db: AsyncSession, match: MeetupMatch) -> tuple[int, int]:
     """Live (non-soft-deleted) goal counts per team."""
     counts: dict[str, int] = {}
     for team in ("a", "b"):
@@ -1493,7 +1493,7 @@ async def _goal_counts(db: AsyncSession, match: SessionMatch) -> tuple[int, int]
     return counts["a"], counts["b"]
 
 
-async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int, int]:
+async def _recompute_scores(db: AsyncSession, match: MeetupMatch) -> tuple[int, int]:
     """Derive score_a / score_b from COUNT of LIVE goals + manual offset.
 
     Goals are the source of truth; the referee's +1/-1/set-score corrections
@@ -1505,9 +1505,9 @@ async def _recompute_scores(db: AsyncSession, match: SessionMatch) -> tuple[int,
     return match.score_a, match.score_b
 
 
-@router.post("/{session_id}/matches/{match_id}/goals", status_code=201)
+@router.post("/{meetup_id}/matches/{match_id}/goals", status_code=201)
 async def create_goal(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     body: GoalCreate,
     db: AsyncSession = Depends(get_db),
@@ -1518,16 +1518,16 @@ async def create_goal(
     On success: recompute ``score_a``/``score_b`` from COUNT, release the
     lease (the next person's turn starts clean) and broadcast ``goal_added``.
     """
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
 
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     if body.scorer_id not in users_by_id:
-        raise HTTPException(status_code=400, detail="Scorer is not in this session")
+        raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
     if body.assist_id is not None:
         if body.assist_id not in users_by_id:
-            raise HTTPException(status_code=400, detail="Assist is not in this session")
+            raise HTTPException(status_code=400, detail="Assist is not in this meetup")
         if body.assist_id == body.scorer_id:
             raise HTTPException(
                 status_code=400, detail="Assist must be a different player"
@@ -1539,7 +1539,7 @@ async def create_goal(
     if body.goalkeeper_id is not None:
         if body.goalkeeper_id not in users_by_id:
             raise HTTPException(
-                status_code=400, detail="Goalkeeper is not in this session"
+                status_code=400, detail="Goalkeeper is not in this meetup"
             )
         if body.goalkeeper_id == body.scorer_id:
             raise HTTPException(
@@ -1652,7 +1652,7 @@ async def create_goal(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "goal_added",
             "match_id": match_id,
@@ -1661,7 +1661,7 @@ async def create_goal(
             "score_b": score_b,
         },
     )
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
 
     return {
         "goal": _goal_json(goal, users_by_id),
@@ -1671,15 +1671,15 @@ async def create_goal(
     }
 
 
-@router.get("/{session_id}/matches/{match_id}/goals")
+@router.get("/{meetup_id}/matches/{match_id}/goals")
 async def list_goals(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     db: AsyncSession = Depends(get_db),
 ):
     """Live goal log for one match (public, ordered by minute)."""
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     res = await db.execute(
         select(MatchGoal)
@@ -1687,7 +1687,7 @@ async def list_goals(
         .order_by(MatchGoal.clock_minute, MatchGoal.id)
     )
     goals = list(res.scalars().all())
-    users_by_id = await _load_users_for_session(db, session_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {
         "goals": [_goal_json(g, users_by_id) for g in goals],
         "score_a": match.score_a,
@@ -1704,17 +1704,17 @@ async def _require_goal_deleter(
         raise HTTPException(status_code=401, detail="Not authenticated")
     if getattr(request.state, "is_admin", False):
         return user
-    ok, reason = await presence_for_session(
-        db, int(request.path_params["session_id"]), user
+    ok, reason = await presence_for_meetup(
+        db, int(request.path_params["meetup_id"]), user
     )
     if not ok:
         raise HTTPException(status_code=403, detail=reason)
     return user
 
 
-@router.delete("/{session_id}/matches/{match_id}/goals/{goal_id}", status_code=204)
+@router.delete("/{meetup_id}/matches/{match_id}/goals/{goal_id}", status_code=204)
 async def remove_goal(
-    session_id: int,
+    meetup_id: int,
     match_id: int,
     goal_id: int,
     db: AsyncSession = Depends(get_db),
@@ -1731,8 +1731,8 @@ async def remove_goal(
     goal = res.scalar_one_or_none()
     if goal is None:
         raise HTTPException(status_code=404, detail="Goal not found")
-    match = await db.get(SessionMatch, match_id)
-    if not match or match.session_id != session_id:
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
 
     goal.deleted_at = utcnow()
@@ -1741,7 +1741,7 @@ async def remove_goal(
     await db.commit()
 
     await _broadcast_match_event(
-        session_id,
+        meetup_id,
         {
             "type": "goal_removed",
             "match_id": match_id,
@@ -1751,13 +1751,13 @@ async def remove_goal(
             "score_b": score_b,
         },
     )
-    await bump_and_notify(db, session_id)
+    await bump_and_notify(db, meetup_id)
     return None
 
 
-@router.get("/{session_id}/steward-state")
+@router.get("/{meetup_id}/steward-state")
 async def steward_state(
-    session_id: int,
+    meetup_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
@@ -1769,10 +1769,10 @@ async def steward_state(
     user = getattr(request.state, "user", None)
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    ok, reason = await presence_for_session(db, session_id, user)
+    ok, reason = await presence_for_meetup(db, meetup_id, user)
 
     lease = None
-    match = await _current_match(db, session_id)
+    match = await _current_match(db, meetup_id)
     if match is not None:
         row = await db.get(MatchEditorLease, match.id)
         if row is not None and row.holder_id is not None:

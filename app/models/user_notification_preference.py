@@ -13,12 +13,12 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 NOTIFICATION_CATEGORIES = (
-    "session_invite",      # New session announcements
+    "meetup_invite",      # New meetup announcements
     "waitlist",            # Waitlist alerts
     "chat",                # Chat messages
-    "session_cancelled",   # Session cancelled
+    "meetup_cancelled",   # Meetup cancelled
     "kickoff_reminder",    # Kickoff 1h reminder
-    "rating_reminder",     # Post-session rating reminder
+    "rating_reminder",     # Post-meetup rating reminder
 )
 
 
@@ -26,7 +26,7 @@ class UserNotificationPreference(Base):
     __tablename__ = "user_notification_preferences"
     __table_args__ = (
         CheckConstraint(
-            "category IN ('session_invite', 'waitlist', 'chat', 'session_cancelled', 'kickoff_reminder', 'rating_reminder')",
+            "category IN ('meetup_invite', 'waitlist', 'chat', 'meetup_cancelled', 'kickoff_reminder', 'rating_reminder')",
             name="chk_notification_category",
         ),
     )

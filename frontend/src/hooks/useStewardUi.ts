@@ -14,7 +14,7 @@ import {
 
 /**
  * Shared state for the live-scoring surfaces (LiveMatchBanner and
- * RefereePage), fed from the ONE existing session data SSE channel:
+ * RefereePage), fed from the ONE existing meetup data SSE channel:
  *
  * - steward gate: fetched on mount and every 30 s — decides whether
  *   controls render and what reason line a locked member sees.
