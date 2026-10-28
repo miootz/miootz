@@ -103,8 +103,6 @@ export function MeetupTeamsPanel({
     "expand" | "contract" | null
   >(null);
   const [reshuffling, setReshuffling] = useState(false);
-  // Capacity controls are a progressive-disclosure detail; stats stay visible.
-  const [capOpen, setCapOpen] = useState(false);
   // Locks are client-side only (no server field); keep them across refetches
   // so reshuffles and SSE-driven refreshes don't cancel them.
   const lockedIdsRef = useRef<Set<string>>(new Set());
@@ -112,6 +110,10 @@ export function MeetupTeamsPanel({
   const waitlistedCount = detail.attendees.filter(
     (a) => a.status === "waitlisted",
   ).length;
+  // Capacity controls are a progressive-disclosure detail; stats stay
+  // visible. Auto-expand only when the waitlist can fill a whole extra
+  // team (5 players) — that is when adding a team is actually on the table.
+  const [capOpen, setCapOpen] = useState(() => waitlistedCount >= 5);
 
   // Re-apply client-side locks onto a freshly built lineup (server payload
   // never carries them), so refetches never cancel an existing lock.
