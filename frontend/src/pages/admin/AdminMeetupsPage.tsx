@@ -232,6 +232,7 @@ export function AdminMeetupsPage() {
           />
         }
         title="Meetups"
+        subtitle="Past meetups. The next one is managed from Overview."
         action={
           <Link
             to="/admin/meetups/new"
@@ -372,9 +373,14 @@ export function AdminMeetupsPage() {
                   className="border border-line bg-panel overflow-hidden transition-colors hover:border-ink-faint"
                 >
                   <div className="flex">
-                    {/* Clickable card body */}
+                    {/* Clickable card body — upcoming meetups are managed in
+                        Overview; the detail page is for past meetups. */}
                     <Link
-                      to={`/admin/meetups/${s.id}`}
+                      to={
+                        upcoming
+                          ? "/admin"
+                          : `/admin/meetups/${s.id}`
+                      }
                       className="flex-1 min-w-0 p-3.5 active:bg-raised/50 transition-colors"
                     >
                       {/* Date + time row */}

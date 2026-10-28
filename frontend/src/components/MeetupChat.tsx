@@ -68,6 +68,8 @@ const MAX_MESSAGE_LENGTH = 1000;
 
 interface MeetupChatProps {
   meetupId: string;
+  /** Member view collapses by default; management surfaces pass true. */
+  defaultExpanded?: boolean;
 }
 
 /** ─── Avatar / initials ─────────────────────────────────────────── */
@@ -239,14 +241,17 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
 }
 
 /** ─── Main component ────────────────────────────────────────────── */
-export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
+export const MeetupChat: React.FC<MeetupChatProps> = ({
+  meetupId,
+  defaultExpanded = false,
+}) => {
   const { showToast } = useToast();
   const { me, tokens } = useAuth();
   const myUserId = me?.user.id ?? null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
