@@ -388,6 +388,19 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
     return () => el.removeEventListener("scroll", onScroll);
   }, [userScrolledUp]);
 
+  // Mobile expanded chat is a full-screen overlay: lock page scroll behind
+  // it (same pattern as the admin drawer) so gestures stay in the chat.
+  useEffect(() => {
+    if (!isExpanded || !window.matchMedia("(max-width: 767px)").matches) {
+      return;
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isExpanded]);
+
   // Unread indicator for bottom nav (Details tab dot)
   useEffect(() => {
     if (messages.length === 0) return;
@@ -727,7 +740,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
         {/* Messages */}
         <div
           ref={chatContainerRef}
-          className="flex-1 overflow-y-auto px-4 py-4 space-y-4 relative"
+          className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4 relative"
         >
           {isLoading ? (
             <ChatSkeleton />
