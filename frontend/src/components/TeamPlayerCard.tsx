@@ -4,17 +4,10 @@ import type { User } from "../types";
 import { PlayerAvatarFace } from "./PlayerAvatar";
 
 /*
- * Single source of UI truth for a team player row: avatar + lock badge,
- * name (full on mobile), positions, computed rating, lock toggle.
+ * Single source of UI truth for a team player row: avatar (spans both rows),
+ * name on top, positions + computed rating below, lock toggle (spans rows).
  * DraggableTeams wraps this with dnd-kit wiring (dragProps/style/cardRef).
  */
-
-export function formatRating(player: User): string {
-  if (player.calculatedSkill != null && player.calculatedSkill > 0) {
-    return player.calculatedSkill.toFixed(1);
-  }
-  return Math.round(player.skillScore).toFixed(1);
-}
 
 export function formatPositions(player: User): string {
   const parts: string[] = [];
@@ -28,6 +21,21 @@ export function formatPositions(player: User): string {
   return parts.length > 0 ? `(${parts.join("/")})` : "";
 }
 
+/** Star rating: computed skill when present, rounded raw skill otherwise. */
+export const SkillRating: React.FC<{
+  calculated: number | null | undefined;
+  raw: number | null | undefined;
+}> = ({ calculated, raw }) => {
+  const value =
+    calculated != null && calculated > 0 ? calculated : Math.round(raw ?? 0);
+  return (
+    <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
+      <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
+      {value.toFixed(1)}
+    </span>
+  );
+};
+
 export const TeamPlayerCard: React.FC<{
   player: User;
   canDrag: boolean;
@@ -37,15 +45,7 @@ export const TeamPlayerCard: React.FC<{
   /** Spread of dnd-kit listeners/attributes (drag surface = whole card). */
   dragProps?: React.HTMLAttributes<HTMLDivElement>;
 }> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps }) => {
-  const ratingValue = formatRating(player);
   const positions = formatPositions(player);
-
-  const rating = (
-    <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
-      <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
-      {ratingValue}
-    </span>
-  );
 
   const lockButton =
     canDrag && onToggleLock ? (
@@ -79,8 +79,8 @@ export const TeamPlayerCard: React.FC<{
             : ""
       }`}
     >
-      {/* Avatar */}
-      <div className="relative shrink-0">
+      {/* Avatar — spans both rows */}
+      <div className="relative shrink-0 self-stretch flex items-center">
         <PlayerAvatarFace
           name={player.name}
           avatarUrl={player.avatarUrl}
@@ -95,30 +95,24 @@ export const TeamPlayerCard: React.FC<{
       </div>
 
       <div className="min-w-0 flex-1">
-        {/* Row 1 — name (full on mobile); positions + rating inline on sm+ */}
-        <div className="flex items-center gap-1.5">
-          <span className="min-w-0 text-sm font-medium text-ink break-words sm:truncate">
-            {player.name}
-          </span>
+        <span className="block text-sm font-medium text-ink truncate">
+          {player.name}
+        </span>
+        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
           {positions && (
-            <span className="hidden text-2xs text-ink-faint sm:inline sm:shrink-0">
+            <span className="text-2xs text-ink-faint truncate">
               {positions}
             </span>
           )}
-          <span className="hidden sm:inline-flex sm:shrink-0">{rating}</span>
-          <span className="hidden sm:inline-block sm:shrink-0">{lockButton}</span>
-        </div>
-        {/* Row 2 — mobile only: same info so the name owns the whole row */}
-        <div className="mt-0.5 flex items-center gap-1.5 sm:hidden">
-          {positions && (
-            <span className="text-2xs text-ink-faint">
-              {positions}
-            </span>
-          )}
-          {rating}
-          {lockButton}
+          <SkillRating
+            calculated={player.calculatedSkill}
+            raw={player.skillScore}
+          />
         </div>
       </div>
+
+      {/* Lock toggle — spans both rows */}
+      {lockButton}
     </div>
   );
 };

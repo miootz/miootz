@@ -1,9 +1,12 @@
 import React from "react";
-import { PlayerAvatarFace, SkillBadge } from "./PlayerAvatar";
+import { CheckCircle2, Hourglass } from "lucide-react";
+import { PlayerAvatarFace } from "./PlayerAvatar";
+import { SkillRating } from "./TeamPlayerCard";
 
 /*
  * Single source of UI truth for an attendance row at every breakpoint:
- * avatar, name, +1, positions, skill, status badge, calc-skill, actions.
+ * avatar (spans both rows), name + status icon on top, positions +
+ * computed star rating below, action button (spans rows).
  */
 
 const SPECIALTY_LABELS: Record<string, string> = {
@@ -18,10 +21,20 @@ function specialtyLabel(code: string | null | undefined): string | null {
   return SPECIALTY_LABELS[code] ?? code;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  confirmed: "bg-team-a/15 text-team-a",
-  waitlisted: "bg-live/15 text-live",
-  cancelled: "bg-raised text-ink-dim",
+const STATUS_ICONS: Record<
+  string,
+  { icon: React.ReactNode; label: string; className: string }
+> = {
+  confirmed: {
+    icon: <CheckCircle2 className="w-4 h-4" />,
+    label: "Confirmed",
+    className: "text-team-a",
+  },
+  waitlisted: {
+    icon: <Hourglass className="w-4 h-4" />,
+    label: "Waitlisted",
+    className: "text-live",
+  },
 };
 
 export const AttendancePlayerCard: React.FC<{
@@ -49,49 +62,48 @@ export const AttendancePlayerCard: React.FC<{
     [specialtyLabel(primary), specialtyLabel(secondary)]
       .filter(Boolean)
       .join("/") || null;
-  const mmSkill = Math.min(5, Math.max(1, Math.round(skill)));
+  const statusIcon = STATUS_ICONS[status] ?? null;
 
   return (
-    <div className="border border-line bg-panel p-3 transition-colors">
-      <div className="flex items-center gap-2.5">
-        <PlayerAvatarFace
-          name={name}
-          avatarUrl={avatarUrl ?? undefined}
-          size="sm"
-          isPlusOne={isPlusOne}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm font-medium text-ink truncate">
-              {name}
-            </span>
-            {isPlusOne && (
-              <span className="shrink-0 bg-pink-500/15 px-1.5 py-0.5 text-2xs font-medium text-pink-400">
-                +1
-              </span>
-            )}
-            {posLabel && (
-              <span className="shrink-0 text-2xs font-medium text-ink-dim bg-raised px-1.5 py-0.5">
-                {posLabel}
-              </span>
-            )}
-            <SkillBadge score={mmSkill} size="sm" />
+    <div className="border border-line bg-panel p-3 transition-colors flex items-center gap-2.5">
+      {/* Avatar — spans both rows */}
+      <PlayerAvatarFace
+        name={name}
+        avatarUrl={avatarUrl ?? undefined}
+        size="sm"
+        isPlusOne={isPlusOne}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="min-w-0 text-sm font-medium text-ink truncate">
+            {name}
+          </span>
+          {statusIcon && (
             <span
-              className={`shrink-0 px-2 py-0.5 text-2xs font-medium ${
-                STATUS_STYLES[status] ?? STATUS_STYLES.cancelled
-              }`}
+              className={`shrink-0 ${statusIcon.className}`}
+              title={statusIcon.label}
+              aria-label={statusIcon.label}
             >
-              {status}
+              {statusIcon.icon}
             </span>
-          </div>
-          {calculatedSkill != null && (
-            <div className="text-2xs text-ink-faint mt-0.5">
-              calc {calculatedSkill}
-            </div>
+          )}
+          {isPlusOne && (
+            <span className="shrink-0 bg-pink-500/15 px-1.5 py-0.5 text-2xs font-medium text-pink-400">
+              +1
+            </span>
           )}
         </div>
-        {action}
+        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+          {posLabel && (
+            <span className="text-2xs text-ink-faint truncate">
+              {posLabel}
+            </span>
+          )}
+          <SkillRating calculated={calculatedSkill} raw={skill} />
+        </div>
       </div>
+      {/* Action — spans both rows */}
+      {action}
     </div>
   );
 };

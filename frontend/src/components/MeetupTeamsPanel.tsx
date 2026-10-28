@@ -71,11 +71,14 @@ export function MeetupTeamsPanel({
   meetupId,
   detail,
   onChanged,
+  live,
 }: {
   meetupId: number;
   detail: MeetupDetail;
   /** Parent refetch hook — called after every successful write. */
   onChanged: () => void | Promise<void>;
+  /** SSE subscription state, shown in the section header. */
+  live?: boolean;
 }) {
   const { showToast } = useToast();
   const [teams, setTeams] = useState<TeamsResponse | null>(null);
@@ -211,9 +214,19 @@ export function MeetupTeamsPanel({
         <h2 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
           Teams
         </h2>
-        {teams && teams.teams.length > 0 && (
-          <span className="text-2xs text-ink-faint tabular-nums">
-            {teams.teams.length} team{teams.teams.length !== 1 ? "s" : ""}
+        {live !== undefined && (
+          <span
+            className={`inline-flex items-center gap-1.5 text-2xs font-medium ${
+              live ? "text-live" : "text-ink-faint"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                live ? "bg-live" : "bg-ink-faint"
+              }`}
+              aria-hidden
+            />
+            {live ? "Live" : "Offline"}
           </span>
         )}
         {canReshuffle && (
@@ -267,7 +280,7 @@ export function MeetupTeamsPanel({
                 ) : (
                   <Minus className="w-3.5 h-3.5" />
                 )}
-                Remove
+                Remove team
               </button>
               <button
                 type="button"
@@ -281,7 +294,7 @@ export function MeetupTeamsPanel({
                 ) : (
                   <Plus className="w-3.5 h-3.5" />
                 )}
-                Add
+                Add team
               </button>
             </div>
           </div>

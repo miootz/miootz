@@ -8,7 +8,6 @@ import {
   Play,
   Plus,
   Repeat,
-  Share2,
   Users,
   Wrench,
 } from "lucide-react";
@@ -23,11 +22,8 @@ import {
   type GameTemplateRow,
 } from "../../api/adminApi";
 import { useAuth } from "../../auth/useAuth";
-import { useToast } from "../../context/ToastContext";
 import { subscribeMeetupData } from "../../utils/meetupDataBus";
 import { parseMeetupStart } from "../../utils/datetime";
-import { hapticLight } from "../../utils/haptics";
-import { shareMeetup } from "../../utils/share";
 import { MeetupChat } from "../../components/MeetupChat";
 import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
 import { MeetupTeamsPanel } from "../../components/MeetupTeamsPanel";
@@ -98,7 +94,6 @@ function DashboardSkeleton() {
 
 export function AdminDashboard() {
   const { tokens } = useAuth();
-  const { showToast } = useToast();
 
   const [upcoming, setUpcoming] = useState<MeetupListItem[] | null>(null);
   const [templates, setTemplates] = useState<GameTemplateRow[] | null>(null);
@@ -147,21 +142,6 @@ export function AdminDashboard() {
       setLive,
     );
   }, [nextId, tokens?.accessToken, loadDetail]);
-
-  function handleShare() {
-    if (!detail) return;
-    hapticLight();
-    void shareMeetup({
-      title: "Miootz meetup",
-      text: `${detail.location} · ${format(parseMeetupStart(detail.start_time), "EEE d MMM HH:mm")}`,
-      url: window.location.origin + "/",
-    }).then((ok) =>
-      showToast(
-        ok ? "Link copied or shared." : "Could not share.",
-        ok ? "success" : "error",
-      ),
-    );
-  }
 
   const loading = upcoming === null && !err;
 
@@ -227,34 +207,14 @@ export function AdminDashboard() {
         <>
           {/* ── Next meetup command card ─────────────────── */}
           <section className="mb-4 border border-line bg-panel p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h2 className="text-xl sm:text-2xl font-bold text-ink">
-                    {format(parseMeetupStart(detail.start_time), "EEEE, d MMMM")}
-                    <span className="ml-2 text-lg font-semibold text-ink-dim tabular-nums">
-                      {format(parseMeetupStart(detail.start_time), "HH:mm")}
-                    </span>
-                  </h2>
-                  <MeetupWeatherBadge meetupId={detail.id} />
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-2xs font-medium ${
-                      live ? "text-live" : "text-ink-faint"
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        live ? "bg-live" : "bg-ink-faint"
-                      }`}
-                      aria-hidden
-                    />
-                    {live ? "Live" : "Offline"}
+                <h2 className="text-xl sm:text-2xl font-bold text-ink">
+                  {format(parseMeetupStart(detail.start_time), "EEEE, d MMMM")}
+                  <span className="ml-2 text-lg font-semibold text-ink-dim tabular-nums">
+                    {format(parseMeetupStart(detail.start_time), "HH:mm")}
                   </span>
-                </div>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-dim">
-                  <MapPin className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden />
-                  <span className="truncate">{detail.location}</span>
-                </p>
+                </h2>
                 <div className="mt-3 max-w-md">
                   <CapacityBar
                     confirmed={confirmed}
@@ -279,34 +239,35 @@ export function AdminDashboard() {
                         : "balanced teams"}
                     </span>
                   </div>
+                  {(matchActive ||
+                    (meetupActive && !currentMatch)) && (
+                    <Link
+                      to={`/meetup-matches/${detail.id}`}
+                      className={`mt-3 inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm font-bold transition-colors active:scale-[0.98] ${
+                        matchActive
+                          ? "bg-live text-board hover:bg-live/90"
+                          : "bg-team-a text-white hover:bg-team-a/90"
+                      }`}
+                    >
+                      <Play className="w-4 h-4" aria-hidden />
+                      {matchActive
+                        ? `Manage match ${currentMatch?.match_number ?? ""}`
+                        : "Start matches"}
+                    </Link>
+                  )}
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-stretch sm:shrink-0">
-                {(matchActive || (meetupActive && !currentMatch)) && (
-                  <Link
-                    to={`/meetup-matches/${detail.id}`}
-                    className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm font-bold transition-colors active:scale-[0.98] ${
-                      matchActive
-                        ? "bg-live text-board hover:bg-live/90"
-                        : "bg-team-a text-white hover:bg-team-a/90"
-                    }`}
-                  >
-                    <Play className="w-4 h-4" aria-hidden />
-                    {matchActive
-                      ? `Manage match ${currentMatch?.match_number ?? ""}`
-                      : "Start matches"}
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium transition-colors active:scale-[0.98]"
-                >
-                  <Share2 className="w-4 h-4" aria-hidden />
-                  Share
-                </button>
+              {/* Location + weather */}
+              <div className="flex flex-col items-start gap-2 md:border-l md:border-line md:pl-4">
+                <p className="flex items-center gap-1.5 text-sm text-ink-dim">
+                  <MapPin
+                    className="w-3.5 h-3.5 text-ink-faint shrink-0"
+                    aria-hidden
+                  />
+                  <span>{detail.location}</span>
+                </p>
+                <MeetupWeatherBadge meetupId={detail.id} />
               </div>
             </div>
           </section>
@@ -317,6 +278,7 @@ export function AdminDashboard() {
               meetupId={detail.id}
               detail={detail}
               onChanged={() => loadDetail(detail.id)}
+              live={live}
             />
           </div>
 
@@ -330,7 +292,11 @@ export function AdminDashboard() {
               />
             </div>
             <div className="lg:col-span-2">
-              <MeetupChat meetupId={String(detail.id)} defaultExpanded />
+              <MeetupChat
+                meetupId={String(detail.id)}
+                defaultExpanded
+                fillHeight
+              />
             </div>
           </div>
         </>

@@ -70,6 +70,8 @@ interface MeetupChatProps {
   meetupId: string;
   /** Member view collapses by default; management surfaces pass true. */
   defaultExpanded?: boolean;
+  /** Fill the parent column's height on desktop/tablet (admin Overview). */
+  fillHeight?: boolean;
 }
 
 /** ─── Avatar / initials ─────────────────────────────────────────── */
@@ -244,6 +246,7 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
 export const MeetupChat: React.FC<MeetupChatProps> = ({
   meetupId,
   defaultExpanded = false,
+  fillHeight = false,
 }) => {
   const { showToast } = useToast();
   const { me, tokens } = useAuth();
@@ -261,6 +264,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiWrapRef = useRef<HTMLDivElement>(null);
   const lastTypingSentRef = useRef(0);
+  const hasUserScrolledRef = useRef(false);
   const typingClearTimeoutsRef = useRef<
     Map<number, ReturnType<typeof setTimeout>>
   >(new Map());
@@ -335,6 +339,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   const userScrolledUp = useCallback(() => {
     const el = chatContainerRef.current;
     if (!el) return true;
+    if (!hasUserScrolledRef.current) return false;
     return el.scrollTop < el.scrollHeight - el.clientHeight - 80;
   }, []);
 
@@ -369,7 +374,10 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   useEffect(() => {
     const el = chatContainerRef.current;
     if (!el) return;
-    const onScroll = () => setShowScrollFab(userScrolledUp());
+    const onScroll = () => {
+      hasUserScrolledRef.current = true;
+      setShowScrollFab(userScrolledUp());
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [userScrolledUp]);
@@ -417,6 +425,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
       setIsLoading(fromStore === undefined);
       setShowScrollFab(false);
       setSendError(null);
+      hasUserScrolledRef.current = false;
     })();
     return () => {
       cancelled = true;
@@ -630,12 +639,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           >
             <span className="flex items-center gap-2">
               <Users className="w-4 h-4 text-ink-dim" />
-              Meetup Chat
-              {messageCount > 0 && (
-                <span className="text-xs font-normal text-ink-faint tabular-nums">
-                  · {messageCount} message{messageCount !== 1 ? "s" : ""}
-                </span>
-              )}
+              Chat
             </span>
             <ChevronUp className="w-4 h-4 text-ink-faint" />
           </button>
@@ -670,26 +674,23 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   return (
     <section
       className={`max-w-2xl mx-auto w-full ${
+        fillHeight ? "h-full" : ""
+      } ${
         isExpanded
           ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-board/60"
           : ""
       }`}
     >
       <div
-        className={`relative bg-panel border border-line overflow-hidden flex flex-col h-[min(75vh,600px)] ${
-          isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""
-        }`}
+        className={`relative bg-panel border border-line overflow-hidden flex flex-col ${
+          fillHeight ? "md:h-full" : "h-[min(75vh,600px)]"
+        } ${isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 font-semibold text-ink border-b border-line bg-panel flex-shrink-0">
           <span className="flex items-center gap-2">
             <Users className="w-4 h-4 text-ink-dim" />
-            Meetup Chat
-            {messageCount > 0 && (
-              <span className="text-xs font-normal text-ink-faint tabular-nums">
-                · {messageCount} message{messageCount !== 1 ? "s" : ""}
-              </span>
-            )}
+            Chat
           </span>
           <button
             type="button"

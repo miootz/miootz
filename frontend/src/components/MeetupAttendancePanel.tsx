@@ -1,11 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  ClipboardList,
-  Loader2,
-  Search,
-  UserCheck,
-  Users,
-} from "lucide-react";
+import { ClipboardList, Loader2, Search, Users } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { adminMoveAttendance } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
@@ -30,7 +24,6 @@ export function MeetupAttendancePanel({
   const [attFilter, setAttFilter] = useState<AttFilter>("all");
   const [attSearch, setAttSearch] = useState("");
   const [movingKey, setMovingKey] = useState<string | null>(null);
-  const [bulkWorking, setBulkWorking] = useState(false);
 
   const attCounts = useMemo(() => {
     return {
@@ -66,37 +59,13 @@ export function MeetupAttendancePanel({
     }
   }
 
-  async function confirmAllWaitlisted() {
-    const waiters = detail.attendees.filter((a) => a.status === "waitlisted");
-    if (waiters.length === 0) {
-      showToast("No waitlisted players.", "success");
-      return;
-    }
-    setBulkWorking(true);
-    try {
-      for (const a of waiters) {
-        await adminMoveAttendance(meetupId, a.user_id, "confirmed");
-      }
-      hapticLight();
-      await onChanged();
-      showToast(`Confirmed ${waiters.length} player(s).`, "success");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Bulk confirm failed", "error");
-    } finally {
-      setBulkWorking(false);
-    }
-  }
-
   return (
-    <section className="border border-line bg-panel overflow-hidden">
+    <section className="border border-line bg-panel overflow-hidden h-full">
       <header className="flex items-center gap-2 px-4 py-3 border-b border-line">
         <ClipboardList className="w-4 h-4 text-ink-faint" aria-hidden />
         <h2 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
           Attendance
         </h2>
-        <span className="text-2xs text-ink-faint tabular-nums">
-          {attCounts.confirmed} confirmed · {attCounts.waitlisted} waitlisted
-        </span>
       </header>
 
       {/* Search + filters */}
@@ -135,20 +104,6 @@ export function MeetupAttendancePanel({
               </span>
             </button>
           ))}
-          <div className="w-px py-1 bg-line shrink-0 mx-1" />
-          <button
-            type="button"
-            disabled={bulkWorking}
-            onClick={() => void confirmAllWaitlisted()}
-            className="shrink-0 inline-flex items-center gap-1 border border-team-a/40 bg-team-a/15 px-3 py-1.5 text-xs font-medium text-team-a hover:bg-team-a/25 disabled:opacity-50 active:scale-[0.97]"
-          >
-            {bulkWorking ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <UserCheck className="w-3 h-3" />
-            )}
-            Confirm all
-          </button>
         </div>
       </div>
 
