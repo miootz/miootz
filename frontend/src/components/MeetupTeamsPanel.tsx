@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LayoutGrid, Loader2, Minus, Plus } from "lucide-react";
+import { ChevronDown, LayoutGrid, Loader2, Minus, Plus } from "lucide-react";
 import type { Meetup, Team, User } from "../types";
 import {
   fetchMeetupTeams,
@@ -103,6 +103,8 @@ export function MeetupTeamsPanel({
     "expand" | "contract" | null
   >(null);
   const [reshuffling, setReshuffling] = useState(false);
+  // Capacity controls are a progressive-disclosure detail; stats stay visible.
+  const [capOpen, setCapOpen] = useState(false);
   // Locks are client-side only (no server field); keep them across refetches
   // so reshuffles and SSE-driven refreshes don't cancel them.
   const lockedIdsRef = useRef<Set<string>>(new Set());
@@ -287,67 +289,81 @@ export function MeetupTeamsPanel({
       </header>
 
       <div className="space-y-3 p-4">
-        {/* Team capacity */}
-        <div className="border border-line bg-panel p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
+        {/* Team capacity — header + stats always visible; buttons and notes
+            collapse in an accordion */}
+        <div className="border border-line bg-panel overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setCapOpen((o) => !o)}
+            aria-expanded={capOpen}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-raised transition-colors"
+          >
+            <span className="min-w-0">
+              <span className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                 Team capacity
-              </h3>
-              <p className="text-xs text-ink-dim mt-0.5 tabular-nums">
+              </span>
+              <span className="block text-xs text-ink-dim mt-0.5 tabular-nums">
                 {teams
                   ? `${teams.teams.length} team(s) · ${detail.attendees.filter((a) => a.status === "confirmed").length} confirmed`
                   : "Loading…"}
                 <span className="text-live ml-1">
                   · {waitlistedCount} waitlisted
                 </span>
-              </p>
+              </span>
+            </span>
+            <ChevronDown
+              className={`w-4 h-4 shrink-0 text-ink-faint transition-transform motion-reduce:transition-none ${capOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
+          {capOpen && (
+            <div className="border-t border-line p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    !detail.max_teams ||
+                    detail.max_teams <= 2 ||
+                    adjustingTeam !== null
+                  }
+                  onClick={() => void adjustTeams("contract")}
+                  className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium bg-danger/15 hover:bg-danger/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                  title="Remove a team (returns players to waitlist)"
+                >
+                  {adjustingTeam === "contract" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Minus className="w-3.5 h-3.5" />
+                  )}
+                  Remove team
+                </button>
+                <button
+                  type="button"
+                  disabled={waitlistedCount === 0 || adjustingTeam !== null}
+                  onClick={() => void adjustTeams("expand")}
+                  className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                  title="Add a team (promotes players from waitlist)"
+                >
+                  {adjustingTeam === "expand" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  Add team
+                </button>
+              </div>
+              {waitlistedCount > 0 && waitlistedCount < 5 && (
+                <p className="text-2xs text-ink-faint">
+                  Only {waitlistedCount} waitlisted player(s) — adding a team
+                  will create a partial team.
+                </p>
+              )}
+              {!detail.max_teams && (
+                <p className="text-2xs text-ink-faint">
+                  Team count is automatic. Adding a team sets an explicit cap.
+                </p>
+              )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                disabled={
-                  !detail.max_teams ||
-                  detail.max_teams <= 2 ||
-                  adjustingTeam !== null
-                }
-                onClick={() => void adjustTeams("contract")}
-                className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium bg-danger/15 hover:bg-danger/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
-                title="Remove a team (returns players to waitlist)"
-              >
-                {adjustingTeam === "contract" ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Minus className="w-3.5 h-3.5" />
-                )}
-                Remove team
-              </button>
-              <button
-                type="button"
-                disabled={waitlistedCount === 0 || adjustingTeam !== null}
-                onClick={() => void adjustTeams("expand")}
-                className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
-                title="Add a team (promotes players from waitlist)"
-              >
-                {adjustingTeam === "expand" ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Plus className="w-3.5 h-3.5" />
-                )}
-                Add team
-              </button>
-            </div>
-          </div>
-          {waitlistedCount > 0 && waitlistedCount < 5 && (
-            <p className="text-2xs text-ink-faint mt-2">
-              Only {waitlistedCount} waitlisted player(s) — adding a team will
-              create a partial team.
-            </p>
-          )}
-          {!detail.max_teams && (
-            <p className="text-2xs text-ink-faint mt-2">
-              Team count is automatic. Adding a team sets an explicit cap.
-            </p>
           )}
         </div>
 

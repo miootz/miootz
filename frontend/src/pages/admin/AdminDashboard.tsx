@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import {
   ChevronRight,
-  Clock,
   MapPin,
   Play,
   Plus,
@@ -149,9 +148,6 @@ export function AdminDashboard() {
   const confirmed = detail?.attendees.filter(
     (a) => a.status === "confirmed",
   ).length ?? 0;
-  const waitlisted = detail?.attendees.filter(
-    (a) => a.status === "waitlisted",
-  ).length ?? 0;
   const activeTemplate =
     templates?.find((t) => t.is_active) ?? templates?.[0] ?? null;
   const nextAnnounceAt = activeTemplate?.next_announce_at ?? null;
@@ -215,24 +211,6 @@ export function AdminDashboard() {
                     max={detail.max_players}
                     min={detail.min_players}
                   />
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                    <span className="inline-flex items-center gap-1 text-ink-dim font-medium">
-                      <Clock className="w-3.5 h-3.5" aria-hidden />
-                      {formatDistanceToNow(parseMeetupStart(detail.start_time), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                    {waitlisted > 0 && (
-                      <span className="text-ink-faint">
-                        {waitlisted} waitlisted
-                      </span>
-                    )}
-                    <span className="text-ink-faint">
-                      {detail.team_assignment_mode === "random"
-                        ? "random teams"
-                        : "balanced teams"}
-                    </span>
-                  </div>
                   {(matchActive ||
                     (meetupActive && !currentMatch)) && (
                     <Link
