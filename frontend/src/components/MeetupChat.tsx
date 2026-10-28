@@ -254,7 +254,13 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // Mobile renders the expanded chat as a full-screen overlay; start
+  // collapsed there so it never obscures the page on first paint.
+  const [isExpanded, setIsExpanded] = useState(
+    () =>
+      defaultExpanded &&
+      !window.matchMedia("(max-width: 767px)").matches,
+  );
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -664,6 +670,19 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
                 ))}
               </>
             )}
+            {/* Bottom fade + Open: the preview is collapsed, not interactive */}
+            <div
+              className="absolute inset-x-0 bottom-0 h-14 pointer-events-none bg-linear-to-t from-panel to-transparent"
+              aria-hidden
+            />
+            <button
+              type="button"
+              onClick={() => setIsExpanded(true)}
+              className="absolute bottom-2.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 border border-line bg-panel px-3 py-1.5 text-xs font-medium text-ink shadow-lg hover:bg-raised active:scale-[0.97] transition-colors"
+            >
+              <ChevronUp className="w-3.5 h-3.5" aria-hidden />
+              Open
+            </button>
           </div>
         </div>
       </section>

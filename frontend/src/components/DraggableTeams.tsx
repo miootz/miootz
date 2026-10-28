@@ -127,41 +127,48 @@ function SkillBanner({
     return `${teamName}: ${total.toFixed(1)}`;
   });
 
+  const totalsText = (
+    <>
+      {parts.join(" \u00B7 ")}
+      {maxDiff > 0 && (
+        <span className="text-ink-faint">
+          {" "}
+          (spread {maxDiff.toFixed(1)})
+        </span>
+      )}
+    </>
+  );
+
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-      <Scale
-        className="h-4 w-4 shrink-0 text-ink-dim"
-        aria-hidden
-      />
-      <span className="font-medium text-ink">
-        Skill totals
-      </span>
-      <span className="tabular-nums text-ink-dim">
-        {parts.join(" \u00B7 ")}
-        {maxDiff > 0 && (
-          <span className="text-ink-faint">
-            {" "}
-            (spread {maxDiff.toFixed(1)})
-          </span>
-        )}
-      </span>
-      <span
-        className={
-          balanced
-            ? "ml-auto inline-flex items-center bg-team-a/15 px-2 py-0.5 text-xs font-medium text-team-a"
-            : "ml-auto inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium text-live"
-        }
-      >
-        {balanced ? "Balanced \u2713" : "Uneven"}
-      </span>
-      {onReshuffle && (
+    <div className="mb-4">
+      {/* Mobile: state row → data row → full-width action; desktop stays one row */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+        <Scale
+          className="h-4 w-4 shrink-0 text-ink-dim"
+          aria-hidden
+        />
+        <span className="font-medium text-ink">
+          Skill totals
+        </span>
+        <span className="hidden md:inline tabular-nums text-ink-dim">
+          {totalsText}
+        </span>
+        <span
+          className={
+            balanced
+              ? "md:ml-auto inline-flex items-center bg-team-a/15 px-2 py-0.5 text-xs font-medium text-team-a"
+              : "md:ml-auto inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium text-live"
+          }
+        >
+          {balanced ? "Balanced \u2713" : "Uneven"}
+        </span>
         <button
           type="button"
           disabled={!reshuffleVisible || reshuffling}
           onClick={onReshuffle}
           aria-hidden={!reshuffleVisible}
           tabIndex={reshuffleVisible ? 0 : -1}
-          className={`inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97] ${
+          className={`hidden md:inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97] ${
             reshuffleVisible ? "" : "invisible"
           }`}
         >
@@ -172,7 +179,27 @@ function SkillBanner({
           )}
           Reshuffle
         </button>
-      )}
+      </div>
+      <p className="mt-1.5 text-sm tabular-nums text-ink-dim md:hidden">
+        {totalsText}
+      </p>
+      <button
+        type="button"
+        disabled={!reshuffleVisible || reshuffling}
+        onClick={onReshuffle}
+        aria-hidden={!reshuffleVisible}
+        tabIndex={reshuffleVisible ? 0 : -1}
+        className={`mt-2 w-full min-h-[44px] md:hidden inline-flex items-center justify-center gap-1.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.97] ${
+          reshuffleVisible ? "" : "invisible"
+        }`}
+      >
+        {reshuffling ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Shuffle className="w-4 h-4" />
+        )}
+        Reshuffle
+      </button>
     </div>
   );
 }

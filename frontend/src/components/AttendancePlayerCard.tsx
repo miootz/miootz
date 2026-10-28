@@ -95,7 +95,7 @@ export const AttendancePlayerCard: React.FC<{
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
           {posLabel && (
-            <span className="text-2xs text-ink-faint truncate">
+            <span className="min-w-0 text-2xs text-ink-faint truncate">
               {posLabel}
             </span>
           )}

@@ -171,9 +171,6 @@ export function AdminLayout() {
         <div className="min-w-0 text-center">
           <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
             Admin
-            <span className="ml-1.5 bg-live/15 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-live">
-              Viewing as Admin
-            </span>
           </p>
           <p className="truncate text-sm font-medium text-ink">
             {me.user.display_name}
@@ -198,11 +195,8 @@ export function AdminLayout() {
               </span>
             </span>
           </Link>
-          <h2 className="mt-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink flex items-center gap-2">
+          <h2 className="mt-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink">
             Admin
-            <span className="bg-live/15 px-2 py-0.5 text-2xs font-semibold normal-case tracking-normal text-live">
-              Viewing as Admin
-            </span>
           </h2>
           <p
             className="text-xs text-ink-dim truncate mt-1"
@@ -252,9 +246,6 @@ export function AdminLayout() {
               <div>
                 <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                   Admin
-                  <span className="ml-1.5 bg-live/15 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-live">
-                    Viewing as Admin
-                  </span>
                 </p>
                 <p className="truncate text-sm font-medium text-ink">
                   {me.user.display_name}

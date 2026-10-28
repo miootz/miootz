@@ -289,7 +289,7 @@ export function MeetupTeamsPanel({
       <div className="space-y-3 p-4">
         {/* Team capacity */}
         <div className="border border-line bg-panel p-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                 Team capacity
@@ -312,7 +312,7 @@ export function MeetupTeamsPanel({
                   adjustingTeam !== null
                 }
                 onClick={() => void adjustTeams("contract")}
-                className="inline-flex items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium bg-danger/15 hover:bg-danger/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium bg-danger/15 hover:bg-danger/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
                 title="Remove a team (returns players to waitlist)"
               >
                 {adjustingTeam === "contract" ? (
@@ -326,7 +326,7 @@ export function MeetupTeamsPanel({
                 type="button"
                 disabled={waitlistedCount === 0 || adjustingTeam !== null}
                 onClick={() => void adjustTeams("expand")}
-                className="inline-flex items-center gap-1 px-3 py-1.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
+                className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
                 title="Add a team (promotes players from waitlist)"
               >
                 {adjustingTeam === "expand" ? (

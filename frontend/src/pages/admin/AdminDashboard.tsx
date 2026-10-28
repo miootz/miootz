@@ -29,7 +29,6 @@ import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
 import { MeetupTeamsPanel } from "../../components/MeetupTeamsPanel";
 import { MeetupAttendancePanel } from "../../components/MeetupAttendancePanel";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
-import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 
 /* ── Capacity bar ───────────────────────────────────────── */
 
@@ -174,13 +173,8 @@ export function AdminDashboard() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      <AdminPageHeader
-        breadcrumb={
-          <AdminBreadcrumb
-            items={[{ label: "Admin", to: "/admin" }, { label: "Overview" }]}
-          />
-        }
-        title="Overview"
+      <AdminBreadcrumb
+        items={[{ label: "Admin", to: "/admin" }, { label: "Overview" }]}
       />
 
       {err && (
@@ -284,14 +278,14 @@ export function AdminDashboard() {
 
           {/* ── Attendance (left) + chat (right) ─────────── */}
           <div className="grid gap-4 lg:grid-cols-5">
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 min-w-0">
               <MeetupAttendancePanel
                 meetupId={detail.id}
                 detail={detail}
                 onChanged={() => loadDetail(detail.id)}
               />
             </div>
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 min-w-0">
               <MeetupChat
                 meetupId={String(detail.id)}
                 defaultExpanded
