@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LayoutGrid, Loader2, Minus, Plus, Shuffle } from "lucide-react";
+import { LayoutGrid, Loader2, Minus, Plus } from "lucide-react";
 import type { Meetup, Team, User } from "../types";
 import {
   fetchMeetupTeams,
@@ -284,21 +284,6 @@ export function MeetupTeamsPanel({
             {live ? "Live" : "Offline"}
           </span>
         )}
-        {showReshuffle && (
-          <button
-            type="button"
-            disabled={reshuffling}
-            onClick={() => void reshuffleTeams()}
-            className="ml-auto inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
-          >
-            {reshuffling ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Shuffle className="w-3.5 h-3.5" />
-            )}
-            Reshuffle
-          </button>
-        )}
       </header>
 
       <div className="space-y-3 p-4">
@@ -386,8 +371,9 @@ export function MeetupTeamsPanel({
             onMovePlayer={handleMovePlayer}
             onToggleLock={handleToggleLock}
             canDragTeams={Boolean(teamMeetup)}
-            onReshuffle={showReshuffle ? () => void reshuffleTeams() : undefined}
+            onReshuffle={() => void reshuffleTeams()}
             reshuffling={reshuffling}
+            reshuffleVisible={showReshuffle}
           />
         )}
       </div>
