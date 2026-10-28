@@ -168,16 +168,16 @@ export function AdminMeetupNewPage() {
   }
 
   const stepper = (
-    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+    <div className="flex items-center gap-2 text-sm text-ink-dim mb-6">
       {[1, 2].map((n) => (
         <div key={n} className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setStep(n as Step)}
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+            className={`flex h-9 w-9 items-center justify-center text-sm font-semibold transition-colors ${
               step === n
-                ? 'bg-teal-700 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+                ? 'bg-ink text-board'
+                : 'bg-raised text-ink-dim'
             }`}
           >
             {n}
@@ -204,12 +204,11 @@ export function AdminMeetupNewPage() {
           />
         }
         title="One-off meetup"
-        subtitle="A single meetup outside the template schedule. Regular meetups are scheduled automatically by the active template."
       />
 
       <Link
         to="/admin/meetups"
-        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700 mb-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded transition-colors"
+        className="inline-flex items-center gap-2 text-sm text-ink-dim hover:text-ink mb-6 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
         All meetups
@@ -219,11 +218,11 @@ export function AdminMeetupNewPage() {
 
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm space-y-5 transition-colors"
+        className="border border-line bg-panel p-6 space-y-5 transition-colors"
       >
         {error && (
           <div
-            className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-800 dark:text-red-200"
+            className="border border-danger/40 bg-danger/15 px-3 py-2 text-sm text-danger"
             role="alert"
           >
             {error}
@@ -235,14 +234,14 @@ export function AdminMeetupNewPage() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                className="border border-line px-3 py-2 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
                 onClick={() => applyPreset('weekday_evening')}
               >
                 Weekday evening (~7 PM)
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                className="border border-line px-3 py-2 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
                 onClick={() => applyPreset('weekend_morning')}
               >
                 Weekend morning (~10 AM)
@@ -251,7 +250,7 @@ export function AdminMeetupNewPage() {
             <div>
               <label
                 htmlFor="start"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-xs font-medium text-ink-dim mb-1"
               >
                 Start time
               </label>
@@ -261,13 +260,13 @@ export function AdminMeetupNewPage() {
                 required
                 value={startLocal}
                 onChange={(e) => setStartLocal(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 transition-colors"
+                className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               />
             </div>
             <div>
               <label
                 htmlFor="loc"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-xs font-medium text-ink-dim mb-1"
               >
                 Location
               </label>
@@ -278,12 +277,12 @@ export function AdminMeetupNewPage() {
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="Pitch address or venue name"
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 transition-colors"
+                className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Venue coordinates <span className="text-gray-400">(optional)</span>
+              <label className="block text-xs font-medium text-ink-dim mb-1">
+                Venue coordinates <span className="text-ink-faint">(optional)</span>
               </label>
               <LocationPicker value={coords} onChange={setCoords} />
             </div>
@@ -291,7 +290,7 @@ export function AdminMeetupNewPage() {
               <div>
                 <label
                   htmlFor="minp"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  className="block text-xs font-medium text-ink-dim mb-1"
                 >
                   Min players
                 </label>
@@ -302,13 +301,13 @@ export function AdminMeetupNewPage() {
                   max={50}
                   value={minPlayers}
                   onChange={(e) => setMinPlayers(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
+                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
                 />
               </div>
               <div>
                 <label
                   htmlFor="maxp"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  className="block text-xs font-medium text-ink-dim mb-1"
                 >
                   Max players
                 </label>
@@ -319,14 +318,14 @@ export function AdminMeetupNewPage() {
                   max={50}
                   value={maxPlayers}
                   onChange={(e) => setMaxPlayers(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
+                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
                 />
               </div>
             </div>
             <div>
               <label
                 htmlFor="fee"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-xs font-medium text-ink-dim mb-1"
               >
                 Fee
               </label>
@@ -337,13 +336,13 @@ export function AdminMeetupNewPage() {
                 step="0.01"
                 value={fee}
                 onChange={(e) => setFee(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
+                className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               />
             </div>
             <div>
               <label
                 htmlFor="wl"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-xs font-medium text-ink-dim mb-1"
               >
                 Waitlist mode
               </label>
@@ -353,7 +352,7 @@ export function AdminMeetupNewPage() {
                 onChange={(e) =>
                   setWaitlistMode(e.target.value as WaitlistMode)
                 }
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
+                className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               >
                 <option value="auto_promote">Auto-promote from waitlist</option>
                 <option value="broadcast">Broadcast only (manual)</option>
@@ -362,7 +361,7 @@ export function AdminMeetupNewPage() {
             <div>
               <label
                 htmlFor="team-mode"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-xs font-medium text-ink-dim mb-1"
               >
                 Team assignment
               </label>
@@ -372,7 +371,7 @@ export function AdminMeetupNewPage() {
                 onChange={(e) =>
                   setTeamMode(e.target.value as TeamAssignmentMode)
                 }
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-gray-900 dark:text-gray-100 transition-colors"
+                className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               >
                 <option value="balanced">Balanced (skill snake)</option>
                 <option value="random">Random order (snake)</option>
@@ -380,7 +379,7 @@ export function AdminMeetupNewPage() {
             </div>
             <button
               type="button"
-              className="w-full min-h-[44px] rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 active:scale-[0.98] transition-colors"
+              className="w-full min-h-[44px] bg-ink text-board font-bold hover:bg-white/90 active:scale-[0.98] transition-colors"
               onClick={() => setStep(2)}
             >
               Next: review
@@ -390,40 +389,37 @@ export function AdminMeetupNewPage() {
 
         {step === 2 && (
           <div className="space-y-5">
-            <div className="rounded-xl bg-gray-50 dark:bg-gray-950/50 p-4 text-sm text-gray-700 dark:text-gray-300 space-y-2 border border-gray-200 dark:border-gray-800">
+            <div className="bg-raised p-4 text-sm text-ink-dim space-y-2 border border-line">
               <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">When:</span>{' '}
+                <span className="font-medium text-ink">When:</span>{' '}
                 {startLocal.replace('T', ' ')}
               </p>
               <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">Where:</span>{' '}
+                <span className="font-medium text-ink">Where:</span>{' '}
                 {location || '—'}
               </p>
               <p>
-                <span className="font-medium text-gray-900 dark:text-gray-100">Players:</span>{' '}
+                <span className="font-medium text-ink">Players:</span>{' '}
                 {minPlayers}–{maxPlayers} · Fee {fee}
               </p>
             </div>
-            <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-950/40 px-3 py-3 transition-colors">
+            <label className="flex items-start gap-3 cursor-pointer border border-line bg-raised/50 px-3 py-3 transition-colors">
               <input
                 type="checkbox"
                 checked={sendPushNotifs}
                 onChange={(e) => setSendPushNotifs(e.target.checked)}
-                className="mt-0.5 rounded border-gray-300 text-teal-700 focus:ring-teal-500"
+                className="mt-0.5 border-line text-team-a focus:ring-2 focus:ring-live"
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium text-gray-900 dark:text-gray-100">
+              <span className="text-sm text-ink">
+                <span className="font-medium text-ink">
                   Notify all players
-                </span>
-                <span className="block text-gray-600 dark:text-gray-400 mt-0.5">
-                  Send a push notification to everyone with the join link.
                 </span>
               </span>
             </label>
             <div className="flex flex-wrap gap-3 pt-2">
               <button
                 type="button"
-                className="flex-1 min-h-[44px] rounded-xl border border-gray-300 dark:border-gray-600 py-2.5 font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                className="flex-1 min-h-[44px] border border-line py-2.5 font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
                 onClick={() => setStep(1)}
               >
                 Back
@@ -431,7 +427,7 @@ export function AdminMeetupNewPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 disabled:opacity-60 transition-colors"
+                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60 transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Create meetup
@@ -439,7 +435,7 @@ export function AdminMeetupNewPage() {
             </div>
             <Link
               to="/admin/meetups"
-              className="block text-center text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700"
+              className="block text-center text-sm text-ink-dim hover:text-ink"
             >
               Cancel
             </Link>

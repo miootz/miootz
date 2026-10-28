@@ -27,28 +27,28 @@ export function AuthCallbackPage() {
   const failed = !loading && !!authError;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50 to-gray-50 dark:from-gray-950 dark:to-gray-950 flex items-center justify-center p-6">
-      <div className="max-w-md w-full rounded-2xl border border-teal-200/80 dark:border-teal-900/50 bg-white dark:bg-gray-900 p-8 shadow-xl text-center space-y-6">
+    <div className="min-h-screen bg-board flex items-center justify-center p-6">
+      <div className="max-w-md w-full border border-line bg-panel p-8 shadow-xl text-center space-y-6">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
             Miootz
           </p>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <h1 className="text-xl font-semibold text-ink">
             Signing in…
           </h1>
         </div>
 
         {!failed ? (
-          <div className="flex flex-col items-center gap-3 text-gray-600 dark:text-gray-400">
-            <Loader2 className="w-10 h-10 animate-spin text-teal-700 motion-reduce:animate-none" aria-hidden />
+          <div className="flex flex-col items-center gap-3 text-ink-dim">
+            <Loader2 className="w-10 h-10 animate-spin text-live motion-reduce:animate-none" aria-hidden />
             <p className="text-sm">Completing sign-in…</p>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="flex justify-center">
-              <XCircle className="w-10 h-10 text-amber-500" aria-hidden />
+              <XCircle className="w-10 h-10 text-danger" aria-hidden />
             </div>
-            <p className="text-sm text-amber-800 dark:text-amber-200">{authError}</p>
+            <p className="text-sm text-danger">{authError}</p>
           </div>
         )}
       </div>

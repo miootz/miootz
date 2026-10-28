@@ -177,14 +177,14 @@ export function AdminGameTemplateEditPage() {
   }
 
   if (!isNew && Number.isNaN(id)) {
-    return <p className="p-6 text-red-600">Invalid template id</p>;
+    return <p className="p-6 text-danger">Invalid template id</p>;
   }
 
   if (loading) {
     return (
       <div className="flex justify-center py-24">
         <Loader2
-          className="w-8 h-8 animate-spin text-teal-700"
+          className="w-8 h-8 animate-spin text-ink-dim"
           aria-label="Loading"
         />
       </div>
@@ -211,7 +211,7 @@ export function AdminGameTemplateEditPage() {
 
       <Link
         to="/admin/game-templates"
-        className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-teal-700"
+        className="inline-flex items-center gap-2 text-sm text-ink-dim hover:text-ink"
       >
         <ArrowLeft className="w-4 h-4" />
         All templates
@@ -219,11 +219,11 @@ export function AdminGameTemplateEditPage() {
 
       <form
         onSubmit={(e) => void onSubmit(e)}
-        className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm space-y-5"
+        className="border border-line bg-panel p-6 space-y-5"
       >
         {error && (
           <div
-            className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-800 dark:text-red-200"
+            className="border border-danger/40 bg-danger/15 px-3 py-2 text-sm text-danger"
             role="alert"
           >
             {error}
@@ -231,7 +231,7 @@ export function AdminGameTemplateEditPage() {
         )}
 
         {!isNew && meetupCount != null && meetupCount > 0 && (
-          <p className="text-xs text-amber-800 dark:text-amber-200 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+          <p className="text-xs text-live border border-live/40 bg-live/15 px-3 py-2">
             {meetupCount} materialized meetup{meetupCount === 1 ? "" : "s"}{" "}
             reference this template. You can still edit schedule and defaults;
             delete is disabled until no meetups use this template.
@@ -239,20 +239,20 @@ export function AdminGameTemplateEditPage() {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Template name
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Default location
           </label>
           <input
@@ -260,21 +260,21 @@ export function AdminGameTemplateEditPage() {
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="Copied onto new meetups"
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Venue coordinates <span className="text-gray-400">(optional)</span>
+          <label className="block text-xs font-medium text-ink-dim mb-1">
+            Venue coordinates <span className="text-ink-faint">(optional)</span>
           </label>
           <LocationPicker value={coords} onChange={setCoords} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-medium text-ink-dim mb-1">
               Min players
             </label>
             <input
@@ -283,11 +283,11 @@ export function AdminGameTemplateEditPage() {
               max={50}
               value={minPlayers}
               onChange={(e) => setMinPlayers(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
+              className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-medium text-ink-dim mb-1">
               Max players
             </label>
             <input
@@ -296,13 +296,13 @@ export function AdminGameTemplateEditPage() {
               max={50}
               value={maxPlayers}
               onChange={(e) => setMaxPlayers(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
+              className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Fee
           </label>
           <input
@@ -311,18 +311,18 @@ export function AdminGameTemplateEditPage() {
             step="0.01"
             value={fee}
             onChange={(e) => setFee(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Waitlist mode
           </label>
           <select
             value={waitlistMode}
             onChange={(e) => setWaitlistMode(e.target.value as WaitlistMode)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           >
             <option value="auto_promote">Auto-promote</option>
             <option value="broadcast">Broadcast</option>
@@ -330,13 +330,13 @@ export function AdminGameTemplateEditPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Team assignment
           </label>
           <select
             value={teamMode}
             onChange={(e) => setTeamMode(e.target.value as TeamAssignmentMode)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           >
             <option value="balanced">Balanced (skill snake)</option>
             <option value="random">Random order (snake)</option>
@@ -344,7 +344,7 @@ export function AdminGameTemplateEditPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Match duration (minutes)
           </label>
           <input
@@ -353,27 +353,20 @@ export function AdminGameTemplateEditPage() {
             max={60}
             value={matchDuration}
             onChange={(e) => setMatchDuration(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Duration for each team-vs-team match during live meetups.
-          </p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-xs font-medium text-ink-dim mb-1">
             Reference datetime (for “sync from start” only)
           </label>
           <input
             type="datetime-local"
             value={anchorStartLocal}
             onChange={(e) => setAnchorStartLocal(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Optional helper — use “Match start time above” in the schedule block
-            to align kickoff fields.
-          </p>
         </div>
 
         <AdminMeetupRecurrenceForm
@@ -399,14 +392,13 @@ export function AdminGameTemplateEditPage() {
           onAnnounceHourChange={setAnnounceHour}
           announceMinute={announceMinute}
           onAnnounceMinuteChange={setAnnounceMinute}
-          showDisabledHint={false}
         />
 
         <div className="flex flex-wrap gap-3 pt-2">
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center justify-center gap-2 min-h-[44px] px-5 rounded-xl bg-teal-700 text-white font-medium hover:bg-teal-800 disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 min-h-[44px] px-5 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {isNew ? "Create template" : "Save changes"}
@@ -416,7 +408,7 @@ export function AdminGameTemplateEditPage() {
               type="button"
               disabled={!canDelete}
               onClick={() => setConfirmDelete(true)}
-              className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-xl border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-40"
             >
               <Trash2 className="w-4 h-4" />
               Delete

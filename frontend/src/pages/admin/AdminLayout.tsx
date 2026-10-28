@@ -20,10 +20,10 @@ import { OfflineBanner } from "../../components/OfflineBanner";
 import { AdminNotificationPrompt } from "../../components/admin/AdminNotificationPrompt";
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+  `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
     isActive
-      ? "bg-teal-700 text-white shadow-sm"
-      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+      ? "bg-ink text-board font-bold"
+      : "text-ink-dim hover:bg-raised hover:text-ink"
   }`;
 
 function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -131,13 +131,13 @@ export function AdminLayout() {
 
   if (loading || !me) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-board">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-line border-t-live animate-spin"
             aria-hidden
           />
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading…</p>
+          <p className="text-sm text-ink-dim">Loading…</p>
         </div>
       </div>
     );
@@ -148,34 +148,34 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-board flex flex-col md:flex-row">
       <a
         href="#admin-main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:bg-gray-900 dark:focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-board focus:outline-hidden focus:ring-2 focus:ring-live"
       >
         Skip to main content
       </a>
       <OfflineBanner />
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-gray-50/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
+      <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-board/95 px-4 backdrop-blur md:hidden">
         <button
           type="button"
           onClick={openDrawer}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          className="inline-flex h-11 w-11 items-center justify-center border border-line bg-panel text-ink hover:bg-raised focus:outline-hidden focus:ring-2 focus:ring-live"
           aria-expanded={drawerOpen}
           aria-label="Open admin menu"
         >
           <Menu className="h-5 w-5" />
         </button>
         <div className="min-w-0 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
             Admin
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            <span className="ml-1.5 bg-live/15 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-live">
               Viewing as Admin
             </span>
           </p>
-          <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+          <p className="truncate text-sm font-medium text-ink">
             {me.user.display_name}
           </p>
         </div>
@@ -183,29 +183,29 @@ export function AdminLayout() {
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:w-56 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 md:min-h-screen shrink-0 flex-col">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+      <aside className="hidden md:flex md:w-56 border-b md:border-b-0 md:border-r border-line bg-panel md:min-h-screen shrink-0 flex-col">
+        <div className="p-4 border-b border-line">
           <Link
             to="/"
             onClick={() => setPreferMemberView(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-teal-400 hover:bg-white dark:hover:bg-gray-800 transition-colors w-full"
+            className="inline-flex items-center gap-2 border border-line bg-raised/50 px-3 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors w-full"
           >
-            <Home className="w-4 h-4 shrink-0 text-teal-700" aria-hidden />
+            <Home className="w-4 h-4 shrink-0 text-ink-faint" aria-hidden />
             <span className="text-left">
               <span className="block">Member view</span>
-              <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+              <span className="block text-xs font-normal text-ink-faint">
                 Player home & meetups
               </span>
             </span>
           </Link>
-          <h2 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <span className="text-teal-700">Admin</span>
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+          <h2 className="mt-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink flex items-center gap-2">
+            Admin
+            <span className="bg-live/15 px-2 py-0.5 text-2xs font-semibold normal-case tracking-normal text-live">
               Viewing as Admin
             </span>
           </h2>
           <p
-            className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1"
+            className="text-xs text-ink-dim truncate mt-1"
             title={me.user.display_name ?? ""}
           >
             {me.user.display_name}
@@ -214,11 +214,11 @@ export function AdminLayout() {
         <nav className="p-2 flex flex-col gap-1 flex-1">
           <AdminNavLinks />
         </nav>
-        <div className="p-4 mt-auto border-t border-gray-200 dark:border-gray-800 space-y-2">
+        <div className="p-4 mt-auto border-t border-line space-y-2">
           <button
             type="button"
             onClick={() => void refresh()}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
+            className="text-xs text-ink-faint hover:text-ink"
           >
             Refresh session
           </button>
@@ -227,7 +227,7 @@ export function AdminLayout() {
             onClick={() => {
               void logout();
             }}
-            className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+            className="flex items-center gap-1.5 text-xs text-danger hover:opacity-80"
           >
             <LogOut className="w-3.5 h-3.5" />
             Log out
@@ -240,46 +240,46 @@ export function AdminLayout() {
         <div className="fixed inset-0 z-[100] md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+            className="absolute inset-0 bg-black/50"
             aria-label="Close menu"
             onClick={closeDrawer}
           />
           <div
-            className="absolute left-0 top-0 flex h-full w-[min(20rem,88vw)] flex-col border-r border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
+            className="absolute left-0 top-0 flex h-full w-[min(20rem,88vw)] flex-col border-r border-line bg-panel shadow-xl"
             style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
           >
-            <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-800">
+            <div className="flex items-center justify-between border-b border-line p-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                   Admin
-                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  <span className="ml-1.5 bg-live/15 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-live">
                     Viewing as Admin
                   </span>
                 </p>
-                <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                <p className="truncate text-sm font-medium text-ink">
                   {me.user.display_name}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closeDrawer}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                className="inline-flex h-11 w-11 items-center justify-center border border-line text-ink-dim hover:bg-raised hover:text-ink"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="border-b border-gray-200 p-4 dark:border-gray-800">
+            <div className="border-b border-line p-4">
               <Link
                 to="/"
                 onClick={() => {
                   setPreferMemberView(true);
                   closeDrawer();
                 }}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-teal-400 w-full"
+                className="inline-flex items-center gap-2 border border-line bg-raised/50 px-3 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink w-full"
               >
                 <Home
-                  className="w-4 h-4 shrink-0 text-teal-700"
+                  className="w-4 h-4 shrink-0 text-ink-faint"
                   aria-hidden
                 />
                 Member view
@@ -288,11 +288,11 @@ export function AdminLayout() {
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
               <AdminNavLinks onNavigate={closeDrawer} />
             </nav>
-            <div className="border-t border-gray-200 p-4 dark:border-gray-800">
+            <div className="border-t border-line p-4">
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="text-xs text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
+                className="text-xs text-ink-faint hover:text-ink"
               >
                 Refresh session
               </button>
@@ -304,7 +304,7 @@ export function AdminLayout() {
       <main
         id="admin-main-content"
         tabIndex={-1}
-        className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 outline-none"
+        className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 outline-hidden"
         style={{
           paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
         }}

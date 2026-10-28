@@ -1,17 +1,17 @@
 /** Loading placeholders matching MeetupDetails layout (teams only). */
 export function MeetupDetailsSkeleton() {
   const pulse =
-    'motion-safe:animate-pulse motion-reduce:animate-none rounded bg-gray-200 dark:bg-gray-700';
+    'motion-safe:animate-pulse motion-reduce:animate-none rounded bg-raised';
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-6" aria-busy="true" aria-label="Loading meetup">
+    <div className="mx-auto max-w-6xl space-y-8 p-6 bg-board" aria-busy="true" aria-label="Loading meetup">
       <div className="space-y-3 text-center">
         <div className={`mx-auto h-8 w-48 ${pulse}`} />
         <div className={`mx-auto h-4 w-32 ${pulse}`} />
         <div className={`mx-auto h-4 w-full max-w-md ${pulse}`} />
       </div>
 
-      <div className={`mx-auto max-w-xl rounded-xl border border-gray-200 p-4 dark:border-gray-800`}>
+      <div className={`mx-auto max-w-xl border border-line p-4`}>
         <div className={`mx-auto mb-3 h-4 w-3/4 max-w-sm ${pulse}`} />
         <div className={`mx-auto h-10 w-40 ${pulse}`} />
       </div>
@@ -23,9 +23,9 @@ export function MeetupDetailsSkeleton() {
           {[0, 1].map((col) => (
             <div
               key={col}
-              className="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-800"
+              className="space-y-4 border border-line p-4"
             >
-              <div className="flex justify-between border-b border-gray-200 pb-2 dark:border-gray-800">
+              <div className="flex justify-between border-b border-line pb-2">
                 <div className={`h-6 w-20 ${pulse}`} />
                 <div className={`h-4 w-16 ${pulse}`} />
               </div>
@@ -39,8 +39,8 @@ export function MeetupDetailsSkeleton() {
         </div>
       </section>
 
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800">
-        <div className={`h-10 border-b border-gray-200 dark:border-gray-800 ${pulse}`} />
+      <div className="border border-line">
+        <div className={`h-10 border-b border-line ${pulse}`} />
         <div className="space-y-3 p-4">
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex gap-2">

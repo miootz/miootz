@@ -23,18 +23,9 @@ function formatTimer(seconds: number): string {
 
 function getTimerColor(seconds: number, total: number): string {
   const ratio = seconds / total;
-  if (ratio > 1 / 3) return "text-emerald-600 dark:text-emerald-400";
-  if (ratio > 1 / 10) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
-}
-
-function getTimerBg(seconds: number, total: number): string {
-  const ratio = seconds / total;
-  if (ratio > 1 / 3)
-    return "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800";
-  if (ratio > 1 / 10)
-    return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800";
-  return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
+  if (ratio > 1 / 3) return "text-ink";
+  if (ratio > 1 / 10) return "text-live";
+  return "text-danger";
 }
 
 /** Steward gate → reason line shown to locked members (never silent). */
@@ -227,7 +218,6 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
     timerSeconds,
     currentMatch.timer_total_seconds,
   );
-  const timerBg = getTimerBg(timerSeconds, currentMatch.timer_total_seconds);
 
   const runTimer = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -242,32 +232,32 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
 
   return (
     <div
-      className={`rounded-xl border ${timerBg} p-4 space-y-3 transition-colors`}
+      className="border border-line bg-panel"
       role="region"
       aria-label="Live match scoreboard"
     >
       {/* Half-time flash */}
       {halfTimeFlash && (
-        <div className="flex items-center justify-center gap-1.5 text-center py-1 px-3 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-sm font-bold motion-safe:animate-pulse motion-reduce:animate-none">
+        <div className="flex items-center justify-center gap-1.5 border-b border-line bg-live py-1.5 text-sm font-bold text-board motion-safe:animate-pulse motion-reduce:animate-none">
           <Zap className="h-4 w-4 shrink-0" aria-hidden />
           Half-time!
         </div>
       )}
 
       {/* Match header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-line px-4 py-2">
         <div className="flex items-center gap-2">
           <Timer className={`h-4 w-4 ${timerColor}`} aria-hidden />
-          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink-dim">
             Match {currentMatch.match_number}
           </span>
           {isTimeUp && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
-              Time's up!
+            <span className="bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger">
+              Time's up
             </span>
           )}
           {isPaused && !isTimeUp && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+            <span className="bg-raised px-2 py-0.5 text-xs font-medium text-ink-dim">
               Paused
             </span>
           )}
@@ -275,40 +265,40 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         {canControl && (
           <a
             href={`/meetup-matches/${sid}`}
-            className="text-xs text-teal-700 dark:text-teal-400 hover:underline font-medium"
+            className="text-xs font-medium text-ink-dim hover:text-ink"
           >
             Manage match →
           </a>
         )}
       </div>
 
-      {/* Scoreboard */}
-      <div className="flex items-center justify-center gap-4 sm:gap-8">
-        <div className="flex-1 text-right">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 truncate">
+      {/* Scoreboard — team slabs + the big numbers */}
+      <div className="flex items-stretch">
+        <div className="flex flex-1 items-center justify-end bg-team-a px-3 py-2.5">
+          <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
             {currentMatch.team_a.name}
           </p>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white tabular-nums">
+        <div className="flex shrink-0 items-center gap-2 border-x border-line bg-board px-3 sm:gap-3 sm:px-5">
+          <span className="text-4xl font-extrabold tabular-nums text-ink sm:text-5xl">
             {currentMatch.score_a}
           </span>
-          <span className="text-lg text-gray-400 dark:text-gray-600">—</span>
-          <span className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white tabular-nums">
+          <span className="text-lg text-ink-faint">—</span>
+          <span className="text-4xl font-extrabold tabular-nums text-ink sm:text-5xl">
             {currentMatch.score_b}
           </span>
         </div>
-        <div className="flex-1 text-left">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 truncate">
+        <div className="flex flex-1 items-center bg-team-b px-3 py-2.5">
+          <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
             {currentMatch.team_b.name}
           </p>
         </div>
       </div>
 
       {/* Timer */}
-      <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col items-center gap-3 border-t border-line px-4 py-4">
         <span
-          className={`text-2xl sm:text-3xl font-bold tabular-nums ${timerColor} transition-colors`}
+          className={`text-3xl font-extrabold tabular-nums sm:text-4xl ${timerColor}`}
           style={{
             animation:
               currentMatch.status === "active" && !isPaused
@@ -329,7 +319,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
                 onClick={() =>
                   void runTimer(() => startTimer(sid, currentMatch.id))
                 }
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
               >
                 <Timer className="h-4 w-4" aria-hidden />
                 Start timer
@@ -342,7 +332,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
                 onClick={() =>
                   void runTimer(() => pauseTimer(sid, currentMatch.id))
                 }
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
               >
                 Pause
               </button>
@@ -354,7 +344,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
                 onClick={() =>
                   void runTimer(() => resumeTimer(sid, currentMatch.id))
                 }
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
               >
                 Resume
               </button>
@@ -368,7 +358,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             onClick={() =>
               void runTimer(() => resetMatch(sid, currentMatch.id))
             }
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-700 text-white text-xs font-semibold hover:bg-gray-800 disabled:opacity-50 transition-transform"
+            className="inline-flex items-center gap-1.5 px-4 py-2 border border-line text-xs font-semibold text-ink-dim hover:bg-raised disabled:opacity-50"
           >
             Reset (admin)
           </button>
@@ -380,7 +370,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             type="button"
             disabled={leaseHeld || busy}
             onClick={() => setSheetOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-700 text-white text-sm font-bold hover:bg-teal-800 disabled:opacity-60 active:scale-[0.98] transition-transform"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98]"
           >
             {leaseHeld
               ? leaseBusyLabel(lease!.holderName, leaseLeft)
@@ -388,15 +378,15 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
           </button>
         )}
         {!canControl && stewardReasonLine(steward?.reason) && (
-          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <p className="text-xs font-medium text-ink-faint">
             {stewardReasonLine(steward?.reason)}
           </p>
         )}
       </div>
 
       {/* Goal log — visible to everyone, delete when the viewer controls. */}
-      <div className="pt-1">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+      <div className="border-t border-line px-4 py-3">
+        <p className="mb-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">
           Goals
         </p>
         <GoalList

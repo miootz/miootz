@@ -88,7 +88,7 @@ function Avatar({
       <img
         src={resolved}
         alt=""
-        className={`${sizeClasses} rounded-full object-cover flex-shrink-0 ring-1 ring-gray-200 dark:ring-gray-700`}
+        className={`${sizeClasses} border border-line object-cover flex-shrink-0`}
         loading="lazy"
       />
     );
@@ -101,8 +101,7 @@ function Avatar({
 
   return (
     <div
-      className={`${sizeClasses} rounded-full flex items-center justify-center flex-shrink-0 text-white font-medium select-none`}
-      style={{ backgroundColor: usernameColor(username) }}
+      className={`${sizeClasses} border border-line bg-raised text-ink font-medium flex items-center justify-center flex-shrink-0 select-none`}
     >
       {initials}
     </div>
@@ -112,7 +111,7 @@ function Avatar({
 /** ─── Skeleton loader ───────────────────────────────────────────── */
 function ChatSkeleton() {
   const pulse =
-    "motion-safe:animate-pulse motion-reduce:animate-none bg-gray-200 dark:bg-gray-700";
+    "motion-safe:animate-pulse motion-reduce:animate-none bg-raised";
   const bubbleHeights = ["h-12", "h-8", "h-10", "h-8", "h-12"] as const;
 
   return (
@@ -124,15 +123,15 @@ function ChatSkeleton() {
             key={i}
             className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}
           >
-            <div className={`h-7 w-7 flex-shrink-0 rounded-full ${pulse}`} />
+            <div className={`h-7 w-7 flex-shrink-0 ${pulse}`} />
             <div
               className={`flex-1 space-y-2 ${mine ? "flex flex-col items-end" : ""}`}
             >
               <div
-                className={`h-3 w-20 rounded ${mine ? "ml-auto" : ""} ${pulse}`}
+                className={`h-3 w-20 ${mine ? "ml-auto" : ""} ${pulse}`}
               />
               <div
-                className={`w-full max-w-[14rem] rounded-2xl ${bubbleHeights[i]} ${pulse} ${
+                className={`w-full max-w-[14rem] ${bubbleHeights[i]} ${pulse} ${
                   mine ? "ml-auto" : ""
                 }`}
               />
@@ -149,9 +148,8 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
   const isFirst = group.showHeader;
   const mine = group.isMine;
 
-  const bubbleMine = "bg-teal-700 text-white dark:bg-teal-700 shadow-sm";
-  const bubbleOther =
-    "bg-gray-100 text-gray-800 dark:bg-gray-700/70 dark:text-gray-100";
+  const bubbleMine = "bg-raised text-ink";
+  const bubbleOther = "bg-panel border border-line text-ink";
 
   return (
     <div className={`flex gap-2 group/chat ${mine ? "flex-row-reverse" : ""}`}>
@@ -172,16 +170,12 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
             }`}
           >
             <span
-              className={
-                mine
-                  ? "text-xs font-semibold truncate text-teal-800 dark:text-teal-300"
-                  : "text-xs font-semibold truncate"
-              }
+              className="text-xs font-semibold truncate text-ink"
               style={mine ? undefined : { color: group.usernameColor }}
             >
               {mine ? "You" : group.username}
             </span>
-            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
+            <span className="text-2xs text-ink-faint tabular-nums shrink-0">
               {formatCompactTime(group.messages[0].time)}
             </span>
           </div>
@@ -191,7 +185,7 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
         {group.messages.length === 1 ? (
           <div className="inline-block max-w-[85%]">
             <div
-              className={`rounded-2xl px-3 py-2 text-sm leading-relaxed break-words text-left ${
+              className={`px-3 py-2 text-sm leading-relaxed break-words text-left ${
                 mine ? bubbleMine : bubbleOther
               }`}
             >
@@ -199,18 +193,12 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl overflow-hidden max-w-[85%]">
-            {group.messages.map((m, idx) => (
+          <div className="overflow-hidden max-w-[85%]">
+            {group.messages.map((m) => (
               <div
                 key={m.id}
                 className={`px-3 py-1.5 text-sm leading-relaxed break-words text-left ${
                   mine ? bubbleMine : bubbleOther
-                } ${
-                  idx === 0
-                    ? "rounded-t-2xl"
-                    : idx === group.messages.length - 1
-                      ? "rounded-b-2xl"
-                      : ""
                 }`}
               >
                 {m.text}
@@ -227,11 +215,11 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
 function DateSeparator({ date }: { date: Date }) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-      <span className="text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      <div className="flex-1 h-px bg-line" />
+      <span className="text-2xs font-medium text-ink-faint uppercase tracking-wider">
         {formatDateHeader(date)}
       </span>
-      <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+      <div className="flex-1 h-px bg-line" />
     </div>
   );
 }
@@ -242,7 +230,7 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="absolute bottom-20 right-4 z-10 w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 hover:shadow-xl transition-all"
+      className="absolute bottom-20 right-4 z-10 w-9 h-9 border border-line bg-panel shadow-lg flex items-center justify-center text-ink-dim hover:text-ink hover:shadow-xl transition-all"
       aria-label="Scroll to latest messages"
     >
       <ArrowDown className="w-4 h-4" />
@@ -627,46 +615,44 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
   if (!isExpanded) {
     return (
       <section className="max-w-2xl mx-auto w-full">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-panel border border-line overflow-hidden">
           {/* Header */}
           <button
             type="button"
             onClick={() => setIsExpanded(true)}
-            className="w-full flex items-center justify-between px-4 py-3 font-semibold text-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 font-semibold text-ink hover:bg-raised transition-colors"
             aria-expanded="false"
           >
             <span className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-teal-500" />
+              <Users className="w-4 h-4 text-ink-dim" />
               Meetup Chat
               {messageCount > 0 && (
-                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                <span className="text-xs font-normal text-ink-faint tabular-nums">
                   · {messageCount} message{messageCount !== 1 ? "s" : ""}
                 </span>
               )}
             </span>
-            <ChevronUp className="w-4 h-4 text-gray-400" />
+            <ChevronUp className="w-4 h-4 text-ink-faint" />
           </button>
 
           {/* Preview (last 4 messages) */}
           <div className="px-4 pb-3 space-y-3 max-h-[190px] overflow-hidden relative">
             {isLoading ? (
-              <div className="text-center text-sm text-gray-400">Loading…</div>
+              <div className="text-center text-sm text-ink-faint">Loading…</div>
             ) : flatMessages.length === 0 ? (
-              <div className="text-center text-sm text-gray-400">
-                No messages yet — start the conversation!
+              <div className="text-center text-sm text-ink-faint">
+                No messages yet
               </div>
             ) : (
               <>
                 {flatMessages.slice(-4).map((m) => (
                   <div key={m.id} className="flex gap-2">
                     <Avatar url={m.avatarUrl} username={m.username} />
-                    <div className="rounded-2xl px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700/70 text-gray-800 dark:text-gray-100 max-w-[85%]">
+                    <div className="border border-line bg-panel px-3 py-1.5 text-sm text-ink max-w-[85%]">
                       {m.text}
                     </div>
                   </div>
                 ))}
-                {/* Fade overlay */}
-                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white dark:from-gray-800 to-transparent pointer-events-none" />
               </>
             )}
           </div>
@@ -680,22 +666,22 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
     <section
       className={`max-w-2xl mx-auto w-full ${
         isExpanded
-          ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-gray-950/40"
+          ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-board/60"
           : ""
       }`}
     >
       <div
-        className={`relative bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-md:rounded-xl h-[min(75vh,600px)] ${
+        className={`relative bg-panel border border-line overflow-hidden flex flex-col h-[min(75vh,600px)] ${
           isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 font-semibold text-gray-800 dark:text-white border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 font-semibold text-ink border-b border-line bg-panel flex-shrink-0">
           <span className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-teal-500" />
+            <Users className="w-4 h-4 text-ink-dim" />
             Meetup Chat
             {messageCount > 0 && (
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+              <span className="text-xs font-normal text-ink-faint tabular-nums">
                 · {messageCount} message{messageCount !== 1 ? "s" : ""}
               </span>
             )}
@@ -706,7 +692,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
               setIsExpanded(false);
               scrollToBottom(true);
             }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+            className="w-8 h-8 flex items-center justify-center hover:bg-raised transition-colors text-ink-dim"
             aria-label="Collapse chat"
           >
             <ChevronDown className="w-4 h-4" />
@@ -721,10 +707,10 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
           {isLoading ? (
             <ChatSkeleton />
           ) : flatMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-2">
+            <div className="flex flex-col items-center justify-center h-full text-center text-ink-faint space-y-2">
               <Users className="w-8 h-8 opacity-50" />
               <p className="text-sm">
-                No messages yet — start the conversation!
+                No messages yet
               </p>
             </div>
           ) : (
@@ -740,7 +726,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
 
         {typingLabel && (
           <div
-            className="px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700/80 flex-shrink-0"
+            className="px-4 py-1.5 text-xs text-ink-faint bg-panel border-t border-line flex-shrink-0"
             aria-live="polite"
           >
             {typingLabel}
@@ -750,7 +736,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
         {/* Input */}
         <form
           onSubmit={handleSendMessage}
-          className="flex items-end gap-2 p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0"
+          className="flex items-end gap-2 p-3 border-t border-line bg-panel flex-shrink-0"
         >
           <div className="relative shrink-0" ref={emojiWrapRef}>
             <button
@@ -759,7 +745,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
                 e.stopPropagation();
                 setEmojiOpen((o) => !o);
               }}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-700"
+              className="flex h-9 w-9 items-center justify-center border border-line text-ink-dim hover:bg-raised"
               aria-expanded={emojiOpen}
               aria-label="Insert emoji"
             >
@@ -767,7 +753,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
             </button>
             {emojiOpen && (
               <div
-                className="absolute bottom-full left-0 z-20 mb-2 flex w-[13.5rem] flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-900"
+                className="absolute bottom-full left-0 z-20 mb-2 flex w-[13.5rem] flex-wrap gap-1 border border-line bg-panel p-2 shadow-lg"
                 role="menu"
                 aria-label="Quick emoji"
               >
@@ -776,7 +762,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
                     key={em}
                     type="button"
                     role="menuitem"
-                    className="rounded p-1.5 text-lg leading-none hover:bg-gray-100 dark:hover:bg-gray-800"
+                    className="p-1.5 text-lg leading-none hover:bg-raised"
                     onClick={() => {
                       setNewMessage((m) =>
                         (m + em).slice(0, MAX_MESSAGE_LENGTH),
@@ -800,13 +786,13 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
             onKeyDown={handleKeyDown}
             placeholder="Type a message…"
             maxLength={MAX_MESSAGE_LENGTH + 10}
-            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-shadow placeholder:text-gray-500 dark:placeholder:text-gray-400"
+            className="flex-1 min-w-0 px-3 py-2 border border-line bg-raised text-ink text-sm focus:outline-hidden focus:ring-2 focus:ring-live focus:border-transparent transition-shadow placeholder:text-ink-faint"
             aria-label="Chat message"
           />
           <button
             type="submit"
             disabled={!newMessage.trim() || isOverLimit}
-            className="flex-shrink-0 w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-95"
+            className="flex-shrink-0 w-9 h-9 bg-ink text-board flex items-center justify-center hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-95"
             aria-label="Send message"
           >
             <Send className="w-4 h-4" />
@@ -814,23 +800,23 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({ meetupId }) => {
         </form>
 
         {/* Footer info */}
-        <div className="flex items-center justify-between px-4 py-1.5 text-2xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/50 bg-white dark:bg-gray-800 flex-shrink-0">
-          <span>
+        <div className="flex items-center justify-between px-4 py-1.5 text-2xs text-ink-faint border-t border-line bg-panel flex-shrink-0">
+          <span className="tabular-nums">
             {messageCount} message{messageCount !== 1 ? "s" : ""}
           </span>
-          <span className={isOverLimit ? "text-red-500 font-medium" : ""}>
+          <span className={`tabular-nums ${isOverLimit ? "text-danger font-medium" : ""}`}>
             {charCount}/{MAX_MESSAGE_LENGTH}
           </span>
         </div>
 
         {/* Send error toast */}
         {sendError && (
-          <div className="absolute bottom-14 left-4 right-4 bg-red-50 dark:bg-red-900/40 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 text-xs text-red-700 dark:text-red-300 flex items-center justify-between gap-2 z-10">
+          <div className="absolute bottom-14 left-4 right-4 bg-danger/15 border border-danger/40 px-3 py-2 text-xs text-danger flex items-center justify-between gap-2 z-10">
             <span>{sendError}</span>
             <button
               type="button"
               onClick={() => setSendError(null)}
-              className="flex-shrink-0 hover:text-red-900 dark:hover:text-red-100"
+              className="flex-shrink-0 hover:text-white"
               aria-label="Dismiss"
             >
               <X className="w-3.5 h-3.5" />

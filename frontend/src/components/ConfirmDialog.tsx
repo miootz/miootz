@@ -51,7 +51,7 @@ export function ConfirmDialog({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+        className="absolute inset-0 bg-black/50"
         aria-label="Dismiss"
         onClick={onCancel}
       />
@@ -59,16 +59,16 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+        className="relative z-10 w-full max-w-md border border-line bg-panel p-6 shadow-xl"
       >
         <h2
           id={titleId}
-          className="text-lg font-semibold text-gray-900 dark:text-gray-100"
+          className="text-lg font-bold text-ink"
         >
           {title}
         </h2>
         {description ? (
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          <p className="mt-2 text-sm text-ink-dim">
             {description}
           </p>
         ) : null}
@@ -76,17 +76,17 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            className="inline-flex items-center justify-center border border-line px-4 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
+            className={`inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold focus:outline-hidden focus:ring-2 focus:ring-live ${
               destructive
-                ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
-                : 'bg-teal-700 hover:bg-teal-800 focus:ring-teal-500'
+                ? 'bg-danger text-white hover:bg-danger/90'
+                : 'bg-ink text-board hover:bg-white/90'
             }`}
           >
             {confirmLabel}

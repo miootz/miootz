@@ -1,6 +1,5 @@
 import {
   initialsFromName,
-  playerAvatarColor,
   skillBadgeClasses,
 } from "../utils/playerDisplay";
 
@@ -27,7 +26,7 @@ export function SkillBadge({
 }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-full font-semibold tabular-nums ${badgeSize[size]} ${skillBadgeClasses(score)}`}
+      className={`inline-flex shrink-0 items-center font-semibold tabular-nums ${badgeSize[size]} ${skillBadgeClasses(score)}`}
       title={`Skill ${score}`}
     >
       {score}
@@ -51,7 +50,7 @@ export function PlayerAvatarFace({
   if (isPlusOne) {
     return (
       <div
-        className={`${s} rounded-full shrink-0 flex items-center justify-center font-bold text-white bg-pink-500`}
+        className={`${s} shrink-0 flex items-center justify-center font-bold text-pink-400 bg-pink-500/20 border border-pink-500/50`}
         aria-hidden
       >
         +1
@@ -64,15 +63,14 @@ export function PlayerAvatarFace({
       <img
         src={avatarUrl}
         alt=""
-        className={`${s} rounded-full object-cover shrink-0 bg-gray-200 dark:bg-gray-700`}
+        className={`${s} border border-line object-cover shrink-0 bg-raised`}
       />
     );
   }
 
   return (
     <div
-      className={`${s} rounded-full shrink-0 flex items-center justify-center font-semibold text-white`}
-      style={{ backgroundColor: playerAvatarColor(name) }}
+      className={`${s} border border-line bg-raised text-ink shrink-0 flex items-center justify-center font-semibold`}
       aria-hidden
     >
       {initialsFromName(name)}

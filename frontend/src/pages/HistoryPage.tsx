@@ -69,19 +69,19 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
   return (
     <Link
       to={`/history/${row.id}`}
-      className="block rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/60"
+      className="block border border-line bg-panel overflow-hidden transition-colors hover:bg-raised"
     >
       <div className="flex items-start gap-3 p-3.5">
         {/* Date chip */}
         <div className="shrink-0 mt-0.5">
-          <div className="rounded-lg bg-gray-100 dark:bg-gray-800 px-2.5 py-1.5 text-center min-w-[52px]">
-            <div className="text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase leading-tight">
+          <div className="bg-raised px-2.5 py-1.5 text-center min-w-[52px]">
+            <div className="text-2xs font-medium text-ink-dim uppercase leading-tight">
               {format(start, "EEE")}
             </div>
-            <div className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
+            <div className="text-base font-bold text-ink leading-tight">
               {format(start, "d")}
             </div>
-            <div className="text-2xs text-gray-500 dark:text-gray-400 leading-tight">
+            <div className="text-2xs text-ink-dim leading-tight">
               {format(start, "MMM")}
             </div>
           </div>
@@ -91,8 +91,8 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
         <div className="min-w-0 flex-1 space-y-1.5">
           {/* Attendee count */}
           <div className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <Users className="w-3.5 h-3.5 text-ink-faint shrink-0" />
+            <span className="text-sm font-semibold text-ink tabular-nums">
               {row.confirmed_count ?? 0} player
               {row.confirmed_count !== 1 ? "s" : ""}
             </span>
@@ -101,10 +101,10 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
           {/* Metadata chips */}
           <div className="flex flex-wrap items-center gap-1.5">
             {matchCount > 0 && (
-              <span className="rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs text-gray-600 dark:text-gray-400">
+              <span className="bg-raised px-2 py-0.5 text-2xs text-ink-dim">
                 {matchCount} match{matchCount !== 1 ? "es" : ""}
                 {final && (
-                  <span className="ml-1 text-gray-500 dark:text-gray-400">
+                  <span className="ml-1 tabular-nums text-ink">
                     · Final: {final.teamA} {final.scoreA} – {final.scoreB}{" "}
                     {final.teamB}
                   </span>
@@ -112,7 +112,7 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
               </span>
             )}
             {ratingAvg != null && (
-              <span className="rounded-md bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">
+              <span className="bg-live/15 px-2 py-0.5 text-2xs font-medium text-live tabular-nums">
                 ★ {ratingAvg.toFixed(1)}
               </span>
             )}
@@ -121,7 +121,7 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
 
         {/* Chevron */}
         <div className="shrink-0 self-center mt-0.5">
-          <ChevronRight className="w-4 h-4 text-gray-400" />
+          <ChevronRight className="w-4 h-4 text-ink-faint" />
         </div>
       </div>
     </Link>
@@ -132,15 +132,15 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
 
 function HistoryRowSkeleton() {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3.5 motion-safe:animate-pulse motion-reduce:animate-none">
+    <div className="border border-line bg-panel p-3.5 motion-safe:animate-pulse motion-reduce:animate-none">
       <div className="flex items-start gap-3">
-        <div className="w-[52px] h-14 rounded-lg bg-gray-200 dark:bg-gray-700 shrink-0" />
+        <div className="w-[52px] h-14 bg-raised shrink-0" />
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="h-4 w-3/4 max-w-xs rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-16 rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-3/4 max-w-xs bg-raised" />
+          <div className="h-3 w-16 bg-raised" />
           <div className="flex gap-1.5">
-            <div className="h-5 w-16 rounded-md bg-gray-200 dark:bg-gray-700" />
-            <div className="h-5 w-20 rounded-md bg-gray-200 dark:bg-gray-700" />
+            <div className="h-5 w-16 bg-raised" />
+            <div className="h-5 w-20 bg-raised" />
           </div>
         </div>
       </div>
@@ -245,17 +245,14 @@ export const HistoryPage: React.FC = () => {
     <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4">
       {/* Header */}
       <header>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+        <h1 className="text-2xl font-bold text-ink">
           Match History
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          Past meetups — tap a meetup for results and ratings.
-        </p>
       </header>
 
       {loadError && (
         <p
-          className="text-center text-sm text-red-600 dark:text-red-400"
+          className="text-center text-sm text-danger"
           role="alert"
         >
           {loadError}
@@ -265,14 +262,14 @@ export const HistoryPage: React.FC = () => {
       {/* Search + Sort */}
       {pastMeetups.length > 0 && (
         <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
-            <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+          <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by location…"
-              className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none dark:text-white"
+              className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
               aria-label="Filter meetups by location"
             />
           </label>
@@ -283,10 +280,10 @@ export const HistoryPage: React.FC = () => {
                 key={key}
                 type="button"
                 onClick={() => setSortKey(key)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
+                className={`shrink-0 border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   sortKey === key
-                    ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
+                    ? "border-live bg-live/15 text-live"
+                    : "border-line text-ink-dim hover:bg-raised hover:text-ink"
                 }`}
               >
                 {label}
@@ -298,11 +295,11 @@ export const HistoryPage: React.FC = () => {
 
       {/* Meetup list */}
       {pastMeetups.length === 0 && !loadError ? (
-        <p className="text-center text-gray-500 dark:text-gray-400 py-12">
+        <p className="text-center text-ink-dim py-12">
           No past meetups yet.
         </p>
       ) : sortedFiltered.length === 0 ? (
-        <p className="text-center text-gray-500 dark:text-gray-400 py-12">
+        <p className="text-center text-ink-dim py-12">
           No meetups match your filter.
         </p>
       ) : (
@@ -317,7 +314,7 @@ export const HistoryPage: React.FC = () => {
                 type="button"
                 disabled={loadingMore}
                 onClick={() => void loadMore()}
-                className="inline-flex items-center gap-2 min-h-[44px] rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 min-h-[44px] border border-line px-5 py-2.5 text-sm font-medium text-ink-dim tabular-nums hover:bg-raised hover:text-ink disabled:opacity-50 transition-colors"
               >
                 {loadingMore ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

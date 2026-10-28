@@ -287,28 +287,28 @@ export function GoalEntrySheet({
       aria-modal="true"
       aria-label="Log a goal"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-4 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div className="w-full max-w-md bg-panel border border-line shadow-xl p-4 space-y-4 max-h-[92vh] overflow-y-auto">
         {/* Header + lease status */}
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-bold text-ink">
             Log a goal
           </h3>
           <div className="flex items-center gap-2">
             {holding ? (
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums">
+              <span className="text-xs font-semibold text-team-a tabular-nums">
                 Your turn — {leaseCountdown(null) || renewLeft()}s of lease
               </span>
             ) : lease ? (
-              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+              <span className="text-xs font-semibold text-live tabular-nums">
                 {leaseBusyLabel(lease.holderName, leaseCountdown(lease))}
               </span>
             ) : (
-              <span className="text-xs text-gray-400">No lease</span>
+              <span className="text-xs text-ink-faint">No lease</span>
             )}
             <button
               type="button"
               onClick={close}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="inline-flex h-11 w-11 items-center justify-center text-ink-dim hover:bg-raised focus:outline-hidden focus:ring-2 focus:ring-live"
               aria-label="Close goal entry"
             >
               <X className="h-5 w-5" />
@@ -318,7 +318,7 @@ export function GoalEntrySheet({
 
         {/* Team chooser */}
         <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
             1 · Team
           </p>
           <div className="grid grid-cols-2 gap-2">
@@ -330,12 +330,12 @@ export function GoalEntrySheet({
                   setTeam(t);
                   setConfirmDuplicate(false);
                 }}
-                className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors ${
+                className={`py-3 border-2 font-semibold text-sm transition-colors ${
                   team === t
                     ? t === "a"
-                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200"
-                      : "border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200"
-                    : "border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400"
+                      ? "bg-team-a text-white"
+                      : "bg-team-b text-white"
+                    : "border-line bg-raised text-ink-dim"
                 }`}
               >
                 {t === "a" ? match.team_a.name : match.team_b.name}
@@ -385,7 +385,7 @@ export function GoalEntrySheet({
 
         {/* Minute */}
         <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
             5 · Minute (from the server clock)
           </p>
           <div className="flex items-center gap-2">
@@ -399,23 +399,23 @@ export function GoalEntrySheet({
                 setMinute(Math.max(1, parseInt(e.target.value, 10) || 1));
                 setConfirmDuplicate(false);
               }}
-              className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-base font-bold tabular-nums text-gray-900 dark:text-gray-100"
+              className="w-24 px-3 py-2 border border-line bg-raised text-base font-bold tabular-nums text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
             />
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-ink-dim tabular-nums">
               {minute}'
             </span>
             {minuteTouched && (
               <button
                 type="button"
                 onClick={() => setMinuteTouched(false)}
-                className="text-xs text-gray-400 underline"
+                className="text-xs text-ink-faint underline hover:text-ink"
               >
                 use live clock
               </button>
             )}
           </div>
           {afterWhistle && (
-            <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+            <p className="mt-1 text-xs font-medium text-danger">
               This is beyond the full match length — an admin must confirm
               after-whistle goals.
             </p>
@@ -424,8 +424,8 @@ export function GoalEntrySheet({
 
         {/* Confirm */}
         {confirmDuplicate && (
-          <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+          <div className="border border-live/40 bg-live/15 p-3 space-y-2">
+            <p className="text-sm font-medium text-ink">
               {scorer?.name} already has a goal in {minute}′. Log a second
               goal?
             </p>
@@ -433,7 +433,7 @@ export function GoalEntrySheet({
               type="button"
               onClick={confirmSecondGoal}
               disabled={submitting}
-              className="w-full py-2.5 rounded-lg bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
+              className="w-full py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50"
             >
               Yes — second goal
             </button>
@@ -443,7 +443,7 @@ export function GoalEntrySheet({
           type="button"
           disabled={!canSubmit}
           onClick={() => void submit()}
-          className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-lg font-bold hover:bg-emerald-700 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[56px]"
+          className="w-full py-4 bg-live text-board text-lg font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[56px]"
         >
           {submitting ? (
             <Loader2 className="h-5 w-5 animate-spin" />

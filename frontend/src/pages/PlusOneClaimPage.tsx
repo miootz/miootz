@@ -79,11 +79,11 @@ export function PlusOneClaimPage() {
   if (busy) claimButtonLabel = "Claiming…";
 
   const buttonClass =
-    "w-full px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50";
+    "w-full px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50";
 
   if (loading || authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-board flex items-center justify-center text-ink-dim">
         Loading reservation…
       </div>
     );
@@ -93,9 +93,9 @@ export function PlusOneClaimPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="max-w-sm text-center space-y-4">
-          <AlertCircle className="mx-auto text-red-500" size={40} />
-          <h1 className="text-xl font-bold">Reservation unavailable</h1>
-          <p className="text-sm" role="alert">
+          <AlertCircle className="mx-auto text-danger" size={40} />
+          <h1 className="text-xl font-bold text-ink">Reservation unavailable</h1>
+          <p className="text-sm text-danger" role="alert">
             {error}
           </p>
           <button className={buttonClass} onClick={() => navigate("/")}>
@@ -110,11 +110,11 @@ export function PlusOneClaimPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="max-w-sm text-center space-y-4">
-          <CheckCircle className="mx-auto text-emerald-500" size={48} />
-          <h1 className="text-xl font-bold">
+          <CheckCircle className="mx-auto text-team-a" size={48} />
+          <h1 className="text-xl font-bold text-ink">
             {claimed ? "Your reservation is claimed" : "Already claimed"}
           </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-ink-dim">
             {claimed
               ? "Your place or waitlist position is now linked to your account."
               : "This reservation has already been linked to a member account."}
@@ -129,37 +129,38 @@ export function PlusOneClaimPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-5 shadow-xl">
+      <div className="w-full max-w-md border border-line bg-panel p-6 space-y-5 shadow-xl">
         <div className="flex items-center gap-3">
           <UserPlus
-            className="text-teal-700 dark:text-teal-400 shrink-0"
+            className="text-ink shrink-0"
             size={28}
           />
           <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-xl font-bold text-ink">
               Claim your reservation
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-ink-dim">
               Invited by {guestInfo.inviter_display_name}
             </p>
           </div>
         </div>
-        <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4 space-y-2 text-sm">
+        <div className="bg-raised p-4 space-y-2 text-sm text-ink">
           <p className="font-medium">
             {guestInfo.first_name} {guestInfo.last_name}
           </p>
-          <p>Skill level: {guestInfo.self_assessed_skill}/5</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="tabular-nums">Skill level: {guestInfo.self_assessed_skill}/5</p>
+          <p className="text-xs text-ink-dim">
             {SKILL_SCALE_BLURB}
           </p>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {me
-            ? `Claim this reservation as ${me.user.display_name || "the signed-in member"}. Your existing profile stays with your account.`
-            : "Sign in with your Miootz account to claim this reservation. If you do not have an account yet, ask the organizer for an account invitation first."}
-        </p>
+        {!me && (
+          <p className="text-sm text-ink-dim">
+            If you do not have an account yet, ask the organizer for an
+            account invitation first.
+          </p>
+        )}
         {(error || authError) && (
-          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+          <p className="text-sm text-danger" role="alert">
             {error || authError}
           </p>
         )}

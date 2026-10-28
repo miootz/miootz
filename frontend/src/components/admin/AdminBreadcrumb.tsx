@@ -8,7 +8,7 @@ export function AdminBreadcrumb({ items }: { items: AdminCrumb[] }) {
 
   return (
     <nav
-      className="mb-4 flex flex-wrap items-center gap-1 text-sm text-gray-500 dark:text-gray-400"
+      className="mb-4 flex flex-wrap items-center gap-1 text-sm text-ink-faint"
       aria-label="Breadcrumb"
     >
       {items.map((item, i) => {
@@ -21,7 +21,7 @@ export function AdminBreadcrumb({ items }: { items: AdminCrumb[] }) {
             {item.to && !last ? (
               <Link
                 to={item.to}
-                className="hover:text-teal-700 dark:hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded"
+                className="text-ink-dim hover:text-ink focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live"
               >
                 {item.label}
               </Link>
@@ -29,7 +29,7 @@ export function AdminBreadcrumb({ items }: { items: AdminCrumb[] }) {
               <span
                 className={
                   last
-                    ? 'font-medium text-gray-800 dark:text-gray-200'
+                    ? 'font-medium text-ink'
                     : undefined
                 }
               >

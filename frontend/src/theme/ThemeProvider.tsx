@@ -51,9 +51,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute("content", resolvedDark ? "#030712" : "#f9fafb");
+      // Single dark theme: the address bar matches the board.
+      meta.setAttribute("content", "#0b1220");
     }
-  }, [resolvedDark]);
+  }, []);
 
   const value = useMemo(
     () => ({ preference, setPreference, resolvedDark }),

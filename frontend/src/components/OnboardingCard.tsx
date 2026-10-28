@@ -51,23 +51,23 @@ export function OnboardingCard({ userId }: { userId: string }) {
   const isLast = step === STEPS.length - 1;
 
   return (
-    <div className="rounded-2xl border border-teal-200 dark:border-teal-900/60 bg-teal-50 dark:bg-teal-950/30 p-4 sm:p-5">
+    <div className="border border-line bg-panel p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
             New to Miootz? · Step {step + 1} of {STEPS.length}
           </p>
-          <h3 className="mt-1 text-base font-bold text-gray-900 dark:text-white">
+          <h3 className="mt-1 text-base font-bold text-ink">
             {stepData.title}
           </h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          <p className="mt-1 text-sm text-ink-dim">
             {stepData.body}
           </p>
         </div>
         <button
           type="button"
           onClick={persistDismissed}
-          className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-teal-100 hover:text-gray-600 dark:hover:bg-teal-900/50 dark:hover:text-gray-300"
+          className="shrink-0 p-1.5 text-ink-faint hover:bg-raised hover:text-ink"
           aria-label="Dismiss onboarding"
         >
           <X className="h-4 w-4" />
@@ -79,8 +79,8 @@ export function OnboardingCard({ userId }: { userId: string }) {
           {STEPS.map((s, i) => (
             <span
               key={s.title}
-              className={`h-1.5 w-6 rounded-full ${
-                i <= step ? "bg-teal-500" : "bg-teal-200 dark:bg-teal-900"
+              className={`h-1.5 w-6 ${
+                i <= step ? "bg-live" : "bg-raised"
               }`}
             />
           ))}
@@ -88,7 +88,7 @@ export function OnboardingCard({ userId }: { userId: string }) {
         <button
           type="button"
           onClick={() => (isLast ? persistDismissed() : setStep(step + 1))}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 active:scale-[0.98]"
+          className="inline-flex items-center gap-1.5 border border-line px-4 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
         >
           {isLast ? (
             <>

@@ -82,13 +82,13 @@ export function MeetupLocationSection({
   if (!location && !hasCoords) return null;
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 text-left dark:border-gray-800 dark:bg-gray-900/50">
+    <section className="border border-line bg-panel p-4 text-left">
       {location && (
-        <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{location}</p>
+        <p className="mb-3 text-sm text-ink">{location}</p>
       )}
 
       {hasCoords && (
-        <div className="relative z-0 mb-3 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="relative z-0 mb-3 overflow-hidden border border-line">
           <MapContainer
             center={[latitude!, longitude!]}
             zoom={15}
@@ -114,7 +114,7 @@ export function MeetupLocationSection({
               href={directionsGoogle(latitude!, longitude!)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-1.5 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
             >
               <Navigation className="h-4 w-4" aria-hidden />
               Google Maps
@@ -123,7 +123,7 @@ export function MeetupLocationSection({
               href={directionsApple(latitude!, longitude!)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-1.5 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
             >
               Apple Maps
             </a>
@@ -131,7 +131,7 @@ export function MeetupLocationSection({
               type="button"
               onClick={() => void measureDistance()}
               disabled={distanceBusy}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200 dark:hover:bg-teal-900/40"
+              className="inline-flex items-center gap-1.5 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-50"
             >
               {distanceBusy ? 'Getting location…' : 'Distance from me'}
             </button>
@@ -142,7 +142,7 @@ export function MeetupLocationSection({
               href={directionsSearchQuery(location)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-1.5 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
             >
               <Navigation className="h-4 w-4" aria-hidden />
               Google Maps
@@ -152,12 +152,12 @@ export function MeetupLocationSection({
       </div>
 
       {distanceKm != null && hasCoords && (
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          About <strong>{formatDistance(distanceKm)}</strong> from your position.
+        <p className="mt-2 text-sm text-ink-dim">
+          About <strong className="font-semibold tabular-nums text-ink">{formatDistance(distanceKm)}</strong> from your position.
         </p>
       )}
       {distanceError && (
-        <p className="mt-2 text-sm text-amber-700 dark:text-amber-400" role="alert">
+        <p className="mt-2 text-sm text-danger" role="alert">
           {distanceError}
         </p>
       )}

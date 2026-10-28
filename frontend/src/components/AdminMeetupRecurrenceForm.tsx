@@ -32,8 +32,11 @@ type Props = {
   onAnnounceHourChange: (v: number) => void;
   announceMinute: number;
   onAnnounceMinuteChange: (v: number) => void;
-  showDisabledHint?: boolean;
 };
+
+const fieldClass =
+  'w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live';
+const labelClass = 'block text-xs font-medium text-ink-dim mb-1';
 
 export function AdminMeetupRecurrenceForm({
   startLocal,
@@ -58,7 +61,6 @@ export function AdminMeetupRecurrenceForm({
   onAnnounceHourChange,
   announceMinute,
   onAnnounceMinuteChange,
-  showDisabledHint = true,
 }: Props) {
   function syncKickoffFromStart() {
     const t = inferRecurrenceWallTime(startLocal, timezone);
@@ -76,61 +78,51 @@ export function AdminMeetupRecurrenceForm({
   }
 
   return (
-    <div className="rounded-xl border border-teal-200 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/20 p-4 space-y-6">
+    <div className="border border-line bg-panel p-4 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="inline-flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => onEnabledChange(e.target.checked)}
-            className="rounded border-gray-300 text-teal-700 focus:ring-teal-500"
+            className="accent-live"
           />
-          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+          <span className="text-sm font-medium text-ink">
             {scheduleToggleLabel}
           </span>
         </label>
       </div>
 
-      {showDisabledHint && !enabled ? (
-        <p className="text-xs text-gray-600 dark:text-gray-400">
-          The first meetup sets location, fees, and roster size. When repeat is on,
-          you define the weekly kickoff time and a separate weekly moment when the
-          next meetup is created and invite notifications (with join links) are sent.
-        </p>
-      ) : null}
-
       {enabled ? (
         <>
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-sm font-semibold text-ink">
                 Meetup time (each week)
               </h3>
               {!hideMatchStartButton ? (
                 <button
                   type="button"
                   onClick={syncKickoffFromStart}
-                  className="text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
+                  className="text-xs font-medium text-ink-dim hover:text-ink hover:underline"
                 >
                   Match start time above
                 </button>
               ) : null}
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            <p className="text-xs text-ink-faint mb-3">
               {kickoffHelperText}
             </p>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Timezone (IANA)
-                </label>
+                <label className={labelClass}>Timezone (IANA)</label>
                 <input
                   type="text"
                   list="tz-presets-kickoff"
                   value={timezone}
                   onChange={(e) => onTimezoneChange(e.target.value)}
                   placeholder="Europe/London"
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+                  className={fieldClass}
                 />
                 <datalist id="tz-presets-kickoff">
                   {COMMON_TIMEZONES.map((tz) => (
@@ -139,13 +131,11 @@ export function AdminMeetupRecurrenceForm({
                 </datalist>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Weekday
-                </label>
+                <label className={labelClass}>Weekday</label>
                 <select
                   value={weekday}
                   onChange={(e) => onWeekdayChange(Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+                  className={fieldClass}
                 >
                   {WEEKDAY_LABELS.map((label, i) => (
                     <option key={label} value={i}>
@@ -156,64 +146,54 @@ export function AdminMeetupRecurrenceForm({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Hour
-                  </label>
+                  <label className={labelClass}>Hour</label>
                   <input
                     type="number"
                     min={0}
                     max={23}
                     value={hour}
                     onChange={(e) => onHourChange(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm"
+                    className={`${fieldClass} tabular-nums`}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Minute
-                  </label>
+                  <label className={labelClass}>Minute</label>
                   <input
                     type="number"
                     min={0}
                     max={59}
                     value={minute}
                     onChange={(e) => onMinuteChange(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm"
+                    className={`${fieldClass} tabular-nums`}
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="border-t border-teal-200/80 dark:border-teal-900/50 pt-4">
+          <div className="border-t border-line pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                Create next meetup & send invites (each week)
+              <h3 className="text-sm font-semibold text-ink">
+                Create next meetup &amp; send invites (each week)
               </h3>
               <button
                 type="button"
                 onClick={copyAnnounceFromKickoff}
-                className="text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
+                className="text-xs font-medium text-ink-dim hover:text-ink hover:underline"
               >
                 Same as meetup time
               </button>
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-              At this clock time each week, the server adds the next meetup (if not
-              already there) and sends browser notifications to subscribed members.
-            </p>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Timezone (IANA)
-                </label>
+                <label className={labelClass}>Timezone (IANA)</label>
                 <input
                   type="text"
                   list="tz-presets-announce"
                   value={announceTimezone}
                   onChange={(e) => onAnnounceTimezoneChange(e.target.value)}
                   placeholder="Europe/London"
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+                  className={fieldClass}
                 />
                 <datalist id="tz-presets-announce">
                   {COMMON_TIMEZONES.map((tz) => (
@@ -222,15 +202,13 @@ export function AdminMeetupRecurrenceForm({
                 </datalist>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Weekday
-                </label>
+                <label className={labelClass}>Weekday</label>
                 <select
                   value={announceWeekday}
                   onChange={(e) =>
                     onAnnounceWeekdayChange(Number(e.target.value))
                   }
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+                  className={fieldClass}
                 >
                   {WEEKDAY_LABELS.map((label, i) => (
                     <option key={label} value={i}>
@@ -241,22 +219,18 @@ export function AdminMeetupRecurrenceForm({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Hour
-                  </label>
+                  <label className={labelClass}>Hour</label>
                   <input
                     type="number"
                     min={0}
                     max={23}
                     value={announceHour}
                     onChange={(e) => onAnnounceHourChange(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm"
+                    className={`${fieldClass} tabular-nums`}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Minute
-                  </label>
+                  <label className={labelClass}>Minute</label>
                   <input
                     type="number"
                     min={0}
@@ -265,7 +239,7 @@ export function AdminMeetupRecurrenceForm({
                     onChange={(e) =>
                       onAnnounceMinuteChange(Number(e.target.value))
                     }
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm"
+                    className={`${fieldClass} tabular-nums`}
                   />
                 </div>
               </div>

@@ -25,7 +25,7 @@ export function Avatar({
         alt=""
         loading="lazy"
         onError={() => setFailed(true)}
-        className={`${sizeClasses} rounded-full object-cover flex-shrink-0 ring-1 ring-gray-200 dark:ring-gray-700`}
+        className={`${sizeClasses} border border-line object-cover flex-shrink-0`}
       />
     );
   }
@@ -40,7 +40,7 @@ export function Avatar({
 
   return (
     <div
-      className={`${sizeClasses} rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium flex items-center justify-center flex-shrink-0 ring-1 ring-gray-200 dark:ring-gray-700 select-none`}
+      className={`${sizeClasses} border border-line bg-raised text-ink font-medium flex items-center justify-center flex-shrink-0 select-none`}
     >
       {initials}
     </div>

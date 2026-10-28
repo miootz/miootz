@@ -71,7 +71,7 @@ function DroppableZone({
       data-droppable-id={id}
       className={`transition-all duration-200 ${
         isOver
-          ? "ring-2 ring-teal-400 ring-offset-2 dark:ring-teal-500"
+          ? "ring-2 ring-live ring-offset-2 ring-offset-board"
           : ""
       }`}
     >
@@ -114,8 +114,8 @@ function PlayerRow({
     : {};
 
   const rating = (
-    <span className="inline-flex items-center gap-1 text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
-      <Star className="h-3.5 w-3.5 text-amber-500" aria-hidden />
+    <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
+      <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
       {ratingValue}
     </span>
   );
@@ -128,10 +128,10 @@ function PlayerRow({
           e.stopPropagation();
           onToggleLock(player.id);
         }}
-        className={`p-1 rounded transition-colors shrink-0 ${
+        className={`p-1 transition-colors shrink-0 ${
           player.isLocked
-            ? "text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-950/30"
-            : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            ? "text-live hover:bg-live/10"
+            : "text-ink-faint hover:bg-raised"
         }`}
         aria-label={player.isLocked ? "Unlock" : "Lock"}
       >
@@ -145,9 +145,9 @@ function PlayerRow({
       style={dragStyle}
       {...(canDrag ? listeners : {})}
       {...(canDrag ? attributes : {})}
-      className={`group flex items-center gap-2.5 rounded-xl border px-3 py-2 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 transition-colors ${
+      className={`group flex items-center gap-2.5 border px-3 py-2 bg-panel border-line transition-colors ${
         canDrag && !player.isLocked
-          ? "cursor-grab active:cursor-grabbing hover:border-teal-300 dark:hover:border-teal-700 [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]"
+          ? "cursor-grab active:cursor-grabbing hover:border-live/60 [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]"
           : player.isLocked
             ? "opacity-60"
             : ""
@@ -162,8 +162,8 @@ function PlayerRow({
           isPlusOne={player.isPlusOne}
         />
         {player.isLocked && (
-          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-teal-500 flex items-center justify-center shadow">
-            <Lock size={9} className="text-white" />
+          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-live flex items-center justify-center">
+            <Lock size={9} className="text-board" />
           </div>
         )}
       </div>
@@ -171,11 +171,11 @@ function PlayerRow({
       <div className="min-w-0 flex-1">
         {/* Row 1 — name (full on mobile); positions + rating inline on sm+ */}
         <div className="flex items-center gap-1.5">
-          <span className="min-w-0 text-sm font-medium text-gray-900 dark:text-gray-100 break-words sm:truncate">
+          <span className="min-w-0 text-sm font-medium text-ink break-words sm:truncate">
             {player.name}
           </span>
           {positions && (
-            <span className="hidden text-2xs text-gray-500 dark:text-gray-400 sm:inline sm:shrink-0">
+            <span className="hidden text-2xs text-ink-faint sm:inline sm:shrink-0">
               {positions}
             </span>
           )}
@@ -185,7 +185,7 @@ function PlayerRow({
         {/* Row 2 — mobile only: same info so the name owns the whole row */}
         <div className="mt-0.5 flex items-center gap-1.5 sm:hidden">
           {positions && (
-            <span className="text-2xs text-gray-500 dark:text-gray-400">
+            <span className="text-2xs text-ink-faint">
               {positions}
             </span>
           )}
@@ -211,16 +211,16 @@ function SkillBanner({ meetup }: { meetup: Meetup }) {
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
       <Scale
-        className="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-400"
+        className="h-4 w-4 shrink-0 text-ink-dim"
         aria-hidden
       />
-      <span className="font-medium text-gray-800 dark:text-gray-200">
+      <span className="font-medium text-ink">
         Skill totals
       </span>
-      <span className="text-gray-600 dark:text-gray-400">
+      <span className="tabular-nums text-ink-dim">
         {parts.join(" \u00B7 ")}
         {maxDiff > 0 && (
-          <span className="text-gray-500 dark:text-gray-400">
+          <span className="text-ink-faint">
             {" "}
             (spread {maxDiff.toFixed(1)})
           </span>
@@ -229,8 +229,8 @@ function SkillBanner({ meetup }: { meetup: Meetup }) {
       <span
         className={
           balanced
-            ? "ml-auto inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300"
-            : "ml-auto inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/80 dark:text-amber-200"
+            ? "ml-auto inline-flex items-center bg-team-a/15 px-2 py-0.5 text-xs font-medium text-team-a"
+            : "ml-auto inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium text-live"
         }
       >
         {balanced ? "Balanced \u2713" : "Uneven"}
@@ -256,17 +256,25 @@ function TeamColumn({
 }) {
   const content = (
     <div className="space-y-2">
-      <div className="flex justify-between items-center px-1">
-        <h3 className="font-bold text-base text-teal-700 dark:text-teal-400">
+      <div
+        className={`flex justify-between items-center px-3 py-2 ${
+          index === 0
+            ? "bg-team-a text-white"
+            : index === 1
+              ? "bg-team-b text-white"
+              : "bg-raised text-ink"
+        }`}
+      >
+        <h3 className="font-bold text-sm uppercase tracking-wide">
           {team.name ?? `Team ${index + 1}`}
         </h3>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
+        <span className="text-xs tabular-nums opacity-80">
           {players.length} player{players.length !== 1 ? "s" : ""}
         </span>
       </div>
       {players.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="border border-line bg-panel px-4 py-6 text-center">
+          <span className="text-sm text-ink-faint">
             No players yet
           </span>
         </div>

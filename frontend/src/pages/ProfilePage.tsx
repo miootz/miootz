@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronDown,
-  ExternalLink,
-  LogOut,
-  Monitor,
-  Moon,
-  Sun,
-  User,
-} from "lucide-react";
+import { ChevronDown, ExternalLink, LogOut, User } from "lucide-react";
 import { useToast } from "../context/ToastContext";
-import { useTheme } from "../theme/ThemeProvider";
-import type { ThemePreference } from "../theme/themeStorage";
 import {
   fetchGameTemplateSubscriptions,
   fetchMyStats,
@@ -93,18 +83,18 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+    <div className="border border-line bg-panel overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-raised transition-colors"
         aria-expanded={open}
       >
-        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+        <span className="text-lg font-bold text-ink">
           {title}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
+          className={`w-4 h-4 text-ink-dim transition-transform duration-200 ${
             open ? "rotate-180" : ""
           }`}
         />
@@ -124,7 +114,7 @@ function CollapsibleSection({
 
 function ProfileSkeleton() {
   const pulse =
-    "motion-safe:animate-pulse motion-reduce:animate-none rounded bg-gray-200 dark:bg-gray-700";
+    "motion-safe:animate-pulse motion-reduce:animate-none rounded bg-raised";
 
   return (
     <div
@@ -155,14 +145,14 @@ function ToggleSwitch({
       type="button"
       disabled={disabled}
       onClick={onChange}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 ${
-        enabled ? "bg-teal-700" : "bg-gray-200 dark:bg-gray-600"
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer border-2 border-transparent transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
+        enabled ? "bg-live" : "bg-raised"
       } disabled:opacity-50`}
       role="switch"
       aria-checked={enabled}
     >
       <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
+        className={`pointer-events-none inline-block h-5 w-5 transform bg-ink transition ${
           enabled ? "translate-x-5" : "translate-x-1"
         }`}
       />
@@ -175,7 +165,6 @@ function ToggleSwitch({
 export function ProfilePage() {
   const { me, logout } = useAuth();
   const { showToast } = useToast();
-  const { preference, setPreference } = useTheme();
 
   // Profile field state
   const [selfAssessed, setSelfAssessed] = useState<number | "">("");
@@ -396,10 +385,10 @@ export function ProfilePage() {
   const pushEnabled = import.meta.env.PROD && pushSupported();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+    <div className="min-h-screen bg-board text-ink">
       <div className="max-w-lg mx-auto p-6 space-y-6">
         {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
-        <section className="rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 p-5 text-white shadow-lg">
+        <section className="border border-line bg-panel p-5">
           <div className="flex items-center gap-4">
             <PlayerAvatarFace
               name={displayName}
@@ -407,10 +396,10 @@ export function ProfilePage() {
               size="md"
             />
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold text-white truncate">
+              <h1 className="text-xl font-bold text-ink truncate">
                 {displayName}
               </h1>
-              <p className="text-sm text-teal-100 truncate">
+              <p className="text-sm text-ink-dim truncate">
                 {u.pocket_id_sub ?? ""}
               </p>
             </div>
@@ -418,7 +407,7 @@ export function ProfilePage() {
               href={pocketIdSettingsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/20 hover:bg-white/30 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1 border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
               aria-label="Edit account in Pocket ID"
             >
               <User className="w-3.5 h-3.5" />
@@ -430,17 +419,17 @@ export function ProfilePage() {
           {/* Position badges */}
           <div className="flex flex-wrap gap-2 mt-4">
             {u.primary_specialty && (
-              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-white/20">
+              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
                 {SPECIALTY_LABEL[u.primary_specialty]}
               </span>
             )}
             {u.secondary_specialty && (
-              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-white/10">
+              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
                 {SPECIALTY_LABEL[u.secondary_specialty]}
               </span>
             )}
             {me.is_admin && (
-              <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-400/30 text-emerald-100">
+              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
                 Admin
               </span>
             )}
@@ -449,16 +438,16 @@ export function ProfilePage() {
 
         {/* ── Zone 2: Stats & Skill ─────────────────────────────── */}
         {statsError && (
-          <p className="text-sm text-amber-800 dark:text-amber-200">
+          <p className="text-sm text-danger">
             {statsError}
           </p>
         )}
 
-        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 space-y-5">
+        <section className="border border-line bg-panel p-5 space-y-5">
           {/* Stats grid */}
           {stats && (
             <div>
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              <h2 className="text-lg font-bold text-ink mb-3">
                 Your stats
               </h2>
               <div className="grid grid-cols-2 gap-3">
@@ -487,32 +476,32 @@ export function ProfilePage() {
             calcSkill != null &&
             selfSkill >= 1 &&
             selfSkill <= 5 && (
-              <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
-                <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              <div className="space-y-3 pt-2 border-t border-line">
+                <h2 className="text-lg font-bold text-ink">
                   Skill comparison
                 </h2>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-ink-dim">
                     <span>Self-assessed</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                    <span className="font-medium text-ink tabular-nums">
                       {selfSkill}/5
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                  <div className="h-2 w-full bg-raised">
                     <div
-                      className="h-full rounded-full bg-teal-500"
+                      className="h-full bg-ink"
                       style={{ width: `${(selfSkill / 5) * 100}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center justify-between text-xs text-ink-dim">
                     <span>Calculated (peers)</span>
-                    <span className="font-medium text-gray-800 dark:text-gray-200">
+                    <span className="font-medium text-ink tabular-nums">
                       {calcSkill.toFixed(1)}/5
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                  <div className="h-2 w-full bg-raised">
                     <div
-                      className="h-full rounded-full bg-emerald-500"
+                      className="h-full bg-team-a"
                       style={{
                         width: `${Math.min(100, Math.max(0, (calcSkill / 5) * 100))}%`,
                       }}
@@ -523,13 +512,13 @@ export function ProfilePage() {
             )}
 
           {/* Skill editor + positions */}
-          <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-800">
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <div className="space-y-4 pt-2 border-t border-line">
+            <h2 className="text-lg font-bold text-ink">
               Edit profile
             </h2>
 
             <label className="block space-y-1.5">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-xs text-ink-dim">
                 Self-assessed skill (1–5)
               </span>
               <StarRating
@@ -537,12 +526,12 @@ export function ProfilePage() {
                 onChange={onSkillChange}
                 label="Skill rating"
               />
-              <span className="text-2xs text-gray-500 dark:text-gray-400">
+              <span className="text-2xs text-ink-dim">
                 {SKILL_SCALE_BLURB}
               </span>
               {skillSaved && (
                 <span
-                  className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                  className="text-xs font-medium text-team-a"
                   role="status"
                 >
                   Saved ✓
@@ -552,7 +541,7 @@ export function ProfilePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="text-xs text-ink-dim">
                   Primary position
                 </span>
                 <select
@@ -568,7 +557,7 @@ export function ProfilePage() {
                       setPrimarySpecialty,
                     );
                   }}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
                 >
                   <option value="">— Select —</option>
                   {SPECIALTY_OPTIONS.map((opt) => (
@@ -580,7 +569,7 @@ export function ProfilePage() {
               </div>
 
               <div className="space-y-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="text-xs text-ink-dim">
                   Secondary position
                 </span>
                 <select
@@ -596,7 +585,7 @@ export function ProfilePage() {
                       setSecondarySpecialty,
                     );
                   }}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
                 >
                   <option value="">— Select —</option>
                   {SPECIALTY_OPTIONS.map((opt) => (
@@ -610,64 +599,21 @@ export function ProfilePage() {
           </div>
         </section>
 
-        {/* ── Zone 2b: Appearance ───────────────────────────────── */}
-        <CollapsibleSection title="Appearance">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Choose your preferred theme. Saved automatically.
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {(
-              [
-                {
-                  value: "system" as ThemePreference,
-                  label: "System",
-                  Icon: Monitor,
-                },
-                {
-                  value: "light" as ThemePreference,
-                  label: "Light",
-                  Icon: Sun,
-                },
-                { value: "dark" as ThemePreference, label: "Dark", Icon: Moon },
-              ] as const
-            ).map(({ value, label, Icon }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setPreference(value)}
-                className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
-                  preference === value
-                    ? "border-teal-500 bg-teal-50 text-teal-800 dark:border-teal-400 dark:bg-teal-950/50 dark:text-teal-300"
-                    : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:border-gray-600"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </CollapsibleSection>
-
         {/* ── Zone 3: Preferences (collapsible) ─────────────────── */}
 
         {pushEnabled && (
           <CollapsibleSection title="Push notifications">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-              Receive in-app notifications on registered devices. Tap a
-              notification to open the relevant meetup.
-            </p>
-
             {/* Device list */}
             <div className="space-y-3 mb-4">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+              <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                 Registered devices
               </span>
               {devicesLoading ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-ink-dim">
                   Loading…
                 </p>
               ) : pushDevices.length === 0 ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-ink-dim">
                   No devices registered yet.
                 </p>
               ) : (
@@ -691,14 +637,14 @@ export function ProfilePage() {
                     return (
                       <li
                         key={dev.id}
-                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-50/50 dark:bg-gray-950/40"
+                        className="flex items-center justify-between gap-3 px-3 py-2"
                       >
                         <div className="min-w-0">
-                          <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                          <p className="text-sm text-ink truncate">
                             {host}
                           </p>
                           {date && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                            <p className="text-xs text-ink-dim">
                               {date}
                             </p>
                           )}
@@ -725,7 +671,7 @@ export function ProfilePage() {
                               })
                               .finally(() => setDeviceRemoveId(null));
                           }}
-                          className="shrink-0 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
+                          className="shrink-0 text-xs text-danger hover:text-ink disabled:opacity-50"
                         >
                           {deviceRemoveId === dev.id ? "Removing…" : "Remove"}
                         </button>
@@ -759,13 +705,13 @@ export function ProfilePage() {
                       }
                     })();
                   }}
-                  className="rounded-xl bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                  className="bg-ink px-3 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50"
                 >
                   {pushBusy ? "Registering…" : "Register this device"}
                 </button>
               )}
               {pushOn && pushDevices.length === 0 && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-ink-dim">
                   This device is registered but not yet visible. Try refreshing.
                 </p>
               )}
@@ -774,34 +720,31 @@ export function ProfilePage() {
         )}
 
         <CollapsibleSection title="Notification preferences">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Choose which updates you receive on your registered devices.
-          </p>
           {/* Notification type toggles */}
           <div className="space-y-2">
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+            <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
               Notification types
             </span>
             {notifPrefsLoading ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-ink-dim">
                 Loading…
               </p>
             ) : notifPrefs.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-ink-dim">
                 Could not load preferences.
               </p>
             ) : (
-              <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <ul className="divide-y divide-line border border-line overflow-hidden">
                 {notifPrefs.map((row) => (
                   <li
                     key={row.category}
-                    className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
+                    className="flex items-center justify-between gap-3 px-3 py-2.5"
                   >
                     <div className="min-w-0">
-                      <span className="text-sm text-gray-900 dark:text-gray-100">
+                      <span className="text-sm text-ink">
                         {NOTIF_CATEGORY_META[row.category].display_name}
                       </span>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      <p className="text-xs text-ink-dim truncate">
                         {NOTIF_CATEGORY_META[row.category].description}
                       </p>
                     </div>
@@ -840,31 +783,31 @@ export function ProfilePage() {
         </CollapsibleSection>
 
         {!pushEnabled && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-ink-dim">
             This browser meetup cannot receive push notifications. Your
             preferences still apply to registered devices.
           </p>
         )}
 
         <CollapsibleSection title="Weekly meetups">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Per-meetup opt-out. Turning this off removes you from the invite
-            list for that recurring meetup.
+          <p className="text-xs text-ink-dim mb-3">
+            Turning this off removes you from the invite list for that
+            recurring meetup.
           </p>
           {templateSubsLoading ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            <p className="text-sm text-ink-dim">Loading…</p>
           ) : templateSubs.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-ink-dim">
               No active weekly templates yet.
             </p>
           ) : (
-            <ul className="divide-y divide-gray-200 dark:divide-gray-800 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <ul className="divide-y divide-line border border-line overflow-hidden">
               {templateSubs.map((row) => (
                 <li
                   key={row.game_template_id}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50/50 dark:bg-gray-950/40"
+                  className="flex items-center justify-between gap-3 px-3 py-2.5"
                 >
-                  <span className="text-sm text-gray-900 dark:text-gray-100 min-w-0 truncate">
+                  <span className="text-sm text-ink min-w-0 truncate">
                     {row.name}
                   </span>
                   <ToggleSwitch
@@ -913,25 +856,25 @@ export function ProfilePage() {
           <CollapsibleSection title="Debug info">
             <dl className="grid gap-2 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500 dark:text-gray-400">Admin</dt>
+                <dt className="text-ink-dim">Admin</dt>
                 <dd className="text-right">
                   {me.is_admin ? (
-                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                    <span className="text-team-a font-medium">
                       Yes
                     </span>
                   ) : (
-                    <span className="text-gray-500 dark:text-gray-400">No</span>
+                    <span className="text-ink-dim">No</span>
                   )}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500 dark:text-gray-400">Groups</dt>
+                <dt className="text-ink-dim">Groups</dt>
                 <dd className="text-right">
                   <div className="flex flex-wrap gap-1.5 justify-end">
                     {me.auth_groups.map((g) => (
                       <span
                         key={g}
-                        className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-200"
+                        className="inline-block px-2 py-0.5 text-xs font-medium bg-raised text-ink-dim"
                       >
                         {g}
                       </span>
@@ -944,7 +887,7 @@ export function ProfilePage() {
         )}
 
         {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-danger">{error}</p>
         )}
 
         <div className="pt-2 pb-6">
@@ -953,7 +896,7 @@ export function ProfilePage() {
             onClick={() => {
               void logout();
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700 transition-colors"
+            className="w-full flex items-center justify-center gap-2 border border-danger/40 px-4 py-3 text-danger font-medium hover:bg-danger/10 transition-colors"
           >
             <LogOut className="w-4 h-4" />
             Log out
@@ -968,11 +911,11 @@ export function ProfilePage() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2.5 text-center">
-      <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">
+    <div className="bg-raised px-3 py-2.5 text-center">
+      <p className="text-2xl font-bold tabular-nums text-ink">
         {value}
       </p>
-      <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="text-xs text-ink-dim">{label}</p>
     </div>
   );
 }

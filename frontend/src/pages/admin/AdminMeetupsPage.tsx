@@ -37,20 +37,20 @@ function useDebounced<T>(value: T, ms: number): T {
 
 function MeetupRowSkeleton() {
   return (
-    <li className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 animate-pulse">
+    <li className="border border-line bg-panel p-4 animate-pulse">
       <div className="flex items-start gap-3">
-        <div className="h-4 w-4 rounded-full bg-gray-200 dark:bg-gray-700 mt-0.5 shrink-0" />
+        <div className="h-4 w-4 bg-raised mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1 space-y-2.5">
           <div className="flex items-center gap-2">
-            <div className="h-4 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-            <div className="h-4 w-12 rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-24 bg-raised" />
+            <div className="h-4 w-12 bg-raised" />
           </div>
-          <div className="h-4 w-3/4 max-w-xs rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-3/4 max-w-xs bg-raised" />
           <div className="flex gap-2">
-            <div className="h-5 w-20 rounded-md bg-gray-200 dark:bg-gray-700" />
-            <div className="h-5 w-16 rounded-md bg-gray-200 dark:bg-gray-700" />
+            <div className="h-5 w-20 bg-raised" />
+            <div className="h-5 w-16 bg-raised" />
           </div>
-          <div className="h-1 rounded-full bg-gray-200 dark:bg-gray-700" />
+          <div className="h-1 bg-raised" />
         </div>
       </div>
     </li>
@@ -61,17 +61,15 @@ function MeetupRowSkeleton() {
 
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-  const colour =
-    pct >= 90 ? "bg-emerald-500" : pct >= 60 ? "bg-sky-500" : "bg-amber-500";
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+      <div className="flex-1 h-1 bg-raised overflow-hidden">
         <div
-          className={`h-full rounded-full ${colour} transition-[width]`}
+          className="h-full bg-ink-dim transition-[width]"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-2xs tabular-nums text-gray-500 dark:text-gray-400 shrink-0 leading-none">
+      <span className="text-2xs tabular-nums text-ink-faint shrink-0 leading-none">
         {value}/{max}
       </span>
     </div>
@@ -234,11 +232,10 @@ export function AdminMeetupsPage() {
           />
         }
         title="Meetups"
-        subtitle="Meetups are scheduled automatically by the active template. Manage attendance, teams, and one-offs here."
         action={
           <Link
             to="/admin/meetups/new"
-            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 py-2 text-sm font-medium text-teal-800 dark:text-teal-300 hover:text-teal-900 dark:hover:text-teal-100 transition-colors shrink-0"
+            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 py-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors shrink-0"
           >
             <Plus className="w-4 h-4" />
             One-off
@@ -248,7 +245,7 @@ export function AdminMeetupsPage() {
 
       {error && (
         <div
-          className="mb-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-800 dark:text-red-200"
+          className="mb-4 border border-danger/40 bg-danger/15 px-4 py-3 text-sm text-danger"
           role="alert"
         >
           {error}
@@ -260,15 +257,15 @@ export function AdminMeetupsPage() {
       {!loading && meetups.length > 0 && (
         <div className="flex flex-col gap-3 mb-4">
           {/* Search */}
-          <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
-            <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+          <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
             <input
               id="admin-meetups-search"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by location…"
-              className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none focus:ring-0 dark:text-white"
+              className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden focus:ring-0"
               aria-label="Filter meetups by location"
             />
           </label>
@@ -280,10 +277,10 @@ export function AdminMeetupsPage() {
                 key={key}
                 type="button"
                 onClick={() => setFilter(key)}
-                className={`inline-flex items-center gap-1.5 shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
+                className={`inline-flex items-center gap-1.5 shrink-0 border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                   filter === key
-                    ? "border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-gray-600"
+                    ? "border-live/40 bg-live/15 text-live"
+                    : "border-line bg-panel text-ink-dim hover:border-ink-faint"
                 }`}
               >
                 {label}
@@ -291,8 +288,8 @@ export function AdminMeetupsPage() {
                   <span
                     className={
                       filter === key
-                        ? "text-teal-500 dark:text-teal-400"
-                        : "text-gray-500 dark:text-gray-400"
+                        ? "text-live"
+                        : "text-ink-faint"
                     }
                   >
                     {count}
@@ -300,11 +297,11 @@ export function AdminMeetupsPage() {
                 )}
               </button>
             ))}
-            <div className="w-px py-1 bg-gray-200 dark:bg-gray-700 shrink-0 mx-1" />
+            <div className="w-px py-1 bg-line shrink-0 mx-1" />
             <select
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              className="shrink-0 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400"
+              className="shrink-0 border border-line bg-raised px-2 py-1.5 text-xs text-ink-dim"
               aria-label="Rows per page"
             >
               {[10, 25, 50].map((n) => (
@@ -330,15 +327,15 @@ export function AdminMeetupsPage() {
           <MeetupRowSkeleton />
         </ul>
       ) : meetups.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-12 text-center">
-          <Calendar className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+        <div className="border border-line bg-panel p-12 text-center">
+          <Calendar className="w-12 h-12 mx-auto text-ink-faint mb-4" />
+          <p className="text-ink-dim mb-6">
             No meetups yet. Create an active template and meetups are scheduled
             automatically.
           </p>
           <Link
             to="/admin/game-templates"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 active:scale-[0.98]"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
             Create template
@@ -346,14 +343,14 @@ export function AdminMeetupsPage() {
           <p className="mt-4 text-sm">
             <Link
               to="/admin/meetups/new"
-              className="text-gray-500 dark:text-gray-400 hover:text-teal-700 dark:hover:text-teal-400"
+              className="text-ink-faint hover:text-ink"
             >
               Or create a one-off meetup
             </Link>
           </p>
         </div>
       ) : filtered.length === 0 ? (
-        <p className="text-center text-gray-500 dark:text-gray-400 py-12 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
+        <p className="text-center text-ink-dim py-12 border border-dashed border-line">
           No meetups match your filters.
         </p>
       ) : (
@@ -372,36 +369,34 @@ export function AdminMeetupsPage() {
               return (
                 <li
                   key={s.id}
-                  className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden transition-colors hover:border-gray-300 dark:hover:border-gray-700"
+                  className="border border-line bg-panel overflow-hidden transition-colors hover:border-ink-faint"
                 >
                   <div className="flex">
                     {/* Clickable card body */}
                     <Link
                       to={`/admin/meetups/${s.id}`}
-                      className="flex-1 min-w-0 p-3.5 active:bg-gray-50/50 dark:active:bg-gray-800/30 transition-colors"
+                      className="flex-1 min-w-0 p-3.5 active:bg-raised/50 transition-colors"
                     >
                       {/* Date + time row */}
                       <div className="flex items-center gap-2">
                         {/* Status dot */}
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
-                            upcoming
-                              ? "bg-emerald-500 dark:bg-emerald-400"
-                              : "bg-gray-300 dark:bg-gray-600"
+                            upcoming ? "bg-live" : "bg-ink-faint"
                           }`}
                         />
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <span className="text-sm font-medium text-ink">
                           {format(start, "EEE, d MMM")}
                         </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                        <span className="text-sm text-ink-dim tabular-nums">
                           {format(start, "HH:mm")}
                         </span>
                         {countdown ? (
-                          <span className="text-xs text-emerald-600 dark:text-emerald-400 ml-auto shrink-0">
+                          <span className="text-xs text-live ml-auto shrink-0">
                             {countdown}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto shrink-0">
+                          <span className="text-xs text-ink-faint ml-auto shrink-0">
                             ended
                           </span>
                         )}
@@ -409,23 +404,23 @@ export function AdminMeetupsPage() {
 
                       {/* Location */}
                       <div className="mt-1.5 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                        <MapPin className="w-3.5 h-3.5 text-ink-faint shrink-0" />
+                        <span className="text-sm font-semibold text-ink truncate">
                           {s.location}
                         </span>
                       </div>
 
                       {/* Metadata chips */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs font-medium text-gray-600 dark:text-gray-400">
+                        <span className="inline-flex items-center gap-1 bg-raised px-2 py-0.5 text-2xs font-medium text-ink-dim">
                           <Users className="w-3 h-3" />
                           {s.min_players}–{s.max_players}
                         </span>
-                        <span className="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-2xs text-gray-500 dark:text-gray-400 capitalize">
+                        <span className="inline-flex items-center bg-raised px-2 py-0.5 text-2xs text-ink-dim capitalize">
                           {s.waitlist_mode.replace("_", " ")}
                         </span>
                         {s.game_template_id != null && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 text-2xs font-medium text-teal-800 dark:text-teal-300">
+                          <span className="inline-flex items-center gap-1 bg-raised px-2 py-0.5 text-2xs font-medium text-ink-dim">
                             <Repeat className="w-3 h-3" />
                             Weekly
                           </span>
@@ -439,7 +434,7 @@ export function AdminMeetupsPage() {
                     </Link>
 
                     {/* Delete button — subtle icon on right */}
-                    <div className="flex items-start border-l border-gray-100 dark:border-gray-800">
+                    <div className="flex items-start border-l border-line">
                       <button
                         type="button"
                         onClick={() => {
@@ -447,7 +442,7 @@ export function AdminMeetupsPage() {
                           setConfirmDeleteId(s.id);
                         }}
                         disabled={deletingId === s.id}
-                        className="min-h-[44px] w-11 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 dark:hover:text-red-400 disabled:opacity-50 transition-colors"
+                        className="min-h-[44px] w-11 flex items-center justify-center text-ink-faint hover:text-danger hover:bg-danger/10 disabled:opacity-50 transition-colors"
                         aria-label={`Delete meetup at ${s.location}`}
                       >
                         {deletingId === s.id ? (
@@ -464,7 +459,7 @@ export function AdminMeetupsPage() {
           </ul>
 
           {filtered.length > pageSize ? (
-            <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-3">
+            <p className="text-center text-xs text-ink-faint mt-3">
               Showing {Math.min(pageSize, filtered.length)} of {filtered.length}{" "}
               matching (adjust &quot;rows&quot;).
             </p>
@@ -476,7 +471,7 @@ export function AdminMeetupsPage() {
                 type="button"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
-                className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-50 transition-colors"
               >
                 {loadingMore ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

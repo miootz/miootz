@@ -30,14 +30,14 @@ export function GoalList({
 
   if (goals.length === 0) {
     return (
-      <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+      <p className="text-sm text-ink-faint italic">
         {emptyLabel}
       </p>
     );
   }
 
   return (
-    <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+    <ul className="divide-y divide-line">
       {goals.map((g) => {
         const teamName = g.team === "a" ? teamAName : teamBName;
         // Credit line: "(assist Carlos · beaten Bob)" — parts omitted when unknown.
@@ -49,16 +49,16 @@ export function GoalList({
         return (
           <li
             key={g.id}
-            className="flex items-center gap-2 py-1.5 text-sm text-gray-800 dark:text-gray-200"
+            className="flex items-center gap-2 py-1.5 text-sm text-ink"
           >
-            <span className="tabular-nums font-semibold shrink-0 text-gray-500 dark:text-gray-400">
+            <span className="tabular-nums font-semibold shrink-0 text-live">
               {g.clock_minute}'
             </span>
             <span aria-hidden>⚽</span>
             <span className="truncate">
-              <span className="font-medium">{g.scorer.display_name}</span>
+              <span className="font-medium text-ink">{g.scorer.display_name}</span>
               {credit}
-              <span className="text-gray-400 dark:text-gray-500">
+              <span className="text-ink-faint">
                 {" "}
                 · {teamName}
                 {whistle} · logged by {g.recorded_by.display_name}
@@ -79,10 +79,10 @@ export function GoalList({
                   void onDelete(g).finally(() => setDeletingId(null));
                 }}
                 onBlur={() => setConfirmingId((id) => (id === g.id ? null : id))}
-                className={`ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                className={`ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium border transition-colors ${
                   confirmingId === g.id
-                    ? "border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300"
-                    : "border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    ? "border-danger/40 bg-danger/15 text-danger"
+                    : "border-line text-ink-faint hover:text-danger"
                 }`}
               >
                 {confirmingId === g.id ? (

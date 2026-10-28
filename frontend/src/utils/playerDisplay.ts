@@ -9,19 +9,9 @@ export function initialsFromName(name: string): string {
   return name.slice(0, 2).toUpperCase().replace(/[^A-Z0-9]/g, '') || '?';
 }
 
-/** Tailwind classes for skill badge (1–5 scale used by the app). */
-export function skillBadgeClasses(score: number): string {
-  const s = Math.round(score);
-  if (s <= 2) {
-    return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/80 dark:text-emerald-200';
-  }
-  if (s === 3) {
-    return 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200';
-  }
-  if (s >= 4) {
-    return 'bg-rose-100 text-rose-900 dark:bg-rose-950/80 dark:text-rose-200';
-  }
-  return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+/** Tailwind classes for skill badge — the number carries the level. */
+export function skillBadgeClasses(_score: number): string {
+  return "bg-raised text-ink-dim";
 }
 
 export function playerAvatarColor(name: string): string {

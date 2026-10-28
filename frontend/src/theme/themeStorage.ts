@@ -29,6 +29,8 @@ export function resolveDark(pref: ThemePreference): boolean {
 }
 
 /** Apply before React paint — call from main.tsx */
-export function applyThemeClass(pref: ThemePreference): void {
-  document.documentElement.classList.toggle('dark', resolveDark(pref));
+export function applyThemeClass(_pref: ThemePreference): void {
+  // The scoreboard world is a single dark theme; the class stays set so
+  // existing dark: variants keep resolving.
+  document.documentElement.classList.add("dark");
 }

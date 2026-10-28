@@ -20,11 +20,11 @@ export function AdminPageHeader({
       {breadcrumb}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
         <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold text-ink tracking-tight">
             {title}
           </h1>
           {subtitle ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+            <p className="text-sm text-ink-dim mt-1 max-w-2xl">
               {subtitle}
             </p>
           ) : null}

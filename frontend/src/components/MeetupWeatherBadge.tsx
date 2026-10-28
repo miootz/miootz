@@ -28,16 +28,6 @@ function codeToIcon(code: number): { Icon: typeof Sun; label: string } {
     return { Icon: CloudRain, label: "Rain" };
 }
 
-// ── Color for temperature ────────────────────────────────────
-
-function tempColor(c: number): string {
-    if (c <= 0) return "text-blue-500 dark:text-blue-400";
-    if (c <= 10) return "text-blue-600 dark:text-blue-400";
-    if (c <= 20) return "text-gray-700 dark:text-gray-300";
-    if (c <= 30) return "text-amber-600 dark:text-amber-400";
-    return "text-red-600 dark:text-red-400";
-}
-
 // ── Types ────────────────────────────────────────────────────
 
 interface WeatherData {
@@ -149,24 +139,24 @@ export function MeetupWeatherBadge({ meetupId }: MeetupWeatherBadgeProps) {
             : { Icon: Cloud, label: "Unknown" };
 
     return (
-        <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 group">
+        <span className="inline-flex items-center gap-1.5 text-xs text-ink-dim group">
             <Icon
-                className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400"
+                className="h-4 w-4 shrink-0 text-ink-dim"
                 aria-hidden
             />
-            <span className={tempColor(active.temperature_c)}>
+            <span className="tabular-nums text-ink">
                 {active.temperature_c}°C
             </span>
-            <span className="hidden sm:inline text-gray-500 dark:text-gray-400">
+            <span className="hidden sm:inline text-ink-dim">
                 {label}
             </span>
             {isRecorded ? (
-                <span className="text-2xs text-gray-500 dark:text-gray-400">
+                <span className="text-2xs text-ink-faint">
                     (actual)
                 </span>
             ) : data.can_refresh ? (
                 <span className="flex items-center gap-0.5">
-                    <span className="text-2xs text-gray-500 dark:text-gray-400">
+                    <span className="text-2xs text-ink-faint">
                         (forecast)
                     </span>
                     <button
@@ -176,7 +166,7 @@ export function MeetupWeatherBadge({ meetupId }: MeetupWeatherBadgeProps) {
                             void handleRefresh();
                         }}
                         disabled={refreshing}
-                        className="p-0.5 rounded text-gray-400 hover:text-teal-700 dark:hover:text-teal-400 opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
+                        className="p-0.5 text-ink-faint hover:text-ink opacity-0 group-hover:opacity-100 disabled:opacity-50 transition-all"
                         aria-label="Refresh weather forecast"
                         title="Refresh forecast"
                     >
@@ -186,7 +176,7 @@ export function MeetupWeatherBadge({ meetupId }: MeetupWeatherBadgeProps) {
                     </button>
                 </span>
             ) : (
-                <span className="text-2xs text-gray-500 dark:text-gray-400">
+                <span className="text-2xs text-ink-faint">
                     (forecast)
                 </span>
             )}
@@ -209,12 +199,12 @@ export function RecordedWeatherBadge({
         weather_code != null ? codeToIcon(weather_code ?? 0) : { Icon: Cloud };
 
     return (
-        <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+        <span className="inline-flex items-center gap-1 text-xs text-ink-dim">
             <Icon
-                className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+                className="h-3.5 w-3.5 shrink-0 text-ink-dim"
                 aria-hidden
             />
-            <span className={tempColor(temperature_c)}>{temperature_c}°C</span>
+            <span className="tabular-nums text-ink">{temperature_c}°C</span>
             {label && <span className="hidden sm:inline">{label}</span>}
         </span>
     );

@@ -84,15 +84,15 @@ export function PlayerSelect({
 
   return (
     <div ref={rootRef} className="relative">
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+      <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
         {label}
       </p>
 
       {/* Trigger: search input; keeps the chosen name after collapse. */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint pointer-events-none" />
         <ChevronDown
-          className={`absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none transition-transform ${
+          className={`absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint pointer-events-none transition-transform ${
             open ? "rotate-180" : ""
           }`}
         />
@@ -106,16 +106,16 @@ export function PlayerSelect({
           onFocus={() => setOpen(true)}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full pl-9 pr-9 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
+          className="w-full pl-9 pr-9 py-2.5 border border-line bg-raised text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
           aria-label={label}
         />
       </div>
 
       {/* Dropdown list (only while open) */}
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto border border-line bg-panel shadow-lg">
           {shown.length === 0 ? (
-            <p className="p-3 text-xs text-gray-400">No players found.</p>
+            <p className="p-3 text-xs text-ink-faint">No players found.</p>
           ) : (
             <ul>
               {shown.map((p) => {
@@ -133,19 +133,19 @@ export function PlayerSelect({
                       }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                         isSel
-                          ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-semibold"
-                          : "hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200"
+                          ? "bg-live/15 text-live font-semibold"
+                          : "hover:bg-raised text-ink"
                       }`}
                     >
                       <Avatar url={p.avatarUrl} username={p.name} size="md" />
                       <span className="truncate flex-1">{p.name}</span>
                       {p.teamTag && (
-                        <span className="text-xs text-gray-400 shrink-0">
+                        <span className="text-xs text-ink-faint shrink-0">
                           {p.teamTag}
                         </span>
                       )}
                       {isSel && (
-                        <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <Check className="h-4 w-4 text-live shrink-0" />
                       )}
                     </button>
                   </li>
@@ -154,7 +154,7 @@ export function PlayerSelect({
             </ul>
           )}
           {allowClear && selected && (
-            <div className="border-t border-gray-100 dark:border-gray-800 p-2">
+            <div className="border-t border-line p-2">
               <button
                 type="button"
                 onMouseDown={(e) => {
@@ -163,7 +163,7 @@ export function PlayerSelect({
                   setOpen(false);
                   setQuery("");
                 }}
-                className="w-full text-center text-xs text-gray-500 dark:text-gray-400 py-1 hover:text-gray-700 dark:hover:text-gray-200"
+                className="w-full text-center text-xs text-ink-faint py-1 hover:text-ink"
               >
                 Clear selection
               </button>

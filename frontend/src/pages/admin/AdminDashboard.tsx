@@ -42,7 +42,13 @@ import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 
-const TEAM_COLORS = ["#0ea5e9", "#f43f5e", "#8b5cf6", "#22c55e", "#eab308"];
+const TEAM_COLORS = [
+  "var(--color-team-a)",
+  "var(--color-team-b)",
+  "var(--color-raised)",
+  "var(--color-raised)",
+  "var(--color-raised)",
+];
 
 const SPECIALTY_LABELS: Record<string, string> = {
   ATT: "Attacker",
@@ -69,35 +75,31 @@ function CapacityBar({
 }) {
   const pct = max > 0 ? Math.min(100, Math.round((confirmed / max) * 100)) : 0;
   const colour =
-    pct >= 100 ? "bg-emerald-500" : confirmed < min ? "bg-amber-500" : "bg-sky-500";
+    pct >= 100 ? "bg-team-a" : confirmed < min ? "bg-live" : "bg-ink-dim";
   const minPct = max > 0 ? Math.min(100, Math.round((min / max) * 100)) : 0;
   return (
     <div>
-      <div className="relative h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+      <div className="relative h-1.5 bg-raised overflow-hidden">
         <div
-          className={`h-full rounded-full ${colour} transition-[width]`}
+          className={`h-full ${colour} transition-[width]`}
           style={{ width: `${pct}%` }}
         />
         {/* min-players marker */}
         <div
-          className="absolute top-0 h-full w-0.5 bg-gray-400/70 dark:bg-gray-500/70"
+          className="absolute top-0 h-full w-0.5 bg-ink/60"
           style={{ left: `${minPct}%` }}
           aria-hidden
         />
       </div>
-      <div className="mt-1 flex items-center gap-2 text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
-        <span className="font-medium text-gray-700 dark:text-gray-300">
+      <div className="mt-1 flex items-center gap-2 text-2xs text-ink-faint tabular-nums">
+        <span className="font-medium text-ink-dim">
           {confirmed}/{max} confirmed
         </span>
         {confirmed < min && (
-          <span className="font-medium text-amber-600 dark:text-amber-400">
-            below min ({min})
-          </span>
+          <span className="font-medium text-live">below min ({min})</span>
         )}
         {confirmed >= max && (
-          <span className="font-medium text-emerald-600 dark:text-emerald-400">
-            full
-          </span>
+          <span className="font-medium text-team-a">full</span>
         )}
       </div>
     </div>
@@ -109,10 +111,10 @@ function CapacityBar({
 function DashboardSkeleton() {
   return (
     <div className="space-y-4 animate-pulse" aria-busy="true">
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 h-44" />
+      <div className="border border-line bg-panel p-5 h-44" />
       <div className="grid gap-4 lg:grid-cols-5">
-        <div className="lg:col-span-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50 h-72" />
-        <div className="lg:col-span-2 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50 h-72" />
+        <div className="lg:col-span-3 border border-line bg-raised h-72" />
+        <div className="lg:col-span-2 border border-line bg-raised h-72" />
       </div>
     </div>
   );
@@ -283,12 +285,11 @@ export function AdminDashboard() {
           />
         }
         title="Overview"
-        subtitle="Live view of the next scheduled meetup, with the tools you need to run it."
       />
 
       {err && (
         <div
-          className="mb-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-800 dark:text-red-200"
+          className="mb-4 border border-danger/40 bg-danger/15 px-4 py-3 text-sm text-danger"
           role="alert"
         >
           <div className="flex items-center justify-between gap-3">
@@ -296,7 +297,7 @@ export function AdminDashboard() {
             <button
               type="button"
               onClick={() => void load()}
-              className="shrink-0 text-sm font-medium text-teal-800 dark:text-teal-300 hover:underline"
+              className="shrink-0 text-sm font-medium text-ink hover:underline"
             >
               Retry
             </button>
@@ -309,20 +310,20 @@ export function AdminDashboard() {
       ) : detail ? (
         <>
           {/* ── Next meetup command card ─────────────────── */}
-          <section className="mb-4 rounded-2xl border border-teal-200 dark:border-teal-900/60 bg-gradient-to-br from-teal-50 to-white dark:from-teal-950/30 dark:to-gray-900 p-5 shadow-sm">
+          <section className="mb-4 border border-line bg-panel p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  <h2 className="text-xl sm:text-2xl font-bold text-ink">
                     {format(parseMeetupStart(detail.start_time), "EEEE, d MMMM")}
-                    <span className="ml-2 text-lg font-semibold text-gray-500 dark:text-gray-400 tabular-nums">
+                    <span className="ml-2 text-lg font-semibold text-ink-dim tabular-nums">
                       {format(parseMeetupStart(detail.start_time), "HH:mm")}
                     </span>
                   </h2>
                   <MeetupWeatherBadge meetupId={detail.id} />
                 </div>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
-                  <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" aria-hidden />
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-dim">
+                  <MapPin className="w-3.5 h-3.5 text-ink-faint shrink-0" aria-hidden />
                   <span className="truncate">{detail.location}</span>
                 </p>
                 <div className="mt-3 max-w-md">
@@ -332,18 +333,18 @@ export function AdminDashboard() {
                     min={detail.min_players}
                   />
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                    <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
+                    <span className="inline-flex items-center gap-1 text-ink-dim font-medium">
                       <Clock className="w-3.5 h-3.5" aria-hidden />
                       {formatDistanceToNow(parseMeetupStart(detail.start_time), {
                         addSuffix: true,
                       })}
                     </span>
                     {waitlisted > 0 && (
-                      <span className="text-gray-500 dark:text-gray-400">
+                      <span className="text-ink-faint">
                         {waitlisted} waitlisted
                       </span>
                     )}
-                    <span className="text-gray-500 dark:text-gray-400">
+                    <span className="text-ink-faint">
                       {detail.team_assignment_mode === "random"
                         ? "random teams"
                         : "balanced teams"}
@@ -356,7 +357,7 @@ export function AdminDashboard() {
               <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-stretch sm:shrink-0">
                 <Link
                   to={`/admin/meetups/${detail.id}`}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 transition-colors active:scale-[0.98]"
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 transition-colors active:scale-[0.98]"
                 >
                   Manage meetup
                   <ChevronRight className="w-4 h-4" aria-hidden />
@@ -365,10 +366,10 @@ export function AdminDashboard() {
                   {(matchActive || (meetupActive && !currentMatch)) && (
                     <Link
                       to={`/meetup-matches/${detail.id}`}
-                      className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl text-sm font-medium text-white transition-colors active:scale-[0.98] ${
+                      className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm font-bold transition-colors active:scale-[0.98] ${
                         matchActive
-                          ? "bg-amber-600 hover:bg-amber-700"
-                          : "bg-emerald-600 hover:bg-emerald-700"
+                          ? "bg-live text-board hover:bg-live/90"
+                          : "bg-team-a text-white hover:bg-team-a/90"
                       }`}
                     >
                       <Play className="w-4 h-4" aria-hidden />
@@ -382,7 +383,7 @@ export function AdminDashboard() {
                       type="button"
                       onClick={() => void reshuffleTeams()}
                       disabled={reshuffling}
-                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/70 text-gray-700 dark:bg-gray-900/40 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60 transition-colors active:scale-[0.98]"
+                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.98]"
                     >
                       {reshuffling ? (
                         <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
@@ -395,7 +396,7 @@ export function AdminDashboard() {
                   <button
                     type="button"
                     onClick={handleShare}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/70 text-gray-700 dark:bg-gray-900/40 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors active:scale-[0.98]"
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium transition-colors active:scale-[0.98]"
                   >
                     <Share2 className="w-4 h-4" aria-hidden />
                     Share
@@ -407,27 +408,23 @@ export function AdminDashboard() {
 
           {/* ── Roster + chat ────────────────────────────── */}
           <div className="grid gap-4 lg:grid-cols-5">
-            <section className="lg:col-span-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
-              <header className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-                <Users className="w-4 h-4 text-teal-500" aria-hidden />
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <section className="lg:col-span-3 border border-line bg-panel overflow-hidden">
+              <header className="flex items-center gap-2 px-4 py-3 border-b border-line">
+                <Users className="w-4 h-4 text-ink-faint" aria-hidden />
+                <h2 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                   Roster
                 </h2>
-                <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                <span className="text-2xs text-ink-faint tabular-nums">
                   {confirmed} confirmed · {waitlisted} waitlisted
                 </span>
                 <span
                   className={`ml-auto inline-flex items-center gap-1.5 text-2xs font-medium ${
-                    live
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-gray-400"
+                    live ? "text-live" : "text-ink-faint"
                   }`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
-                      live
-                        ? "bg-emerald-500"
-                        : "bg-gray-300 dark:bg-gray-600"
+                      live ? "bg-live" : "bg-ink-faint"
                     }`}
                     aria-hidden
                   />
@@ -435,15 +432,15 @@ export function AdminDashboard() {
                 </span>
                 <Link
                   to={`/admin/meetups/${detail.id}`}
-                  className="text-2xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
+                  className="text-2xs font-medium text-ink-dim hover:text-ink hover:underline"
                 >
                   Manage all
                 </Link>
               </header>
 
-              <div className="divide-y divide-gray-50 dark:divide-gray-800/60">
+              <div className="divide-y divide-line">
                 {confirmed === 0 && (
-                  <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <p className="px-4 py-8 text-center text-sm text-ink-dim">
                     No one has signed up yet.
                   </p>
                 )}
@@ -465,10 +462,10 @@ export function AdminDashboard() {
               {waitlisted > 0 && (
                 <div>
                   <div className="flex items-center gap-2 px-4 pt-3 pb-1">
-                    <h3 className="text-2xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                    <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                       Waitlist
                     </h3>
-                    <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                    <span className="text-2xs text-ink-faint tabular-nums">
                       {waitlisted}
                     </span>
                     {confirmed < detail.max_players && (
@@ -476,7 +473,7 @@ export function AdminDashboard() {
                         type="button"
                         onClick={() => void confirmAllWaitlisted()}
                         disabled={bulkConfirming}
-                        className="ml-auto inline-flex items-center gap-1 min-h-[36px] px-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50 transition-colors"
+                        className="ml-auto inline-flex items-center gap-1 min-h-[36px] px-2.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-50 transition-colors"
                       >
                         {bulkConfirming ? (
                           <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
@@ -487,7 +484,7 @@ export function AdminDashboard() {
                       </button>
                     )}
                   </div>
-                  <div className="divide-y divide-gray-50 dark:divide-gray-800/60">
+                  <div className="divide-y divide-line">
                     {detail.attendees
                       .filter((a) => a.status === "waitlisted")
                       .map((a) => {
@@ -509,7 +506,7 @@ export function AdminDashboard() {
                                   onClick={() =>
                                     void moveUser(a.user_id, "confirmed")
                                   }
-                                  className="min-h-[36px] px-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-medium bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50 transition-colors"
+                                  className="min-h-[36px] px-2.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-50 transition-colors"
                                 >
                                   {busy ? (
                                     <Loader2
@@ -521,7 +518,7 @@ export function AdminDashboard() {
                                   )}
                                 </button>
                               ) : (
-                                <span className="text-2xs text-gray-400">
+                                <span className="text-2xs text-ink-faint">
                                   full
                                 </span>
                               )
@@ -540,20 +537,20 @@ export function AdminDashboard() {
           </div>
 
           {/* ── Teams ────────────────────────────────────── */}
-          <section className="mt-4 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-4">
+          <section className="mt-4 border border-line bg-panel p-4">
             <header className="flex items-center gap-2 mb-3">
-              <LayoutGrid className="w-4 h-4 text-teal-500" aria-hidden />
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <LayoutGrid className="w-4 h-4 text-ink-faint" aria-hidden />
+              <h2 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                 Teams
               </h2>
               {teams && teams.teams.length > 0 && (
-                <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                <span className="text-2xs text-ink-faint tabular-nums">
                   {teams.teams.length} team{teams.teams.length !== 1 ? "s" : ""}
                 </span>
               )}
               <Link
                 to={`/admin/meetups/${detail.id}`}
-                className="ml-auto text-2xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
+                className="ml-auto text-2xs font-medium text-ink-dim hover:text-ink hover:underline"
               >
                 Manage teams
               </Link>
@@ -570,10 +567,10 @@ export function AdminDashboard() {
                         }}
                         aria-hidden
                       />
-                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">
+                      <span className="text-xs font-semibold text-ink">
                         {team.name ?? `Team ${idx + 1}`}
                       </span>
-                      <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                      <span className="text-2xs text-ink-faint tabular-nums">
                         {team.players.length}
                       </span>
                     </div>
@@ -581,14 +578,14 @@ export function AdminDashboard() {
                       {team.players.map((p) => (
                         <li
                           key={p.id}
-                          className="flex items-center gap-2 rounded-lg px-2 py-1 bg-gray-50 dark:bg-gray-800/50"
+                          className="flex items-center gap-2 px-2 py-1 bg-raised/50"
                         >
                           <PlayerAvatarFace
                             name={p.name}
                             avatarUrl={p.profilePic ?? undefined}
                             size="sm"
                           />
-                          <span className="min-w-0 flex-1 truncate text-xs text-gray-800 dark:text-gray-200">
+                          <span className="min-w-0 flex-1 truncate text-xs text-ink">
                             {p.name}
                           </span>
                           <SkillBadge
@@ -605,7 +602,7 @@ export function AdminDashboard() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500 dark:text-gray-400 py-3 text-center">
+              <p className="text-sm text-ink-dim py-3 text-center">
                 Teams form automatically as players confirm.
               </p>
             )}
@@ -613,11 +610,9 @@ export function AdminDashboard() {
         </>
       ) : (
         /* ── No upcoming meetup ─────────────────────────── */
-        <section className="mb-4 rounded-2xl border border-teal-200 dark:border-teal-900/60 bg-gradient-to-br from-teal-50 to-white dark:from-teal-950/30 dark:to-gray-900 p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-            No upcoming meetup
-          </h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+        <section className="mb-4 border border-line bg-panel p-6">
+          <h2 className="text-xl font-bold text-ink">No upcoming meetup</h2>
+          <p className="mt-1 text-sm text-ink-dim">
             {nextAnnounceAt
               ? `Signups open ${format(new Date(nextAnnounceAt), "EEEE, d MMMM · HH:mm")}.`
               : "Activate a template to schedule meetups automatically."}
@@ -625,14 +620,14 @@ export function AdminDashboard() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Link
               to="/admin/game-templates"
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 transition-colors"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 transition-colors"
             >
               <Repeat className="w-4 h-4" aria-hidden />
               Open templates
             </Link>
             <Link
               to="/admin/meetups/new"
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-3 text-sm font-medium text-teal-800 dark:text-teal-300 hover:underline"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-3 text-sm font-medium text-ink-dim hover:text-ink hover:underline"
             >
               <Plus className="w-4 h-4" aria-hidden />
               One-off meetup
@@ -644,38 +639,38 @@ export function AdminDashboard() {
       {/* ── Auto-scheduled list ──────────────────────────── */}
       {upcoming && upcoming.length > 1 && (
         <section className="mt-4">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-1.5">
-            <Repeat className="w-4 h-4 text-teal-500" aria-hidden />
+          <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-1.5">
+            <Repeat className="w-4 h-4 text-ink-faint" aria-hidden />
             Auto-scheduled
             {activeTemplate && (
-              <span className="text-2xs font-normal text-gray-500 dark:text-gray-400">
+              <span className="text-2xs font-normal text-ink-faint">
                 from “{activeTemplate.name}”
               </span>
             )}
           </h2>
-          <ul className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm divide-y divide-gray-50 dark:divide-gray-800/60 overflow-hidden">
+          <ul className="border border-line bg-panel divide-y divide-line overflow-hidden">
             {upcoming.slice(1).map((m) => (
               <li key={m.id}>
                 <Link
                   to={`/admin/meetups/${m.id}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-raised transition-colors"
                 >
                   <div className="min-w-[88px] shrink-0">
-                    <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">
+                    <p className="text-xs font-semibold text-ink">
                       {format(parseMeetupStart(m.start_time), "EEE, d MMM")}
                     </p>
-                    <p className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                    <p className="text-2xs text-ink-faint tabular-nums">
                       {format(parseMeetupStart(m.start_time), "HH:mm")}
                     </p>
                   </div>
-                  <span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-300">
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink-dim">
                     {m.location}
                   </span>
-                  <span className="shrink-0 text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+                  <span className="shrink-0 text-2xs text-ink-faint tabular-nums">
                     {m.confirmed_count ?? 0}/{m.max_players}
                   </span>
                   <ChevronRight
-                    className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0"
+                    className="w-4 h-4 text-ink-faint shrink-0"
                     aria-hidden
                   />
                 </Link>
@@ -687,31 +682,31 @@ export function AdminDashboard() {
 
       {/* ── Quick links ──────────────────────────────────── */}
       <nav
-        className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-200 dark:border-gray-800 pt-4"
+        className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4"
         aria-label="Admin sections"
       >
         <Link
           to="/admin/game-templates"
-          className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+          className="inline-flex items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
         >
           <Repeat className="w-4 h-4" aria-hidden />
           Templates
           {activeTemplate && (
-            <span className="text-2xs font-normal text-gray-400 truncate max-w-40">
+            <span className="text-2xs font-normal text-ink-faint truncate max-w-40">
               active: {activeTemplate.name}
             </span>
           )}
         </Link>
         <Link
           to="/admin/users"
-          className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+          className="inline-flex items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
         >
           <Users className="w-4 h-4" aria-hidden />
           Users
         </Link>
         <Link
           to="/admin/tools"
-          className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+          className="inline-flex items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
         >
           <Wrench className="w-4 h-4" aria-hidden />
           Tools
@@ -754,17 +749,17 @@ function RosterRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+          <span className="truncate text-sm font-medium text-ink">
             {name}
           </span>
           {isPlusOne && (
-            <span className="shrink-0 rounded-full bg-teal-100 dark:bg-teal-950/60 px-1.5 py-0.5 text-2xs font-medium text-teal-800 dark:text-teal-300">
+            <span className="shrink-0 bg-pink-500/15 px-1.5 py-0.5 text-2xs font-medium text-pink-400">
               +1
             </span>
           )}
         </div>
         {posLabel && (
-          <p className="text-2xs text-gray-500 dark:text-gray-400">{posLabel}</p>
+          <p className="text-2xs text-ink-faint">{posLabel}</p>
         )}
       </div>
       <SkillBadge score={Math.min(5, Math.max(1, Math.round(skill)))} size="sm" />

@@ -101,18 +101,18 @@ export function MeetupActionPage() {
 
   const icon =
     status === "done" ? (
-      <Check className="h-16 w-16 text-emerald-500" />
+      <Check className="h-16 w-16 text-team-a" />
     ) : status === "error" ? (
-      <XCircle className="h-16 w-16 text-red-500" />
+      <XCircle className="h-16 w-16 text-danger" />
     ) : (
-      <Loader2 className="h-16 w-16 animate-spin text-teal-600" />
+      <Loader2 className="h-16 w-16 animate-spin text-live" />
     );
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6 dark:bg-gray-950">
-      <div className="w-full max-w-sm space-y-6 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-lg dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex min-h-screen items-center justify-center bg-board p-6">
+      <div className="w-full max-w-sm space-y-6 border border-line bg-panel p-8 text-center shadow-lg">
         <div className="flex justify-center">{icon}</div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+        <h1 className="text-xl font-bold text-ink">
           {status === "authenticating"
             ? "Signing you in…"
             : status === "acting"
@@ -121,12 +121,12 @@ export function MeetupActionPage() {
                 ? "Done"
                 : "Error"}
         </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{message}</p>
+        <p className="text-sm text-ink-dim">{message}</p>
         {status === "error" && (
           <button
             type="button"
             onClick={() => navigate("/meetups")}
-            className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800"
+            className="inline-flex items-center gap-2 bg-ink px-4 py-2.5 text-sm font-bold text-board hover:bg-white/90"
           >
             Go to meetups
           </button>

@@ -1,18 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
-import { format, formatDuration, intervalToDuration } from 'date-fns';
-import { Calendar, Clock, Share2, Users } from 'lucide-react';
-import type { Meetup } from '../types';
-import { parseMeetupStart } from '../utils/datetime';
-import { shareMeetup } from '../utils/share';
-import { useToast } from '../context/ToastContext';
-import { hapticLight } from '../utils/haptics';
-import { MeetupWeatherBadge } from './MeetupWeatherBadge';
-import { teamSkillBalanceSummary } from '../services/teamService';
+import { useEffect, useMemo, useState } from "react";
+import { format, formatDuration, intervalToDuration } from "date-fns";
+import { Clock, Share2 } from "lucide-react";
+import type { Meetup } from "../types";
+import { parseMeetupStart } from "../utils/datetime";
+import { shareMeetup } from "../utils/share";
+import { useToast } from "../context/ToastContext";
+import { hapticLight } from "../utils/haptics";
+import { MeetupWeatherBadge } from "./MeetupWeatherBadge";
+import { teamSkillBalanceSummary } from "../services/teamService";
 
 interface MeetupHeroSectionProps {
   meetup: Meetup;
 }
 
+/**
+ * The pre-kickoff scoreboard band: one painted panel that tells the state of
+ * play — when, where, how full, how the teams balance. The big number is the
+ * countdown; once the match is live, LiveMatchBanner takes the board.
+ */
 export function MeetupHeroSection({ meetup }: MeetupHeroSectionProps) {
   const { showToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
@@ -24,147 +29,128 @@ export function MeetupHeroSection({ meetup }: MeetupHeroSectionProps) {
 
   const kickoff = meetup.startTime ? parseMeetupStart(meetup.startTime) : null;
   const kickoffValid = Boolean(
-    kickoff && !Number.isNaN(kickoff.getTime())
+    kickoff && !Number.isNaN(kickoff.getTime()),
   );
 
   const countdown = useMemo(() => {
     if (!kickoffValid || !kickoff) return null;
-    if (kickoff.getTime() <= now) return 'Started';
+    if (kickoff.getTime() <= now) return "Started";
     const d = intervalToDuration({ start: now, end: kickoff.getTime() });
     const s = formatDuration(d, {
-      delimiter: ', ',
-      format: ['days', 'hours', 'minutes'],
+      delimiter: " ",
+      format: ["days", "hours", "minutes"],
     });
-    return s || 'Soon';
+    return s || "Soon";
   }, [kickoff, kickoffValid, now]);
 
   const { totals, balanced, maxDiff } = teamSkillBalanceSummary(meetup.teams);
-  const balanceHint =
+  const balanceLine =
     totals.length > 0
-      ? `${totals.map((t, i) => `T${i + 1}: ${t.toFixed(1)}`).join(' vs ')}${maxDiff > 0 ? ` (±${maxDiff.toFixed(1)})` : ''}`
+      ? `T1 ${totals[0].toFixed(1)} · T2 ${totals[1].toFixed(1)}${
+          maxDiff > 0 ? ` (±${maxDiff.toFixed(1)})` : ""
+        }`
       : null;
 
   const confirmed = meetup.attendance.filter(
-    (p) => p.attendanceStatus !== 'waitlisted'
+    (p) => p.attendanceStatus !== "waitlisted",
   ).length;
   const waitlisted = meetup.attendance.filter(
-    (p) => p.attendanceStatus === 'waitlisted'
+    (p) => p.attendanceStatus === "waitlisted",
   ).length;
   const cap = meetup.maxPlayers ?? 0;
-  const progress =
-    cap > 0 ? Math.min(100, Math.round((confirmed / cap) * 100)) : 0;
 
-  const timeLine = kickoffValid
-    ? format(kickoff!, 'HH:mm')
-    : meetup.date;
+  const timeLine = kickoffValid ? format(kickoff!, "HH:mm") : meetup.date;
 
   const onShare = async () => {
     hapticLight();
-    const url = window.location.origin + '/';
+    const url = window.location.origin + "/";
     const ok = await shareMeetup({
-      title: 'Miootz meetup',
-      text: `${meetup.location ?? 'Meetup'} · ${meetup.date} ${timeLine}`,
+      title: "Miootz meetup",
+      text: `${meetup.location ?? "Meetup"} · ${meetup.date} ${timeLine}`,
       url,
     });
-    showToast(ok ? 'Link copied or shared.' : 'Could not share.', ok ? 'success' : 'error');
+    showToast(
+      ok ? "Link copied or shared." : "Could not share.",
+      ok ? "success" : "error",
+    );
   };
 
   return (
-    <section className="rounded-2xl border border-teal-200/80 bg-gradient-to-br from-teal-50 to-white p-5 text-left shadow-sm dark:border-teal-900/50 dark:from-teal-950/40 dark:to-gray-900/80">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1 min-w-0">
-          <p className="inline-flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <Calendar className="h-5 w-5 shrink-0 text-teal-700 dark:text-teal-400" aria-hidden />
-            <span>
-              {kickoffValid
-                ? format(kickoff!, 'EEE d MMM')
-                : meetup.date}
-            </span>
-            <span className="text-teal-700 dark:text-teal-400">·</span>
-            <span className="inline-flex items-center gap-1 font-medium">
-              <Clock className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-              {timeLine}
-            </span>
-          </p>
-          {meetup.location && (
-            <p className="text-sm text-gray-700 dark:text-gray-300 truncate max-w-[min(100%,28rem)]">
-              {meetup.location}
-            </p>
-          )}
-        </div>
+    <section className="border border-line bg-panel">
+      {/* Zone label row */}
+      <div className="flex items-center justify-between border-b border-line px-4 py-2">
+        <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+          Meetup
+          {meetup.location ? ` · ${meetup.location}` : ""}
+        </p>
         <button
           type="button"
           onClick={() => void onShare()}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm font-medium text-teal-800 shadow-sm hover:bg-teal-50 active:scale-[0.98] dark:border-teal-800 dark:bg-gray-900 dark:text-teal-200 dark:hover:bg-teal-950/50"
+          className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink"
         >
-          <Share2 className="h-4 w-4" aria-hidden />
+          <Share2 className="h-3.5 w-3.5" aria-hidden />
           Share
         </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600 dark:text-gray-400">
-        {meetup.fee != null && meetup.fee > 0 && (
-          <span className="font-medium text-gray-800 dark:text-gray-200">
-            ${meetup.fee.toFixed(0)}
-          </span>
-        )}
+      {/* The board */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 py-4">
+        <div className="min-w-0">
+          <p className="text-lg font-bold leading-tight text-ink">
+            {kickoffValid ? format(kickoff!, "EEE d MMM") : meetup.date}
+            <span className="mx-2 text-ink-faint">·</span>
+            <span className="inline-flex items-center gap-1 tabular-nums">
+              <Clock className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+              {timeLine}
+            </span>
+          </p>
+          {meetup.fee != null && meetup.fee > 0 && (
+            <p className="mt-1 text-sm font-medium tabular-nums text-ink-dim">
+              ${meetup.fee.toFixed(0)}
+            </p>
+          )}
+        </div>
         {countdown && (
-          <span className="text-teal-800 dark:text-teal-300 font-medium">
-            Kickoff in {countdown}
-          </span>
+          <div className="text-right">
+            <p className="text-4xl font-extrabold leading-none tracking-tight tabular-nums text-ink">
+              {countdown}
+            </p>
+            <p className="mt-1 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+              to kickoff
+            </p>
+          </div>
         )}
       </div>
 
       {meetup.latitude != null &&
         meetup.longitude != null &&
         meetup.startTime && (
-          <div className="mt-2">
+          <div className="px-4 pb-3">
             <MeetupWeatherBadge meetupId={Number(meetup.id)} />
           </div>
         )}
 
-      <div className="mt-4 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
-          <span className="inline-flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" aria-hidden />
-            {cap > 0
-              ? `${confirmed}/${cap} confirmed${waitlisted ? ` · ${waitlisted} waitlisted` : ''}`
-              : `${confirmed} confirmed${waitlisted ? ` · ${waitlisted} waitlisted` : ''}`}
-          </span>
-          {cap > 0 && (
-            <span className="tabular-nums text-gray-500 dark:text-gray-400">
-              {progress}%
+      {/* Bottom strip: capacity + balance, tabular */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line px-4 py-2.5 text-sm">
+        <span className="tabular-nums font-medium text-ink">
+          {cap > 0 ? `${confirmed}/${cap}` : `${confirmed}`} confirmed
+          {waitlisted > 0 && (
+            <span className="ml-2 text-ink-dim">
+              · {waitlisted} waitlisted
             </span>
           )}
-        </div>
-        {cap > 0 && (
-          <div
-            className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"
-            role="progressbar"
-            aria-valuenow={confirmed}
-            aria-valuemin={0}
-            aria-valuemax={cap}
-            aria-label="Confirmed players"
-          >
-            <div
-              className="h-full rounded-full bg-teal-700 transition-[width] duration-300 dark:bg-teal-500"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+        </span>
+        {balanceLine && (
+          <span className="tabular-nums text-xs text-ink-dim">
+            {balanceLine}{" "}
+            {balanced ? (
+              <span className="font-medium text-team-a">· Balanced</span>
+            ) : (
+              <span className="font-medium text-live">· Uneven</span>
+            )}
+          </span>
         )}
       </div>
-
-      {balanceHint && (
-        <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-          <span className="font-medium text-gray-800 dark:text-gray-200">Teams: </span>
-          {balanceHint}
-          {balanced ? (
-            <span className="ml-1 text-emerald-700 dark:text-emerald-400">· Balanced</span>
-          ) : (
-            <span className="ml-1 text-amber-800 dark:text-amber-300">· Uneven</span>
-          )}
-        </p>
-      )}
     </section>
   );
 }

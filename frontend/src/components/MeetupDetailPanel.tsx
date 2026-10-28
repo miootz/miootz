@@ -90,10 +90,10 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+      <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-1.5">
         <MessageSquare className="h-4 w-4" aria-hidden />
         Chat history
-        <span className="text-2xs font-normal text-gray-500 dark:text-gray-400 ml-auto">
+        <span className="text-2xs font-normal text-ink-faint ml-auto tabular-nums">
           {messages.length} message{messages.length !== 1 ? "s" : ""}
         </span>
       </h2>
@@ -115,7 +115,7 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
                   >
                     {group.username}
                   </span>
-                  <span className="text-2xs text-gray-500 dark:text-gray-400">
+                  <span className="text-2xs text-ink-faint">
                     {formatDateHeader(firstMsg.time)}
                   </span>
                 </div>
@@ -123,10 +123,10 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
               {group.messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`px-3 py-1.5 rounded-2xl text-sm max-w-[85%] ${
+                  className={`px-3 py-1.5 text-sm max-w-[85%] ${
                     group.isMine
-                      ? "bg-teal-100 dark:bg-teal-900/40 text-teal-900 dark:text-teal-100 ml-auto"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                      ? "bg-raised text-ink ml-auto"
+                      : "bg-panel border border-line text-ink-dim"
                   }`}
                 >
                   <p className="break-words whitespace-pre-wrap">{msg.text}</p>
@@ -269,26 +269,26 @@ export function MeetupDetailPanel({
         meetupTime ||
         meetupFee != null ||
         weatherData) && (
-        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 space-y-2">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        <section className="border border-line bg-panel p-3 space-y-2">
+          <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">
             Meetup details
           </h3>
           <div className="grid grid-cols-2 gap-2 text-sm">
             {meetupTime && (
-              <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
-                <Clock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              <div className="flex items-center gap-1.5 text-ink-dim">
+                <Clock className="h-3.5 w-3.5 text-ink-faint shrink-0" />
                 <span>{meetupTime}</span>
               </div>
             )}
             {meetupLocation && (
-              <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
-                <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              <div className="flex items-center gap-1.5 text-ink-dim">
+                <MapPin className="h-3.5 w-3.5 text-ink-faint shrink-0" />
                 <span className="truncate">{meetupLocation}</span>
               </div>
             )}
             {meetupFee != null && meetupFee > 0 && (
-              <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
-                <span className="text-gray-400">$</span>
+              <div className="flex items-center gap-1.5 text-ink-dim">
+                <span className="text-ink-faint">$</span>
                 <span className="tabular-nums">{meetupFee.toFixed(0)}</span>
               </div>
             )}
@@ -307,23 +307,18 @@ export function MeetupDetailPanel({
 
       {/* ── Teams on pitch ─────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
           Teams
-          {canRate && (
-            <span className="text-2xs font-normal text-teal-700 dark:text-teal-400 ml-auto">
-              Rate players below
-            </span>
-          )}
           {viewerAttended && ratingsLocked && (
-            <span className="text-2xs font-normal text-gray-500 dark:text-gray-400 ml-auto">
+            <span className="text-2xs font-normal text-ink-faint ml-auto">
               Ratings final
             </span>
           )}
         </h2>
 
         {teamsLoading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink-faint">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading teams…
           </div>
@@ -333,9 +328,9 @@ export function MeetupDetailPanel({
               const players = mapTeamPlayers(team);
               return (
                 <div key={team.id} className="space-y-1.5">
-                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 text-center">
+                  <div className="text-xs font-bold uppercase tracking-wide text-ink text-center">
                     {team.name ?? team.id}
-                    <span className="text-gray-400 font-normal ml-1">
+                    <span className="text-ink-faint font-normal ml-1 tabular-nums">
                       ({players.length})
                     </span>
                   </div>
@@ -350,7 +345,7 @@ export function MeetupDetailPanel({
             })}
           </div>
         ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+          <p className="text-sm text-ink-faint text-center py-4">
             No teams recorded for this meetup.
           </p>
         )}
@@ -358,7 +353,7 @@ export function MeetupDetailPanel({
 
       {/* ── Match results ──────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-1.5">
+        <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
           Match results
         </h2>

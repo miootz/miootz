@@ -63,22 +63,22 @@ export function MemberNotificationPrompt({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Enable notifications"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-teal-200 bg-white p-6 shadow-2xl dark:border-teal-800 dark:bg-gray-900">
+      <div className="w-full max-w-sm border border-line bg-panel p-6 shadow-lg">
         <div className="flex items-start justify-between">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-900/40">
+          <div className="flex h-12 w-12 items-center justify-center bg-raised">
             <Bell
-              className="h-6 w-6 text-teal-700 dark:text-teal-400"
+              className="h-6 w-6 text-ink-dim"
               aria-hidden
             />
           </div>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+            className="p-1.5 text-ink-faint hover:bg-raised hover:text-ink transition-colors"
             aria-label="Dismiss"
             onClick={dismiss}
           >
@@ -86,10 +86,10 @@ export function MemberNotificationPrompt({
           </button>
         </div>
 
-        <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-white">
+        <h2 className="mt-4 text-xl font-bold text-ink">
           Never miss a kickoff
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+        <p className="mt-2 text-sm leading-relaxed text-ink-dim">
           Get notified about kickoff reminders, roster changes, and chat
           messages — even when the app is in the background.
         </p>
@@ -97,7 +97,7 @@ export function MemberNotificationPrompt({
         <div className="mt-5 flex gap-2">
           <button
             type="button"
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800 active:scale-[0.98] transition-colors"
+            className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors"
             onClick={async () => {
               const result = await subscribeToWebPush();
               dismiss();
@@ -116,7 +116,7 @@ export function MemberNotificationPrompt({
           </button>
           <button
             type="button"
-            className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+            className="border border-line px-4 py-3 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
             onClick={dismiss}
           >
             Later

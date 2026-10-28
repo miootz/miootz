@@ -54,7 +54,7 @@ function PlayerRow({
                 />
                 {/* Locked badge */}
                 {player.isLocked && (
-                    <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-teal-500 flex items-center justify-center shadow">
+                    <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-live flex items-center justify-center">
                         <Lock size={9} className="text-white" />
                     </div>
                 )}
@@ -62,11 +62,11 @@ function PlayerRow({
 
             {/* Name + position */}
             <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                <span className="text-sm font-medium text-ink truncate">
                     {player.name}
                 </span>
                 {positions && (
-                    <span className="text-2xs text-gray-500 dark:text-gray-400 shrink-0">
+                    <span className="text-2xs text-ink-faint shrink-0">
                         {positions}
                     </span>
                 )}
@@ -85,7 +85,7 @@ function PlayerRow({
             )}
 
             {/* Computed rating in bold */}
-            <span className="text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
+            <span className="text-sm font-bold text-ink tabular-nums shrink-0">
                 {rating}
             </span>
         </div>
@@ -122,8 +122,8 @@ export function TeamRoster({
 }) {
     if (players.length === 0) {
         return (
-            <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-6 text-center">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="border border-line bg-panel px-4 py-6 text-center">
+                <span className="text-sm text-ink-faint">
                     No players yet
                 </span>
             </div>
@@ -133,13 +133,13 @@ export function TeamRoster({
     return (
         <div
             ref={droppable?.setNodeRef}
-            className={`rounded-xl overflow-hidden border transition-colors bg-white dark:bg-gray-900 ${
+            className={`border transition-colors bg-panel ${
                 droppable?.isOver
-                    ? "border-teal-400 ring-2 ring-teal-400/40 dark:ring-teal-500/40"
-                    : "border-gray-200 dark:border-gray-800"
+                    ? "border-live ring-2 ring-live/40"
+                    : "border-line"
             }`}
         >
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            <div className="divide-y divide-line">
                 {players.map((player) => (
                     <PlayerRow
                         key={player.id}

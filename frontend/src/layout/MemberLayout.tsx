@@ -28,11 +28,11 @@ function SseIndicator({ live }: { live: boolean }) {
     <span className="ml-1.5 inline-flex items-center" aria-hidden>
       {live ? (
         <span className="relative block h-2 w-2">
-          <span className="absolute inset-0 motion-safe:animate-ping motion-reduce:animate-none rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative block h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="absolute inset-0 motion-safe:animate-ping motion-reduce:animate-none bg-live opacity-75" />
+          <span className="relative block h-2 w-2 bg-live" />
         </span>
       ) : (
-        <WifiOff className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+        <WifiOff className="h-3.5 w-3.5 text-ink-faint" />
       )}
     </span>
   );
@@ -77,23 +77,23 @@ function MemberChrome() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50 transition-colors dark:bg-gray-950">
+    <div className="flex min-h-screen flex-col bg-board transition-colors">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-teal-500 dark:focus:bg-gray-900 dark:focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-line focus:bg-panel focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-lg"
       >
         Skip to main content
       </a>
       <OfflineBanner />
       <InstallAppBanner enabled={online} />
       <MemberNotificationPrompt enabled={online} />
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-gray-50/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
+      <header className="sticky top-0 z-40 border-b border-line bg-board/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
           <div className="min-w-0 flex-1 text-left">
-            <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+            <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
               Miootz
               {isAdmin && (
-                <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-2xs font-medium normal-case tracking-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                <span className="ml-2 bg-live/15 px-1.5 py-0.5 text-2xs font-semibold normal-case tracking-normal text-live">
                   Player view
                 </span>
               )}
@@ -103,13 +103,11 @@ function MemberChrome() {
             </p>
             {header ? (
               <>
-                <h1 className="text-base font-semibold text-gray-900 dark:text-white">
-                  {header.line1}
-                </h1>
+                <h1 className="text-base font-bold text-ink">{header.line1}</h1>
                 {(header.location != null ||
                   header.fee != null ||
                   header.meetupId != null) && (
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-ink-dim">
                     {header.location != null && (
                       <span className="truncate max-w-[min(100%,20rem)]">
                         {header.location}
@@ -117,19 +115,17 @@ function MemberChrome() {
                     )}
                     {header.location != null &&
                       (header.fee != null || header.meetupId != null) && (
-                        <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                          &middot;
-                        </span>
+                        <span className="shrink-0 text-ink-faint">&middot;</span>
                       )}
                     {header.fee != null && header.fee > 0 && (
-                      <span className="shrink-0 font-medium text-gray-800 dark:text-gray-200">
+                      <span className="shrink-0 font-medium tabular-nums text-ink">
                         ${header.fee.toFixed(0)}
                       </span>
                     )}
                     {header.fee != null &&
                       header.fee > 0 &&
                       header.meetupId != null && (
-                        <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                        <span className="shrink-0 text-ink-faint">
                           &middot;
                         </span>
                       )}
@@ -140,9 +136,7 @@ function MemberChrome() {
                 )}
               </>
             ) : (
-              <h1 className="text-sm text-gray-500 dark:text-gray-400">
-                {fallbackTitle}
-              </h1>
+              <h1 className="text-sm text-ink-dim">{fallbackTitle}</h1>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -152,7 +146,7 @@ function MemberChrome() {
                 <Link
                   to="/admin"
                   onClick={() => setPreferMemberView(false)}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-50 px-3 text-sm font-medium text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/40 dark:focus:ring-offset-gray-950"
+                  className="inline-flex h-10 items-center gap-1.5 border border-line px-3 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                 >
                   <Shield className="h-4 w-4 shrink-0" aria-hidden />
                   Admin
@@ -164,7 +158,7 @@ function MemberChrome() {
               <button
                 type="button"
                 onClick={() => setOverflowOpen((o) => !o)}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                className="inline-flex h-11 w-11 items-center justify-center border border-line bg-panel text-ink-dim hover:bg-raised focus:outline-hidden focus:ring-2 focus:ring-live"
                 aria-expanded={overflowOpen}
                 aria-label="More actions"
               >
@@ -176,7 +170,7 @@ function MemberChrome() {
               </button>
               {overflowOpen && (
                 <div
-                  className="absolute right-0 top-full z-50 mt-2 min-w-[12rem] rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  className="absolute right-0 top-full z-50 mt-2 min-w-[12rem] border border-line bg-panel py-1 shadow-lg"
                   role="menu"
                 >
                   <button
@@ -186,7 +180,7 @@ function MemberChrome() {
                       goDetails();
                       setOverflowOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-ink-dim hover:bg-raised hover:text-ink"
                   >
                     <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
                     Meetup
@@ -198,7 +192,7 @@ function MemberChrome() {
                       goHistory();
                       setOverflowOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-ink-dim hover:bg-raised hover:text-ink"
                   >
                     <History className="h-4 w-4 shrink-0" aria-hidden />
                     History
@@ -207,7 +201,7 @@ function MemberChrome() {
                     to="/profile"
                     role="menuitem"
                     onClick={() => setOverflowOpen(false)}
-                    className="flex items-center gap-2 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="flex items-center gap-2 px-4 py-3 text-sm text-ink-dim hover:bg-raised hover:text-ink"
                   >
                     <UserCircle className="h-4 w-4 shrink-0" aria-hidden />
                     Profile
@@ -220,7 +214,7 @@ function MemberChrome() {
                         setPreferMemberView(false);
                         setOverflowOpen(false);
                       }}
-                      className="flex items-center gap-2 px-4 py-3 text-sm text-amber-900 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-950/50"
+                      className="flex items-center gap-2 px-4 py-3 text-sm text-ink-dim hover:bg-raised hover:text-ink"
                     >
                       <Shield className="h-4 w-4 shrink-0" aria-hidden />
                       Admin
@@ -236,7 +230,7 @@ function MemberChrome() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto w-full max-w-6xl flex-1 text-left outline-none"
+        className="mx-auto w-full max-w-6xl flex-1 text-left outline-hidden"
         style={{
           paddingBottom: `calc(${BOTTOM_NAV_H} + env(safe-area-inset-bottom, 0px))`,
         }}
@@ -245,7 +239,7 @@ function MemberChrome() {
       </main>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-line bg-panel/95 backdrop-blur"
         style={{
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
@@ -256,65 +250,47 @@ function MemberChrome() {
             type="button"
             onClick={goDetails}
             aria-label={chatUnread ? "Meetup, unread chat messages" : "Meetup"}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
-              isPlayerHome
-                ? "text-teal-700 dark:text-teal-400"
-                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
+              isPlayerHome ? "text-live" : "text-ink-faint hover:text-ink-dim"
             }`}
           >
             <span className="relative inline-flex">
               <LayoutGrid className="h-5 w-5 shrink-0" aria-hidden />
               {chatUnread && (
                 <span
-                  className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-950"
+                  className="absolute -right-0.5 -top-0.5 h-2 w-2 bg-danger ring-2 ring-panel"
                   aria-hidden
                 />
               )}
             </span>
             <span className="truncate">Meetup</span>
             <span
-              className={`h-0.5 w-8 rounded-full ${
-                isPlayerHome
-                  ? "bg-teal-700 dark:bg-teal-400"
-                  : "bg-transparent"
-              }`}
+              className={`h-0.5 w-8 ${isPlayerHome ? "bg-live" : "bg-transparent"}`}
             />
           </button>
           <button
             type="button"
             onClick={goHistory}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
-              isHistory
-                ? "text-teal-700 dark:text-teal-400"
-                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
+              isHistory ? "text-live" : "text-ink-faint hover:text-ink-dim"
             }`}
           >
             <History className="h-5 w-5 shrink-0" aria-hidden />
             <span className="truncate">History</span>
             <span
-              className={`h-0.5 w-8 rounded-full ${
-                isHistory
-                  ? "bg-teal-700 dark:bg-teal-400"
-                  : "bg-transparent"
-              }`}
+              className={`h-0.5 w-8 ${isHistory ? "bg-live" : "bg-transparent"}`}
             />
           </button>
           <Link
             to="/profile"
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950 ${
-              isProfile
-                ? "text-teal-700 dark:text-teal-400"
-                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
+              isProfile ? "text-live" : "text-ink-faint hover:text-ink-dim"
             }`}
           >
             <UserCircle className="h-5 w-5 shrink-0" aria-hidden />
             <span className="truncate">Profile</span>
             <span
-              className={`h-0.5 w-8 rounded-full ${
-                isProfile
-                  ? "bg-teal-700 dark:bg-teal-400"
-                  : "bg-transparent"
-              }`}
+              className={`h-0.5 w-8 ${isProfile ? "bg-live" : "bg-transparent"}`}
             />
           </Link>
         </div>

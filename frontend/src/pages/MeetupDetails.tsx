@@ -124,12 +124,12 @@ function PlusOneModal({
 		>
 			<button
 				type="button"
-				className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+				className="absolute inset-0 bg-black/60"
 				aria-label="Dismiss"
 				onClick={onClose}
 			/>
 			<div
-				className="relative z-10 w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-4 shadow-xl"
+				className="relative z-10 w-full max-w-md border border-line bg-panel p-6 space-y-4 shadow-xl"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby={titleId}
@@ -138,7 +138,7 @@ function PlusOneModal({
 				<button
 					type="button"
 					onClick={onClose}
-					className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400"
+					className="absolute top-4 right-4 p-2 text-ink-dim hover:bg-raised hover:text-ink"
 					aria-label="Close"
 				>
 					<X size={18} />
@@ -146,17 +146,14 @@ function PlusOneModal({
 
 				{result ? (
 					<div className="text-center space-y-4">
-						<PartyPopper className="mx-auto h-10 w-10 text-teal-600" aria-hidden />
+						<PartyPopper className="mx-auto h-10 w-10 text-team-a" aria-hidden />
 						<h3
 							id={titleId}
-							className="text-lg font-semibold text-gray-900 dark:text-white"
+							className="text-lg font-bold text-ink"
 						>
 							Plus-one added!
 						</h3>
-						<p className="text-sm text-gray-600 dark:text-gray-400">
-							Share this link so your guest can claim their spot:
-						</p>
-						<div className="break-all rounded-lg bg-gray-100 dark:bg-gray-800 p-3 text-xs text-gray-700 dark:text-gray-300 font-mono select-all">
+						<div className="break-all bg-raised p-3 text-xs text-ink-dim font-mono select-all">
 							{window.location.origin}
 							{result.claim_url}
 						</div>
@@ -164,7 +161,7 @@ function PlusOneModal({
 							<button
 								type="button"
 								onClick={handleSharePlusOne}
-								className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+								className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
 							>
 								<Share className="h-4 w-4" aria-hidden />
 								Share
@@ -172,7 +169,7 @@ function PlusOneModal({
 							<button
 								type="button"
 								onClick={onClose}
-								className="flex-1 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800"
+								className="flex-1 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90"
 							>
 								Done
 							</button>
@@ -181,23 +178,19 @@ function PlusOneModal({
 				) : (
 					<>
 						<div className="flex items-center gap-2">
-							<UserPlus className="text-teal-700 dark:text-teal-400" size={20} />
+							<UserPlus className="text-ink" size={20} />
 							<h3
 								id={titleId}
-								className="text-lg font-semibold text-gray-900 dark:text-white"
+								className="text-lg font-bold text-ink"
 							>
 								Add a plus-one
 							</h3>
 						</div>
-						<p className="text-sm text-gray-500 dark:text-gray-400">
-							Invite a friend to play with you. They'll receive a link to claim their
-							spot.
-						</p>
 
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<div className="grid grid-cols-2 gap-3">
 								<div>
-									<label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+									<label className="block text-xs font-medium text-ink-dim mb-1">
 										First name
 									</label>
 									<input
@@ -205,12 +198,12 @@ function PlusOneModal({
 										value={firstName}
 										onChange={(e) => setFirstName(e.target.value)}
 										placeholder="John"
-										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+										className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 										maxLength={80}
 									/>
 								</div>
 								<div>
-									<label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+									<label className="block text-xs font-medium text-ink-dim mb-1">
 										Last name
 									</label>
 									<input
@@ -218,24 +211,24 @@ function PlusOneModal({
 										value={lastName}
 										onChange={(e) => setLastName(e.target.value)}
 										placeholder="Doe"
-										className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+										className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 										maxLength={80}
 									/>
 								</div>
 							</div>
 
 							<div>
-								<label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+								<label className="block text-xs font-medium text-ink-dim mb-1">
 									Skill level
 								</label>
 								<StarRating value={skill} onChange={setSkill} size={28} label="Skill level" />
-								<p className="mt-1 text-2xs text-gray-500 dark:text-gray-400">
+								<p className="mt-1 text-2xs text-ink-faint">
 									{SKILL_SCALE_BLURB}
 								</p>
 							</div>
 
 							{error && (
-								<p className="text-sm text-red-600 dark:text-red-400" role="alert">
+								<p className="text-sm text-danger" role="alert">
 									{error}
 								</p>
 							)}
@@ -244,14 +237,14 @@ function PlusOneModal({
 								<button
 									type="button"
 									onClick={onClose}
-									className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+									className="flex-1 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised"
 								>
 									Cancel
 								</button>
 								<button
 									type="submit"
 									disabled={busy}
-									className="flex-1 px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50"
+									className="flex-1 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50"
 								>
 									{busy ? "Adding…" : "Add plus-one"}
 								</button>
@@ -345,17 +338,17 @@ function MeetupAttendanceActions({
 	return (
 		<div className="relative text-center space-y-3 max-w-xl mx-auto">
 			{celebrate && (
-				<div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/90 dark:bg-gray-900/90">
+				<div className="absolute inset-0 z-10 flex items-center justify-center bg-panel/90">
 					<SuccessCheckLottie size={100} />
 				</div>
 			)}
-			<p className="text-sm text-gray-600 dark:text-gray-400">
+			<p className="text-sm text-ink-dim">
 				{status === "confirmed" && `You're confirmed for this meetup.`}
 				{status === "waitlisted" && (
 					<span>
 						You're on the waitlist.
 						{myWaitlistPosition != null && (
-							<span className="ml-2 inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+							<span className="ml-2 inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium tabular-nums text-live">
 								#{myWaitlistPosition} on waitlist
 							</span>
 						)}
@@ -365,7 +358,7 @@ function MeetupAttendanceActions({
 				{status == null && `You're not signed up for this meetup yet.`}
 			</p>
 			{feedback && (
-				<p className="text-sm text-red-600 dark:text-red-400" role="alert">
+				<p className="text-sm text-danger" role="alert">
 					{feedback}
 				</p>
 			)}
@@ -375,7 +368,7 @@ function MeetupAttendanceActions({
 						type="button"
 						disabled={busy}
 						onClick={() => void runJoin()}
-						className="px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98]"
+						className="px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
 					>
 						{status === "cancelled" ? "Join again" : "Join meetup"}
 					</button>
@@ -386,7 +379,7 @@ function MeetupAttendanceActions({
 							<button
 								type="button"
 								onClick={() => setShowPlusOne(true)}
-								className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 active:scale-[0.98]"
+								className="inline-flex items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
 							>
 								<UserPlus size={14} />
 								Add a plus-one
@@ -396,7 +389,7 @@ function MeetupAttendanceActions({
 							type="button"
 							disabled={busy}
 							onClick={() => void runLeave()}
-							className="px-4 py-2 rounded-lg border border-red-200 dark:border-red-900/50 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50 active:scale-[0.98]"
+							className="px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
 						>
 							{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
 						</button>
@@ -454,7 +447,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	};
 
 	return (
-		<div className="p-6 max-w-6xl mx-auto space-y-8">
+		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8">
 			{/* 1. Join / Leave / Plus-one */}
 			{onRosterUpdated && (
 				<MeetupAttendanceActions
@@ -467,8 +460,8 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 
 			{/* 2. Teams */}
 			<section className="space-y-3">
-				<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-					<Users className="h-5 w-5" aria-hidden />
+				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+					<Users className="h-5 w-5 text-ink-dim" aria-hidden />
 					Teams
 				</h2>
 				<DraggableTeams
@@ -482,11 +475,11 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 			{/* 3. Match results */}
 			{!isNaN(meetupIdNum) && (
 				<>
-					<hr className="border-gray-200 dark:border-gray-800" />
+					<hr className="border-line" />
 					<section className="space-y-3">
 						<div className="flex items-center justify-between">
-							<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-								<Trophy className="h-5 w-5" aria-hidden />
+							<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+								<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
 								Match results
 							</h2>
 							{isAdmin && (
@@ -494,7 +487,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 									type="button"
 									disabled={startingMatch}
 									onClick={() => void handleStartMatches()}
-									className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-60 active:scale-[0.98] transition-colors"
+									className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-ink text-board text-xs font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-colors"
 								>
 									<Play className="w-3.5 h-3.5" />
 									New match
@@ -509,9 +502,9 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 
 			{/* 4. Chat */}
 			<>
-				<hr className="border-gray-200 dark:border-gray-800" />
-				<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-					<MessageSquare className="h-5 w-5" aria-hidden />
+				<hr className="border-line" />
+				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+					<MessageSquare className="h-5 w-5 text-ink-dim" aria-hidden />
 					Chat
 				</h2>
 			</>
@@ -519,9 +512,9 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 
 			{/* 5. Location */}
 			<>
-				<hr className="border-gray-200 dark:border-gray-800" />
-				<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-					<MapPin className="h-5 w-5" aria-hidden />
+				<hr className="border-line" />
+				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+					<MapPin className="h-5 w-5 text-ink-dim" aria-hidden />
 					Location
 				</h2>
 			</>

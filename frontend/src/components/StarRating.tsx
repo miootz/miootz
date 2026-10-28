@@ -26,9 +26,9 @@ export function StarRating({
           onClick={() => onChange?.(n)}
           className={`${onChange && !readonly ? 'cursor-pointer' : 'cursor-default'} transition-colors ${
             n <= value
-              ? 'text-yellow-400'
-              : 'text-gray-300 dark:text-gray-600'
-          } hover:text-yellow-400 disabled:text-gray-300 dark:disabled:text-gray-600`}
+              ? 'text-amber-400'
+              : 'text-ink-faint'
+          } hover:text-amber-400 disabled:text-ink-faint`}
           aria-label={`${n} star${n > 1 ? 's' : ''}`}
           aria-pressed={n <= value}
         >

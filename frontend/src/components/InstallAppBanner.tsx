@@ -90,22 +90,22 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Install Miootz"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-teal-200 bg-white p-6 shadow-2xl dark:border-teal-800 dark:bg-gray-900">
+      <div className="w-full max-w-sm border border-line bg-panel p-6 shadow-lg">
         <div className="flex items-start justify-between">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-100 dark:bg-teal-900/40">
+          <div className="flex h-12 w-12 items-center justify-center bg-raised">
             <Smartphone
-              className="h-6 w-6 text-teal-700 dark:text-teal-400"
+              className="h-6 w-6 text-ink-dim"
               aria-hidden
             />
           </div>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors"
+            className="p-1.5 text-ink-faint hover:bg-raised hover:text-ink transition-colors"
             aria-label="Dismiss"
             onClick={() => {
               release("install");
@@ -116,33 +116,33 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
           </button>
         </div>
 
-        <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-white">
+        <h2 className="mt-4 text-xl font-bold text-ink">
           Install Miootz
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+        <p className="mt-2 text-sm leading-relaxed text-ink-dim">
           Get instant access from your home screen, push notifications for
           kickoff reminders, and a faster app experience.
         </p>
 
         {showSafariHint && (
-          <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50 p-3 dark:border-teal-800 dark:bg-teal-950/30">
-            <p className="text-sm font-medium text-teal-950 dark:text-teal-100">
+          <div className="mt-4 border border-line p-3">
+            <p className="text-sm font-medium text-ink-dim">
               On iPhone, use the Share button to install:
             </p>
-            <ol className="mt-2 space-y-1.5 text-sm text-teal-800 dark:text-teal-200/90">
+            <ol className="mt-2 space-y-1.5 text-sm text-ink-faint">
               <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-200 text-xs font-bold text-teal-800 dark:bg-teal-800 dark:text-teal-200">
+                <span className="flex h-5 w-5 items-center justify-center bg-raised text-xs font-bold text-ink-dim">
                   1
                 </span>
-                Tap the <span className="font-semibold">Share</span>{" "}
+                Tap the <span className="font-semibold text-ink">Share</span>{" "}
                 <span className="text-lg">⬆</span> button at the bottom
               </li>
               <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-teal-200 text-xs font-bold text-teal-800 dark:bg-teal-800 dark:text-teal-200">
+                <span className="flex h-5 w-5 items-center justify-center bg-raised text-xs font-bold text-ink-dim">
                   2
                 </span>
                 Scroll and tap{" "}
-                <span className="font-semibold">Add to Home Screen</span>
+                <span className="font-semibold text-ink">Add to Home Screen</span>
               </li>
             </ol>
           </div>
@@ -152,7 +152,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
           {showChromium && (
             <button
               type="button"
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800 active:scale-[0.98] transition-colors"
+              className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors"
               onClick={() => {
                 void (async () => {
                   await deferred.prompt();
@@ -171,7 +171,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
           )}
           <button
             type="button"
-            className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+            className="border border-line px-4 py-3 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
             onClick={() => {
               release("install");
               setDismissedThisMeetup(true);

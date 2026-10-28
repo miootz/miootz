@@ -54,7 +54,7 @@ export function LocationPicker({
 
   return (
     <div className="space-y-2">
-      <div className="relative z-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+      <div className="relative z-0 overflow-hidden border border-line">
         <MapContainer
           center={center}
           zoom={value ? 15 : 13}
@@ -73,7 +73,7 @@ export function LocationPicker({
         </MapContainer>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+        <p className="flex items-center gap-1.5 text-xs text-ink-faint tabular-nums">
           <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
           {value
             ? `Pinned: ${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}`
@@ -83,7 +83,7 @@ export function LocationPicker({
           <button
             type="button"
             onClick={() => onChange(null)}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            className="inline-flex items-center gap-1 border border-line px-2.5 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
             Clear

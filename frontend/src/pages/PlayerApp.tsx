@@ -284,12 +284,12 @@ export function PlayerApp() {
     <>
       {loading && <MeetupDetailsSkeleton />}
       {error && !loading && (
-        <p className="mx-auto max-w-lg p-8 text-center text-amber-700 dark:text-amber-400">
+        <p className="mx-auto max-w-lg p-8 text-center text-danger">
           {error}
         </p>
       )}
       {!loading && !meetup && !error && (
-        <p className="mx-auto max-w-lg p-8 text-center text-gray-600 dark:text-gray-400">
+        <p className="mx-auto max-w-lg p-8 text-center text-ink-dim">
           {me?.is_admin
             ? "No upcoming meetup. Create one in Admin."
             : nextAnnounceAt

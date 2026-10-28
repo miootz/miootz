@@ -228,13 +228,12 @@ export function AdminUsersPage() {
 			/>
 			<AdminPageHeader
 				title="Users"
-				subtitle="Manage players, edit profiles, and generate invite links."
 			/>
 
 			{/* Create user form */}
-			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
-				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Plus className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
+			<section className="border border-line bg-panel p-4 sm:p-6 space-y-4">
+				<h2 className="text-base sm:text-lg font-semibold text-ink flex items-center gap-2">
+					<Plus className="h-4 w-4 sm:h-5 sm:w-5 text-team-a" aria-hidden />
 					New user
 				</h2>
 
@@ -242,7 +241,7 @@ export function AdminUsersPage() {
 					<div>
 						<label
 							htmlFor="firstName"
-							className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+							className="block text-xs font-medium text-ink-dim mb-1"
 						>
 							First name
 						</label>
@@ -253,13 +252,13 @@ export function AdminUsersPage() {
 							value={firstName}
 							onChange={(e) => setFirstName(e.target.value)}
 							placeholder="e.g. John"
-							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white transition-colors"
+							className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
 						/>
 					</div>
 					<div>
 						<label
 							htmlFor="lastName"
-							className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+							className="block text-xs font-medium text-ink-dim mb-1"
 						>
 							Last name
 						</label>
@@ -270,13 +269,13 @@ export function AdminUsersPage() {
 							value={lastName}
 							onChange={(e) => setLastName(e.target.value)}
 							placeholder="e.g. Smith"
-							className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white transition-colors"
+							className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
 						/>
 					</div>
 				</div>
 
 				{userError && (
-					<p className="text-sm text-red-600 dark:text-red-400" role="alert">
+					<p className="text-sm text-danger" role="alert">
 						{userError}
 					</p>
 				)}
@@ -286,7 +285,7 @@ export function AdminUsersPage() {
 						type="button"
 						disabled={userLoading}
 						onClick={() => void createUser()}
-						className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98] transition-colors"
+						className="inline-flex items-center gap-2 bg-ink text-board px-4 py-2.5 text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] transition-colors"
 					>
 						{userLoading ? (
 							<Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -297,30 +296,30 @@ export function AdminUsersPage() {
 			</section>
 
 			{/* Users list */}
-			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
-				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Users className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
+			<section className="border border-line bg-panel p-4 sm:p-6 space-y-4">
+				<h2 className="text-base sm:text-lg font-semibold text-ink flex items-center gap-2">
+					<Users className="h-4 w-4 sm:h-5 sm:w-5 text-team-a" aria-hidden />
 					Players
 				</h2>
 
-				<label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
-					<Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+				<label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
+					<Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
 					<input
 						type="search"
 						value={userSearch}
 						onChange={(e) => setUserSearch(e.target.value)}
 						placeholder="Search players…"
-						className="min-w-0 flex-1 bg-transparent text-sm focus:outline-none dark:text-white"
+						className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden"
 						aria-label="Search users"
 					/>
 				</label>
 
 				{usersLoading ? (
 					<div className="flex justify-center py-8">
-						<Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+						<Loader2 className="h-6 w-6 animate-spin text-ink-faint" />
 					</div>
 				) : filteredUsers.length === 0 ? (
-					<p className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
+					<p className="text-sm text-ink-dim py-8 text-center">
 						No players found.
 					</p>
 				) : (
@@ -348,7 +347,7 @@ export function AdminUsersPage() {
 							return (
 								<div
 									key={user.id}
-									className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden transition-colors"
+									className="border border-line bg-panel overflow-hidden transition-colors"
 								>
 									{isEditing ? (
 										/* Edit form */
@@ -360,11 +359,11 @@ export function AdminUsersPage() {
 													size="lg"
 												/>
 												<div className="min-w-0">
-													<span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+													<span className="font-medium text-ink text-sm">
 														{displayName}
 													</span>
 													{handle && (
-														<div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+														<div className="text-xs text-ink-faint truncate">
 															{handle}
 														</div>
 													)}
@@ -373,7 +372,7 @@ export function AdminUsersPage() {
 
 											{/* Display name */}
 											<div>
-												<label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+												<label className="block text-xs font-medium text-ink-dim mb-1">
 													Display name
 												</label>
 												<input
@@ -381,13 +380,13 @@ export function AdminUsersPage() {
 													value={editDisplayName}
 													onChange={(e) => setEditDisplayName(e.target.value)}
 													placeholder="e.g. John Smith"
-													className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+													className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 												/>
 											</div>
 
 											{/* Self skill — star rating, full row */}
 											<div>
-												<label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+												<label className="block text-xs font-medium text-ink-dim mb-1.5">
 													Self skill
 												</label>
 												<StarRating
@@ -400,13 +399,13 @@ export function AdminUsersPage() {
 
 											{/* Primary position — full row */}
 											<div>
-												<label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+												<label className="block text-xs font-medium text-ink-dim mb-1">
 													Primary position
 												</label>
 												<select
 													value={editPrimary}
 													onChange={(e) => setEditPrimary(e.target.value)}
-													className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+													className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
 												>
 													<option value="">— unset —</option>
 													{SPECIALTIES.map((s) => (
@@ -419,13 +418,13 @@ export function AdminUsersPage() {
 
 											{/* Secondary position — full row */}
 											<div>
-												<label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+												<label className="block text-xs font-medium text-ink-dim mb-1">
 													Secondary position
 												</label>
 												<select
 													value={editSecondary}
 													onChange={(e) => setEditSecondary(e.target.value)}
-													className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+													className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
 												>
 													<option value="">— unset —</option>
 													{SPECIALTIES.map((s) => (
@@ -443,16 +442,16 @@ export function AdminUsersPage() {
 														type="checkbox"
 														checked={editIsAdmin}
 														onChange={(e) => setEditIsAdmin(e.target.checked)}
-														className="rounded border-gray-300 text-teal-700 focus:ring-teal-500"
+														className="border-line text-team-a focus:ring-2 focus:ring-live"
 													/>
-													<span className="text-sm text-gray-700 dark:text-gray-300">
+													<span className="text-sm text-ink">
 														Admin
 													</span>
 												</label>
 												<button
 													type="button"
 													onClick={() => void deleteUser(user)}
-													className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+													className="inline-flex items-center gap-1.5 text-xs font-medium text-danger hover:opacity-80 transition-colors"
 												>
 													<Trash2 className="h-3.5 w-3.5" />
 													Delete
@@ -464,7 +463,7 @@ export function AdminUsersPage() {
 													type="button"
 													disabled={isSaving}
 													onClick={() => void saveEdit(user)}
-													className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 active:scale-[0.98]"
+													className="flex-1 inline-flex items-center justify-center gap-1.5 bg-ink text-board px-4 py-2.5 text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
 												>
 													{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
 													Save
@@ -472,7 +471,7 @@ export function AdminUsersPage() {
 												<button
 													type="button"
 													onClick={cancelEdit}
-													className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800 active:scale-[0.98]"
+													className="inline-flex items-center justify-center gap-1.5 border border-line px-4 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
 												>
 													<X className="h-4 w-4" />
 													Cancel
@@ -490,13 +489,13 @@ export function AdminUsersPage() {
 												/>
 												<div className="min-w-0 flex-1">
 													<div className="flex items-center gap-2">
-														<span className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">
+														<span className="font-semibold text-ink text-sm truncate">
 															{displayName}
 														</span>
 														{skill != null && <SkillBadge score={skill} size="sm" />}
 													</div>
 													{handle && (
-														<div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+														<div className="text-xs text-ink-faint mt-0.5">
 															{handle}
 														</div>
 													)}
@@ -506,10 +505,10 @@ export function AdminUsersPage() {
 											{/* Metadata row */}
 											<div className="flex flex-wrap items-center gap-2 mt-3">
 												{user.primary_specialty && (
-													<span className="inline-flex items-center rounded-md bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+													<span className="inline-flex items-center bg-team-b/15 px-2 py-0.5 text-xs font-medium text-team-b">
 														{user.primary_specialty}
 														{user.secondary_specialty && (
-															<span className="text-blue-400 dark:text-blue-500">
+															<span className="text-team-b/70">
 																{" "}
 																/ {user.secondary_specialty}
 															</span>
@@ -517,21 +516,21 @@ export function AdminUsersPage() {
 													</span>
 												)}
 												{user.calculated_skill != null && (
-													<span className="inline-flex items-center rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">
+													<span className="inline-flex items-center bg-raised px-2 py-0.5 text-xs text-ink-dim">
 														calc {user.calculated_skill}
 													</span>
 												)}
 												{user.is_admin && (
-													<span className="inline-flex items-center rounded-md bg-teal-100 dark:bg-teal-950/50 px-2 py-0.5 text-xs font-medium text-teal-800 dark:text-teal-300">
+													<span className="inline-flex items-center bg-raised px-2 py-0.5 text-xs font-medium text-ink-dim">
 														Admin
 													</span>
 												)}
 												{user.has_pocket_id ? (
-													<span className="inline-flex items-center rounded-md bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+													<span className="inline-flex items-center bg-team-a/15 px-2 py-0.5 text-xs font-medium text-team-a">
 														Pocket ID linked
 													</span>
 												) : (
-													<span className="inline-flex items-center rounded-md bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+													<span className="inline-flex items-center bg-raised px-2 py-0.5 text-xs font-medium text-ink-dim">
 														Not linked
 													</span>
 												)}
@@ -539,21 +538,21 @@ export function AdminUsersPage() {
 
 											{/* Invite result */}
 											{showInviteResult && inviteResult && (
-												<div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 p-4 space-y-3">
-													<p className="text-sm font-medium text-emerald-900 dark:text-emerald-200">
+												<div className="mt-3 border border-team-a/40 bg-team-a/15 p-4 space-y-3">
+													<p className="text-sm font-medium text-ink">
 														Invite ready — share this link or QR code:
 													</p>
 													<div className="flex flex-wrap items-center gap-3">
 														<input
 															readOnly
 															value={inviteResult.invite_link}
-															className="min-w-0 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-1.5 text-xs font-mono dark:text-gray-200 transition-colors"
+															className="min-w-0 flex-1 border border-line bg-raised px-3 py-1.5 text-xs font-mono text-ink transition-colors"
 															onClick={(e) => (e.target as HTMLInputElement).select()}
 														/>
 														<button
 															type="button"
 															onClick={() => void shareLinkInvite(inviteResult.invite_link)}
-															className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+															className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
 														>
 															<Share className="h-3.5 w-3.5" aria-hidden />
 															Share
@@ -561,7 +560,7 @@ export function AdminUsersPage() {
 														<button
 															type="button"
 															onClick={() => void copyLink(inviteResult.invite_link)}
-															className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+															className="inline-flex items-center gap-1.5 border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
 														>
 															<Copy className="h-3.5 w-3.5" aria-hidden />
 															Copy
@@ -573,9 +572,6 @@ export function AdminUsersPage() {
 															size={120}
 															level="M"
 														/>
-														<p className="text-xs text-gray-500 dark:text-gray-400">
-															Scan with phone camera to open the signup link.
-														</p>
 													</div>
 												</div>
 											)}
@@ -587,7 +583,7 @@ export function AdminUsersPage() {
 														type="button"
 														disabled={isInviting}
 														onClick={() => void generateInvite(user)}
-														className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 disabled:opacity-50 active:scale-[0.98] transition-colors"
+														className="flex-1 inline-flex items-center justify-center gap-1.5 border border-team-a/40 px-3 py-2 text-xs font-medium text-team-a hover:bg-team-a/15 disabled:opacity-50 active:scale-[0.98] transition-colors"
 													>
 														{isInviting ? (
 															<Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -600,7 +596,7 @@ export function AdminUsersPage() {
 												<button
 													type="button"
 													onClick={() => startEdit(user)}
-													className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/60 active:scale-[0.98] transition-colors"
+													className="inline-flex items-center justify-center gap-1.5 border border-line px-3 py-2 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98] transition-colors"
 												>
 													<Pencil className="h-3.5 w-3.5" />
 													Edit
@@ -616,61 +612,61 @@ export function AdminUsersPage() {
 			</section>
 
 			{/* Invite history */}
-			<section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-6 shadow-sm space-y-4">
-				<h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-					<Mail className="h-4 w-4 sm:h-5 sm:w-5 text-teal-700" aria-hidden />
+			<section className="border border-line bg-panel p-4 sm:p-6 space-y-4">
+				<h2 className="text-base sm:text-lg font-semibold text-ink flex items-center gap-2">
+					<Mail className="h-4 w-4 sm:h-5 sm:w-5 text-team-a" aria-hidden />
 					Invite history
 				</h2>
 
 				{inviteHistoryLoading ? (
 					<div className="flex justify-center py-8">
-						<Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+						<Loader2 className="h-6 w-6 animate-spin text-ink-faint" />
 					</div>
 				) : inviteHistory.length === 0 ? (
-					<p className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
+					<p className="text-sm text-ink-dim py-8 text-center">
 						No invites created yet.
 					</p>
 				) : (
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">
 							<thead>
-								<tr className="border-b border-gray-200 dark:border-gray-800 text-left text-gray-500 dark:text-gray-400">
-									<th className="pb-2 pr-4 font-medium">Player</th>
-									<th className="pb-2 pr-4 font-medium hidden sm:table-cell">Created</th>
-									<th className="pb-2 pr-4 font-medium hidden sm:table-cell">Expires</th>
-									<th className="pb-2 pr-4 font-medium">Status</th>
-									<th className="pb-2 font-medium">Link</th>
+								<tr className="border-b border-line text-left">
+									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Player</th>
+									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint hidden sm:table-cell">Created</th>
+									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint hidden sm:table-cell">Expires</th>
+									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Status</th>
+									<th className="pb-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Link</th>
 								</tr>
 							</thead>
-							<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+							<tbody className="divide-y divide-line">
 								{inviteHistory.map((row) => {
 									const expired = new Date(row.expires_at) < new Date();
 									const name = `${row.first_name} ${row.last_name}`;
 									return (
 										<tr
 											key={row.token}
-											className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+											className="hover:bg-raised transition-colors"
 										>
-											<td className="py-2.5 pr-4 font-medium text-gray-900 dark:text-gray-100">
+											<td className="py-2.5 pr-4 font-medium text-ink">
 												{name}
 											</td>
-											<td className="py-2.5 pr-4 text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+											<td className="py-2.5 pr-4 text-ink-faint tabular-nums hidden sm:table-cell">
 												{new Date(row.created_at).toLocaleDateString()}
 											</td>
-											<td className="py-2.5 pr-4 text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+											<td className="py-2.5 pr-4 text-ink-faint tabular-nums hidden sm:table-cell">
 												{new Date(row.expires_at).toLocaleDateString()}
 											</td>
 											<td className="py-2.5 pr-4">
 												{row.used ? (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+													<span className="inline-flex items-center gap-1 text-xs font-medium text-team-a">
 														<Check className="h-3.5 w-3.5" aria-hidden /> Used
 													</span>
 												) : expired ? (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+													<span className="inline-flex items-center gap-1 text-xs font-medium text-ink-faint">
 														<XCircle className="h-3.5 w-3.5" aria-hidden /> Expired
 													</span>
 												) : (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+													<span className="inline-flex items-center gap-1 text-xs font-medium text-live">
 														<Mail className="h-3.5 w-3.5" aria-hidden /> Active
 													</span>
 												)}
@@ -679,7 +675,7 @@ export function AdminUsersPage() {
 												<button
 													type="button"
 													onClick={() => void copyLink(row.invite_link)}
-													className="inline-flex items-center gap-1 rounded-lg border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+													className="inline-flex items-center gap-1 border border-line px-2 py-1 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
 												>
 													<Copy className="h-3 w-3" aria-hidden />
 													Copy

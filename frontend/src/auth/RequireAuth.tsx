@@ -23,13 +23,13 @@ export function RequireAuth() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-board">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-live border-t-transparent rounded-full animate-spin"
             aria-hidden
           />
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-ink-dim">
             Checking sign-in…
           </p>
         </div>
@@ -39,9 +39,9 @@ export function RequireAuth() {
 
   if (error && !me) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-6">
-        <div className="max-w-md w-full rounded-2xl border border-red-200 dark:border-red-900 bg-white dark:bg-gray-900 p-8 shadow-lg text-center space-y-4">
-          <p className="text-red-800 dark:text-red-200 text-sm">{error}</p>
+      <div className="min-h-screen flex items-center justify-center bg-board p-6">
+        <div className="max-w-md w-full border border-danger/40 bg-panel p-8 shadow-lg text-center space-y-4">
+          <p className="text-danger text-sm">{error}</p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
             <button
               type="button"
@@ -49,7 +49,7 @@ export function RequireAuth() {
                 redirectingRef.current = false;
                 void refresh();
               }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm"
             >
               <RefreshCw className="w-4 h-4" />
               Try again
@@ -60,7 +60,7 @@ export function RequireAuth() {
                 redirectingRef.current = false;
                 void login();
               }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-teal-700 text-white hover:bg-teal-800 text-sm"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-ink text-board hover:bg-white/90 text-sm font-bold"
             >
               <LogIn className="w-4 h-4" />
               Sign in
@@ -73,13 +73,13 @@ export function RequireAuth() {
 
   if (!me) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-board">
         <div className="flex flex-col items-center gap-3">
           <div
-            className="w-10 h-10 border-2 border-teal-700 border-t-transparent rounded-full animate-spin"
+            className="w-10 h-10 border-2 border-live border-t-transparent rounded-full animate-spin"
             aria-hidden
           />
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-ink-dim">
             Redirecting to sign-in…
           </p>
         </div>

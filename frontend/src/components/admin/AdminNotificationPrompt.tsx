@@ -24,21 +24,21 @@ export function AdminNotificationPrompt() {
 
   return (
     <div
-      className="mb-4 flex flex-wrap items-start gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100"
+      className="mb-4 flex flex-wrap items-start gap-3 border border-line bg-panel px-4 py-3 text-sm text-ink"
       role="region"
       aria-label="Notifications"
     >
-      <Bell className="h-5 w-5 shrink-0 mt-0.5" aria-hidden />
+      <Bell className="h-5 w-5 shrink-0 mt-0.5 text-live" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-medium">Get notified</p>
-        <p className="text-teal-800/90 dark:text-teal-200/90 mt-0.5">
+        <p className="text-ink-dim mt-0.5">
           Allow browser notifications for new meetups and roster changes when this app is in the
           background.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 transition-colors"
+            className="bg-ink text-board px-3 py-1.5 text-xs font-bold hover:bg-white/90 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live transition-colors"
             onClick={() => {
               void Notification.requestPermission();
             }}
@@ -47,7 +47,7 @@ export function AdminNotificationPrompt() {
           </button>
           <button
             type="button"
-            className="rounded-lg border border-teal-300 px-3 py-1.5 text-xs font-medium text-teal-900 hover:bg-white/80 dark:border-teal-800 dark:text-teal-100 dark:hover:bg-teal-900/50"
+            className="border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink"
             onClick={() => {
               try {
                 window.localStorage.setItem(DISMISS_KEY, '1');
@@ -63,7 +63,7 @@ export function AdminNotificationPrompt() {
       </div>
       <button
         type="button"
-        className="rounded-lg p-1 text-teal-800 hover:bg-teal-100 dark:text-teal-200 dark:hover:bg-teal-900/60"
+        className="p-1 text-ink-faint hover:bg-raised hover:text-ink"
         aria-label="Dismiss"
         onClick={() => {
           try {

@@ -139,7 +139,7 @@ export function MatchHistoryList({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-center gap-2 py-4 text-sm text-ink-dim">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
         Loading matches…
       </div>
@@ -148,9 +148,9 @@ export function MatchHistoryList({
 
   if (matches.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-gray-200 dark:border-gray-700 p-6 text-center">
-        <Trophy className="w-6 h-6 mx-auto text-gray-400 mb-1.5" />
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+      <div className="border border-dashed border-line p-6 text-center">
+        <Trophy className="w-6 h-6 mx-auto text-ink-faint mb-1.5" />
+        <p className="text-sm text-ink-dim">
           No match results recorded yet.
         </p>
       </div>
@@ -173,9 +173,9 @@ export function MatchHistoryList({
       )}
 
       {matches.length > 1 && (
-        <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-400 px-1">
+        <div className="flex items-center gap-2 text-sm font-medium text-live px-1">
           <Flag className="h-4 w-4" aria-hidden />
-          <span>Final match: {finalResultText}</span>
+          <span className="tabular-nums">Final match: {finalResultText}</span>
         </div>
       )}
       <div className="space-y-2">
@@ -230,16 +230,20 @@ function MatchResultRow({
   })();
 
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+    <div
+      className={`border border-line overflow-hidden ${
+        winner ? "bg-raised" : "bg-panel"
+      }`}
+    >
       {/* Match header */}
-      <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800">
-        <span className="text-2xs font-medium text-gray-500 dark:text-gray-400">
+      <div className="flex items-center gap-2 px-4 py-1.5 bg-board border-b border-line">
+        <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
           Match {match.match_number}
         </span>
         {timeLabel && (
           <>
-            <span className="text-gray-300 dark:text-gray-600">·</span>
-            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+            <span className="text-ink-faint">·</span>
+            <span className="text-2xs text-ink-dim tabular-nums">
               {timeLabel}
             </span>
           </>
@@ -250,13 +254,7 @@ function MatchResultRow({
         <div className="flex items-center gap-3">
           {/* Team A */}
           <div className="flex-1 min-w-0 text-right">
-            <span
-              className={`text-sm font-semibold truncate block ${
-                winner === "a"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-gray-700 dark:text-gray-300"
-              }`}
-            >
+            <span className="text-sm font-semibold truncate block text-team-a">
               {match.team_a.name}
             </span>
           </div>
@@ -282,14 +280,14 @@ function MatchResultRow({
                 }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-teal-700 dark:hover:text-teal-400"
-                    : "cursor-default text-gray-900 dark:text-gray-100"
+                    ? "cursor-pointer text-ink hover:text-live"
+                    : "cursor-default text-ink"
                 }`}
               >
                 {match.score_a}
               </button>
             )}
-            <span className="text-gray-500 dark:text-gray-400 text-lg font-bold select-none">
+            <span className="text-ink-faint text-lg font-bold select-none">
               :
             </span>
             {isEditing ? (
@@ -311,8 +309,8 @@ function MatchResultRow({
                 }
                 className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
-                    ? "cursor-pointer text-gray-900 dark:text-gray-100 hover:text-teal-700 dark:hover:text-teal-400"
-                    : "cursor-default text-gray-900 dark:text-gray-100"
+                    ? "cursor-pointer text-ink hover:text-live"
+                    : "cursor-default text-ink"
                 }`}
               >
                 {match.score_b}
@@ -322,13 +320,7 @@ function MatchResultRow({
 
           {/* Team B */}
           <div className="flex-1 min-w-0 text-left">
-            <span
-              className={`text-sm font-semibold truncate block ${
-                winner === "b"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-gray-700 dark:text-gray-300"
-              }`}
-            >
+            <span className="text-sm font-semibold truncate block text-team-b">
               {match.team_b.name}
             </span>
           </div>
@@ -340,7 +332,7 @@ function MatchResultRow({
             <button
               type="button"
               onClick={onDelete}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-colors min-h-[32px]"
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium hover:bg-danger/10 active:scale-95 transition-colors min-h-[32px]"
             >
               <Trash2 className="w-3 h-3" />
               Delete
@@ -355,7 +347,7 @@ function MatchResultRow({
                 const scoreB = inputs[1]?.value ?? String(match.score_b);
                 onEditSubmit(match, scoreA, scoreB);
               }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 active:scale-95 transition-colors min-h-[32px]"
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-ink text-board text-xs font-bold hover:bg-white/90 active:scale-95 transition-colors min-h-[32px]"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                 <path
@@ -371,7 +363,7 @@ function MatchResultRow({
             <button
               type="button"
               onClick={onEditCancel}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 active:scale-95 transition-colors min-h-[32px]"
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-line text-ink-dim text-xs font-medium hover:bg-raised hover:text-ink active:scale-95 transition-colors min-h-[32px]"
             >
               Cancel
             </button>
@@ -414,7 +406,7 @@ function EditableScore({
       min={0}
       defaultValue={value}
       data-match-edit={matchId}
-      className="w-12 text-2xl font-bold tabular-nums text-center rounded-lg border-2 border-teal-400 dark:border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-gray-900 dark:text-gray-100 outline-none"
+      className="w-12 text-2xl font-bold tabular-nums text-center border-2 border-live bg-raised text-ink outline-hidden"
     />
   );
 }
@@ -480,7 +472,7 @@ function AddMatchForm({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800/50 active:scale-[0.99] transition-colors"
+        className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 border border-dashed border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-[0.99] transition-colors"
       >
         <Plus className="w-4 h-4" />
         Add match result
@@ -491,16 +483,16 @@ function AddMatchForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3 shadow-sm"
+      className="border border-line bg-panel p-4 space-y-3"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+        <h2 className="text-sm font-semibold text-ink">
           Add match result
         </h2>
         <button
           type="button"
           onClick={onToggle}
-          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+          className="text-ink-faint hover:text-ink p-1"
           aria-label="Close"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -515,7 +507,7 @@ function AddMatchForm({
       </div>
 
       {error && (
-        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {error}
         </p>
       )}
@@ -523,13 +515,13 @@ function AddMatchForm({
       {/* Team dropdowns */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
             Team A
           </label>
           <select
             value={teamA}
             onChange={(e) => setTeamA(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink"
           >
             {teamNames.map((name) => (
               <option
@@ -543,13 +535,13 @@ function AddMatchForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
             Team B
           </label>
           <select
             value={teamB}
             onChange={(e) => setTeamB(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm dark:text-white"
+            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink"
           >
             {teamNames.map((name) => (
               <option
@@ -567,7 +559,7 @@ function AddMatchForm({
       {/* Score inputs */}
       <div className="flex items-center justify-center gap-3">
         <div className="text-center">
-          <label className="block text-2xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
             {teamA || "Team A"}
           </label>
           <input
@@ -578,12 +570,12 @@ function AddMatchForm({
             onChange={(e) =>
               setScoreA(Math.max(0, parseInt(e.target.value || "0", 10)))
             }
-            className="w-16 text-center text-xl font-bold tabular-nums rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-2 py-1.5 dark:text-white"
+            className="w-16 text-center text-xl font-bold tabular-nums border border-line bg-raised px-2 py-1.5 text-ink"
           />
         </div>
-        <span className="text-gray-400 text-lg font-bold select-none">:</span>
+        <span className="text-ink-faint text-lg font-bold select-none">:</span>
         <div className="text-center">
-          <label className="block text-2xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">
+          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
             {teamB || "Team B"}
           </label>
           <input
@@ -594,7 +586,7 @@ function AddMatchForm({
             onChange={(e) =>
               setScoreB(Math.max(0, parseInt(e.target.value || "0", 10)))
             }
-            className="w-16 text-center text-xl font-bold tabular-nums rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-2 py-1.5 dark:text-white"
+            className="w-16 text-center text-xl font-bold tabular-nums border border-line bg-raised px-2 py-1.5 text-ink"
           />
         </div>
       </div>
@@ -604,7 +596,7 @@ function AddMatchForm({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 active:scale-95 transition-colors min-h-[36px]"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-95 transition-colors min-h-[36px]"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {submitting ? "Adding…" : "Save match"}
@@ -612,7 +604,7 @@ function AddMatchForm({
         <button
           type="button"
           onClick={onToggle}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 active:scale-95 transition-colors min-h-[36px]"
+          className="inline-flex items-center gap-1 px-4 py-2 border border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-95 transition-colors min-h-[36px]"
         >
           Cancel
         </button>
