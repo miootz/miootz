@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutGrid, Loader2, Minus, Plus, Shuffle } from "lucide-react";
 import type { Meetup, Team, User } from "../types";
 import {
@@ -13,17 +13,32 @@ import { hapticLight } from "../utils/haptics";
 import { DraggableTeams } from "./DraggableTeams";
 import { rebalanceTeams } from "../services/teamService";
 
+function ratingOf(p: User): number {
+  return p.calculatedSkill != null && p.calculatedSkill > 0
+    ? p.calculatedSkill
+    : Math.round(p.skillScore);
+}
+
+/** Display order: rating desc, name (first letter) asc on ties. */
+function sortedPlayers(players: User[]): User[] {
+  return [...players].sort(
+    (a, b) => ratingOf(b) - ratingOf(a) || a.name.localeCompare(b.name),
+  );
+}
+
 function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
-  return team.players.map((p) => ({
-    id: p.id,
-    name: p.name,
-    skillScore: p.skillScore,
-    isLocked: p.isLocked,
-    avatarUrl: p.profilePic ?? undefined,
-    primarySpecialty: p.primarySpecialty ?? undefined,
-    secondarySpecialty: p.secondarySpecialty ?? undefined,
-    calculatedSkill: p.calculatedSkill ?? null,
-  }));
+  return sortedPlayers(
+    team.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      skillScore: p.skillScore,
+      isLocked: p.isLocked,
+      avatarUrl: p.profilePic ?? undefined,
+      primarySpecialty: p.primarySpecialty ?? undefined,
+      secondarySpecialty: p.secondarySpecialty ?? undefined,
+      calculatedSkill: p.calculatedSkill ?? null,
+    })),
+  );
 }
 
 /**
@@ -88,6 +103,9 @@ export function MeetupTeamsPanel({
     "expand" | "contract" | null
   >(null);
   const [reshuffling, setReshuffling] = useState(false);
+  // Locks are client-side only (no server field); keep them across refetches
+  // so reshuffles and SSE-driven refreshes don't cancel them.
+  const lockedIdsRef = useRef<Set<string>>(new Set());
 
   const waitlistedCount = detail.attendees.filter(
     (a) => a.status === "waitlisted",
@@ -98,6 +116,21 @@ export function MeetupTeamsPanel({
   const showReshuffle =
     detail.team_assignment_mode === "random" || hasLocked;
 
+  // Re-apply client-side locks onto a freshly built lineup (server payload
+  // never carries them), so refetches never cancel an existing lock.
+  const withLocalLocks = useCallback(
+    (built: Meetup | null): Meetup | null => {
+      if (!built) return null;
+      return {
+        ...built,
+        attendance: built.attendance.map((u) =>
+          lockedIdsRef.current.has(u.id) ? { ...u, isLocked: true } : u,
+        ),
+      };
+    },
+    [],
+  );
+
   useEffect(() => {
     let cancelled = false;
     setTeamsLoading(true);
@@ -105,7 +138,7 @@ export function MeetupTeamsPanel({
       .then((t) => {
         if (cancelled) return;
         setTeams(t);
-        setTeamMeetup(buildTeamMeetup(detail, t, meetupId));
+        setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, t, meetupId)));
       })
       .catch(() => {
         if (!cancelled) setTeams(null);
@@ -176,13 +209,21 @@ export function MeetupTeamsPanel({
   const handleToggleLock = useCallback((userId: string) => {
     setTeamMeetup((m) => {
       if (!m) return m;
+      const next = new Set(lockedIdsRef.current);
+      const nowLocked = !m.attendance.find((u) => u.id === userId)?.isLocked;
+      if (nowLocked) next.add(userId);
+      else next.delete(userId);
+      lockedIdsRef.current = next;
       const attendance = m.attendance.map((u) =>
-        u.id === userId ? { ...u, isLocked: !u.isLocked } : u,
+        u.id === userId ? { ...u, isLocked: nowLocked } : u,
       );
       return {
         ...m,
         attendance,
-        teams: rebalanceTeams({ attendance, teams: m.teams }),
+        teams: rebalanceTeams({ attendance, teams: m.teams }).map((t) => ({
+          ...t,
+          players: sortedPlayers(t.players),
+        })),
       };
     });
   }, []);
@@ -208,7 +249,7 @@ export function MeetupTeamsPanel({
       try {
         const res = await patchMeetupTeams(meetupId, payload);
         setTeams(res);
-        setTeamMeetup(buildTeamMeetup(detail, res, meetupId));
+        setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, res, meetupId)));
         void onChanged();
       } catch (e) {
         showToast(
@@ -218,7 +259,7 @@ export function MeetupTeamsPanel({
         void onChanged();
       }
     },
-    [meetupId, teamMeetup, detail, onChanged, showToast],
+    [meetupId, teamMeetup, detail, onChanged, showToast, withLocalLocks],
   );
 
   return (

@@ -87,11 +87,6 @@ export const TeamPlayerCard: React.FC<{
           size="sm"
           isPlusOne={player.isPlusOne}
         />
-        {player.isLocked && (
-          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-live flex items-center justify-center">
-            <Lock size={9} className="text-board" />
-          </div>
-        )}
       </div>
 
       <div className="min-w-0 flex-1">
