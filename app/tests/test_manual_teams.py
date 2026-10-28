@@ -70,3 +70,46 @@ def test_rebalance_random_still_partitions():
     )
     ids = sorted(uid for team in out for uid in (int(p["id"]) for p in team))
     assert ids == [1, 2, 3, 4, 5, 6, 7, 8]
+
+
+def test_rebalance_distinct_skills_is_deterministic():
+    import random as _r
+
+    # All skills distinct → no equal-skill groups → one valid snake layout.
+    players = [{"id": str(i + 1), "skill": 6 - i * 0.5} for i in range(6)]
+    lineup = [[1, 2, 3], [4, 5, 6]]
+    _r.seed(1)
+    a = rebalance_around_locked(players, lineup, locked=set())
+    _r.seed(2)
+    b = rebalance_around_locked(players, lineup, locked=set())
+    assert a == b
+
+
+def test_rebalance_equal_skill_varies_layout_keeps_totals():
+    import random as _r
+
+    # Two players at each of three skill levels.
+    players: list[dict] = []
+    for s in (4.0, 3.0, 2.0):
+        for _ in range(2):
+            players.append({"id": str(len(players) + 1), "skill": s})
+    lineup = [[1, 2, 3], [4, 5, 6]]
+
+    def totals(out):
+        return tuple(
+            round(sum(float(p["skill"]) for p in players if int(p["id"]) in team), 3)
+            for team in out
+        )
+
+    layouts: set[tuple] = set()
+    reference: tuple | None = None
+    for seed in range(15):
+        _r.seed(seed)
+        out = rebalance_around_locked(players, lineup, locked=set())
+        ids = tuple(tuple(int(p["id"]) for p in team) for team in out)
+        t = totals(out)
+        assert sorted(uid for team in ids for uid in team) == [1, 2, 3, 4, 5, 6]
+        reference = t if reference is None else reference
+        assert t == reference  # equal-skill shuffle never moves a total
+        layouts.add(ids)
+    assert len(layouts) > 1  # …but it does produce new layouts

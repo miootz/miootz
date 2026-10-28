@@ -94,7 +94,8 @@ def rebalance_around_locked(
 
     *lineup* is the current valid partition (user ids per team); only the
     ids in *locked* stay put. The remaining confirmed players are snake-
-    drafted (by skill, desc) — or shuffled, when *randomize* — into the
+    drafted by skill (desc), with equal-rated players shuffled among the
+    teams on each call — or fully shuffled, when *randomize* — into the
     leftover slots of each team, preserving team sizes.
     """
     by_id = {str(p["id"]): p for p in players}
@@ -109,7 +110,20 @@ def rebalance_around_locked(
     if randomize:
         random.shuffle(pending)
     else:
+        # Skill-desc sort, then shuffle within equal-skill groups: a
+        # rebalance must yield a *new* layout, and swapping equal-rated
+        # players across teams keeps every team's skill total exactly the
+        # same (equal-skill players stay contiguous in the snake, so the
+        # per-team bucket counts are unchanged).
         pending.sort(key=lambda x: float(x.get("skill", 0)), reverse=True)
+        start = 0
+        for k in range(1, len(pending) + 1):
+            if k == len(pending) or float(pending[k].get("skill", 0)) != float(pending[start].get("skill", 0)):
+                if k - start > 1:
+                    group = pending[start:k]
+                    random.shuffle(group)
+                    pending[start:k] = group
+                start = k
 
     teams = [list(team) for team in fixed]
     remaining = [max(0, counts[i] - len(teams[i])) for i in range(len(teams))]

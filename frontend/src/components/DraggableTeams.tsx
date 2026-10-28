@@ -27,7 +27,6 @@ interface DraggableTeamsProps {
   canDragTeams: boolean;
   onReshuffle?: () => void;
   reshuffling?: boolean;
-  reshuffleVisible?: boolean;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
@@ -112,12 +111,10 @@ function SkillBanner({
   meetup,
   onReshuffle,
   reshuffling,
-  reshuffleVisible = false,
 }: {
   meetup: Meetup;
   onReshuffle?: () => void;
   reshuffling?: boolean;
-  reshuffleVisible?: boolean;
 }) {
   const { totals, balanced, maxDiff } = teamSkillBalanceSummary(meetup.teams);
   if (totals.length === 0) return null;
@@ -164,13 +161,9 @@ function SkillBanner({
         </span>
         <button
           type="button"
-          disabled={!reshuffleVisible || reshuffling}
+          disabled={reshuffling}
           onClick={onReshuffle}
-          aria-hidden={!reshuffleVisible}
-          tabIndex={reshuffleVisible ? 0 : -1}
-          className={`hidden md:inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97] ${
-            reshuffleVisible ? "" : "invisible"
-          }`}
+          className="hidden md:inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
         >
           {reshuffling ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -185,13 +178,9 @@ function SkillBanner({
       </p>
       <button
         type="button"
-        disabled={!reshuffleVisible || reshuffling}
+        disabled={reshuffling}
         onClick={onReshuffle}
-        aria-hidden={!reshuffleVisible}
-        tabIndex={reshuffleVisible ? 0 : -1}
-        className={`mt-2 w-full min-h-[44px] md:hidden inline-flex items-center justify-center gap-1.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.97] ${
-          reshuffleVisible ? "" : "invisible"
-        }`}
+        className="mt-2 w-full min-h-[44px] md:hidden inline-flex items-center justify-center gap-1.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
       >
         {reshuffling ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -274,7 +263,6 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
   canDragTeams,
   onReshuffle,
   reshuffling,
-  reshuffleVisible,
 }) => {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -315,7 +303,6 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
         meetup={meetup}
         onReshuffle={onReshuffle}
         reshuffling={reshuffling}
-        reshuffleVisible={reshuffleVisible}
       />
       {canDragTeams ? (
         <DndContext

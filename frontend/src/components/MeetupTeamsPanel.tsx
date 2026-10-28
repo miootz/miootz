@@ -112,11 +112,6 @@ export function MeetupTeamsPanel({
   const waitlistedCount = detail.attendees.filter(
     (a) => a.status === "waitlisted",
   ).length;
-  const hasLocked = teamMeetup
-    ? teamMeetup.attendance.some((u) => u.isLocked)
-    : false;
-  const showReshuffle =
-    detail.team_assignment_mode === "random" || hasLocked;
 
   // Re-apply client-side locks onto a freshly built lineup (server payload
   // never carries them), so refetches never cancel an existing lock.
@@ -197,10 +192,14 @@ export function MeetupTeamsPanel({
               .map((u) => u.id),
           }
         : undefined;
-      await adminReshuffleTeams(meetupId, body);
-      await onChanged();
-      showToast("Teams reshuffled.", "success");
-      hapticLight();
+      const res = await adminReshuffleTeams(meetupId, body);
+      if (res.status === "already_balanced") {
+        showToast("Already balanced — nothing to reshuffle.");
+      } else {
+        await onChanged();
+        showToast("Teams reshuffled.", "success");
+        hapticLight();
+      }
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Reshuffle failed", "error");
     } finally {
@@ -389,7 +388,6 @@ export function MeetupTeamsPanel({
             canDragTeams={Boolean(teamMeetup)}
             onReshuffle={() => void reshuffleTeams()}
             reshuffling={reshuffling}
-            reshuffleVisible={showReshuffle}
           />
         )}
       </div>

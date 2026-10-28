@@ -754,9 +754,15 @@ async def reshuffle_meetup_teams(
             max_teams=meetup.max_teams,
             randomize=(mode == "random"),
         )
-        meetup.manual_teams_json = json.dumps(
-            [[p["user_id"] for p in team] for team in rebalanced]
-        )
+        new_lineup = [[p["user_id"] for p in team] for team in rebalanced]
+        if new_lineup == int_teams:
+            # No alternative layout under the current rules (e.g. every
+            # rating is unique and nothing is locked) — nothing to persist.
+            return {
+                "status": "already_balanced",
+                "content_revision": meetup.content_revision,
+            }
+        meetup.manual_teams_json = json.dumps(new_lineup)
 
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
