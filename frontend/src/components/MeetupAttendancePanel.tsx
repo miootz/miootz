@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ClipboardList, Loader2, Search, Users } from "lucide-react";
+import { ClipboardList, Loader2, Search } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { adminMoveAttendance } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
@@ -162,10 +162,7 @@ export function MeetupAttendancePanel({
                           {movingKey === `${a.user_id}-waitlisted` ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
                           ) : (
-                            <>
-                              <Users className="w-3.5 h-3.5" />
-                              Waitlist
-                            </>
+                            "Waitlist"
                           )}
                         </button>
                       )}

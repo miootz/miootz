@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCircle2, Hourglass } from "lucide-react";
+import { CheckCircle2, Hourglass, XCircle } from "lucide-react";
 import { PlayerAvatarFace } from "./PlayerAvatar";
 import { SkillRating } from "./TeamPlayerCard";
 
@@ -34,6 +34,11 @@ const STATUS_ICONS: Record<
     icon: <Hourglass className="w-4 h-4" />,
     label: "Waitlisted",
     className: "text-live",
+  },
+  cancelled: {
+    icon: <XCircle className="w-4 h-4" />,
+    label: "Cancelled",
+    className: "text-ink-faint",
   },
 };
 
