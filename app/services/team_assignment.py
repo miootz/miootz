@@ -81,3 +81,49 @@ def assign_teams_random(
     shuffled = list(players)
     random.shuffle(shuffled)
     return _snake_draft(shuffled, max_teams=max_teams)
+
+
+def rebalance_around_locked(
+    players: list[dict[str, Any]],
+    lineup: list[list[int]],
+    locked: set[int],
+    max_teams: int | None = None,
+    randomize: bool = False,
+) -> list[list[dict[str, Any]]]:
+    """Reassign the unlocked players around a lineup with locked spots.
+
+    *lineup* is the current valid partition (user ids per team); only the
+    ids in *locked* stay put. The remaining confirmed players are snake-
+    drafted (by skill, desc) — or shuffled, when *randomize* — into the
+    leftover slots of each team, preserving team sizes.
+    """
+    by_id = {str(p["id"]): p for p in players}
+    locked_str = {str(uid) for uid in locked}
+    fixed = [
+        [by_id[str(uid)] for uid in team if str(uid) in locked_str and str(uid) in by_id]
+        for team in lineup
+    ]
+    counts = [len(team) for team in lineup]
+    fixed_ids = {id(p) for team in fixed for p in team}
+    pending = [p for p in players if id(p) not in fixed_ids]
+    if randomize:
+        random.shuffle(pending)
+    else:
+        pending.sort(key=lambda x: float(x.get("skill", 0)), reverse=True)
+
+    teams = [list(team) for team in fixed]
+    remaining = [max(0, counts[i] - len(teams[i])) for i in range(len(teams))]
+    n = len(teams)
+    i = 0
+    round_idx = 0
+    while i < len(pending) and any(r > 0 for r in remaining):
+        order = range(n) if round_idx % 2 == 0 else range(n - 1, -1, -1)
+        for t in order:
+            if i >= len(pending):
+                break
+            if remaining[t] > 0:
+                teams[t].append(pending[i])
+                remaining[t] -= 1
+                i += 1
+        round_idx += 1
+    return teams

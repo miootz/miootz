@@ -92,7 +92,11 @@ export function MeetupTeamsPanel({
   const waitlistedCount = detail.attendees.filter(
     (a) => a.status === "waitlisted",
   ).length;
-  const canReshuffle = detail.team_assignment_mode === "random";
+  const hasLocked = teamMeetup
+    ? teamMeetup.attendance.some((u) => u.isLocked)
+    : false;
+  const showReshuffle =
+    detail.team_assignment_mode === "random" || hasLocked;
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +152,17 @@ export function MeetupTeamsPanel({
   async function reshuffleTeams() {
     setReshuffling(true);
     try {
-      await adminReshuffleTeams(meetupId);
+      // Send the current lineup + locked ids so locked players keep their
+      // spots and only the rest is rebalanced (backend handles both modes).
+      const body = teamMeetup
+        ? {
+            teams: teamMeetup.teams.map((t) => t.players.map((p) => p.id)),
+            locked: teamMeetup.attendance
+              .filter((u) => u.isLocked)
+              .map((u) => u.id),
+          }
+        : undefined;
+      await adminReshuffleTeams(meetupId, body);
       await onChanged();
       showToast("Teams reshuffled.", "success");
       hapticLight();
@@ -229,7 +243,7 @@ export function MeetupTeamsPanel({
             {live ? "Live" : "Offline"}
           </span>
         )}
-        {canReshuffle && (
+        {showReshuffle && (
           <button
             type="button"
             disabled={reshuffling}
@@ -331,6 +345,8 @@ export function MeetupTeamsPanel({
             onMovePlayer={handleMovePlayer}
             onToggleLock={handleToggleLock}
             canDragTeams={Boolean(teamMeetup)}
+            onReshuffle={showReshuffle ? () => void reshuffleTeams() : undefined}
+            reshuffling={reshuffling}
           />
         )}
       </div>

@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Scale } from "lucide-react";
+import { Loader2, Scale, Shuffle } from "lucide-react";
 import type { Meetup, User } from "../types";
 import { teamSkillBalanceSummary } from "../services/teamService";
 import { TeamPlayerCard } from "./TeamPlayerCard";
@@ -25,6 +25,8 @@ interface DraggableTeamsProps {
   ) => void | Promise<void>;
   onToggleLock: (userId: string) => void;
   canDragTeams: boolean;
+  onReshuffle?: () => void;
+  reshuffling?: boolean;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
@@ -105,7 +107,15 @@ function PlayerRow({
 
 /* ── Skill banner ────────────────────────────────────────────────── */
 
-function SkillBanner({ meetup }: { meetup: Meetup }) {
+function SkillBanner({
+  meetup,
+  onReshuffle,
+  reshuffling,
+}: {
+  meetup: Meetup;
+  onReshuffle?: () => void;
+  reshuffling?: boolean;
+}) {
   const { totals, balanced, maxDiff } = teamSkillBalanceSummary(meetup.teams);
   if (totals.length === 0) return null;
 
@@ -141,6 +151,21 @@ function SkillBanner({ meetup }: { meetup: Meetup }) {
       >
         {balanced ? "Balanced \u2713" : "Uneven"}
       </span>
+      {onReshuffle && (
+        <button
+          type="button"
+          disabled={reshuffling}
+          onClick={onReshuffle}
+          className="inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
+        >
+          {reshuffling ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Shuffle className="w-3.5 h-3.5" />
+          )}
+          Reshuffle
+        </button>
+      )}
     </div>
   );
 }
@@ -213,6 +238,8 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
   onMovePlayer,
   onToggleLock,
   canDragTeams,
+  onReshuffle,
+  reshuffling,
 }) => {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -249,7 +276,11 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
 
   return (
     <>
-      <SkillBanner meetup={meetup} />
+      <SkillBanner
+        meetup={meetup}
+        onReshuffle={onReshuffle}
+        reshuffling={reshuffling}
+      />
       {canDragTeams ? (
         <DndContext
           sensors={sensors}

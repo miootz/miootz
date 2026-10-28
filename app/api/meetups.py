@@ -54,6 +54,7 @@ from app.services.manual_teams import (
     build_teams_from_manual,
 )
 from app.services.team_adjustment import expand_teams, contract_teams
+from app.services.team_assignment import rebalance_around_locked
 from app.services.web_push import (
     notify_new_meetup_invites,
     notify_meetup_cancelled_recipients,
@@ -135,6 +136,13 @@ class TeamsUpdateBody(BaseModel):
     """Confirmed user ids grouped by team (same sizes as automatic snake draft)."""
 
     teams: list[list[str]]
+
+
+class TeamsReshuffleBody(BaseModel):
+    """Optional: current lineup + locked ids for a locked-aware rebalance."""
+
+    teams: list[list[str]] = []
+    locked: list[str] = []
 
 
 class TeamsAdjustBody(BaseModel):
@@ -673,21 +681,83 @@ async def patch_meetup_teams(
 @router.post("/{meetup_id}/teams/reshuffle")
 async def reshuffle_meetup_teams(
     meetup_id: int,
+    body: TeamsReshuffleBody | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Re-randomize teams (only when `team_assignment_mode` is `random`)."""
+    """Reshuffle teams.
+
+    Without a body: full redraw (only when `team_assignment_mode` is
+    `random`). With a body: locked players keep their spots and the rest
+    is rebalanced around them (both modes); the result is persisted as
+    the manual lineup.
+    """
     result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
     meetup = result.scalar_one_or_none()
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
     mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
-    if mode != "random":
-        raise HTTPException(
-            status_code=400,
-            detail="Reshuffle only applies when team_assignment_mode is random",
+
+    if not body or not body.teams:
+        if mode != "random":
+            raise HTTPException(
+                status_code=400,
+                detail="Reshuffle only applies when team_assignment_mode is random",
+            )
+        meetup.manual_teams_json = None
+    else:
+        result = await db.execute(
+            select(Attendance, User)
+            .join(User, Attendance.user_id == User.id)
+            .where(
+                Attendance.meetup_id == meetup_id,
+                Attendance.status == "confirmed",
+            )
         )
-    meetup.manual_teams_json = None
+        rows = result.all()
+        players = [
+            {
+                "id": str(user.id),
+                "skill": _user_skill(user),
+                "user_id": user.id,
+            }
+            for _, user in rows
+        ]
+        confirmed_ids = {p["user_id"] for p in players}
+        try:
+            int_teams = [[int(x) for x in team] for team in body.teams]
+        except TypeError, ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid user id in teams"
+            ) from None
+        if not validate_team_partition(
+            int_teams, confirmed_ids, max_teams=meetup.max_teams
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Teams must partition all confirmed players with valid team sizes",
+            )
+        try:
+            locked = {int(x) for x in body.locked}
+        except TypeError, ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid user id in locked"
+            ) from None
+        if not locked <= confirmed_ids:
+            raise HTTPException(
+                status_code=400, detail="Locked user is not confirmed"
+            )
+        rebalanced = rebalance_around_locked(
+            players,
+            int_teams,
+            locked,
+            max_teams=meetup.max_teams,
+            randomize=(mode == "random"),
+        )
+        meetup.manual_teams_json = json.dumps(
+            [[p["user_id"] for p in team] for team in rebalanced]
+        )
+
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:

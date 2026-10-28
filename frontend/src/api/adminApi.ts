@@ -92,10 +92,12 @@ export async function adminDeleteMeetup(id: number): Promise<{ status: string }>
 }
 
 export async function adminReshuffleTeams(
-  meetupId: number
+  meetupId: number,
+  body?: { teams: string[][]; locked: string[] }
 ): Promise<{ status: string; content_revision?: number }> {
   const r = await apiFetch(`/meetups/${meetupId}/teams/reshuffle`, {
     method: 'POST',
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   return jsonOrThrow(r);
 }
