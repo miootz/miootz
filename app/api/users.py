@@ -2,8 +2,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import delete, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
@@ -19,12 +19,15 @@ from app.models.user_notification_preference import (
 from app.models.web_push_subscription import WebPushSubscription
 from app.schemas.user import SPECIALTY_OPTIONS, UserProfileUpdate
 from app.models.invite import InviteToken
+from app.models.meetup import Attendance, MatchScore, Meetup
+from app.models.rating import Rating
 from app.services.pocket_id_client import (
     create_signup_token,
     delete_user,
     get_user_by_id,
 )
 from app.services.skill_service import update_user_calculated_skill
+from app.services.stats_service import get_user_statistics
 from app.services.template_subscriptions import user_wants_template_notifications
 from pydantic import BaseModel, ConfigDict, Field
 from app.core.timeutil import utcnow
@@ -489,51 +492,151 @@ class AdminSelfAssessedBody(BaseModel):
     self_assessed_skill: int = Field(..., ge=1, le=5)
 
 
-@router.get("")
-async def list_users_admin(
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """List all users for the admin UI, enriched with fresh Pocket ID profile data."""
+def _user_out(user: User, sso: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        **AdminUserListOut.model_validate(user).model_dump(),
+        "display_name": sso.get("displayName") if sso else user.sso_display_name,
+        "username": (
+            sso.get("preferredUsername") or sso.get("username")
+            if sso
+            else user.sso_preferred_username
+        ),
+        "has_pocket_id": bool(user.pocket_id_sub),
+    }
 
-    result = await db.execute(
-        select(User, func.count().over().label("total")).order_by(
-            User.sso_display_name.asc(), User.pocket_id_sub.asc()
-        )
-    )
-    rows = result.all()
 
-    # Fetch fresh SSO profiles in parallel for all users with a pocket_id_sub
-    subs = [(user, _total) for (user, _total) in rows if user.pocket_id_sub]
-    sso_cache: dict[str, dict[str, Any]] = {}
+async def _enrich(users: list[User]) -> list[dict[str, Any]]:
+    """Fetch fresh SSO profiles in parallel for users with a pocket_id_sub."""
+    subs = [u for u in users if u.pocket_id_sub]
+    cache: dict[str, dict[str, Any]] = {}
     if subs:
         import asyncio
 
         results = await asyncio.gather(
-            *(get_user_by_id(user.pocket_id_sub) for user, _ in subs),
+            *(get_user_by_id(u.pocket_id_sub) for u in subs),
         )
-        for (user, _), sso_data in zip(subs, results, strict=True):
-            if sso_data and user.pocket_id_sub:
-                sso_cache[user.pocket_id_sub] = sso_data
+        for u, sso_data in zip(subs, results, strict=True):
+            if sso_data:
+                cache[u.pocket_id_sub] = sso_data
+    return [_user_out(u, cache.get(u.pocket_id_sub)) for u in users]
 
-    users = []
-    for user, _total in rows:
-        sso = sso_cache.get(user.pocket_id_sub) if user.pocket_id_sub else None
-        display_name = sso.get("displayName") if sso else user.sso_display_name
-        username = (
-            sso.get("preferredUsername") or sso.get("username")
-            if sso
-            else user.sso_preferred_username
+
+@router.get("")
+async def list_users_admin(
+    q: str | None = None,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """List players for the admin UI (search + pagination), enriched with fresh Pocket ID profile data."""
+    stmt = select(User)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.sso_display_name.ilike(like),
+                User.sso_preferred_username.ilike(like),
+                User.pocket_id_sub.ilike(like),
+            )
         )
-        users.append(
+    total = (
+        await db.execute(
+            select(func.count()).select_from(stmt.subquery())
+        )
+    ).scalar()
+    total = total or 0
+    rows = (
+        (
+            await db.execute(
+                stmt.order_by(User.sso_display_name.asc(), User.pocket_id_sub.asc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"items": await _enrich(list(rows)), "total": total}
+
+
+@router.get("/{user_id}/history")
+async def admin_get_player_history(
+    user_id: int,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Player detail payload: profile + stats + paginated attendance history (admin only)."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stats = await get_user_statistics(db, user_id)
+
+    total = (
+        await db.execute(
+            select(func.count(Attendance.id)).where(Attendance.user_id == user_id)
+        )
+    ).scalar()
+    total = total or 0
+
+    res = (
+        await db.execute(
+            select(Attendance, Meetup)
+            .join(Meetup, Meetup.id == Attendance.meetup_id)
+            .where(Attendance.user_id == user_id)
+            .order_by(Meetup.start_time.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+    att_rows = res.all()
+
+    meetup_ids = [m.id for _, m in att_rows]
+    score_map: dict[tuple[int, str], int] = {}
+    rating_map: dict[int, float] = {}
+    if meetup_ids:
+        scores = await db.execute(
+            select(MatchScore).where(
+                MatchScore.meetup_id.in_(meetup_ids),
+                MatchScore.player_id == user_id,
+            )
+        )
+        score_map = {
+            (s.meetup_id, s.type): s.score for s in scores.scalars().all()
+        }
+        ratings = await db.execute(
+            select(Rating.meetup_id, func.avg(Rating.score))
+            .where(Rating.meetup_id.in_(meetup_ids), Rating.ratee_id == user_id)
+            .group_by(Rating.meetup_id)
+        )
+        rating_map = {
+            mid: round(float(avg), 2) for mid, avg in ratings.all() if avg is not None
+        }
+
+    items = []
+    for att, m in att_rows:
+        items.append(
             {
-                **AdminUserListOut.model_validate(user).model_dump(),
-                "display_name": display_name,
-                "username": username,
-                "has_pocket_id": bool(user.pocket_id_sub),
+                "meetup_id": m.id,
+                "start_time": m.start_time.isoformat(),
+                "location": m.location,
+                "status": att.status,
+                "previous_status": att.previous_status,
+                "joined_at": att.joined_at.isoformat(),
+                "score_team": score_map.get((m.id, "team")),
+                "score_individual": score_map.get((m.id, "individual")),
+                "rating_avg": rating_map.get(m.id),
             }
         )
-    return {"items": users}
+
+    return {
+        "user": (await _enrich([user]))[0],
+        "stats": stats,
+        "history": {"items": items, "total": total},
+    }
 
 
 @router.patch("/{user_id}")

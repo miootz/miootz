@@ -254,10 +254,54 @@ export interface AdminUserUpdate {
   display_name?: string | null;
 }
 
-export async function adminListUsers(): Promise<AdminUserRow[]> {
-  const r = await apiFetch('/users');
-  const data = await jsonOrThrow<{ items: AdminUserRow[] }>(r);
-  return data.items;
+export async function adminListUsers(options?: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: AdminUserRow[]; total: number }> {
+  const p = new URLSearchParams();
+  if (options?.q) p.set('q', options.q);
+  if (options?.limit != null) p.set('limit', String(options.limit));
+  if (options?.offset != null) p.set('offset', String(options.offset));
+  const qs = p.toString();
+  const r = await apiFetch(`/users${qs ? `?${qs}` : ''}`);
+  return jsonOrThrow(r);
+}
+
+export interface PlayerHistoryRow {
+  meetup_id: number;
+  start_time: string;
+  location: string;
+  status: 'confirmed' | 'waitlisted' | 'cancelled';
+  previous_status: string | null;
+  joined_at: string;
+  score_team: number | null;
+  score_individual: number | null;
+  rating_avg: number | null;
+}
+
+export interface PlayerHistory {
+  user: AdminUserRow;
+  stats: {
+    games_played: number;
+    season_games: number;
+    average_rating: number;
+    total_ratings: number;
+    skill_level: number;
+  };
+  history: { items: PlayerHistoryRow[]; total: number };
+}
+
+export async function adminGetPlayerHistory(
+  userId: number,
+  options?: { limit?: number; offset?: number }
+): Promise<PlayerHistory> {
+  const p = new URLSearchParams();
+  if (options?.limit != null) p.set('limit', String(options.limit));
+  if (options?.offset != null) p.set('offset', String(options.offset));
+  const qs = p.toString();
+  const r = await apiFetch(`/users/${userId}/history${qs ? `?${qs}` : ''}`);
+  return jsonOrThrow(r);
 }
 
 export async function adminUpdateUser(

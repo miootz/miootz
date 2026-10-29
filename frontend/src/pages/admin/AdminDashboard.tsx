@@ -362,11 +362,11 @@ export function AdminDashboard() {
           )}
         </Link>
         <Link
-          to="/admin/users"
+          to="/admin/players"
           className="inline-flex items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
         >
           <Users className="w-4 h-4" aria-hidden />
-          Users
+          Players
         </Link>
         <Link
           to="/admin/tools"

@@ -45,9 +45,9 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
         <Repeat className="w-4 h-4 shrink-0" />
         Templates
       </NavLink>
-      <NavLink to="/admin/users" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/players" className={navCls} onClick={onNavigate}>
         <Users className="w-4 h-4 shrink-0" />
-        Users
+        Players
       </NavLink>
       <NavLink to="/admin/tools" className={navCls} onClick={onNavigate}>
         <Wrench className="w-4 h-4 shrink-0" />
