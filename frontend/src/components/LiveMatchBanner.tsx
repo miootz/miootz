@@ -37,7 +37,7 @@ function stewardReasonLine(reason: string | undefined): string {
 }
 
 export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
-  const { me, tokens } = useAuth();
+  const { tokens } = useAuth();
   const sid =
     typeof meetupId === "string" ? parseInt(meetupId, 10) : meetupId;
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
@@ -351,7 +351,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             )}
           </div>
         )}
-        {canControl && isTimeUp && me?.is_admin && (
+        {canControl && isTimeUp && (
           <button
             type="button"
             disabled={busy}
@@ -360,7 +360,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             }
             className="inline-flex items-center gap-1.5 px-4 py-2 border border-line text-xs font-semibold text-ink-dim hover:bg-raised disabled:opacity-50"
           >
-            Reset (admin)
+            Reset
           </button>
         )}
 

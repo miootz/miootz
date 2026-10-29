@@ -16,7 +16,7 @@ function openInvitation() {
     <MemoryRouter initialEntries={['/meetup-action?mid=1&act=join']}>
       <Routes>
         <Route path="/meetup-action" element={<MeetupActionPage />} />
-        <Route path="/meetups/1" element={<p>Meetup details</p>} />
+        <Route path="/" element={<p>Meetup details</p>} />
       </Routes>
     </MemoryRouter>,
   );

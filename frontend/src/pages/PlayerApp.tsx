@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { useToast } from "../context/ToastContext";
 import { format, parseISO } from "date-fns";
 import { MeetupDetails } from "./MeetupDetails";
 import type { Meetup, User, Team } from "../types";
-import { rebalanceTeams } from "../services/teamService";
 import {
   fetchMeetups,
   fetchMeetupDetail,
   fetchMeetupTeams,
-  patchMeetupTeams,
   type MeetupDetail,
 } from "../api/meetupsApi";
 import { mediaUrl } from "../api/meApi";
@@ -70,7 +67,6 @@ function mapDetailToMeetup(detail: MeetupDetail, teams: Team[]): Meetup {
 export function PlayerApp() {
   const { setHeader } = useMemberShell();
   const { me, tokens } = useAuth();
-  const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -229,57 +225,6 @@ export function PlayerApp() {
     return () => setHeader(null);
   }, [meetup, loading, setHeader, activeMeetupNumericId, rosterChannelLive]);
 
-  const handleToggleLock = (userId: string) => {
-    if (!meetup) return;
-    const newAttendance = meetup.attendance.map((u) =>
-      u.id === userId ? { ...u, isLocked: !u.isLocked } : u,
-    );
-    const newTeams = rebalanceTeams({
-      attendance: newAttendance,
-      teams: meetup.teams,
-    });
-    setMeetup({
-      ...meetup,
-      attendance: newAttendance,
-      teams: newTeams,
-    });
-  };
-
-  const handleMovePlayer = useCallback(
-    async (playerId: string, sourceTeamId: string, destTeamId: string) => {
-      if (!meetup || activeMeetupNumericId == null) return;
-
-      const nextTeams = meetup.teams.map((team) => {
-        if (team.id === sourceTeamId) {
-          return {
-            ...team,
-            players: team.players.filter((p) => p.id !== playerId),
-          };
-        }
-        if (team.id === destTeamId) {
-          const player = meetup.attendance.find((p) => p.id === playerId);
-          if (!player) return team;
-          return { ...team, players: [...team.players, player] };
-        }
-        return team;
-      });
-      const nextMeetup = { ...meetup, teams: nextTeams };
-      setMeetup(nextMeetup);
-
-      const payload = nextMeetup.teams.map((t) => t.players.map((p) => p.id));
-      try {
-        await patchMeetupTeams(activeMeetupNumericId, payload);
-      } catch (e) {
-        showToast(
-          e instanceof Error ? e.message : "Could not save team lineup",
-          "error",
-        );
-        void loadMeetup(activeMeetupNumericId);
-      }
-    },
-    [meetup, activeMeetupNumericId, loadMeetup, showToast],
-  );
-
   return (
     <>
       {loading && <MeetupDetailsSkeleton />}
@@ -290,14 +235,12 @@ export function PlayerApp() {
       )}
       {!loading && !meetup && !error && (
         <p className="mx-auto max-w-lg p-8 text-center text-ink-dim">
-          {me?.is_admin
-            ? "No upcoming meetup. Create one in Admin."
-            : nextAnnounceAt
-              ? `Next meetup coming soon — signups open ${format(
-                  new Date(nextAnnounceAt),
-                  "EEEE, HH:mm",
-                )}`
-              : "No upcoming meetup. Past meetups are in History."}
+          {nextAnnounceAt
+            ? `Next meetup coming soon — signups open ${format(
+                new Date(nextAnnounceAt),
+                "EEEE, HH:mm",
+              )}`
+            : "No upcoming meetup. Past meetups are in History."}
         </p>
       )}
       {!loading && meetup && (
@@ -307,9 +250,6 @@ export function PlayerApp() {
           </div>
           <MeetupDetails
             meetup={meetup}
-            onToggleLock={handleToggleLock}
-            onMovePlayer={handleMovePlayer}
-            canDragTeams={Boolean(me?.is_admin)}
             rosterChannelLive={rosterChannelLive}
             lastRosterSync={lastRosterSync}
             offlineDataUpdatedAt={offlineDataUpdatedAt}

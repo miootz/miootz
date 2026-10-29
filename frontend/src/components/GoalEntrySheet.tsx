@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { useToast } from "../context/ToastContext";
-import { useAuth } from "../auth/useAuth";
 import {
   acquireLease,
   createGoal,
@@ -48,8 +47,6 @@ export function GoalEntrySheet({
   onLogged,
 }: GoalEntrySheetProps) {
   const { showToast } = useToast();
-  const { me } = useAuth();
-  const isAdmin = !!me?.is_admin;
 
   // ── Idempotency: one intent per sheet meetup ──────────────────
   const intentIdRef = useRef<string>(crypto.randomUUID());
@@ -204,7 +201,7 @@ export function GoalEntrySheet({
           assist_id: assist?.id ?? null,
           goalkeeper_id: goalkeeper?.id ?? null,
           intent_id: intentIdRef.current,
-          force: force || (afterWhistle && isAdmin),
+          force: force || afterWhistle,
         });
         if (res.goal) {
           onLogged(res.goal);
@@ -232,7 +229,6 @@ export function GoalEntrySheet({
     [
       assist,
       goalkeeper,
-      isAdmin,
       afterWhistle,
       holding,
       match,

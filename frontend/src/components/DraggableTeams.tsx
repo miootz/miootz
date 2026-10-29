@@ -18,12 +18,12 @@ import { TeamPlayerCard } from "./TeamPlayerCard";
 
 interface DraggableTeamsProps {
   meetup: Meetup;
-  onMovePlayer: (
+  onMovePlayer?: (
     playerId: string,
     sourceTeamId: string,
     destTeamId: string,
   ) => void | Promise<void>;
-  onToggleLock: (userId: string) => void;
+  onToggleLock?: (userId: string) => void;
   canDragTeams: boolean;
   onReshuffle?: () => void;
   reshuffling?: boolean;
@@ -159,36 +159,40 @@ function SkillBanner({
         >
           {balanced ? "Balanced \u2713" : "Uneven"}
         </span>
-        <button
-          type="button"
-          disabled={reshuffling}
-          onClick={onReshuffle}
-          className="hidden md:inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
-        >
-          {reshuffling ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Shuffle className="w-3.5 h-3.5" />
-          )}
-          Reshuffle
-        </button>
+        {onReshuffle && (
+          <button
+            type="button"
+            disabled={reshuffling}
+            onClick={onReshuffle}
+            className="hidden md:inline-flex items-center gap-1.5 min-h-[36px] px-2.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
+          >
+            {reshuffling ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Shuffle className="w-3.5 h-3.5" />
+            )}
+            Reshuffle
+          </button>
+        )}
       </div>
       <p className="mt-1.5 text-sm tabular-nums text-ink-dim md:hidden">
         {totalsText}
       </p>
-      <button
-        type="button"
-        disabled={reshuffling}
-        onClick={onReshuffle}
-        className="mt-2 w-full min-h-[44px] md:hidden inline-flex items-center justify-center gap-1.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
-      >
-        {reshuffling ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Shuffle className="w-4 h-4" />
-        )}
-        Reshuffle
-      </button>
+      {onReshuffle && (
+        <button
+          type="button"
+          disabled={reshuffling}
+          onClick={onReshuffle}
+          className="mt-2 w-full min-h-[44px] md:hidden inline-flex items-center justify-center gap-1.5 border border-line text-ink-dim hover:bg-raised hover:text-ink text-sm font-medium disabled:opacity-60 transition-colors active:scale-[0.97]"
+        >
+          {reshuffling ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Shuffle className="w-4 h-4" />
+          )}
+          Reshuffle
+        </button>
+      )}
     </div>
   );
 }
@@ -293,7 +297,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
     }
 
     if (destTeamId && destTeamId !== sourceTeam.id) {
-      onMovePlayer(playerId, sourceTeam.id, destTeamId);
+      onMovePlayer?.(playerId, sourceTeam.id, destTeamId);
     }
   };
 

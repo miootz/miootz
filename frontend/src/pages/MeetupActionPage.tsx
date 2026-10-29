@@ -90,14 +90,12 @@ export function MeetupActionPage() {
   useEffect(() => {
     if (status !== "done") return;
     const timer = setTimeout(() => {
-      if (action === "rate") {
-        navigate("/?tab=history");
-      } else {
-        navigate(`/meetups/${meetupId}`);
-      }
+      // The member shell shows the next upcoming meetup (`/`) — ratings live
+      // in History. Both are real routes; `/meetups/:id` is not.
+      navigate(action === "rate" ? "/history" : "/");
     }, 1500);
     return () => clearTimeout(timer);
-  }, [status, action, meetupId, navigate]);
+  }, [status, action, navigate]);
 
   const icon =
     status === "done" ? (
@@ -125,10 +123,10 @@ export function MeetupActionPage() {
         {status === "error" && (
           <button
             type="button"
-            onClick={() => navigate("/meetups")}
+            onClick={() => navigate("/")}
             className="inline-flex items-center gap-2 bg-ink px-4 py-2.5 text-sm font-bold text-board hover:bg-white/90"
           >
-            Go to meetups
+            Go to meetup
           </button>
         )}
       </div>

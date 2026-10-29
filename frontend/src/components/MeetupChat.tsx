@@ -683,11 +683,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
                 ))}
               </>
             )}
-            {/* Bottom fade + Open: the preview is collapsed, not interactive */}
-            <div
-              className="absolute inset-x-0 bottom-0 h-14 pointer-events-none bg-linear-to-t from-panel to-transparent"
-              aria-hidden
-            />
+            {/* Open: the preview is collapsed, not interactive */}
             <button
               type="button"
               onClick={() => setIsExpanded(true)}

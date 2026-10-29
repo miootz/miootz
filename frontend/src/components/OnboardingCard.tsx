@@ -80,7 +80,7 @@ export function OnboardingCard({ userId }: { userId: string }) {
             <span
               key={s.title}
               className={`h-1.5 w-6 ${
-                i <= step ? "bg-live" : "bg-raised"
+                i <= step ? "bg-ink-dim" : "bg-raised"
               }`}
             />
           ))}

@@ -8,7 +8,7 @@ colors:
   line: "#1f2a3d"
   ink: "#f8fafc"
   ink-dim: "#94a3b8"
-  ink-faint: "#64748b"
+  ink-faint: "#7d8ca3"
   team-a: "#16a34a"
   team-b: "#2563eb"
   live: "#f59e0b"
@@ -164,7 +164,7 @@ Tailwind v4 `@theme` tokens in `frontend/src/index.css`. Each means exactly one 
 | `line` | `#1f2a3d` | The only line: 1px hairlines. Pinned as `--default-border-color` so bare v3-compat `border` keeps this colour. |
 | `ink` | `#f8fafc` | Primary text; primary CTA fill (the white painted band). |
 | `ink-dim` | `#94a3b8` | Secondary text; micro-labels; secondary buttons. |
-| `ink-faint` | `#64748b` | Tertiary / muted text, placeholders. |
+| `ink-faint` | `#7d8ca3` | Tertiary / muted text, placeholders. |
 | `team-a` | `#16a34a` | Team A slab; also positive data (success text, "Balanced", "full"). |
 | `team-b` | `#2563eb` | Team B slab; team-related info. |
 | `live` | `#f59e0b` | The single "now" colour: live/active/selected states, focus rings, countdowns, half-time band, sparse warnings (below-min, uneven, timer < ⅓). |

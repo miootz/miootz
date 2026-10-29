@@ -173,7 +173,7 @@ export function MatchHistoryList({
       )}
 
       {matches.length > 1 && (
-        <div className="flex items-center gap-2 text-sm font-medium text-live px-1">
+        <div className="flex items-center gap-2 text-sm font-medium text-ink px-1">
           <Flag className="h-4 w-4" aria-hidden />
           <span className="tabular-nums">Final match: {finalResultText}</span>
         </div>

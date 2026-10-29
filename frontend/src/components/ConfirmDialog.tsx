@@ -85,7 +85,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={`inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold focus:outline-hidden focus:ring-2 focus:ring-live ${
               destructive
-                ? 'bg-danger text-white hover:bg-danger/90'
+                ? 'border border-danger/40 text-danger hover:bg-danger/10'
                 : 'bg-ink text-board hover:bg-white/90'
             }`}
           >

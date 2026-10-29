@@ -92,11 +92,6 @@ function MemberChrome() {
           <div className="min-w-0 flex-1 text-left">
             <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
               Miootz
-              {isAdmin && (
-                <span className="ml-2 bg-live/15 px-1.5 py-0.5 text-2xs font-semibold normal-case tracking-normal text-live">
-                  Player view
-                </span>
-              )}
               {header?.sseLive != null && (
                 <SseIndicator live={header.sseLive} />
               )}

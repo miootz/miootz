@@ -1,8 +1,6 @@
-import React, { useContext, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { MapPin, MessageSquare, PartyPopper, Play, Share, Trophy, Users } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { MapPin, MessageSquare, PartyPopper, Share, Trophy, Users } from "lucide-react";
 import type { Meetup } from "../types";
-import { AuthContext } from "../auth/auth-context";
 import { DraggableTeams } from "../components/DraggableTeams";
 import { MatchHistoryList } from "../components/MatchHistoryList";
 import { MeetupChat } from "../components/MeetupChat";
@@ -10,7 +8,6 @@ import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
 import { addPlusOne, joinMeetup, leaveMeetup } from "../api/meetupsApi";
-import { startMatches } from "../api/matchesApi";
 import { useToast } from "../context/ToastContext";
 import { hapticError, hapticSuccess } from "../utils/haptics";
 import { shareLink } from "../utils/share";
@@ -20,14 +17,6 @@ import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 
 interface MeetupDetailsProps {
 	meetup: Meetup;
-	onToggleLock: (userId: string) => void;
-	onMovePlayer: (
-		playerId: string,
-		sourceTeamId: string,
-		destTeamId: string,
-	) => void | Promise<void>;
-	/** Drag-and-drop between team columns (admins only). */
-	canDragTeams?: boolean;
 	onRosterUpdated?: () => void;
 	/** Server-sent events channel open - roster updates apply in real time. */
 	rosterChannelLive?: boolean;
@@ -412,39 +401,9 @@ function MeetupAttendanceActions({
 
 export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	meetup,
-	onToggleLock,
-	onMovePlayer,
-	canDragTeams = false,
 	onRosterUpdated,
 }) => {
-	const auth = useContext(AuthContext);
-	const isAdmin = auth?.me?.is_admin ?? false;
-	const navigate = useNavigate();
-	const { showToast } = useToast();
 	const meetupIdNum = Number.parseInt(meetup.id, 10);
-
-	const [startingMatch, setStartingMatch] = useState(false);
-
-	const handleStartMatches = async () => {
-		setStartingMatch(true);
-		try {
-			const res = await startMatches(meetupIdNum);
-			hapticSuccess();
-			if (res.status === "already_started") {
-				// Matches already exist — navigate to referee view to start timer.
-				navigate(`/meetup-matches/${meetupIdNum}`);
-			} else {
-				showToast("Matches started!", "success");
-				onRosterUpdated?.();
-			}
-		} catch (e) {
-			hapticError();
-			const msg = e instanceof Error ? e.message : "Could not start matches";
-			showToast(msg, "error");
-		} finally {
-			setStartingMatch(false);
-		}
-	};
 
 	return (
 		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8">
@@ -464,12 +423,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					<Users className="h-5 w-5 text-ink-dim" aria-hidden />
 					Teams
 				</h2>
-				<DraggableTeams
-					meetup={meetup}
-					onMovePlayer={onMovePlayer}
-					onToggleLock={onToggleLock}
-					canDragTeams={canDragTeams}
-				/>
+				<DraggableTeams meetup={meetup} canDragTeams={false} />
 			</section>
 
 			{/* 3. Match results */}
@@ -477,25 +431,12 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 				<>
 					<hr className="border-line" />
 					<section className="space-y-3">
-						<div className="flex items-center justify-between">
-							<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-								<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
-								Match results
-							</h2>
-							{isAdmin && (
-								<button
-									type="button"
-									disabled={startingMatch}
-									onClick={() => void handleStartMatches()}
-									className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-ink text-board text-xs font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-colors"
-								>
-									<Play className="w-3.5 h-3.5" />
-									New match
-								</button>
-							)}
-						</div>
+						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
+							Match results
+						</h2>
 						<LiveMatchBanner meetupId={meetup.id} />
-						<MatchHistoryList meetupId={meetupIdNum} editable={isAdmin} />
+						<MatchHistoryList meetupId={meetupIdNum} />
 					</section>
 				</>
 			)}
