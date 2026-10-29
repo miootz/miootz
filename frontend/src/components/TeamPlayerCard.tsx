@@ -9,7 +9,7 @@ import { PlayerAvatarFace } from "./PlayerAvatar";
  * DraggableTeams wraps this with dnd-kit wiring (dragProps/style/cardRef).
  */
 
-export function formatPositions(player: User): string {
+function formatPositions(player: User): string {
   const parts: string[] = [];
   if (player.primarySpecialty) parts.push(player.primarySpecialty);
   if (

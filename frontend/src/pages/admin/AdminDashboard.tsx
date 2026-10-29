@@ -98,12 +98,14 @@ export function AdminDashboard() {
   const [detail, setDetail] = useState<MeetupDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [detailFetchedAt, setDetailFetchedAt] = useState(0);
 
   const nextId = upcoming?.[0]?.id ?? null;
 
   const loadDetail = useCallback(async (id: number) => {
     const d = await fetchMeetupDetail(id);
     setDetail(d);
+    setDetailFetchedAt(Date.now());
   }, []);
 
   const load = useCallback(async () => {
@@ -127,6 +129,9 @@ export function AdminDashboard() {
   }, [loadDetail]);
 
   useEffect(() => {
+    // Data-fetching effect: populating state is the effect's purpose, not the
+    // derived-state anti-pattern this rule targets.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -162,8 +167,11 @@ export function AdminDashboard() {
     : undefined;
   const matchActive =
     currentMatch?.status === "active" || currentMatch?.status === "time_up";
+  // "Has kickoff passed" — derived purely from the fetch timestamp (no impure
+  // Date.now in render).
   const meetupActive =
-    detail != null && parseMeetupStart(detail.start_time).getTime() <= Date.now();
+    detail != null &&
+    parseMeetupStart(detail.start_time).getTime() <= detailFetchedAt;
 
   /* ── Render ───────────────────────────────────────────── */
 
