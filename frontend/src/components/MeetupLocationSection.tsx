@@ -32,6 +32,14 @@ function directionsApple(lat: number, lng: number) {
   return `https://maps.apple.com/?daddr=${lat},${lng}`;
 }
 
+/** Waze deep link — opens navigation in the installed Waze app (iOS + Android). */
+function directionsWaze(lat: number, lng: number) {
+  return `waze://?ll=${lat},${lng}&navigate=yes`;
+}
+
+/** Waze deep links only resolve on iOS/Android, so the link is iOS/Android-only. */
+const isWazePlatform = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 function directionsSearchQuery(address: string) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
@@ -44,6 +52,7 @@ export function MeetupLocationSection({
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [distanceError, setDistanceError] = useState<string | null>(null);
   const [distanceBusy, setDistanceBusy] = useState(false);
+  const [wazeOs] = useState(isWazePlatform);
 
   const hasCoords =
     latitude != null &&
@@ -110,6 +119,15 @@ export function MeetupLocationSection({
       <div className="flex flex-wrap gap-2">
         {hasCoords ? (
           <>
+            {wazeOs && (
+              <a
+                href={directionsWaze(latitude!, longitude!)}
+                className="inline-flex items-center gap-1.5 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
+              >
+                <Navigation className="h-4 w-4" aria-hidden />
+                Open in Waze
+              </a>
+            )}
             <a
               href={directionsGoogle(latitude!, longitude!)}
               target="_blank"

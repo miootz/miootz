@@ -44,7 +44,9 @@ export const TeamPlayerCard: React.FC<{
   style?: React.CSSProperties;
   /** Spread of dnd-kit listeners/attributes (drag surface = whole card). */
   dragProps?: React.HTMLAttributes<HTMLDivElement>;
-}> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps }) => {
+  /** True for the signed-in player's own row — highlighted with a "You" chip. */
+  isMe?: boolean;
+}> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps, isMe }) => {
   const positions = formatPositions(player);
 
   const lockButton =
@@ -71,7 +73,11 @@ export const TeamPlayerCard: React.FC<{
       ref={cardRef}
       style={style}
       {...dragProps}
-      className={`group flex items-center gap-2.5 border px-3 py-2 bg-panel border-line transition-colors ${
+      className={`group flex items-center gap-2.5 border px-3 py-2 transition-colors ${
+        isMe
+          ? "bg-live/10 border-live"
+          : "bg-panel border-line"
+      } ${
         canDrag && !player.isLocked
           ? "cursor-grab active:cursor-grabbing hover:border-live/60 [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]"
           : player.isLocked
@@ -90,9 +96,16 @@ export const TeamPlayerCard: React.FC<{
       </div>
 
       <div className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-ink truncate">
-          {player.name}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-sm font-medium text-ink truncate">
+            {player.name}
+          </span>
+          {isMe && (
+            <span className="shrink-0 rounded bg-live/20 px-1.5 py-0.5 text-2xs font-semibold text-live">
+              You
+            </span>
+          )}
+        </div>
         <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
           {positions && (
             <span className="min-w-0 text-2xs text-ink-faint truncate">

@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { MapPin, MessageSquare, PartyPopper, Share, Trophy, Users } from "lucide-react";
+import {
+	CheckCircle2,
+	Hourglass,
+	MapPin,
+	MessageSquare,
+	PartyPopper,
+	Share,
+	Trophy,
+	Shield,
+	Users,
+	XCircle,
+	type LucideIcon,
+} from "lucide-react";
 import type { Meetup } from "../types";
 import { DraggableTeams } from "../components/DraggableTeams";
 import { MatchHistoryList } from "../components/MatchHistoryList";
@@ -9,6 +21,8 @@ import { LiveMatchBanner } from "../components/LiveMatchBanner";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
 import { addPlusOne, joinMeetup, leaveMeetup } from "../api/meetupsApi";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../auth/useAuth";
+import { Link } from "react-router-dom";
 import { hapticError, hapticSuccess } from "../utils/haptics";
 import { shareLink } from "../utils/share";
 import { UserPlus, X } from "lucide-react";
@@ -246,6 +260,37 @@ function PlusOneModal({
 	);
 }
 
+/** Attendance status → hero tile + copy. Amber is reserved for "now/you". */
+const STATUS_META: Record<
+	string,
+	{ icon: LucideIcon; tile: string; heading: string; sub: string }
+> = {
+	confirmed: {
+		icon: CheckCircle2,
+		tile: "bg-team-a/15 text-team-a",
+		heading: "You're confirmed",
+		sub: "See you there.",
+	},
+	waitlisted: {
+		icon: Hourglass,
+		tile: "bg-live/15 text-live",
+		heading: "You're on the waitlist",
+		sub: "We'll let you know if a spot opens.",
+	},
+	cancelled: {
+		icon: XCircle,
+		tile: "bg-raised text-ink-faint",
+		heading: "You're not attending",
+		sub: "You can join again anytime.",
+	},
+	none: {
+		icon: UserPlus,
+		tile: "bg-raised text-ink-dim",
+		heading: "Not signed up yet",
+		sub: "Tap Join to claim your spot.",
+	},
+};
+
 function MeetupAttendanceActions({
 	meetupId,
 	myAttendance,
@@ -324,66 +369,79 @@ function MeetupAttendanceActions({
 		}
 	};
 
+	const meta = STATUS_META[status ?? "none"];
+	const MetaIcon = meta.icon;
+
 	return (
-		<div className="relative text-center space-y-3 max-w-xl mx-auto">
+		<div className="relative max-w-xl mx-auto">
 			{celebrate && (
 				<div className="absolute inset-0 z-10 flex items-center justify-center bg-panel/90">
 					<SuccessCheckLottie size={100} />
 				</div>
 			)}
-			<p className="text-sm text-ink-dim">
-				{status === "confirmed" && `You're confirmed for this meetup.`}
-				{status === "waitlisted" && (
-					<span>
-						You're on the waitlist.
-						{myWaitlistPosition != null && (
-							<span className="ml-2 inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium tabular-nums text-live">
-								#{myWaitlistPosition} on waitlist
-							</span>
-						)}
-					</span>
-				)}
-				{status === "cancelled" && `You're not attending (you can join again).`}
-				{status == null && `You're not signed up for this meetup yet.`}
-			</p>
-			{feedback && (
-				<p className="text-sm text-danger" role="alert">
-					{feedback}
-				</p>
-			)}
-			<div className="flex flex-wrap justify-center gap-2">
-				{(status == null || status === "cancelled") && (
-					<button
-						type="button"
-						disabled={busy}
-						onClick={() => void runJoin()}
-						className="px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+			<div className="bg-panel border border-line overflow-hidden">
+				<div className="flex items-center gap-4 p-4">
+					<div
+						className={`w-14 h-14 flex-shrink-0 flex items-center justify-center rounded-xl ${meta.tile}`}
+						aria-hidden
 					>
-						{status === "cancelled" ? "Join again" : "Join meetup"}
-					</button>
-				)}
-				{(status === "confirmed" || status === "waitlisted") && (
-					<>
-						{status === "confirmed" && (
+						<MetaIcon size={28} strokeWidth={2.25} />
+					</div>
+					<div className="min-w-0">
+						<h2 className="text-base font-bold leading-tight text-ink">
+							{meta.heading}
+						</h2>
+						<p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-ink-dim">
+							{status === "waitlisted" && myWaitlistPosition != null && (
+								<span className="inline-flex items-center bg-live/15 px-2 py-0.5 text-xs font-medium tabular-nums text-live">
+									#{myWaitlistPosition} on waitlist
+								</span>
+							)}
+							{meta.sub}
+						</p>
+					</div>
+				</div>
+				<div className="border-t border-line px-4 py-3">
+					{feedback && (
+						<p className="mb-2 text-sm text-danger" role="alert">
+							{feedback}
+						</p>
+					)}
+					<div className="flex flex-wrap gap-2">
+						{(status == null || status === "cancelled") && (
 							<button
 								type="button"
-								onClick={() => setShowPlusOne(true)}
-								className="inline-flex items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+								disabled={busy}
+								onClick={() => void runJoin()}
+								className="flex-1 min-w-[10rem] justify-center px-4 py-2.5 inline-flex items-center bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
 							>
-								<UserPlus size={14} />
-								Add a plus-one
+								{status === "cancelled" ? "Join again" : "Join meetup"}
 							</button>
 						)}
-						<button
-							type="button"
-							disabled={busy}
-							onClick={() => void runLeave()}
-							className="px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
-						>
-							{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
-						</button>
-					</>
-				)}
+						{(status === "confirmed" || status === "waitlisted") && (
+							<>
+								{status === "confirmed" && (
+									<button
+										type="button"
+										onClick={() => setShowPlusOne(true)}
+										className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+									>
+										<UserPlus size={14} />
+										Add a plus-one
+									</button>
+								)}
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() => void runLeave()}
+									className="inline-flex flex-1 min-w-[10rem] justify-center items-center px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
+								>
+									{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
+								</button>
+							</>
+						)}
+					</div>
+				</div>
 			</div>
 			{showPlusOne && (
 				<PlusOneModal
@@ -403,6 +461,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	meetup,
 	onRosterUpdated,
 }) => {
+	const { me } = useAuth();
 	const meetupIdNum = Number.parseInt(meetup.id, 10);
 
 	return (
@@ -423,7 +482,11 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					<Users className="h-5 w-5 text-ink-dim" aria-hidden />
 					Teams
 				</h2>
-				<DraggableTeams meetup={meetup} canDragTeams={false} />
+				<DraggableTeams
+					meetup={meetup}
+					canDragTeams={false}
+					currentUserId={me ? String(me.user.id) : undefined}
+				/>
 			</section>
 
 			{/* 3. Match results */}
@@ -434,6 +497,15 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
 							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
 							Match results
+							{me?.is_admin && (
+								<Link
+									to={`/meetup-matches/${meetupIdNum}`}
+									className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
+								>
+									<Shield size={13} />
+									Referee
+								</Link>
+							)}
 						</h2>
 						<LiveMatchBanner meetupId={meetup.id} />
 						<MatchHistoryList meetupId={meetupIdNum} />

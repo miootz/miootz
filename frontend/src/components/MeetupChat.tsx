@@ -645,9 +645,13 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   const isOverLimit = charCount > MAX_MESSAGE_LENGTH;
 
   // ─── Inline view ──────────────────────────────────────────────
-  if (!isExpanded) {
-    return (
-      <section className="max-w-2xl mx-auto w-full">
+  // Mobile: collapsed preview that opens as a full-screen overlay. On md+
+  // the live chat is always shown inline and the preview is hidden.
+  return (
+    <>
+      <section
+        className={`max-w-2xl mx-auto w-full md:hidden ${isExpanded ? "hidden" : ""}`}
+      >
         <div className="bg-panel border border-line overflow-hidden">
           {/* Header */}
           <button
@@ -695,20 +699,17 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           </div>
         </div>
       </section>
-    );
-  }
 
-  // ─── Expanded view ────────────────────────────────────────────
-  return (
-    <section
-      className={`max-w-2xl mx-auto w-full ${
-        fillHeight ? "h-full" : ""
-      } ${
-        isExpanded
-          ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-board/60"
-          : ""
-      }`}
-    >
+      {/* Expanded view: inline on md+, full-screen overlay on mobile. */}
+      <section
+        className={`max-w-2xl mx-auto w-full ${
+          fillHeight ? "h-full" : ""
+        } ${isExpanded ? "max-md:block" : "hidden"} md:block ${
+          isExpanded
+            ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-board/60"
+            : ""
+        }`}
+      >
       <div
         className={`relative bg-panel border border-line overflow-hidden flex flex-col ${
           fillHeight ? "md:h-full" : "h-[min(75vh,600px)]"
@@ -857,7 +858,8 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
             </button>
           </div>
         )}
-      </div>
-    </section>
+        </div>
+      </section>
+    </>
   );
 };

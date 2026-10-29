@@ -27,6 +27,8 @@ interface DraggableTeamsProps {
   canDragTeams: boolean;
   onReshuffle?: () => void;
   reshuffling?: boolean;
+  /** Id of the signed-in player; their row gets the "You" highlight. */
+  currentUserId?: string;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
@@ -70,11 +72,13 @@ function PlayerRow({
   teamId,
   onToggleLock,
   canDrag,
+  isMe,
 }: {
   player: User;
   teamId: string;
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
+  isMe?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -101,6 +105,7 @@ function PlayerRow({
           : undefined
       }
       dragProps={canDrag ? { ...listeners, ...attributes } : undefined}
+      isMe={isMe}
     />
   );
 }
@@ -205,12 +210,14 @@ function TeamColumn({
   players,
   onToggleLock,
   canDrag,
+  currentUserId,
 }: {
   team: { id: string; name?: string };
   index: number;
   players: User[];
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
+  currentUserId?: string;
 }) {
   const content = (
     <div className="space-y-2">
@@ -245,6 +252,7 @@ function TeamColumn({
               teamId={team.id}
               onToggleLock={canDrag ? onToggleLock : undefined}
               canDrag={canDrag}
+              isMe={currentUserId != null && player.id === currentUserId}
             />
           ))}
         </div>
@@ -267,6 +275,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
   canDragTeams,
   onReshuffle,
   reshuffling,
+  currentUserId,
 }) => {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -327,6 +336,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
                   players={players}
                   onToggleLock={onToggleLock}
                   canDrag={canDragTeams}
+                  currentUserId={currentUserId}
                 />
               );
             })}
@@ -345,6 +355,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
                 index={index}
                 players={players}
                 canDrag={false}
+                currentUserId={currentUserId}
               />
             );
           })}
