@@ -57,6 +57,14 @@ export function GoalList({
             <span aria-hidden>⚽</span>
             <span className="truncate">
               <span className="font-medium text-ink">{g.scorer.display_name}</span>
+              {g.is_own_goal && (
+                <span
+                  title="Own goal — scored against the listed team"
+                  className="ml-1 inline-block px-1 text-2xs font-bold bg-raised border border-line text-ink-dim align-middle"
+                >
+                  OG
+                </span>
+              )}
               {credit}
               <span className="text-ink-faint">
                 {" "}

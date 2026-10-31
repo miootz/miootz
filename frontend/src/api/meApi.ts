@@ -26,6 +26,14 @@ export interface UserStats {
     average_rating: number;
     total_ratings: number;
     skill_level: number;
+    goals: number;
+    assists: number;
+    clean_sheets: number;
+    goals_conceded: number;
+    season_goals: number;
+    season_assists: number;
+    season_clean_sheets: number;
+    season_goals_conceded: number;
 }
 
 export async function fetchMyStats(): Promise<UserStats> {

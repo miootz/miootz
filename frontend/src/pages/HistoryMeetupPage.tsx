@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { fetchMeetupDetail, type MeetupDetail } from "../api/meetupsApi";
+import {
+  fetchMeetupRankings,
+  type RankingRow,
+  type RankingSort,
+} from "../api/rankingsApi";
 import { MeetupDetailPanel } from "../components/MeetupDetailPanel";
+import { RankingsTable } from "../components/RankingsTable";
 import { parseMeetupStart } from "../utils/datetime";
 
 export function HistoryMeetupPage() {
@@ -14,6 +20,11 @@ export function HistoryMeetupPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<MeetupDetail | null>(null);
+
+  // Per-meetup top performers (hidden when the meetup has no completed matches).
+  const [performers, setPerformers] = useState<RankingRow[] | null>(null);
+  const [pSort, setPSort] = useState<RankingSort>("goals");
+  const [pOrder, setPOrder] = useState<"asc" | "desc">("desc");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,6 +43,32 @@ export function HistoryMeetupPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Best-effort: a 404 (no completed matches) hides the section entirely.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMeetupRankings(id)
+      .then((res) => {
+        if (!cancelled) setPerformers(res.rows);
+      })
+      .catch(() => {
+        if (!cancelled) setPerformers(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  const sortedPerformers = useMemo(() => {
+    if (!performers) return null;
+    const rows = [...performers];
+    rows.sort((a, b) => {
+      const d = a[pSort] - b[pSort];
+      if (d !== 0) return pOrder === "desc" ? -d : d;
+      return a.user.display_name.localeCompare(b.user.display_name);
+    });
+    return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [performers, pSort, pOrder]);
 
   /* ── Loading ──────────────────────────────────────── */
 
@@ -101,6 +138,23 @@ export function HistoryMeetupPage() {
         meetupTime={timeLabel}
         meetupFee={detail.fee}
       />
+
+      {/* Top performers for this meetup (hidden without completed matches) */}
+      {sortedPerformers && sortedPerformers.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-bold text-ink">Top performers</h2>
+          <RankingsTable
+            rows={sortedPerformers}
+            sort={pSort}
+            order={pOrder}
+            onSortChange={(s, o) => {
+              setPSort(s);
+              setPOrder(o);
+            }}
+            emptyLabel="No ranked players for this meetup."
+          />
+        </section>
+      )}
     </div>
   );
 }

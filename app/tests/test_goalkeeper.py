@@ -10,11 +10,12 @@ Covers the optional ``goalkeeper_id`` surface:
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
+from app.core.migrations import run_sqlite_migrations
 from app.models.match_goal import MatchGoal
 from app.models.user import User
 
@@ -294,3 +295,78 @@ async def test_keeper_preserved_on_intent_replay():
         assert r2.json()["replayed"] is True
         assert r2.json()["goal"]["id"] == goal["id"]
         assert r2.json()["goal"]["goalkeeper"]["display_name"] == "TP1"
+
+
+@pytest.mark.asyncio
+async def test_own_goal_scorer_must_be_on_conceding_team():
+    """Own goal for team A: the scorer is the player who put it in B's net."""
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        assert (
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
+        ).status_code == 200
+        # P2 is on the scoring team (A) — refused as an own-goal scorer.
+        r1 = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/goals",
+            json={
+                "team": "a",
+                "scorer_id": ids["p2"],
+                "is_own_goal": True,
+                "intent_id": "og-1",
+            },
+            headers=hdr("p1"),
+        )
+        assert r1.status_code == 400
+        assert "conceding" in r1.json()["detail"].lower()
+
+        # P3 is on the conceding team (B) — accepted, stored, and shown.
+        r2 = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/goals",
+            json={
+                "team": "a",
+                "scorer_id": ids["p3"],
+                "is_own_goal": True,
+                "intent_id": "og-2",
+            },
+            headers=hdr("p1"),
+        )
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["goal"]["is_own_goal"] is True
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        assert rp.json()["goals"][0]["is_own_goal"] is True
+
+
+@pytest.mark.asyncio
+async def test_normal_goal_scorer_must_be_on_scoring_team():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        assert (
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
+        ).status_code == 200
+        # P3 is on the opposing team — cannot score a regular goal for A.
+        r = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/goals",
+            json={"team": "a", "scorer_id": ids["p3"], "intent_id": "og-3"},
+            headers=hdr("p1"),
+        )
+        assert r.status_code == 400
+        assert "scoring" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_is_own_goal_migration_adds_column():
+    """A match_goals table from an earlier deploy (no is_own_goal) gets it."""
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE IF EXISTS match_goals"))
+        await conn.execute(
+            text(
+                "CREATE TABLE match_goals (id INTEGER PRIMARY KEY, match_id INTEGER,"
+                " team VARCHAR, scorer_id INTEGER, assist_id INTEGER,"
+                " goalkeeper_id INTEGER, clock_secs INTEGER, clock_minute INTEGER,"
+                " after_whistle INTEGER, recorded_by INTEGER,"
+                " intent_id VARCHAR UNIQUE, created_at TIMESTAMP, deleted_at TIMESTAMP)"
+            )
+        )
+        await run_sqlite_migrations(conn)
+        cols = [c[1] for c in (await conn.execute(text("PRAGMA table_info(match_goals)"))).fetchall()]
+        assert "is_own_goal" in cols

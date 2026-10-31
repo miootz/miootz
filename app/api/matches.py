@@ -93,6 +93,9 @@ class GoalCreate(BaseModel):
     #: Keeper who was in goal for the *conceding* team (must be an opposing
     #: player). Optional — nobody should be blocked on an unknown/rotated keeper.
     goalkeeper_id: int | None = None
+    #: Own goal: the scorer is on the conceding team (still counts toward
+    #: ``team``'s score).
+    is_own_goal: bool = False
     #: Client-minted idempotency key (UUID hex) — a retry replays the goal.
     intent_id: str = Field(min_length=1, max_length=64)
     #: Explicit user confirmation that a duplicated/after-whistle entry stands.
@@ -1473,6 +1476,7 @@ def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
         "goalkeeper": person(goal.goalkeeper_id),
         "recorded_by": person(goal.recorded_by),
         "after_whistle": bool(goal.after_whistle),
+        "is_own_goal": bool(goal.is_own_goal),
     }
 
 
@@ -1525,6 +1529,21 @@ async def create_goal(
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     if body.scorer_id not in users_by_id:
         raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
+    scoring = _loads_int_list(
+        match.team_a_users if body.team == "a" else match.team_b_users
+    )
+    conceding = _loads_int_list(
+        match.team_b_users if body.team == "a" else match.team_a_users
+    )
+    if body.is_own_goal:
+        if body.scorer_id not in conceding:
+            raise HTTPException(
+                status_code=400, detail="Own-goal scorer must be on the conceding team"
+            )
+    elif body.scorer_id not in scoring:
+        raise HTTPException(
+            status_code=400, detail="Scorer must be on the scoring team"
+        )
     if body.assist_id is not None:
         if body.assist_id not in users_by_id:
             raise HTTPException(status_code=400, detail="Assist is not in this meetup")
@@ -1551,8 +1570,7 @@ async def create_goal(
                 status_code=400,
                 detail="Goalkeeper must be on the conceding team, not the assist",
             )
-        conceding = match.team_b_users if body.team == "a" else match.team_a_users
-        if body.goalkeeper_id not in set(_loads_int_list(conceding)):
+        if body.goalkeeper_id not in set(conceding):
             raise HTTPException(
                 status_code=400,
                 detail="Goalkeeper must be on the conceding team",
@@ -1639,6 +1657,7 @@ async def create_goal(
         clock_secs=remaining,
         clock_minute=clock_minute,
         after_whistle=after_whistle,
+        is_own_goal=body.is_own_goal,
         recorded_by=user.id,
         intent_id=body.intent_id,
     )

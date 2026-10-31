@@ -12,6 +12,7 @@ from app.models.game_template import GameTemplate
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.match import MeetupMatch
+from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
@@ -30,6 +31,15 @@ NAMES = (
 POSITIONS = ('MID', 'MID', 'ATT', 'MID', 'DEF', 'DEF', 'ATT', 'GK', 'ATT', 'MID',
              'ATT', 'GK', 'DEF', 'MID', 'ATT', 'MID', 'ATT', 'ATT', 'ATT', 'ATT')
 TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
+
+
+def team_keeper(roster: list[int]) -> int:
+    """Keeper listed for a conceding goal; team 1 has no GK, so fall back to its defender."""
+    for specialty in ('GK', 'DEF'):
+        for uid in roster:
+            if POSITIONS[uid - 1] == specialty:
+                return uid
+    return roster[0]
 
 
 async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dict:
@@ -111,14 +121,35 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             db.add(Attendance(meetup_id=sid, user_id=uid, status='confirmed', joined_at=start - timedelta(days=1)))
         teams = [list(range(1, 6)), list(range(6, 11)), list(range(11, 16))]
         past.manual_teams_json = json.dumps(teams)
+        rng = random.Random(f'demo-goals-{sid}')
+        # A couple of own goals so the OG flag and its ranking toggle have coverage.
+        own_goals = {(3, 2, 'a', 0), (4, 5, 'b', 0)}
         for index, (a, b) in enumerate([(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)], 1):
-            db.add(MeetupMatch(
+            match = MeetupMatch(
                 meetup_id=sid, match_number=index, team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
                 team_a_name=TEAM_NAMES[a], team_b_name=TEAM_NAMES[b],
                 score_a=1 + index % 3, score_b=index % 2, status='completed',
                 timer_total_seconds=600, timer_seconds_remaining=0,
                 created_at=start + timedelta(minutes=10 * (index - 1)), completed_at=start + timedelta(minutes=10 * index),
-            ))
+            )
+            db.add(match)
+            await db.flush()
+            for team, scorers, conceded_by in (('a', teams[a], teams[b]), ('b', teams[b], teams[a])):
+                for goal_no in range(match.score_a if team == 'a' else match.score_b):
+                    own = (sid, index, team, goal_no) in own_goals
+                    keeper = team_keeper(conceded_by)
+                    pool = [u for u in conceded_by if u != keeper] if own else scorers
+                    scorer = rng.choice(pool)
+                    assist = None if own else rng.choice([u for u in scorers if u != scorer])
+                    elapsed = rng.randint(0, 599)
+                    db.add(MatchGoal(
+                        match_id=match.id, team=team, scorer_id=scorer, assist_id=assist,
+                        goalkeeper_id=keeper,
+                        clock_secs=600 - elapsed, clock_minute=elapsed // 60 + 1, after_whistle=False,
+                        is_own_goal=own,
+                        recorded_by=1, intent_id=f'showcase-{sid}-{index}-{team}-{goal_no}',
+                        created_at=match.created_at + timedelta(seconds=elapsed),
+                    ))
         for rater in range(1, 16):
             if sid == 2 and rater == 2:
                 continue  # Member has an editable rating task to demonstrate.

@@ -2,7 +2,7 @@
 # Bootstrap Pocket ID + full Miootz stack.
 #
 # Usage:
-#   ./scripts/bootstrap.sh [--dev] [--setup-admin] [--add-to-admins USERNAME] [--demo]
+#   ./scripts/bootstrap.sh [--dev] [--setup-admin] [--add-to-admins USERNAME]
 #
 # Env files:
 #   Compose interpolates the ${APP_DOMAIN}/${API_DOMAIN}/${AUTH_DOMAIN} host vars from
@@ -20,7 +20,6 @@
 # After first run:
 #   - Visit /setup to create your admin account + passkey
 #   - Re-run with --setup-admin to add that account to admins + members groups
-#   - Re-run with --demo to seed demo players and sessions
 
 set -euo pipefail
 
@@ -32,7 +31,6 @@ cd "$PROJECT_DIR"
 DEV=false
 SETUP_ADMIN=false
 ADD_TO_ADMINS=""
-DEMO=false
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env"
 
@@ -51,10 +49,6 @@ while [[ $# -gt 0 ]]; do
     --add-to-admins)
       ADD_TO_ADMINS="$2"
       shift 2
-      ;;
-    --demo)
-      DEMO=true
-      shift
       ;;
     *)
       echo "Unknown option: $1" >&2
@@ -147,17 +141,6 @@ echo ""
 echo "Starting full stack ..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 
-# ── 5. Demo data ───────────────────────────────────────────────────────────
-
-if $DEMO; then
-  echo ""
-  echo "Seeding demo data ..."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm \
-    -v "$PROJECT_DIR/$ENV_FILE:/app/.env:ro" \
-    -v "$PROJECT_DIR/data:/data" \
-    api \
-    uv run python -m app.bootstrap_data --demo --force
-fi
 
 # ── Summary ────────────────────────────────────────────────────────────────
 
@@ -176,8 +159,5 @@ echo "Next steps:"
 if [[ -z "$ADD_TO_ADMINS" ]] && ! $SETUP_ADMIN; then
   echo "  2. Visit /setup to create your admin account + passkey"
   echo "  3. Re-run with --setup-admin to add that account to the admins group"
-fi
-if ! $DEMO; then
-  echo "  5. Re-run with --demo to seed demo players and sessions"
 fi
 echo "═══════════════════════════════════════"

@@ -670,6 +670,16 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    # ── match_goals.is_own_goal: own goals are counted separately ──
+    if await has_table("match_goals") and not await has_column(
+        "match_goals", "is_own_goal"
+    ):
+        await conn.execute(
+            text(
+                "ALTER TABLE match_goals ADD COLUMN is_own_goal INTEGER DEFAULT 0"
+            )
+        )
+
     # ── Manual score offsets: score = live goal COUNT + offset ──
     if not await has_column("meetup_matches", "score_offset_a"):
         await conn.execute(

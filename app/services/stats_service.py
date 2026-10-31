@@ -5,6 +5,7 @@ from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.core.timeutil import utcnow
+from app.services import rankings_service
 
 
 async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
@@ -55,10 +56,21 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
     except TypeError, ValueError:
         average = 0.0
 
+    all_time = await rankings_service.get_user_metrics(db, user_id)
+    season = await rankings_service.get_user_metrics(db, user_id, year=now.year)
+
     return {
         "games_played": games_played,
         "season_games": season_games,
         "average_rating": average,
         "total_ratings": total_ratings,
         "skill_level": skill_level,
+        "goals": all_time["goals"],
+        "assists": all_time["assists"],
+        "clean_sheets": all_time["clean_sheets"],
+        "goals_conceded": all_time["goals_conceded"],
+        "season_goals": season["goals"],
+        "season_assists": season["assists"],
+        "season_clean_sheets": season["clean_sheets"],
+        "season_goals_conceded": season["goals_conceded"],
     }

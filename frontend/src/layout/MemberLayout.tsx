@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   Menu,
   Shield,
+  Trophy,
   UserCircle,
   WifiOff,
   X,
@@ -59,14 +60,17 @@ function MemberChrome() {
 
   const isProfile = location.pathname === "/profile";
   const isHistory = location.pathname.startsWith("/history");
+  const isRankings = location.pathname === "/rankings";
   let fallbackTitle = "Upcoming meetup";
   if (isProfile) fallbackTitle = "Your profile";
   if (isHistory) fallbackTitle = "Meetup history";
+  if (isRankings) fallbackTitle = "Rankings";
   const isPlayerHome =
     location.pathname === "/" ||
     (location.pathname !== "/profile" &&
       !location.pathname.startsWith("/admin") &&
-      !isHistory);
+      !isHistory &&
+      !isRankings);
 
   const goDetails = () => {
     navigate("/");
@@ -276,6 +280,18 @@ function MemberChrome() {
               className={`h-0.5 w-8 ${isHistory ? "bg-live" : "bg-transparent"}`}
             />
           </button>
+          <Link
+            to="/rankings"
+            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
+              isRankings ? "text-live" : "text-ink-faint hover:text-ink-dim"
+            }`}
+          >
+            <Trophy className="h-5 w-5 shrink-0" aria-hidden />
+            <span className="truncate">Rankings</span>
+            <span
+              className={`h-0.5 w-8 ${isRankings ? "bg-live" : "bg-transparent"}`}
+            />
+          </Link>
           <Link
             to="/profile"
             className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${

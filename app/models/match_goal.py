@@ -56,6 +56,9 @@ class MatchGoal(Base):
     clock_minute: Mapped[int] = mapped_column(Integer)
     #: Goal crossed the line after the final whistle — needs admin confirm.
     after_whistle: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Own goal: the scorer is a member of the *conceding* team. The goal
+    #: still counts toward ``team``'s score (the team that benefited).
+    is_own_goal: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Account that entered the goal (may be a proxy device, plan §2.7).
     recorded_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     #: Client-minted idempotency key (UUID hex).

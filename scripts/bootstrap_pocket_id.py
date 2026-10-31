@@ -1,7 +1,7 @@
 """
 Idempotent Pocket ID bootstrap script.
 
-Creates groups, OIDC clients, and optionally demo users via the Pocket ID
+Creates groups, OIDC clients, and admin setup via the Pocket ID
 admin API.  Safe to run multiple times — skips resources that already exist.
 
 Admin setup flow:
@@ -15,7 +15,7 @@ Requires:
   POCKET_ID_STATIC_API_KEY  – STATIC_API_KEY from Pocket ID env
 
 Usage:
-  uv run python scripts/bootstrap_pocket_id.py [--dev] [--setup-admin] [--add-to-admins USERNAME] [--demo-users]
+  uv run python scripts/bootstrap_pocket_id.py [--dev] [--setup-admin] [--add-to-admins USERNAME]
 """
 
 import argparse
@@ -299,111 +299,6 @@ def _ensure_db_initialized() -> None:
     asyncio.run(_init())
 
 
-def create_demo_users(
-    client: httpx.Client,
-    members_group_id: str,
-    players: list[tuple[str, str, str]],
-) -> list[dict]:
-    """
-    Create Pocket ID user accounts for the fictional demo players.
-    These users have no passkey and can't log in — they exist only so
-    group membership and JWT claims can be tested.
-
-    Args:
-        players: list of (first_name, last_name, position) tuples.
-
-    Returns:
-        List of dicts with keys: pocket_id_sub (user id), username,
-        first_name, last_name, position.
-    """
-    import unicodedata
-
-    def _strip_diacritics(s: str) -> str:
-        nfkd = unicodedata.normalize("NFKD", s)
-        return "".join(c for c in nfkd if not unicodedata.combining(c))
-
-    def _make_username(first: str, last: str) -> str:
-        name = f"{first} {last}".strip()
-        slug = _strip_diacritics(name).lower().replace(" ", "-").replace("-", "-")
-        # Collapse multiple hyphens
-        while "--" in slug:
-            slug = slug.replace("--", "-")
-        return slug.strip("-")
-
-    results = []
-    for first, last, position in players:
-        username = _make_username(first, last)
-        full_name = f"{first} {last}".strip()
-
-        # Check if user already exists
-        try:
-            data = _get_json(client, f"/api/users?search={username}")
-            existing = (
-                data
-                if isinstance(data, list)
-                else data.get("data", data.get("items", []))
-            )
-            for u in existing:
-                if u.get("username") == username:
-                    results.append(
-                        {
-                            "pocket_id_sub": u["id"],
-                            "username": username,
-                            "first_name": first,
-                            "last_name": last,
-                            "position": position,
-                        }
-                    )
-                    continue
-        except httpx.HTTPStatusError:
-            pass
-
-        print(f"  Creating demo user '{username}' ...")
-        result = _post_json(
-            client,
-            "/api/users",
-            {
-                "username": username,
-                "email": f"{username}@miootz.demo",
-                "displayName": full_name,
-                "firstName": first,
-                "lastName": last,
-                "userGroupIds": [members_group_id],
-            },
-        )
-        results.append(
-            {
-                "pocket_id_sub": result["id"],
-                "username": username,
-                "first_name": first,
-                "last_name": last,
-                "position": position,
-            }
-        )
-
-    return results
-
-
-def create_demo_users_and_write_json(
-    client: httpx.Client,
-    members_group_id: str,
-    output_path: str,
-) -> int:
-    """
-    Create Pocket ID accounts for demo players and write the resulting
-    user data to a JSON file for bootstrap_data.py to consume.
-
-    Returns number of users created.
-    """
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from app.bootstrap_data import _DEMO_PLAYERS
-
-    users = create_demo_users(client, members_group_id, _DEMO_PLAYERS)
-    Path(output_path).write_text(json.dumps(users, indent=2) + "\n")
-    print(f"  Wrote {len(users)} user(s) to {output_path}")
-    return len(users)
-
-
 # ---------------------------------------------------------------------------
 # Env file update
 # ---------------------------------------------------------------------------
@@ -491,16 +386,6 @@ def main() -> None:
         default="",
         help="Username to add to the admins + members groups (account must already exist)",
     )
-    parser.add_argument(
-        "--demo-users",
-        action="store_true",
-        help="Create Pocket ID accounts for fictional demo players (no passkey, DB-only)",
-    )
-    parser.add_argument(
-        "--demo-users-output",
-        default="",
-        help="Write demo user data to JSON file for bootstrap_data.py to consume",
-    )
     args = parser.parse_args()
 
     if not STATIC_API_KEY:
@@ -540,18 +425,6 @@ def main() -> None:
                 groups.get("members", ""),
             )
 
-        if args.demo_users:
-            print(f"\n── Demo Users ──")
-            if args.demo_users_output:
-                n = create_demo_users_and_write_json(
-                    client, groups["members"], args.demo_users_output
-                )
-            else:
-                sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-                from app.bootstrap_data import _DEMO_PLAYERS
-                users = create_demo_users(client, groups["members"], _DEMO_PLAYERS)
-                n = len(users)
-            print(f"  Created {n} demo user(s) in Pocket ID (no passkey)")
 
     print("\n── .env Update ──")
     update_env_file(groups["members"], args.dev)

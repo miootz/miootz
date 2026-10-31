@@ -11,6 +11,7 @@ from app.api import (
     invites,
     matches,
     meetups,
+    rankings,
     ratings,
     users_stats,
     users,
@@ -93,6 +94,7 @@ app.include_router(matches.router)
 app.include_router(users.router)
 app.include_router(ratings.router)
 app.include_router(users_stats.router)
+app.include_router(rankings.router)
 
 
 @app.get("/health")

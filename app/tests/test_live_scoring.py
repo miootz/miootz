@@ -130,7 +130,7 @@ async def test_lease_single_winner_under_concurrency():
 @pytest.mark.asyncio
 async def test_lease_expiry_steal():
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         r1 = await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         assert r1.status_code == 200
         tok1 = r1.json()["lease_token"]
@@ -162,7 +162,7 @@ async def test_lease_expiry_steal():
 @pytest.mark.asyncio
 async def test_renew_release_wrong_token_rejected():
     async with await client() as ac:
-        sid, mid, _ = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, _ = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         r1 = await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         assert r1.status_code == 200
 
@@ -208,7 +208,7 @@ async def test_renew_release_wrong_token_rejected():
 @pytest.mark.asyncio
 async def test_goal_requires_lease_and_membership():
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         # Present member without the lease: 409 naming nobody (lease free).
         r = await ac.post(
             f"/meetups/{sid}/matches/{mid}/goals",
@@ -247,7 +247,7 @@ async def test_goal_requires_lease_and_membership():
 @pytest.mark.asyncio
 async def test_goal_intent_replay_returns_same_goal():
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         assert (
             await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
@@ -279,7 +279,7 @@ async def test_goal_intent_replay_returns_same_goal():
 @pytest.mark.asyncio
 async def test_goal_dedupe_90s_and_force_bypass():
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         assert (
             await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
         ).status_code == 200
@@ -333,7 +333,7 @@ async def test_goal_dedupe_90s_and_force_bypass():
 @pytest.mark.asyncio
 async def test_score_counters_match_count_after_add_and_delete():
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         # Team A goal (P1 records P2).
         assert (
             await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
@@ -476,7 +476,7 @@ async def test_steward_state_reasons():
         assert r1.json()["reason"] == "outside_window"
         assert r1.json()["lease"] is None
 
-        sid_live, mid, _ = await make_live_setup(ac, ["p1", "p2"])
+        sid_live, mid, _ = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         # Viewer confirmed? No — never joined: not_attending.
         r2 = await ac.get(f"/meetups/{sid_live}/steward-state", headers=hdr("viewer"))
         assert r2.status_code == 200

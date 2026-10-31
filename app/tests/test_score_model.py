@@ -114,7 +114,7 @@ async def log_goal(ac, sid, mid, team, scorer_id, intent, *, force=False):
 async def test_manual_offset_composes_with_goals():
     """Referee +1 must survive a goal recompute (finding 4)."""
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
 
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-1")
         assert r.status_code == 201, r.text
@@ -150,7 +150,7 @@ async def test_manual_offset_composes_with_goals():
 async def test_second_same_minute_goal_with_force():
     """A striker's double in one minute is loggable (finding 2)."""
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
 
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-1")
         assert r.status_code == 201, r.text
@@ -181,7 +181,7 @@ async def test_second_same_minute_goal_with_force():
 async def test_reset_zeroes_score_and_keeps_it_zero():
     """Reset soft-deletes live goals so the score can't come back (finding 3)."""
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
 
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-1")
         assert r.status_code == 201, r.text
@@ -244,7 +244,7 @@ async def test_delete_user_cleans_child_rows(monkeypatch):
 async def test_delete_meetup_cleans_matches_and_goals():
     """Meetup delete cascades to matches, goals and attendance (finding 6)."""
     async with await client() as ac:
-        sid, mid, ids = await make_live_setup(ac, ["p1", "p2"])
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
         r = await log_goal(ac, sid, mid, "a", ids["p2"], "i-1")
         assert r.status_code == 201, r.text
 

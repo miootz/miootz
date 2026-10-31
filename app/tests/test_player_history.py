@@ -141,6 +141,14 @@ async def test_admin_player_history():
             "average_rating",
             "total_ratings",
             "skill_level",
+            "goals",
+            "assists",
+            "clean_sheets",
+            "goals_conceded",
+            "season_goals",
+            "season_assists",
+            "season_clean_sheets",
+            "season_goals_conceded",
         }
         assert data["history"]["total"] == 2
         items = data["history"]["items"]

@@ -467,6 +467,14 @@ export function ProfilePage() {
                   label="Ratings received"
                   value={String(stats.total_ratings)}
                 />
+                <StatCard
+                  label="Season goals"
+                  value={String(stats.season_goals)}
+                />
+                <StatCard
+                  label="Season assists"
+                  value={String(stats.season_assists)}
+                />
               </div>
             </div>
           )}

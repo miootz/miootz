@@ -21,6 +21,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { HistoryMeetupPage } from './pages/HistoryMeetupPage';
+import { RankingsPage } from './pages/RankingsPage';
 
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="history" element={<HistoryPage />} />
             <Route path="history/:meetupId" element={<HistoryMeetupPage />} />
+            <Route path="rankings" element={<RankingsPage />} />
             <Route path="*" element={<PlayerApp />} />
           </Route>
         </Route>

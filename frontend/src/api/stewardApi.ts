@@ -150,6 +150,8 @@ export interface GoalRow {
   recorded_by: GoalPerson;
   /** 1 when this goal crossed the line after the final whistle. */
   after_whistle?: boolean;
+  /** Own goal: the scorer is on the conceding team. */
+  is_own_goal?: boolean;
 }
 
 function normalizePerson(v: unknown): GoalPerson {
@@ -183,6 +185,7 @@ function normalizeGoal(v: unknown): GoalRow | null {
     goalkeeper: o.goalkeeper ? normalizePerson(o.goalkeeper) : null,
     recorded_by: normalizePerson(o.recorded_by),
     after_whistle: !!o.after_whistle,
+    is_own_goal: !!o.is_own_goal,
   };
 }
 
@@ -212,6 +215,8 @@ export interface GoalCreateBody {
   goalkeeper_id?: number | null;
   intent_id: string;
   force?: boolean;
+  /** Own goal: the scorer is on the conceding team. */
+  is_own_goal?: boolean;
 }
 
 /**

@@ -59,6 +59,7 @@ export function GoalEntrySheet({
 
   // ── Form state ───────────────────────────────────────────────────
   const [team, setTeam] = useState<"a" | "b">("a");
+  const [isOwnGoal, setIsOwnGoal] = useState(false);
   const [scorer, setScorer] = useState<SelectablePlayer | null>(null);
   const [assist, setAssist] = useState<SelectablePlayer | null>(null);
   const [goalkeeper, setGoalkeeper] = useState<SelectablePlayer | null>(null);
@@ -202,6 +203,7 @@ export function GoalEntrySheet({
           goalkeeper_id: goalkeeper?.id ?? null,
           intent_id: intentIdRef.current,
           force: force || afterWhistle,
+          is_own_goal: isOwnGoal,
         });
         if (res.goal) {
           onLogged(res.goal);
@@ -231,6 +233,7 @@ export function GoalEntrySheet({
       goalkeeper,
       afterWhistle,
       holding,
+      isOwnGoal,
       match,
       onClose,
       onLogged,
@@ -254,12 +257,24 @@ export function GoalEntrySheet({
   // Release the lease when the user closes without submitting.
   const close = useCallback(() => onClose(), [onClose]);
 
-  // Options per field: scorer from the chosen team, assist from anyone but
-  // the scorer, keeper from the conceding (opposing) team only — mirroring
-  // the server-side validation so the picker cannot offer an invalid pick.
+  // Options per field: scorer from the chosen team (or the conceding team
+  // for an own goal), assist from anyone but the scorer, keeper from the
+  // conceding (opposing) team only — mirroring the server-side validation so
+  // the picker cannot offer an invalid pick.
   const scorerOptions = useMemo(
-    () => matchPlayers.filter((p) => p.teamTag === (team === "a" ? "A" : "B")),
-    [matchPlayers, team],
+    () =>
+      matchPlayers.filter(
+        (p) =>
+          p.teamTag ===
+          (isOwnGoal
+            ? team === "a"
+              ? "B"
+              : "A"
+            : team === "a"
+              ? "A"
+              : "B"),
+      ),
+    [matchPlayers, team, isOwnGoal],
   );
   const assistOptions = useMemo(
     () => roster.filter((p) => p.id !== scorer?.id),
@@ -325,6 +340,12 @@ export function GoalEntrySheet({
                 onClick={() => {
                   setTeam(t);
                   setConfirmDuplicate(false);
+                  if (isOwnGoal) {
+                    setIsOwnGoal(false);
+                    setScorer(null);
+                    setAssist(null);
+                    setGoalkeeper(null);
+                  }
                 }}
                 className={`py-3 border-2 font-semibold text-sm transition-colors ${
                   team === t
@@ -340,9 +361,47 @@ export function GoalEntrySheet({
           </div>
         </div>
 
+        {/* Own goal toggle */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isOwnGoal}
+          onClick={() => {
+            setIsOwnGoal((v) => !v);
+            setScorer(null);
+            setAssist(null);
+            setGoalkeeper(null);
+            setConfirmDuplicate(false);
+          }}
+          className={`flex items-center justify-between w-full px-3 py-2.5 border-2 text-sm font-semibold transition-colors ${
+            isOwnGoal
+              ? "border-live bg-live/15 text-ink"
+              : "border-line bg-raised text-ink-dim"
+          }`}
+        >
+          <span>Own goal (scored against the listed team)</span>
+          <span
+            className={`relative inline-flex h-5 w-9 items-center ${
+              isOwnGoal ? "bg-live" : "bg-line"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                isOwnGoal ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </span>
+        </button>
+
         {/* Scorer */}
         <PlayerSelect
-          label="2 · Scorer"
+          label={
+            isOwnGoal
+              ? `2 · Own goal — player who put it in ${
+                  team === "a" ? match.team_b.name : match.team_a.name
+                }'s net`
+              : "2 · Scorer"
+          }
           players={scorerOptions}
           selected={scorer}
           onSelect={(p) => {
@@ -354,22 +413,24 @@ export function GoalEntrySheet({
           disabled={!rosterLoaded}
         />
 
-        {/* Assist (one, skippable) */}
-        <PlayerSelect
-          label="3 · Assist (optional — one assist max)"
-          players={assistOptions}
-          selected={assist}
-          onSelect={(p) => {
-            setAssist(p);
-            if (goalkeeper?.id === p.id) setGoalkeeper(null);
-          }}
-          allowClear
-          onClear={() => setAssist(null)}
-        />
+        {/* Assist (one, skippable; not offered for own goals) */}
+        {!isOwnGoal && (
+          <PlayerSelect
+            label="3 · Assist (optional — one assist max)"
+            players={assistOptions}
+            selected={assist}
+            onSelect={(p) => {
+              setAssist(p);
+              if (goalkeeper?.id === p.id) setGoalkeeper(null);
+            }}
+            allowClear
+            onClear={() => setAssist(null)}
+          />
+        )}
 
         {/* Goalkeeper who was beaten (conceding team, optional) */}
         <PlayerSelect
-          label={`4 · Goalkeeper beaten by ${
+          label={`${isOwnGoal ? "3" : "4"} · Goalkeeper beaten by ${
             team === "a" ? match.team_b.name : match.team_a.name
           } (optional)`}
           players={keeperOptions}
@@ -382,7 +443,7 @@ export function GoalEntrySheet({
         {/* Minute */}
         <div>
           <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
-            5 · Minute (from the server clock)
+            {isOwnGoal ? "4" : "5"} · Minute (from the server clock)
           </p>
           <div className="flex items-center gap-2">
             <input

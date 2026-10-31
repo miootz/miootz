@@ -107,35 +107,18 @@ This creates a database user with `is_admin=True`. To grant admin access in Pock
 visit `https://${AUTH_DOMAIN}/login/setup` (`:8443` for dev) to create your admin
 account, then add yourself to the `admins` group in the Pocket ID admin UI.
 
-### Demo data (members, past sessions, ratings)
+### Demo data
 
-Seeds **20** demo users (`demo_m01` … `demo_m20`, emails `*@demo-bootstrap.local`),
-**5** past sessions at locations `Demo Field #1` … `#5`, **10–15** random confirmed
-attendees per session, and sparse **random peer ratings** (1–5). Recalculates
-`calculated_skill` from peer averages.
-
-Run against the same database as the API (host or container):
+The showcase runner seeds a self-contained demo (20 fictional members, an
+upcoming meetup, past meetups with matches, goals and ratings) in a temporary
+database with demo accounts you pick at `/api/demo`:
 
 ```bash
-uv run python -m app.bootstrap_data
+uv run python -m app.demo --scenario full
 ```
 
-Re-run after wiping demo rows only:
-
-```bash
-uv run python -m app.bootstrap_data --force
-```
-
-With Docker (from the project root), start the dev stack if it is not already running,
-then seed inside the `api` container so `DATABASE_URL` matches the API:
-
-```bash
-docker compose -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.dev.yml exec api uv run python -m app.bootstrap_data
-```
-
-Past sessions use `start_time` in the past so they show on the member **History** tab.
-Demo users are DB-only (no Pocket ID); sign in as a real user to browse history.
+See `docs/DEMO.md` for the scenarios and `docs/SHOWCASE.md` for recording the
+demo site.
 
 ## License
 

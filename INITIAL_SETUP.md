@@ -88,18 +88,6 @@ This finds your Pocket ID account and adds it to the `admins` group. The `admins
 group membership is what grants you admin privileges in the Miootz app (via JWT
 `groups` claim).
 
-### 5. (Optional) Create demo user accounts
-
-To create Pocket ID accounts for the fictional demo players from `app/bootstrap_data.py`:
-
-```bash
-./scripts/bootstrap.sh --dev --demo-users
-```
-
-> **Note**: These users have no passkey and can't log in. They exist only so group
-> membership, JWT claims, and data relationships can be tested without creating real
-> accounts.
-
 ### What the script does
 
 | Step | Endpoint | Idempotent? |
@@ -110,7 +98,6 @@ To create Pocket ID accounts for the fictional demo players from `app/bootstrap_
 | Create `miootz-app` OIDC client | `POST /api/oidc/clients` | ✅ Skips if exists |
 | Create `miootz-backend` API key | `POST /api/api-keys` | ⚠️ Warns if exists (token not retrievable) |
 | Add user to admins group | `PUT /api/users/:id/user-groups` | ✅ Skips if already member |
-| Create demo users (optional) | `POST /api/users` | ✅ Skips if exists |
 
 ### Why the admin account isn't created automatically
 
@@ -252,32 +239,18 @@ After initial setup, new users join via **invites**:
 
 The invite link is a Pocket ID signup URL: `https://${AUTH_DOMAIN}/st/<token>`.
 
-## Demo Users
+## Demo data
 
-The `app/bootstrap_data.py` script creates 20 fictional DB users named after famous
-footballers (Demo Player 03, Messi, etc.) with synthetic `pocket_id_sub` UUIDs, past game
-sessions, attendance records, and peer ratings.
-
-```bash
-# Run locally
-uv run python -m app.bootstrap_data
-
-# Run in Docker
-docker compose -f docker-compose.dev.yml exec api uv run python -m app.bootstrap_data
-
-# Re-run (purge demo data first)
-uv run python -m app.bootstrap_data --force
-```
-
-These users are **DB-only** — they have no Pocket ID accounts and can't log in.
-They exist to populate the app with realistic data for testing and demo purposes.
-
-To also create corresponding Pocket ID accounts (still no passkey, for testing group
-membership and JWT claims):
+The showcase runner (`app/demo.py`) seeds a self-contained demo — 20 fictional
+members, an upcoming meetup, and past meetups with matches, goals and ratings —
+into a temporary database, with demo accounts to sign in as:
 
 ```bash
-./scripts/bootstrap.sh --dev --demo-users
+uv run python -m app.demo --scenario full
 ```
+
+See `docs/DEMO.md` for the scenarios and `docs/SHOWCASE.md` for recording the
+demo site.
 
 ## Local Development Ports
 
