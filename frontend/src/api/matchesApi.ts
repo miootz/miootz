@@ -101,6 +101,27 @@ export async function swapMatchTeams(
   return r.json();
 }
 
+export interface MatchSubstitution {
+  id: number;
+  recorded_by: string | null;
+  created_at: string | null;
+  old_team_a_users: number[];
+  old_team_b_users: number[];
+  new_team_a_users: number[];
+  new_team_b_users: number[];
+}
+
+export async function fetchMatchSubstitutions(
+  meetupId: number,
+  matchId: number,
+): Promise<{ substitutions: MatchSubstitution[] }> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/substitutions`,
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
 export async function startTimer(
   meetupId: number,
   matchId: number,

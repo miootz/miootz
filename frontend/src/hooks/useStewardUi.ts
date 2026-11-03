@@ -110,6 +110,7 @@ export function useStewardUi(sid: number, matchId: number | null) {
       switch (data.type) {
         case "goal_added":
         case "goal_removed":
+        case "goal_updated":
           void refreshGoals();
           return true;
         case "lease_acquired": {

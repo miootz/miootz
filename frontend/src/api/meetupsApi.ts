@@ -51,6 +51,8 @@ export interface GameTemplateInfo {
 export interface MeetupListItem {
   id: number;
   start_time: string;
+  /** Meetup duration in minutes (null defaults to 120). */
+  duration_minutes?: number | null;
   location: string;
   fee: number;
   min_players: number;

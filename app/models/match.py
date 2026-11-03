@@ -60,3 +60,24 @@ class MeetupMatch(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     meetup: Mapped[Meetup] = relationship("Meetup")
+
+
+class MatchSubstitution(Base):
+    """One pre-start player swap on a match: full before/after rosters.
+
+    Rows are self-contained (both snapshots) so rankings can credit players
+    per lineup without a chain join. The match's own team_*_users columns
+    always hold the final state.
+    """
+
+    __tablename__ = "match_substitutions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("meetup_matches.id"), index=True)
+    old_team_a_users: Mapped[str] = mapped_column(Text)  # JSON array of int user IDs
+    old_team_b_users: Mapped[str] = mapped_column(Text)
+    new_team_a_users: Mapped[str] = mapped_column(Text)
+    new_team_b_users: Mapped[str] = mapped_column(Text)
+    recorded_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

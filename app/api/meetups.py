@@ -342,6 +342,7 @@ async def list_meetups(
         {
             "id": s.id,
             "start_time": s.start_time,
+            "duration_minutes": s.duration_minutes,
             "location": s.location,
             "fee": s.fee,
             "min_players": s.min_players,

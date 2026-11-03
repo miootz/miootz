@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import {
   acquireLease,
   createGoal,
   releaseLease,
   renewLease,
+  updateGoal,
   type GoalRow,
 } from "../api/stewardApi";
 import { fetchMeetupDetail } from "../api/meetupsApi";
@@ -25,6 +26,10 @@ interface GoalEntrySheetProps {
   match: MatchSummary;
   onClose: () => void;
   onLogged: (goal: GoalRow) => void;
+  /** Present → edit mode: the sheet prefills from this goal and PATCHes it. */
+  editGoal?: GoalRow | null;
+  /** Only offered in edit mode — removes the goal row (light two-tap confirm). */
+  onDeleteGoal?: (goal: GoalRow) => void;
 }
 
 /**
@@ -45,8 +50,11 @@ export function GoalEntrySheet({
   match,
   onClose,
   onLogged,
+  editGoal = null,
+  onDeleteGoal,
 }: GoalEntrySheetProps) {
   const { showToast } = useToast();
+  const isEdit = !!editGoal;
 
   // ── Idempotency: one intent per sheet meetup ──────────────────
   const intentIdRef = useRef<string>(crypto.randomUUID());
@@ -58,17 +66,46 @@ export function GoalEntrySheet({
   const tokenRef = useRef<string | null>(null);
 
   // ── Form state ───────────────────────────────────────────────────
-  const [team, setTeam] = useState<"a" | "b">("a");
-  const [isOwnGoal, setIsOwnGoal] = useState(false);
-  const [scorer, setScorer] = useState<SelectablePlayer | null>(null);
-  const [assist, setAssist] = useState<SelectablePlayer | null>(null);
-  const [goalkeeper, setGoalkeeper] = useState<SelectablePlayer | null>(null);
-  const [minute, setMinute] = useState<number>(1);
-  const [minuteTouched, setMinuteTouched] = useState(false);
+  const [team, setTeam] = useState<"a" | "b">(
+    editGoal?.team ?? "a",
+  );
+  const [isOwnGoal, setIsOwnGoal] = useState(editGoal?.is_own_goal ?? false);
+  const [scorer, setScorer] = useState<SelectablePlayer | null>(
+    editGoal
+      ? {
+          id: editGoal.scorer.id,
+          name: editGoal.scorer.display_name,
+          avatarUrl: editGoal.scorer.avatar_url,
+        }
+      : null,
+  );
+  const [assist, setAssist] = useState<SelectablePlayer | null>(
+    editGoal?.assist
+      ? {
+          id: editGoal.assist.id,
+          name: editGoal.assist.display_name,
+          avatarUrl: editGoal.assist.avatar_url,
+        }
+      : null,
+  );
+  const [goalkeeper, setGoalkeeper] = useState<SelectablePlayer | null>(
+    editGoal?.goalkeeper
+      ? {
+          id: editGoal.goalkeeper.id,
+          name: editGoal.goalkeeper.display_name,
+          avatarUrl: editGoal.goalkeeper.avatar_url,
+        }
+      : null,
+  );
+  const [minute, setMinute] = useState<number>(editGoal?.clock_minute ?? 1);
+  // Edit mode keeps the stored minute (no live-clock prefill).
+  const [minuteTouched, setMinuteTouched] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
   // Server said "same player already has a goal in this minute" — ask before
   // confirming a genuine second goal (force re-send).
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
+  // Delete at the bottom (edit mode): first tap arms, second tap fires.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // ── Roster (confirmed attendees, with team tags for this match) ─
   const [roster, setRoster] = useState<SelectablePlayer[]>([]);
@@ -116,7 +153,7 @@ export function GoalEntrySheet({
   const tryAcquire = useCallback(async (): Promise<boolean> => {
     setAcquiring(true);
     try {
-      const res = await acquireLease(meetupId);
+      const res = await acquireLease(meetupId, match.id);
       if (res.ok) {
         tokenRef.current = res.lease.lease_token;
         setHolding(true);
@@ -138,7 +175,7 @@ export function GoalEntrySheet({
     } finally {
       setAcquiring(false);
     }
-  }, [meetupId, showToast]);
+  }, [meetupId, match.id, showToast]);
 
   // Acquire immediately on open; keep renewed while open; release on unmount.
   useEffect(() => {
@@ -146,7 +183,7 @@ export function GoalEntrySheet({
     const renewTimer = setInterval(() => {
       if (!tokenRef.current) return;
       void (async () => {
-        const res = await renewLease(meetupId, tokenRef.current!);
+        const res = await renewLease(meetupId, tokenRef.current!, match.id);
         if (res.ok) {
           setLease(null);
           setHolding(true);
@@ -160,10 +197,10 @@ export function GoalEntrySheet({
     }, 20_000);
     return () => {
       clearInterval(renewTimer);
-      if (tokenRef.current) void releaseLease(meetupId, tokenRef.current);
+      if (tokenRef.current) void releaseLease(meetupId, tokenRef.current, match.id);
       tokenRef.current = null;
     };
-  }, [meetupId, tryAcquire]);
+  }, [meetupId, match.id, tryAcquire]);
 
   // ── Minute pre-fill from the server clock, ticking until edited ──
   useEffect(() => {
@@ -196,19 +233,30 @@ export function GoalEntrySheet({
           const won = await tryAcquire();
           if (!won) return; // busy label now visible; fields preserved
         }
-        const res = await createGoal(meetupId, match.id, {
-          team,
-          scorer_id: scorer.id,
-          assist_id: assist?.id ?? null,
-          goalkeeper_id: goalkeeper?.id ?? null,
-          intent_id: intentIdRef.current,
-          force: force || afterWhistle,
-          is_own_goal: isOwnGoal,
-        });
+        const res = isEdit && editGoal
+          ? await updateGoal(meetupId, match.id, editGoal.id, {
+              team,
+              scorer_id: scorer.id,
+              assist_id: assist?.id ?? null,
+              goalkeeper_id: goalkeeper?.id ?? null,
+              clock_minute: minute,
+              is_own_goal: isOwnGoal,
+            })
+          : await createGoal(meetupId, match.id, {
+              team,
+              scorer_id: scorer.id,
+              assist_id: assist?.id ?? null,
+              goalkeeper_id: goalkeeper?.id ?? null,
+              intent_id: intentIdRef.current,
+              force: force || afterWhistle,
+              is_own_goal: isOwnGoal,
+            });
         if (res.goal) {
           onLogged(res.goal);
           showToast(
-            `Goal logged — ${team === "a" ? match.team_a.name : match.team_b.name} ${g2score(match, res.goal)}`,
+            isEdit
+              ? `Goal updated — ${g2score(match, res.goal)}`
+              : `Goal logged — ${g2score(match, res.goal)}`,
             "success",
           );
         }
@@ -220,7 +268,7 @@ export function GoalEntrySheet({
           setConfirmDuplicate(true);
         } else {
           showToast(
-            e instanceof Error ? e.message : "Could not log the goal",
+            e instanceof Error ? e.message : "Could not save the goal",
             "error",
           );
         }
@@ -230,11 +278,14 @@ export function GoalEntrySheet({
     },
     [
       assist,
+      editGoal,
       goalkeeper,
+      isEdit,
       afterWhistle,
       holding,
       isOwnGoal,
       match,
+      minute,
       onClose,
       onLogged,
       scorer,
@@ -258,37 +309,28 @@ export function GoalEntrySheet({
   const close = useCallback(() => onClose(), [onClose]);
 
   // Options per field: scorer from the chosen team (or the conceding team
-  // for an own goal), assist from anyone but the scorer, keeper from the
-  // conceding (opposing) team only — mirroring the server-side validation so
-  // the picker cannot offer an invalid pick.
+  // for an own goal), assist from the SCORING team only (never offered for
+  // own goals), keeper from the conceding (opposing) team only — mirroring
+  // the server-side validation so the picker cannot offer an invalid pick.
+  const scoringTag = team === "a" ? "A" : "B";
+  const concedingTag = team === "a" ? "B" : "A";
   const scorerOptions = useMemo(
-    () =>
-      matchPlayers.filter(
-        (p) =>
-          p.teamTag ===
-          (isOwnGoal
-            ? team === "a"
-              ? "B"
-              : "A"
-            : team === "a"
-              ? "A"
-              : "B"),
-      ),
-    [matchPlayers, team, isOwnGoal],
+    () => matchPlayers.filter((p) => p.teamTag === (isOwnGoal ? concedingTag : scoringTag)),
+    [matchPlayers, isOwnGoal, scoringTag, concedingTag],
   );
   const assistOptions = useMemo(
-    () => roster.filter((p) => p.id !== scorer?.id),
-    [roster, scorer],
+    () => matchPlayers.filter((p) => p.teamTag === scoringTag && p.id !== scorer?.id),
+    [matchPlayers, scoringTag, scorer],
   );
   const keeperOptions = useMemo(
     () =>
       roster.filter(
         (p) =>
-          p.teamTag === (team === "a" ? "B" : "A") &&
+          p.teamTag === concedingTag &&
           p.id !== scorer?.id &&
           p.id !== assist?.id,
       ),
-    [roster, team, scorer, assist],
+    [roster, concedingTag, scorer, assist],
   );
 
   return (
@@ -296,13 +338,13 @@ export function GoalEntrySheet({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-3"
       role="dialog"
       aria-modal="true"
-      aria-label="Log a goal"
+      aria-label={isEdit ? "Edit goal" : "Log a goal"}
     >
       <div className="w-full max-w-md bg-panel border border-line shadow-xl p-4 space-y-4 max-h-[92vh] overflow-y-auto">
         {/* Header + lease status */}
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-ink">
-            Log a goal
+            {isEdit ? "Edit goal" : "Log a goal"}
           </h3>
           <div className="flex items-center gap-2">
             {holding ? (
@@ -340,12 +382,10 @@ export function GoalEntrySheet({
                 onClick={() => {
                   setTeam(t);
                   setConfirmDuplicate(false);
-                  if (isOwnGoal) {
-                    setIsOwnGoal(false);
-                    setScorer(null);
-                    setAssist(null);
-                    setGoalkeeper(null);
-                  }
+                  // The scorer/assist/keeper pools all change with the team.
+                  setScorer(null);
+                  setAssist(null);
+                  setGoalkeeper(null);
                 }}
                 className={`py-3 border-2 font-semibold text-sm transition-colors ${
                   team === t
@@ -508,11 +548,37 @@ export function GoalEntrySheet({
             <Plus className="h-5 w-5" />
           )}
           {holding
-            ? "Confirm goal"
+            ? isEdit
+              ? "Save changes"
+              : "Confirm goal"
             : lease
               ? leaseBusyLabel(lease.holderName, leaseCountdown(lease))
-              : "Take lease & log goal"}
+              : isEdit
+                ? "Take lease & save"
+                : "Take lease & log goal"}
         </button>
+
+        {/* Delete (edit mode only) — two-tap confirm, at the very bottom. */}
+        {isEdit && editGoal && onDeleteGoal && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirmDelete) {
+                setConfirmDelete(true);
+                return;
+              }
+              onDeleteGoal(editGoal);
+            }}
+            className={`w-full py-3 border text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+              confirmDelete
+                ? "border-danger bg-danger/15 text-danger"
+                : "border-danger/40 text-danger hover:bg-danger/10"
+            }`}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            {confirmDelete ? "Tap again to delete this goal" : "Delete goal"}
+          </button>
+        )}
       </div>
     </div>
   );

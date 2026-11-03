@@ -118,16 +118,31 @@ export function PlayerApp() {
       });
       const upcoming = upcomingRes.items;
       if (upcoming.length === 0) {
-        await clearMeetupChatCache();
-        setMeetup(null);
-        setActiveMeetupNumericId(null);
-        setOfflineDataUpdatedAt(null);
-        setNextAnnounceAt(null);
+        // A meetup whose presence window (start −15 min … end +30 min,
+        // mirroring app/api/deps.py) is open is still home, not history.
         const anyRes = await fetchMeetups({
           status: "all",
           order: "desc",
           limit: 5,
         });
+        const now = Date.now();
+        const current = anyRes.items.find((m) => {
+          const start = Date.parse(m.start_time);
+          if (Number.isNaN(start)) return false;
+          const close =
+            start + ((m.duration_minutes ?? 120) + 30) * 60_000;
+          return start - 15 * 60_000 <= now && now <= close;
+        });
+        if (current) {
+          await loadMeetup(current.id);
+          recordMeetupView();
+          return;
+        }
+        await clearMeetupChatCache();
+        setMeetup(null);
+        setActiveMeetupNumericId(null);
+        setOfflineDataUpdatedAt(null);
+        setNextAnnounceAt(null);
         if (anyRes.total === 0) {
           setError("No meetups yet. Create one in Admin.");
         } else {

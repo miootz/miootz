@@ -20,7 +20,7 @@ from app.models.user_notification_preference import UserNotificationPreference
 from app.services.team_assignment import assign_teams_snake
 from app.services.skill_service import update_user_calculated_skill
 
-SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live')
+SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
 NAMES = (
     'Demo Player 01', 'Demo Player 02', 'Demo Player 03', 'Demo Player 04', 'Demo Player 05',
@@ -88,7 +88,10 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             team_names_json=json.dumps(TEAM_NAMES),
         )
 
-    upcoming = meetup(1, kickoff)
+    # 'kickoff': the meetup starts right now; the first match is prepared
+    # (pending) and the live-match/steward controls are unlocked at launch.
+    upcoming_start = anchor if scenario == 'kickoff' else kickoff
+    upcoming = meetup(1, upcoming_start)
     upcoming.weather_forecast_temp_c = 22
     upcoming.weather_forecast_code = 1
     upcoming.weather_forecast_label = 'Mainly clear'
@@ -190,6 +193,19 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             timer_pause_intervals=json.dumps([{'paused_at': paused.isoformat(), 'resumed_at': None}]),
             created_at=paused - timedelta(seconds=198),
         ))
+    if scenario == 'kickoff':
+        # First round prepared, not started — one match per pitch pair.
+        for idx, (a, b) in enumerate([(0, 1), (2, 3)]):
+            if b >= len(teams):
+                break
+            db.add(MeetupMatch(
+                meetup_id=1, match_number=idx + 1,
+                team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
+                team_a_name=TEAM_NAMES[a], team_b_name=TEAM_NAMES[b],
+                score_a=0, score_b=0, status='pending',
+                timer_total_seconds=600, timer_seconds_remaining=None,
+                created_at=anchor,
+            ))
     await db.commit()
     return {'scenario': scenario, 'anchor_utc': anchor.isoformat(), 'actors': ACTORS,
             'upcoming_meetup_id': 1, 'ratings_meetup_id': 2,

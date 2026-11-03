@@ -723,6 +723,32 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    # ── match_substitutions: pre-start roster-swap history ──
+    if not await has_table("match_substitutions"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE match_substitutions (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    meetup_id INTEGER NOT NULL REFERENCES meetups (id),
+                    match_id INTEGER NOT NULL REFERENCES meetup_matches (id),
+                    old_team_a_users TEXT NOT NULL,
+                    old_team_b_users TEXT NOT NULL,
+                    new_team_a_users TEXT NOT NULL,
+                    new_team_b_users TEXT NOT NULL,
+                    recorded_by INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_match_substitutions_match_id "
+                "ON match_substitutions (match_id)"
+            )
+        )
+
     # ── match_editor_lease.kind: the "roster" mode was never implemented ──
     if await has_table("match_editor_lease") and await has_column(
         "match_editor_lease", "kind"

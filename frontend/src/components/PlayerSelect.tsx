@@ -91,11 +91,22 @@ export function PlayerSelect({
       {/* Trigger: search input; keeps the chosen name after collapse. */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint pointer-events-none" />
-        <ChevronDown
-          className={`absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint pointer-events-none transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
-        />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => {
+            setOpen((v) => {
+              if (v) setQuery("");
+              return !v;
+            });
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink-faint hover:text-ink"
+          aria-label={open ? "Close list" : "Open list"}
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
         <input
           ref={inputRef}
           value={open ? query : selected?.name ?? ""}

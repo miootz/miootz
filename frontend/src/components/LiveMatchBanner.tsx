@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchMeetupMatches,
-  pauseTimer,
-  resetMatch,
-  resumeTimer,
-  startTimer,
   type MatchSummary,
 } from "../api/matchesApi";
 import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useAuth } from "../auth/useAuth";
 import { useStewardUi } from "../hooks/useStewardUi";
-import { GoalEntrySheet } from "./GoalEntrySheet";
-import { GoalList } from "./GoalList";
-import { leaseBusyLabel } from "../utils/lease";
 import { Timer, Zap } from "lucide-react";
+
+/**
+ * Read-only match board for the member home route: the current match
+ * (prepared or in progress) with its remaining time, plus nothing else —
+ * every control (timer, goals, score) lives in the Referee view
+ * (`/meetup-matches/:id`). The completed history below this board
+ * (MatchHistoryList) carries the scores and teams of finished matches.
+ */
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(Math.max(0, seconds) / 60);
@@ -22,18 +23,11 @@ function formatTimer(seconds: number): string {
 }
 
 function getTimerColor(seconds: number, total: number): string {
+  if (total <= 0) return "text-ink-faint";
   const ratio = seconds / total;
   if (ratio > 1 / 3) return "text-ink";
   if (ratio > 1 / 10) return "text-live";
   return "text-danger";
-}
-
-/** Steward gate → reason line shown to locked members (never silent). */
-function stewardReasonLine(reason: string | undefined): string {
-  if (reason === "not_attending") return "You're not marked as attending.";
-  if (reason === "outside_window")
-    return "Scoring is closed — you're outside the meetup window.";
-  return "";
 }
 
 export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
@@ -45,32 +39,36 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
   const [isPaused, setIsPaused] = useState(false);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [halfTimeFlash, setHalfTimeFlash] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const prevRatioRef = useRef<number | null>(null);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Steward gate / lease chip / goal log — fed from the ONE SSE channel this
-  // banner already owns (see effect below). No second EventSource.
-  const { steward, lease, leaseLeft, goals, applyEvent, removeGoal, refreshGoals } =
-    useStewardUi(sid, currentMatch?.id ?? null);
+  // Steward gate — only used to show the "Manage match" link to members who
+  // may open the Referee view. Fed from the ONE shared meetup-data feed.
+  const { steward, applyEvent, refreshGoals } = useStewardUi(
+    sid,
+    currentMatch?.id ?? null,
+  );
 
   const loadMatch = useCallback(async () => {
     try {
       const res = await fetchMeetupMatches(sid);
-      const active = res.matches.find(
+      const current = res.matches.find(
         (m) =>
           m.status === "active" ||
           m.status === "time_up" ||
           m.status === "pending",
       );
-      if (active) {
-        setCurrentMatch(active);
-        setTimerSeconds(active.timer_seconds_remaining);
-        setIsPaused(active.timer_paused);
+      if (current) {
+        setCurrentMatch(current);
+        setTimerSeconds(
+          current.status === "pending"
+            ? current.timer_total_seconds
+            : current.timer_seconds_remaining,
+        );
+        setIsPaused(current.timer_paused);
         setTimerEndsAt(
-          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
+          current.timer_ends_at ? Date.parse(current.timer_ends_at) : null,
         );
       } else {
         setCurrentMatch(null);
@@ -99,10 +97,8 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
 
   // SSE — rides the ONE existing meetup-data connection via the shared
   // hub (utils/meetupDataBus); does not open a second EventSource.
-  // Scoring events (goal_added / goal_removed / lease_acquired /
-  // lease_released) flow through the hook's applyEvent (snapshot refetch,
-  // never replay); timer events update the clock here; on link (re)connect
-  // we refetch snapshots so a gap self-heals.
+  // Goal/lease events refetch the score; timer events update the clock;
+  // on link (re)connect we refetch snapshots so a gap self-heals.
   useEffect(() => {
     let wasLive = false; // hub pushes current status on subscribe
     return subscribeMeetupData(
@@ -110,8 +106,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
       tokens?.accessToken,
       (data) => {
         if (applyEvent(data)) {
-          // goal_added / goal_removed / lease_acquired / lease_released —
-          // rows refreshed via the hook; pull the new score into the board.
+          // goal_added / goal_removed / lease events — pull the new score.
           void loadMatch();
           return;
         }
@@ -145,8 +140,12 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             typeof data.ends_at === "string" ? Date.parse(data.ends_at) : NaN;
           setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
         } else if (data.type === "match_timer_expired") {
+          // Clear the shared end timestamp and refetch: a stale ends_at
+          // makes the tick clamp to 00:00 while the status stays stale.
           setTimerSeconds(0);
           setIsPaused(false);
+          setTimerEndsAt(null);
+          void loadMatch();
         } else if (
           data.type === "match_ended" ||
           data.type === "match_created" ||
@@ -166,19 +165,20 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
     );
   }, [sid, loadMatch, applyEvent, refreshGoals, tokens?.accessToken]);
 
-  // Timer tick
+  // Timer tick — server-authoritative: derive remaining from the shared
+  // end timestamp the server stamps on start/resume.
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (!currentMatch || isPaused || currentMatch.status !== "active") {
       return;
     }
     intervalRef.current = setInterval(() => {
-      const total = currentMatch.timer_total_seconds;
       if (timerEndsAt != null) {
         // Server-authoritative: derive remaining from the shared end timestamp
         const secs = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
         setTimerSeconds(secs);
-        const ratio = secs / total;
+        const ratio =
+          secs / (currentMatch.timer_total_seconds || 1);
         const prev = prevRatioRef.current;
         prevRatioRef.current = ratio;
         if (prev != null && prev > 0.5 && ratio <= 0.5) {
@@ -193,7 +193,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             return 0;
           }
           const next = prev - 1;
-          const ratio = next / total;
+          const ratio = next / (currentMatch.timer_total_seconds || 1);
           const prevRatio = prevRatioRef.current;
           prevRatioRef.current = ratio;
           if (prevRatio != null && prevRatio > 0.5 && ratio <= 0.5) {
@@ -212,29 +212,18 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
   if (!currentMatch) return null;
 
   const isTimeUp = currentMatch.status === "time_up";
+  const isReady = currentMatch.status === "pending";
   const canControl = !!steward?.can_control;
-  const leaseHeld = !!lease && leaseLeft > 0;
   const timerColor = getTimerColor(
     timerSeconds,
     currentMatch.timer_total_seconds,
   );
 
-  const runTimer = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-      // Timer calls are idempotent (double-tap is a no-op) — pull fresh state.
-      await loadMatch();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div
       className="border border-line bg-panel"
       role="region"
-      aria-label="Live match scoreboard"
+      aria-label="Match scoreboard"
     >
       {/* Half-time flash */}
       {halfTimeFlash && (
@@ -251,6 +240,11 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
           <span className="text-xs font-bold uppercase tracking-[0.14em] text-ink-dim">
             Match {currentMatch.match_number}
           </span>
+          {isReady && (
+            <span className="bg-raised px-2 py-0.5 text-xs font-medium text-ink-dim">
+              Ready
+            </span>
+          )}
           {isTimeUp && (
             <span className="bg-danger/15 px-2 py-0.5 text-xs font-semibold text-danger">
               Time's up
@@ -295,8 +289,8 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         </div>
       </div>
 
-      {/* Timer */}
-      <div className="flex flex-col items-center gap-3 border-t border-line px-4 py-4">
+      {/* Remaining time — display only; controls live in the Referee view */}
+      <div className="flex flex-col items-center border-t border-line px-4 py-4">
         <span
           className={`text-3xl font-extrabold tabular-nums sm:text-4xl ${timerColor}`}
           style={{
@@ -308,109 +302,16 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         >
           {formatTimer(timerSeconds)}
         </span>
-
-        {/* Controls (present members only — steward gate). */}
-        {canControl && !isTimeUp && (
-          <div className="flex items-center gap-2">
-            {currentMatch.status === "pending" && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void runTimer(() => startTimer(sid, currentMatch.id))
-                }
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
-              >
-                <Timer className="h-4 w-4" aria-hidden />
-                Start timer
-              </button>
-            )}
-            {currentMatch.status === "active" && !isPaused && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void runTimer(() => pauseTimer(sid, currentMatch.id))
-                }
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
-              >
-                Pause
-              </button>
-            )}
-            {currentMatch.status === "active" && isPaused && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void runTimer(() => resumeTimer(sid, currentMatch.id))
-                }
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
-              >
-                Resume
-              </button>
-            )}
-          </div>
-        )}
-        {canControl && isTimeUp && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void runTimer(() => resetMatch(sid, currentMatch.id))
-            }
-            className="inline-flex items-center gap-1.5 px-4 py-2 border border-line text-xs font-semibold text-ink-dim hover:bg-raised disabled:opacity-50"
-          >
-            Reset
-          </button>
-        )}
-
-        {/* + Goal / lease chip — named, never silent. */}
-        {canControl && (
-          <button
-            type="button"
-            disabled={leaseHeld || busy}
-            onClick={() => setSheetOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98]"
-          >
-            {leaseHeld
-              ? leaseBusyLabel(lease!.holderName, leaseLeft)
-              : "+ Goal"}
-          </button>
-        )}
-        {!canControl && stewardReasonLine(steward?.reason) && (
-          <p className="text-xs font-medium text-ink-faint">
-            {stewardReasonLine(steward?.reason)}
-          </p>
-        )}
-      </div>
-
-      {/* Goal log — visible to everyone, delete when the viewer controls. */}
-      <div className="border-t border-line px-4 py-3">
-        <p className="mb-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">
-          Goals
+        <p className="mt-1 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">
+          {isReady
+            ? "First whistle not called"
+            : isTimeUp
+              ? "Clock stopped"
+              : isPaused
+                ? "Clock stopped"
+                : "Remaining"}
         </p>
-        <GoalList
-          goals={goals}
-          teamAName={currentMatch.team_a.name}
-          teamBName={currentMatch.team_b.name}
-          canDelete={canControl}
-          onDelete={async (g) => {
-            await removeGoal(g.id);
-          }}
-        />
       </div>
-
-      {sheetOpen && (
-        <GoalEntrySheet
-          meetupId={sid}
-          match={currentMatch}
-          onClose={() => setSheetOpen(false)}
-          onLogged={() => {
-            // Score + rows refresh via SSE/poll — no local optimistic row.
-            void loadMatch();
-          }}
-        />
-      )}
     </div>
   );
 }

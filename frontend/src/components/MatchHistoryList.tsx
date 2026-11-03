@@ -3,13 +3,17 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   createMatch,
   deleteMatch,
+  fetchMatchSubstitutions,
   fetchMeetupMatches,
   setScores,
   type MatchSummary,
+  type MatchSubstitution,
 } from "../api/matchesApi";
-import { Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
+import { fetchGoals, type GoalRow } from "../api/stewardApi";
+import { GoalList } from "./GoalList";
 
 export function MatchHistoryList({
   meetupId,
@@ -182,6 +186,7 @@ export function MatchHistoryList({
         {matches.map((m) => (
           <MatchResultRow
             key={m.id}
+            meetupId={meetupId}
             match={m}
             canEdit={canEdit}
             editingId={editingId}
@@ -199,6 +204,7 @@ export function MatchHistoryList({
 // ── Single match row ───────────────────────────────────────────────
 
 function MatchResultRow({
+  meetupId,
   match,
   canEdit,
   editingId,
@@ -207,6 +213,7 @@ function MatchResultRow({
   onEditSubmit,
   onDelete,
 }: {
+  meetupId: number;
   match: MatchSummary;
   canEdit: boolean;
   editingId: number | null;
@@ -215,6 +222,45 @@ function MatchResultRow({
   onEditSubmit: (match: MatchSummary, scoreA: string, scoreB: string) => void;
   onDelete: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  // null = not fetched yet; lazy-load on first expand
+  const [subs, setSubs] = useState<MatchSubstitution[] | null>(null);
+  const [goals, setGoals] = useState<GoalRow[] | null>(null);
+
+  useEffect(() => {
+    if (!expanded || subs !== null) return;
+    fetchMatchSubstitutions(meetupId, match.id)
+      .then((r) => setSubs(r.substitutions))
+      .catch(() => setSubs([]));
+  }, [expanded, meetupId, match.id, subs]);
+
+  useEffect(() => {
+    if (!expanded || goals !== null) return;
+    fetchGoals(meetupId, match.id)
+      .then(setGoals)
+      .catch(() => setGoals([]));
+  }, [expanded, meetupId, match.id, goals]);
+
+  const nameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const u of match.team_a.users) m.set(u.id, u.display_name);
+    for (const u of match.team_b.users) m.set(u.id, u.display_name);
+    return m;
+  }, [match]);
+
+  const movesFor = (s: MatchSubstitution): string[] => {
+    const oldA = new Set(s.old_team_a_users);
+    const oldB = new Set(s.old_team_b_users);
+    const out: string[] = [];
+    for (const id of s.new_team_b_users)
+      if (!oldB.has(id))
+        out.push(`${nameById.get(id) ?? "?"} → ${match.team_b.name}`);
+    for (const id of s.new_team_a_users)
+      if (!oldA.has(id))
+        out.push(`${nameById.get(id) ?? "?"} → ${match.team_a.name}`);
+    return out;
+  };
+
   const winner =
     match.score_a > match.score_b
       ? "a"
@@ -235,8 +281,13 @@ function MatchResultRow({
         winner ? "bg-raised" : "bg-panel"
       }`}
     >
-      {/* Match header */}
-      <div className="flex items-center gap-2 px-4 py-1.5 bg-board border-b border-line">
+      {/* Match header — tap to expand rosters + substitutions */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-board border-b border-line text-left min-h-[44px]"
+        aria-expanded={expanded}
+      >
         <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
           Match {match.match_number}
         </span>
@@ -248,7 +299,15 @@ function MatchResultRow({
             </span>
           </>
         )}
-      </div>
+        <span className="ml-auto">
+          <ChevronDown
+            className={`h-4 w-4 text-ink-faint transition-transform ${
+              expanded ? "rotate-180" : ""
+            }`}
+            aria-hidden
+          />
+        </span>
+      </button>
       <div className="px-4 py-3 flex flex-col gap-2">
         {/* Score row */}
         <div className="flex items-center gap-3">
@@ -367,6 +426,69 @@ function MatchResultRow({
             >
               Cancel
             </button>
+          </div>
+        )}
+        {/* Expanded: scorers, final rosters + substitution log */}
+        {expanded && (
+          <div className="border-t border-line pt-3 space-y-3">
+            {goals && goals.length > 0 && (
+              <div className="border border-line bg-raised px-3 py-1">
+                <GoalList
+                  goals={goals}
+                  canEdit={false}
+                  onEdit={() => {}}
+                  emptyLabel=""
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  [match.team_a, "text-team-a"],
+                  [match.team_b, "text-team-b"],
+                ] as const
+              ).map(([team, color]) => (
+                <div key={team.name} className="min-w-0">
+                  <p
+                    className={`text-xs font-bold uppercase tracking-wide truncate ${color}`}
+                  >
+                    {team.name}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {team.users.map((u) => (
+                      <li
+                        key={u.id}
+                        className="text-sm text-ink-dim truncate"
+                      >
+                        {u.display_name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            {subs && subs.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+                  Substitutions
+                </p>
+                {subs.map((s) => (
+                  <div key={s.id} className="flex gap-2 text-xs">
+                    <span className="tabular-nums text-ink-faint shrink-0">
+                      {s.created_at
+                        ? new Date(s.created_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </span>
+                    <span className="text-ink-dim">
+                      {movesFor(s).join(" · ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

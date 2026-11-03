@@ -16,7 +16,7 @@ from app.models.game_template import GameTemplate  # noqa: F401  (FK target)
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.invite import InviteToken
-from app.models.match import MeetupMatch
+from app.models.match import MeetupMatch, MatchSubstitution
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
@@ -84,10 +84,11 @@ async def delete_meetup_children(db: AsyncSession, meetup_id: int) -> None:
 
 
 async def delete_match_children(db: AsyncSession, match_id: int) -> None:
-    """Remove goals and the editor lease before the match row goes."""
+    """Remove goals, the editor lease and substitution history before the match row goes."""
     for stmt in (
         delete(MatchGoal).where(MatchGoal.match_id == match_id),
         delete(MatchEditorLease).where(MatchEditorLease.match_id == match_id),
+        delete(MatchSubstitution).where(MatchSubstitution.match_id == match_id),
     ):
         await db.execute(stmt)
     await db.flush()

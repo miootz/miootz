@@ -77,6 +77,47 @@ def resolve_meetup_teams_nested(
     return assign_teams_snake(players, max_teams=max_teams)
 
 
+def apply_roster_swap(
+    manual_teams_json: str | None,
+    team_assignment_mode: str,
+    players: list[dict[str, Any]],
+    old_a: list[int],
+    old_b: list[int],
+    new_a: list[int],
+    new_b: list[int],
+    max_teams: int | None = None,
+) -> str:
+    """Return the manual partition after a pre-start roster swap.
+
+    Swaps only the two teams of the affected match — the other teams (e.g.
+    a parallel match's lineup) are untouched. If no manual partition is
+    stored, the current resolved teams are captured first, making the swap
+    the admin's standing intent for future rounds.
+    """
+    teams = resolve_meetup_teams_nested(
+        manual_teams_json, team_assignment_mode, players, max_teams=max_teams
+    )
+    out: list[list[int]] = [[p["user_id"] for p in t] for t in teams]
+    set_a, set_b = set(old_a), set(old_b)
+    incoming = set(new_a) | set(new_b)
+    released = (set_a | set_b) - incoming  # players who left the match
+    suppliers: list[int] = []  # bench team each pulled-in player came from
+    for i, team in enumerate(out):
+        if set(team) == set_a:
+            out[i] = list(new_a)
+        elif set(team) == set_b:
+            out[i] = list(new_b)
+        else:
+            # A player pulled in from a non-playing team leaves that team.
+            suppliers.extend(i for uid in team if uid in incoming)
+            out[i] = [uid for uid in team if uid not in incoming]
+    # A swapped-out player takes the incoming player's former spot, so a bench
+    # swap is a plain 1-for-1 exchange and the partition stays valid.
+    for team_i, uid in zip(suppliers, sorted(released)):
+        out[team_i] = out[team_i] + [uid]
+    return json.dumps(out)
+
+
 def get_team_names(meetup: Any) -> list[str] | None:
     """Parse team_names_json from a meetup object."""
     raw = getattr(meetup, "team_names_json", None)

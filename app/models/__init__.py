@@ -10,5 +10,5 @@ from app.models.web_push_subscription import WebPushSubscription  # noqa: F401
 from app.models.user_notification_preference import UserNotificationPreference  # noqa: F401
 from app.models.rating import Rating  # noqa: F401
 from app.models.guest_plus_one import GuestPlusOne  # noqa: F401
-from app.models.match import MeetupMatch  # noqa: F401
+from app.models.match import MeetupMatch, MatchSubstitution  # noqa: F401
 from app.models.job_queue import JobQueue  # noqa: F401

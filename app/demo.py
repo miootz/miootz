@@ -258,7 +258,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=["open", "full", "broadcast", "random", "live"],
+        choices=["open", "full", "broadcast", "random", "live", "kickoff"],
         default="full",
     )
     parser.add_argument("--api-port", type=int, default=8010)

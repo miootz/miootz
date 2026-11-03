@@ -57,15 +57,21 @@ export async function fetchStewardState(
 }
 
 /**
- * Acquire the goal-entry lease. `ok:false` is NOT an error — it means the
- * lease is held by someone else (named, never silent).
+ * Acquire the one-writer lease. `matchId` scopes it to a specific match
+ * (parallel 2-pitch play); omit for the current match.
+ * `ok:false` is NOT an error — it means the lease is held by someone else
+ * (named, never silent).
  */
 export async function acquireLease(
   meetupId: number,
+  matchId?: number,
 ): Promise<AcquireResult> {
-  const r = await apiFetch(`/meetups/${meetupId}/matches/lease/acquire`, {
-    method: "POST",
-  });
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/lease/acquire${
+      matchId != null ? `?match_id=${matchId}` : ""
+    }`,
+    { method: "POST" },
+  );
   if (r.status === 409) {
     const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     return {
@@ -90,11 +96,17 @@ export async function acquireLease(
 export async function renewLease(
   meetupId: number,
   leaseToken: string,
+  matchId?: number,
 ): Promise<AcquireResult> {
-  const r = await apiFetch(`/meetups/${meetupId}/matches/lease/renew`, {
-    method: "POST",
-    body: JSON.stringify({ lease_token: leaseToken }),
-  });
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/lease/renew${
+      matchId != null ? `?match_id=${matchId}` : ""
+    }`,
+    {
+      method: "POST",
+      body: JSON.stringify({ lease_token: leaseToken }),
+    },
+  );
   if (r.status === 409) {
     const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     return {
@@ -119,12 +131,18 @@ export async function renewLease(
 export async function releaseLease(
   meetupId: number,
   leaseToken: string,
+  matchId?: number,
 ): Promise<void> {
   try {
-    await apiFetch(`/meetups/${meetupId}/matches/lease/release`, {
-      method: "POST",
-      body: JSON.stringify({ lease_token: leaseToken }),
-    });
+    await apiFetch(
+      `/meetups/${meetupId}/matches/lease/release${
+        matchId != null ? `?match_id=${matchId}` : ""
+      }`,
+      {
+        method: "POST",
+        body: JSON.stringify({ lease_token: leaseToken }),
+      },
+    );
   } catch {
     // Best-effort release — the lease expires on its own otherwise.
   }
@@ -219,6 +237,10 @@ export interface GoalCreateBody {
   is_own_goal?: boolean;
 }
 
+export type GoalUpdateBody = Omit<GoalCreateBody, "intent_id" | "force"> & {
+  clock_minute: number;
+};
+
 /**
  * Submit one goal (idempotent via intent_id). The server recomputes the
  * score, releases the lease and broadcasts `goal_added`.
@@ -232,6 +254,28 @@ export async function createGoal(
     method: "POST",
     body: JSON.stringify(body),
   });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  return { goal: normalizeGoal(j.goal ?? j) };
+}
+
+/**
+ * Edit a logged goal (same team/own-goal/keeper rules as create). The server
+ * recomputes the score, releases the lease and broadcasts `goal_updated`.
+ */
+export async function updateGoal(
+  meetupId: number,
+  matchId: number,
+  goalId: number,
+  body: GoalUpdateBody,
+): Promise<{ goal: GoalRow | null }> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/goals/${goalId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
   if (!r.ok) throw new Error(await parseApiError(r));
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   return { goal: normalizeGoal(j.goal ?? j) };

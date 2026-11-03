@@ -33,10 +33,23 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         recent = await db.get(Meetup, 2)
         assert current is not None
         assert recent is not None
-        assert current.start_time > anchor
-        assert may_rate_or_edit(
-            anchor.replace(tzinfo=UTC), recent, current.start_time
-        ) == (True, None)
+        assert current.start_time >= anchor
+        if scenario == "kickoff":
+            # In progress: starts at the run's now; first round is prepared.
+            assert current.start_time == anchor
+            assert (
+                await db.scalars(
+                    select(MeetupMatch.status).where(MeetupMatch.meetup_id == 1)
+                )
+            ).all() == ["pending"]
+            # Ratings lock at the next kickoff, which is exactly now.
+            assert may_rate_or_edit(
+                anchor.replace(tzinfo=UTC), recent, current.start_time
+            ) == (False, "Ratings for this meetup are locked")
+        else:
+            assert may_rate_or_edit(
+                anchor.replace(tzinfo=UTC), recent, current.start_time
+            ) == (True, None)
         assert await db.scalar(select(func.count()).select_from(ChatMessage)) == 5
         assert await db.scalar(select(func.count()).select_from(GuestPlusOne)) == 1
         confirmed = set(
@@ -54,7 +67,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert sum(len(team) for team in teams) == len(confirmed)
         assert max(map(len, teams)) - min(map(len, teams)) <= 1
         assert await db.scalar(select(func.count()).select_from(MeetupMatch)) == (
-            19 if scenario == "live" else 18
+            19 if scenario in ("live", "kickoff") else 18
         )
         matches = list(await db.scalars(select(MeetupMatch)))
         goals = list(await db.scalars(select(MatchGoal)))

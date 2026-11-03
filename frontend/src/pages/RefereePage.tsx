@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
@@ -12,12 +12,12 @@ import {
   pauseTimer,
   resumeTimer,
   resetMatch,
-  incrementScore,
   endMatch,
   setScores,
   deleteMatch,
   type MatchSummary,
 } from "../api/matchesApi";
+import { deleteGoal, fetchGoals, type GoalRow } from "../api/stewardApi";
 import {
   fetchMeetupDetail,
   fetchMeetupTeams,
@@ -27,9 +27,14 @@ import {
 import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
+import { GoalEntrySheet } from "../components/GoalEntrySheet";
+import { leaseBusyLabel } from "../utils/lease";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
+import { AuthContext } from "../auth/auth-context";
 import {
   ArrowLeft,
+  ArrowRightLeft,
   CheckCircle2,
   ChevronDown,
   Edit,
@@ -40,6 +45,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  X,
 } from "lucide-react";
 
 function formatTimer(seconds: number): string {
@@ -112,6 +118,9 @@ function ManualMatchForm({
   onDelete,
   existingTeamNames,
   initial,
+  goals = [],
+  onAddGoal,
+  onEditGoal,
 }: {
   onSubmit: (body: {
     team_a_name: string;
@@ -128,6 +137,10 @@ function ManualMatchForm({
     score_a: number;
     score_b: number;
   };
+  /** Edit mode: the match's goal log (TV-style list, tap to edit). */
+  goals?: GoalRow[];
+  onAddGoal?: () => void;
+  onEditGoal?: (goal: GoalRow) => void;
 }) {
   const [teamA, setTeamA] = useState(
     initial?.team_a_name ?? existingTeamNames[0] ?? "",
@@ -186,6 +199,34 @@ function ManualMatchForm({
           />
         </div>
       </div>
+      {isEdit ? (
+        /* Edit mode: the score is the goal log — TV-style rows, +Goal opens
+            the sheet, no ±steppers. */
+        <>
+          <div className="flex items-center justify-center gap-3 py-1">
+            <span className="text-3xl font-extrabold tabular-nums text-team-a">
+              {initial?.score_a ?? 0}
+            </span>
+            <span className="text-base text-ink-faint">—</span>
+            <span className="text-3xl font-extrabold tabular-nums text-team-b">
+              {initial?.score_b ?? 0}
+            </span>
+          </div>
+          <div className="border border-line bg-raised px-3 py-1">
+            <GoalList goals={goals} canEdit onEdit={(g) => onEditGoal?.(g)} />
+          </div>
+          {onAddGoal && (
+            <button
+              type="button"
+              onClick={onAddGoal}
+              className="w-full py-3 bg-ink text-board text-sm font-bold hover:bg-white/90 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Goal
+            </button>
+          )}
+        </>
+      ) : (
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <label className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
@@ -236,6 +277,7 @@ function ManualMatchForm({
           </div>
         </div>
       </div>
+      )}
       <div className="flex gap-3 pt-1">
         {onDelete && (
           <button
@@ -259,8 +301,11 @@ function ManualMatchForm({
             onSubmit({
               team_a_name: teamA.trim(),
               team_b_name: teamB.trim(),
-              score_a: scoreA,
-              score_b: scoreB,
+              // Edit mode: the score is the goal log's — send the server's
+              // current values (refreshed after each goal add/edit/delete),
+              // never the mount-time state.
+              score_a: initial ? initial.score_a : scoreA,
+              score_b: initial ? initial.score_b : scoreB,
             })
           }
           disabled={!canSubmit}
@@ -331,6 +376,8 @@ export function RefereePage() {
   const { meetupId } = useParams<{ meetupId: string }>();
   const navigate = useNavigate();
   const { tokens } = useAuth();
+  const auth = useContext(AuthContext);
+  const isAdmin = auth?.me?.is_admin ?? false;
   const { showToast } = useToast();
   const sid = meetupId ? parseInt(meetupId, 10) : NaN;
 
@@ -365,12 +412,40 @@ export function RefereePage() {
   const [selectingTeams, setSelectingTeams] = useState(false);
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
+  const [showSubstitutions, setShowSubstitutions] = useState(false);
+  const [goalSheet, setGoalSheet] = useState<{
+    match: MatchSummary;
+    goal: GoalRow | null;
+  } | null>(null);
+  // Goal log of the match being edited in the result form (fetched on demand).
+  const [editingMatchGoals, setEditingMatchGoals] = useState<GoalRow[]>([]);
 
-  // Steward gate / goal log — fed by the ONE shared meetup-data feed
-  // (see the hub subscription below). Any present member may use the
-  // controls when the backend gate opens, not only admins.
-  const { steward, goals, applyEvent, removeGoal, refreshGoals } =
+  // Steward gate / lease chip / goal log — fed by the ONE shared
+  // meetup-data feed (see the hub subscription below). Any present member
+  // may use the controls when the backend gate opens, not only admins.
+  const { steward, lease, leaseLeft, goals, applyEvent, refreshGoals } =
     useStewardUi(sid, currentMatch?.id ?? null);
+
+  // Goal log of the match being edited in the result form — fetched on
+  // demand, and refetched whenever the editingMatch snapshot is refreshed
+  // (after a goal is added/edited/deleted, the score rows stay truthful).
+  useEffect(() => {
+    if (!editingMatch) {
+      setEditingMatchGoals([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchGoals(sid, editingMatch.id)
+      .then((rows) => {
+        if (!cancelled) setEditingMatchGoals(rows);
+      })
+      .catch(() => {
+        /* keep the previous snapshot */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sid, editingMatch]);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Drives deadline re-evaluation without waiting for SSE (see effect below).
@@ -404,6 +479,9 @@ export function RefereePage() {
     try {
       const res = await fetchMeetupMatches(sid);
       setMatches(res.matches);
+      // Rosters change with substitutions — refresh so the non-playing
+      // (bench) teams derived from teamsData stay correct.
+      fetchMeetupTeams(sid).then((t) => setTeamsData(t.teams)).catch(() => {});
       const active = res.matches.find(
         (m) => m.status === "active" || m.status === "time_up",
       );
@@ -625,32 +703,6 @@ export function RefereePage() {
     });
   };
 
-  const handleScore = async (team: "a" | "b", delta = 1) => {
-    if (!currentMatch) return;
-    setBusy(null); // Don't block rapid taps
-    try {
-      await incrementScore(sid, currentMatch.id, team, delta);
-      // Optimistic update
-      setCurrentMatch((prev) =>
-        prev
-          ? {
-              ...prev,
-              score_a:
-                team === "a" ? Math.max(0, prev.score_a + delta) : prev.score_a,
-              score_b:
-                team === "b" ? Math.max(0, prev.score_b + delta) : prev.score_b,
-            }
-          : null,
-      );
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Score update failed",
-        "error",
-      );
-      void loadMatches();
-    }
-  };
-
   const handleEndMatch = () => {
     if (!currentMatch) return;
     if (currentMatch.score_a !== currentMatch.score_b) {
@@ -729,6 +781,31 @@ export function RefereePage() {
     }
   };
 
+  // Goal sheet saved (new or edited): refresh the match list, and — when a
+  // match is open in the result form — its snapshot so score + scorers stay
+  // truthful.
+  const handleGoalSaved = () => {
+    void loadMatches();
+    if (editingMatch) {
+      void fetchMeetupMatches(sid).then((res) => {
+        const fresh = res.matches.find((m) => m.id === editingMatch.id);
+        if (fresh) setEditingMatch(fresh);
+      });
+    }
+  };
+
+  const handleGoalDeleted = async (g: GoalRow) => {
+    const match = goalSheet?.match;
+    if (!match) return;
+    try {
+      await deleteGoal(sid, match.id, g.id);
+      setGoalSheet(null);
+      handleGoalSaved();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Delete failed", "error");
+    }
+  };
+
   const handleStartNewMatch = async () => {
     await run("Creating match...", async () => {
       await createNewPendingMatch(sid, {
@@ -772,6 +849,29 @@ export function RefereePage() {
   }
 
   const completedMatches = matches.filter((m) => m.status === "completed");
+  const pendingMatches = matches.filter((m) => m.status === "pending");
+
+  // Meetup teams not in the current match — the substitution bench pool.
+  const extraTeams =
+    currentMatch && teamsData
+      ? (() => {
+          const inMatch = new Set([
+            ...currentMatch.team_a.users,
+            ...currentMatch.team_b.users,
+          ].map((u) => u.id));
+          return teamsData
+            .filter(
+              (t) => !t.players.some((p) => inMatch.has(Number(p.id))),
+            )
+            .map((t) => ({
+              name: t.name,
+              users: t.players.map((p) => ({
+                id: Number(p.id),
+                display_name: p.name,
+              })),
+            }));
+        })()
+      : [];
   const allComplete =
     matches.length > 0 &&
     matches.every((m) => m.status === "completed") &&
@@ -898,6 +998,17 @@ export function RefereePage() {
                     score_a: editingMatch.score_a,
                     score_b: editingMatch.score_b,
                   }
+                : undefined
+            }
+            goals={editingMatch ? editingMatchGoals : undefined}
+            onAddGoal={
+              editingMatch
+                ? () => setGoalSheet({ match: editingMatch, goal: null })
+                : undefined
+            }
+            onEditGoal={
+              editingMatch
+                ? (g) => setGoalSheet({ match: editingMatch, goal: g })
                 : undefined
             }
           />
@@ -1109,6 +1220,73 @@ export function RefereePage() {
         ) : (
           /* Active or pending match */
           <>
+            {/* TV-style goal list — directly below the score; tap a goal to
+                open the sheet in edit mode (delete lives inside the sheet). */}
+            <div className="border border-line bg-panel px-4 py-2">
+              <GoalList
+                goals={goals}
+                canEdit={canControl}
+                onEdit={(g) => setGoalSheet({ match: currentMatch, goal: g })}
+              />
+            </div>
+
+            {/* Parallel pending matches (4+ teams) — pick which one to run. */}
+            {currentMatch.status === "pending" && pendingMatches.length > 1 && (
+              <div className="space-y-2">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+                  Pending matches
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {pendingMatches.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setCurrentMatch(m);
+                        setTimerSeconds(m.timer_total_seconds);
+                        setIsPaused(false);
+                      }}
+                      className={`py-3 text-sm font-semibold border active:scale-[0.98] transition-transform min-h-[48px] ${
+                        m.id === currentMatch.id
+                          ? "border-live text-live bg-live/10"
+                          : "border-line text-ink-dim hover:bg-raised hover:text-ink"
+                      }`}
+                    >
+                      Match {m.match_number}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pre-start substitutions — admin only, hidden while a match runs */}
+            {currentMatch.status === "pending" && isAdmin && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSubstitutions((v) => !v)}
+                  className="w-full py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[48px]"
+                  aria-expanded={showSubstitutions}
+                >
+                  {showSubstitutions ? (
+                    <X className="h-4 w-4" aria-hidden />
+                  ) : (
+                    <ArrowRightLeft className="h-4 w-4" aria-hidden />
+                  )}
+                  Substitutions
+                </button>
+                {showSubstitutions && (
+                  <SubstitutionsPanel
+                    key={currentMatch.id}
+                    meetupId={sid}
+                    match={currentMatch}
+                    extraTeams={extraTeams}
+                    onSaved={() => void loadMatches()}
+                  />
+                )}
+              </div>
+            )}
+
             {/* Clock — teams + score live in the painted header band */}
             <div className="border border-line bg-panel p-4 space-y-3">
               {/* Half-time flash */}
@@ -1173,63 +1351,21 @@ export function RefereePage() {
               </button>
             )}
 
-            {/* Score controls */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <p className="text-center text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim truncate">
-                  {currentMatch.team_a.name}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void handleScore("a")}
-                  className="w-full py-6 bg-team-a text-white text-3xl font-bold hover:bg-team-a/90 active:scale-[0.97] transition-transform min-h-[80px]"
-                >
-                  +1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleScore("a", -1)}
-                  className="w-full py-2 border border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-[0.97] transition-transform"
-                >
-                  −1
-                </button>
-              </div>
-              <div className="space-y-2">
-                <p className="text-center text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim truncate">
-                  {currentMatch.team_b.name}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void handleScore("b")}
-                  className="w-full py-6 bg-team-b text-white text-3xl font-bold hover:bg-team-b/90 active:scale-[0.97] transition-transform min-h-[80px]"
-                >
-                  +1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleScore("b", -1)}
-                  className="w-full py-2 border border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-[0.97] transition-transform"
-                >
-                  −1
-                </button>
-              </div>
-            </div>
+            {/* + Goal — the goal-recording sheet (lease-gated, per match). */}
+            {currentMatch.status !== "time_up" && (
+              <button
+                type="button"
+                disabled={(!!lease && leaseLeft > 0) || busy !== null}
+                onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
+                className="w-full py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[56px]"
+              >
+                {lease && leaseLeft > 0
+                  ? leaseBusyLabel(lease.holderName, leaseLeft)
+                  : "+ Goal"}
+              </button>
+            )}
 
-            {/* Goals log — attribution + delete on light confirm (gate: steward). */}
-            <div className="border border-line bg-panel p-4">
-              <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-2">
-                Goals log
-              </h3>
-              <GoalList
-                goals={goals}
-                teamAName={currentMatch.team_a.name}
-                teamBName={currentMatch.team_b.name}
-                canDelete={canControl}
-                onDelete={async (g) => {
-                  await removeGoal(g.id);
-                }}
-              />
-            </div>
+            {/* Score is driven by the goal log — the ±steppers are gone. */}
 
             {/* End match */}
             <button
@@ -1364,6 +1500,22 @@ export function RefereePage() {
         onConfirm={() => void handleConfirmAction()}
         onCancel={() => setConfirmAction(null)}
       />
+
+      {/* Goal recording / editing sheet — lease-gated, scoped to one match */}
+      {goalSheet && (
+        <GoalEntrySheet
+          meetupId={sid}
+          match={goalSheet.match}
+          editGoal={goalSheet.goal}
+          onClose={() => setGoalSheet(null)}
+          onLogged={() => {
+            handleGoalSaved();
+          }}
+          onDeleteGoal={
+            goalSheet.goal ? (g) => void handleGoalDeleted(g) : undefined
+          }
+        />
+      )}
 
       {/* Winner picker modal */}
       {showWinnerPicker && pendingEndMatch && (

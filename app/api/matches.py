@@ -24,12 +24,13 @@ from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.meetup_data_manager import meetup_data_manager
 from app.core.timeutil import utcnow
-from app.models.match import MeetupMatch
+from app.models.match import MeetupMatch, MatchSubstitution
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.manual_teams import (
+    apply_roster_swap,
     ensure_team_names,
     get_team_names,
     resolve_meetup_teams_nested,
@@ -102,6 +103,17 @@ class GoalCreate(BaseModel):
     force: bool = False
 
 
+class GoalUpdate(BaseModel):
+    """Full re-attribution of a logged goal (edit sheet)."""
+
+    team: str = Field(pattern=r"^[ab]$")
+    scorer_id: int
+    assist_id: int | None = None
+    goalkeeper_id: int | None = None
+    clock_minute: int = Field(ge=1, le=600)
+    is_own_goal: bool = False
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 
@@ -168,7 +180,8 @@ def _timer_ends_at_iso(match: MeetupMatch) -> str | None:
         if paused_at and resumed_at:
             pa = datetime.fromisoformat(paused_at).replace(tzinfo=UTC)
             ra = datetime.fromisoformat(resumed_at).replace(tzinfo=UTC)
-            ends -= ra - pa
+            # A pause pushes the end time LATER by its duration.
+            ends += ra - pa
     return ends.isoformat()
 
 
@@ -384,6 +397,7 @@ async def start_matches(
         getattr(meetup, "manual_teams_json", None),
         mode,
         players,
+        max_teams=getattr(meetup, "max_teams", None),
     )
     if len(teams_nested) < 2:
         raise HTTPException(
@@ -704,7 +718,12 @@ async def swap_match_teams(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    """Swap/edit team composition before match starts."""
+    """Substitute players between teams before the match starts (admin).
+
+    Records a before/after snapshot in match_substitutions (for rankings)
+    and persists the new partition to meetup.manual_teams_json so future
+    rounds inherit it.
+    """
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -714,14 +733,136 @@ async def swap_match_teams(
             detail=f"Cannot swap teams for a {match.status} match.",
         )
 
-    match.team_a_users = json.dumps(body.team_a_users)
-    match.team_b_users = json.dumps(body.team_b_users)
-    await db.commit()
-    await db.refresh(match)
+    old_a = _loads_int_list(match.team_a_users)
+    old_b = _loads_int_list(match.team_b_users)
+    new_a, new_b = list(body.team_a_users), list(body.team_b_users)
+    # 1-for-1 between ANY two rosters (including the meetup's non-playing
+    # teams): each match team keeps its size, players may not duplicate,
+    # and every substitute must be a confirmed attendee.
+    if len(new_a) != len(old_a) or len(new_b) != len(old_b) or (
+        len(set(new_a)) != len(new_a) or len(set(new_b)) != len(new_b)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Substitutions must be 1-for-1 swaps: keep each team's size.",
+        )
+    confirmed = set(
+        (
+            await db.execute(
+                select(User.id)
+                .join(Attendance, Attendance.user_id == User.id)
+                .where(
+                    Attendance.meetup_id == meetup_id,
+                    Attendance.status == "confirmed",
+                )
+            )
+        ).scalars().all()
+    )
+    if not (set(new_a) | set(new_b)) <= confirmed:
+        raise HTTPException(
+            status_code=400, detail="Substituted players must be confirmed attendees."
+        )
+
+    # One-writer gate, same as goal entry: only the lease holder may swap.
+    # Not released afterwards — the editing panel renews until it closes.
+    lease = await db.get(MatchEditorLease, match.id)
+    now = utcnow()
+    if lease is None or lease.holder_id is None or lease.expires_at <= now:
+        return await _lease_busy_response(db, match.id, now)
+    if lease.holder_id != _user.id:
+        return await _lease_busy_response(db, match.id, now)
+
+    db.add(
+        MatchSubstitution(
+            meetup_id=meetup_id,
+            match_id=match.id,
+            old_team_a_users=json.dumps(old_a),
+            old_team_b_users=json.dumps(old_b),
+            new_team_a_users=json.dumps(new_a),
+            new_team_b_users=json.dumps(new_b),
+            recorded_by=_user.id,
+        )
+    )
+    match.team_a_users = json.dumps(new_a)
+    match.team_b_users = json.dumps(new_b)
+
+    # Propagate the swap to the meetup-level partition (future rounds).
+    meetup = await db.get(Meetup, meetup_id)
+    result = await db.execute(
+        select(User)
+        .join(Attendance, Attendance.user_id == User.id)
+        .where(
+            Attendance.meetup_id == meetup_id,
+            Attendance.status == "confirmed",
+        )
+    )
+    confirmed_users = result.scalars().all()
+    players = [
+        {
+            "id": str(u.id),
+            "name": u.display_name,
+            "skill": (u.calculated_skill or u.self_assessed_skill or 3),
+            "user_id": u.id,
+            "avatar_url": u.avatar_url,
+            "primary_specialty": u.primary_specialty,
+            "secondary_specialty": u.secondary_specialty,
+            "calculated_skill": u.calculated_skill,
+        }
+        for u in confirmed_users
+    ]
+    meetup.manual_teams_json = apply_roster_swap(
+        meetup.manual_teams_json,
+        getattr(meetup, "team_assignment_mode", None) or "balanced",
+        players,
+        old_a,
+        old_b,
+        new_a,
+        new_b,
+        max_teams=meetup.max_teams,
+    )
 
     await bump_and_notify(db, meetup_id)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     return _match_json(match, users_by_id)
+
+
+@router.get("/{meetup_id}/matches/{match_id}/substitutions")
+async def list_match_substitutions(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Substitution history for one match, oldest first."""
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    rows = (
+        await db.execute(
+            select(MatchSubstitution)
+            .where(MatchSubstitution.match_id == match_id)
+            .order_by(
+                MatchSubstitution.created_at.asc(),
+                MatchSubstitution.id.asc(),
+            )
+        )
+    ).scalars().all()
+    by_id = {s.recorded_by: await db.get(User, s.recorded_by) for s in rows}
+    return {
+        "substitutions": [
+            {
+                "id": s.id,
+                "recorded_by": by_id[s.recorded_by].display_name
+                if by_id[s.recorded_by]
+                else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "old_team_a_users": _loads_int_list(s.old_team_a_users),
+                "old_team_b_users": _loads_int_list(s.old_team_b_users),
+                "new_team_a_users": _loads_int_list(s.new_team_a_users),
+                "new_team_b_users": _loads_int_list(s.new_team_b_users),
+            }
+            for s in rows
+        ]
+    }
 
 
 @router.post("/{meetup_id}/matches/{match_id}/timer/start")
@@ -1331,19 +1472,35 @@ async def _lease_busy_response(
     )
 
 
+async def _lease_match(
+    db: AsyncSession, meetup_id: int, match_id: int | None
+) -> MeetupMatch | None:
+    """Resolve the lease's match: the explicit match_id when given (parallel
+    matches each carry their own lease), else the meetup's current match."""
+    if match_id is not None:
+        m = await db.get(MeetupMatch, match_id)
+        return m if m is not None and m.meetup_id == meetup_id else None
+    return await _current_match(db, meetup_id)
+
+
 @router.post("/{meetup_id}/matches/lease/acquire")
 async def acquire_lease(
     meetup_id: int,
+    match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
-    """Claim the one-writer goal-entry lease for the current match.
+    """Claim the one-writer goal-entry lease.
+
+    By default this is the current match's lease; pass ``match_id`` to scope
+    it to a specific match (4-team / 2-pitch parallel play — each match has
+    its own independent lease).
 
     Atomic: INSERT OR IGNORE the row, then a single guarded UPDATE
     (``holder_id IS NULL OR expires_at <= now``). ``rowcount == 0`` means
     somebody else holds it — they are named in the 409.
     """
-    match = await _current_match(db, meetup_id)
+    match = await _lease_match(db, meetup_id, match_id)
     if match is None:
         raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
@@ -1390,11 +1547,16 @@ async def acquire_lease(
 async def renew_lease(
     meetup_id: int,
     body: LeaseTokenBody,
+    match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
-    """Extend the lease by another 45 s — token checked, holder only."""
-    match = await _current_match(db, meetup_id)
+    """Extend the lease by another 45 s — token checked, holder only.
+
+    ``match_id`` scopes to a specific match (see acquire); the token is the
+    primary gate, so a wrong match simply 409s.
+    """
+    match = await _lease_match(db, meetup_id, match_id)
     if match is None:
         raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
@@ -1420,11 +1582,16 @@ async def renew_lease(
 async def release_lease(
     meetup_id: int,
     body: LeaseTokenBody,
+    match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
-    """Give the lease up immediately — token checked, then broadcast."""
-    match = await _current_match(db, meetup_id)
+    """Give the lease up immediately — token checked, then broadcast.
+
+    ``match_id`` scopes to a specific match (see acquire); the token is the
+    primary gate, so a wrong match simply 409s.
+    """
+    match = await _lease_match(db, meetup_id, match_id)
     if match is None:
         raise HTTPException(status_code=404, detail="No match in this meetup yet")
 
@@ -1509,24 +1676,8 @@ async def _recompute_scores(db: AsyncSession, match: MeetupMatch) -> tuple[int, 
     return match.score_a, match.score_b
 
 
-@router.post("/{meetup_id}/matches/{match_id}/goals", status_code=201)
-async def create_goal(
-    meetup_id: int,
-    match_id: int,
-    body: GoalCreate,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
-):
-    """Log one goal (caller must hold the live lease; idempotent via intent).
-
-    On success: recompute ``score_a``/``score_b`` from COUNT, release the
-    lease (the next person's turn starts clean) and broadcast ``goal_added``.
-    """
-    match = await db.get(MeetupMatch, match_id)
-    if not match or match.meetup_id != meetup_id:
-        raise HTTPException(status_code=404, detail="Match not found")
-
-    users_by_id = await _load_users_for_meetup(db, meetup_id)
+def _validate_goal_fields(body, match: MeetupMatch, users_by_id: dict[int, dict]) -> None:
+    """Team/own-goal/keeper team-membership rules for one goal entry."""
     if body.scorer_id not in users_by_id:
         raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
     scoring = _loads_int_list(
@@ -1575,6 +1726,27 @@ async def create_goal(
                 status_code=400,
                 detail="Goalkeeper must be on the conceding team",
             )
+
+
+@router.post("/{meetup_id}/matches/{match_id}/goals", status_code=201)
+async def create_goal(
+    meetup_id: int,
+    match_id: int,
+    body: GoalCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Log one goal (caller must hold the live lease; idempotent via intent).
+
+    On success: recompute ``score_a``/``score_b`` from COUNT, release the
+    lease (the next person's turn starts clean) and broadcast ``goal_added``.
+    """
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    _validate_goal_fields(body, match, users_by_id)
 
     # Network retry with the same intent replays the row already stored.
     res = await db.execute(
@@ -1680,6 +1852,10 @@ async def create_goal(
             "score_b": score_b,
         },
     )
+    # The turn ended: clear lease chips on every client immediately.
+    await _broadcast_match_event(
+        meetup_id, {"type": "lease_released", "match_id": match_id}
+    )
     await bump_and_notify(db, meetup_id)
 
     return {
@@ -1711,6 +1887,81 @@ async def list_goals(
         "goals": [_goal_json(g, users_by_id) for g in goals],
         "score_a": match.score_a,
         "score_b": match.score_b,
+    }
+
+
+@router.patch("/{meetup_id}/matches/{match_id}/goals/{goal_id}")
+async def update_goal(
+    meetup_id: int,
+    match_id: int,
+    goal_id: int,
+    body: GoalUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_present_member),
+):
+    """Edit a logged goal (caller must hold the live lease, like create)."""
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    res = await db.execute(
+        select(MatchGoal).where(
+            MatchGoal.id == goal_id,
+            MatchGoal.match_id == match_id,
+            MatchGoal.deleted_at.is_(None),
+        )
+    )
+    goal = res.scalar_one_or_none()
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    _validate_goal_fields(body, match, users_by_id)
+
+    # Same one-writer gate as create: only the lease holder may edit.
+    lease = await db.get(MatchEditorLease, match.id)
+    now = utcnow()
+    if lease is None or lease.holder_id is None or lease.expires_at <= now:
+        return await _lease_busy_response(db, match.id, now)
+    if lease.holder_id != user.id:
+        return await _lease_busy_response(db, match.id, now)
+
+    goal.team = body.team
+    goal.scorer_id = body.scorer_id
+    goal.assist_id = body.assist_id
+    goal.goalkeeper_id = body.goalkeeper_id
+    goal.clock_minute = body.clock_minute
+    goal.clock_secs = max(
+        (match.timer_total_seconds or 0) - (body.clock_minute - 1) * 60, 0
+    )
+    goal.after_whistle = body.clock_minute * 60 > (match.timer_total_seconds or 0)
+    await db.flush()
+    score_a, score_b = await _recompute_scores(db, match)
+    # Editing ends our turn: release the lease in the same tx.
+    lease.holder_id = None
+    lease.expires_at = utcnow()
+    lease.release_token = ""
+    await db.commit()
+
+    await _broadcast_match_event(
+        meetup_id,
+        {
+            "type": "goal_updated",
+            "match_id": match_id,
+            "goal": _goal_json(goal, users_by_id),
+            "score_a": score_a,
+            "score_b": score_b,
+        },
+    )
+    # The turn ended: clear lease chips on every client immediately.
+    await _broadcast_match_event(
+        meetup_id, {"type": "lease_released", "match_id": match_id}
+    )
+    await bump_and_notify(db, meetup_id)
+
+    return {
+        "goal": _goal_json(goal, users_by_id),
+        "score_a": score_a,
+        "score_b": score_b,
     }
 
 

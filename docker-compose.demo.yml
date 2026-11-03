@@ -8,7 +8,7 @@
 # The API is same-origin under /api (Vite proxy), so only APP_DOMAIN is needed.
 # Mutually exclusive with the dev stack: both own :8443 and the traefik name.
 #
-# Scenario: DEMO_SCENARIO env var (open|full|broadcast|random|live, default full).
+# Scenario: DEMO_SCENARIO env var (open|full|broadcast|random|live|kickoff, default full).
 
 services:
   traefik:

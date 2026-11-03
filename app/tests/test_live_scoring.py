@@ -456,6 +456,35 @@ async def test_timer_double_taps_are_idempotent():
             assert intervals[0]["resumed_at"] is not None
 
 
+@pytest.mark.asyncio
+async def test_resume_ends_at_shifts_later_by_pause_duration():
+    """A pause pushes the server end time LATER by its duration (the old
+    code subtracted it, so the UI clock jumped down on resume)."""
+    async with await client() as ac:
+        sid, mid, _ = await make_live_setup(ac, ["p1", "p2"], start_offset_minutes=-5)
+        r0 = await ac.get(f"/meetups/{sid}/matches/{mid}", headers=hdr("p1"))
+        ends0 = r0.json()["timer_ends_at"]
+        assert ends0
+
+        rp = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/timer/pause", headers=hdr("p1")
+        )
+        assert rp.status_code == 200
+        assert rp.json()["ends_at"] is None
+        await asyncio.sleep(1.1)
+        rr = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/timer/resume", headers=hdr("p1")
+        )
+        assert rr.status_code == 200
+        ends1 = rr.json()["ends_at"]
+        assert ends1
+
+        shift = (
+            datetime.fromisoformat(ends1) - datetime.fromisoformat(ends0)
+        ).total_seconds()
+        assert shift >= 1.0, f"end time must move later by the pause length (got {shift})"
+
+
 # ── Steward state ─────────────────────────────────────────────────
 
 
@@ -498,3 +527,82 @@ async def test_steward_state_reasons():
         assert r4.json()["lease"]["holder_name"] == "P1"
         assert 0 < r4.json()["lease"]["expires_in"] <= 45
         assert r4.json()["match_id"] == mid
+
+
+@pytest.mark.asyncio
+async def test_goal_edit_updates_attribution_and_score():
+    """PATCH re-attributes a goal under the lease gate; score recomputes."""
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, ["p1", "p2", "p3", "tp1"])
+        # P1 logs a goal for P2 (team A).
+        assert (
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))
+        ).status_code == 200
+        r1 = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/goals",
+            json={
+                "team": "a",
+                "scorer_id": ids["p2"],
+                "assist_id": ids["p1"],
+                "intent_id": "edit-1",
+            },
+            headers=hdr("p1"),
+        )
+        assert r1.status_code == 201, r1.text
+        gid = r1.json()["goal"]["id"]
+        assert (r1.json()["score_a"], r1.json()["score_b"]) == (1, 0)
+
+        # No lease: 409 (never silent).
+        r2 = await ac.patch(
+            f"/meetups/{sid}/matches/{mid}/goals/{gid}",
+            json={
+                "team": "b",
+                "scorer_id": ids["p3"],
+                "assist_id": None,
+                "goalkeeper_id": None,
+                "clock_minute": 7,
+                "is_own_goal": False,
+            },
+            headers=hdr("p2"),
+        )
+        assert r2.status_code == 409
+
+        # Re-acquire and flip the goal to team B, minute 7.
+        assert (
+            await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p2"))
+        ).status_code == 200
+        r3 = await ac.patch(
+            f"/meetups/{sid}/matches/{mid}/goals/{gid}",
+            json={
+                "team": "b",
+                "scorer_id": ids["p3"],
+                "assist_id": None,
+                "goalkeeper_id": ids["p1"],
+                "clock_minute": 7,
+                "is_own_goal": False,
+            },
+            headers=hdr("p2"),
+        )
+        assert r3.status_code == 200, r3.text
+        assert (r3.json()["score_a"], r3.json()["score_b"]) == (0, 1)
+        assert r3.json()["goal"]["scorer"]["display_name"] == "P3"
+        assert r3.json()["goal"]["clock_minute"] == 7
+        assert r3.json()["goal"]["goalkeeper"]["display_name"] == "P1"
+
+        # Team-membership rules still apply on edit: own goal from team A
+        # needs a team-A (conceding) scorer.
+        r4 = await ac.patch(
+            f"/meetups/{sid}/matches/{mid}/goals/{gid}",
+            json={
+                "team": "a",
+                "scorer_id": ids["p2"],
+                "assist_id": None,
+                "goalkeeper_id": None,
+                "clock_minute": 7,
+                "is_own_goal": False,
+            },
+            headers=hdr("p2"),
+        )
+        # P2 must be on the scoring team (A): valid, but no lease after r3
+        # released it -> 409 again.
+        assert r4.status_code == 409
