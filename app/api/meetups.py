@@ -55,6 +55,7 @@ from app.services.manual_teams import (
 )
 from app.services.team_adjustment import expand_teams, contract_teams
 from app.services.team_assignment import rebalance_around_locked
+from app.services.team_names import generate_team_names
 from app.services.web_push import (
     notify_new_meetup_invites,
     notify_meetup_cancelled_recipients,
@@ -152,6 +153,14 @@ class TeamsAdjustBody(BaseModel):
     num_teams: int = 1
 
 
+class TeamsReshapeBody(BaseModel):
+    """Mid-meetup reshape: N teams of M players. Leftover players form ONE
+    (possibly incomplete) bench team — there is no "not on a team" category."""
+
+    team_count: int = Field(ge=2, le=5)
+    team_size: int = Field(ge=2, le=15)
+
+
 class ChatMessageCreate(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
 
@@ -222,6 +231,7 @@ def _game_template_json(t: GameTemplate | None) -> dict | None:
         "announce_minute": t.announce_minute,
         "is_active": t.is_active,
         "team_assignment_mode": getattr(t, "team_assignment_mode", None) or "balanced",
+        "allows_draws": getattr(t, "allows_draws", False),
         "next_announce_at": next_announce.isoformat() if next_announce else None,
     }
 
@@ -806,6 +816,111 @@ async def adjust_meetup_teams(
         raise HTTPException(status_code=400, detail=outcome["error"])
 
     return outcome
+
+
+@router.post("/{meetup_id}/teams/reshape")
+async def reshape_meetup_teams(
+    meetup_id: int,
+    body: TeamsReshapeBody,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Mid-meetup reshape: N teams of M players; leftovers form a bench team.
+
+    Re-partitions the confirmed roster and rewrites the rosters of PENDING
+    matches — completed and live matches keep their own snapshots, so history
+    and stats stay correct by construction. Teams get FRESH names: the old
+    names belong to the old lineups.
+    """
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+
+    result = await db.execute(
+        select(Attendance, User)
+        .join(User, Attendance.user_id == User.id)
+        .where(
+            Attendance.meetup_id == meetup_id,
+            Attendance.status == "confirmed",
+        )
+    )
+    rows = result.all()
+    players = [
+        {
+            "id": str(user.id),
+            "name": user.display_name,
+            "skill": _user_skill(user),
+            "user_id": user.id,
+            "avatar_url": user.avatar_url,
+            "primary_specialty": user.primary_specialty,
+            "secondary_specialty": user.secondary_specialty,
+            "calculated_skill": user.calculated_skill,
+        }
+        for _, user in rows
+    ]
+    if body.team_count * body.team_size > len(players):
+        raise HTTPException(
+            status_code=400,
+            detail="Teams × size cannot exceed the number of confirmed players",
+        )
+
+    mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
+    # N×M playing slots + ONE bench team with everyone else (possibly
+    # incomplete). Redraft around empty "locks" so the skill-sorted (or
+    # shuffled) snake fills the exact target sizes.
+    ordered = sorted(players, key=lambda p: float(p["skill"]), reverse=True)
+    if mode == "random":
+        import random as _random
+
+        _random.shuffle(ordered)
+    chunks: list[list[int]] = [
+        [p["user_id"] for p in ordered[i * body.team_size : (i + 1) * body.team_size]]
+        for i in range(body.team_count)
+    ]
+    leftover = [p["user_id"] for p in ordered[body.team_count * body.team_size :]]
+    if leftover:
+        chunks.append(leftover)
+    rebalanced = rebalance_around_locked(
+        players, chunks, locked=set(), randomize=(mode == "random")
+    )
+    partition = [[p["user_id"] for p in team] for team in rebalanced]
+
+    # Fresh names: a reshaped team is a NEW team. Old names belong to the old
+    # lineups (which live on in completed matches), so stats read correctly.
+    team_names = generate_team_names(len(partition))
+    meetup.team_names_json = json.dumps(team_names)
+    meetup.manual_teams_json = json.dumps(partition)
+    meetup.max_teams = body.team_count
+
+    # Pending matches take the new partition's first two teams; a live or
+    # completed match is untouched.
+    matches = (
+        await db.execute(
+            select(MeetupMatch).where(
+                MeetupMatch.meetup_id == meetup_id,
+                MeetupMatch.status == "pending",
+            )
+        )
+    ).scalars().all()
+    for m in matches:
+        m.team_a_users = json.dumps(partition[0])
+        m.team_b_users = json.dumps(partition[1])
+        m.team_a_name = team_names[0]
+        m.team_b_name = team_names[1]
+
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+
+    teams_nested = build_teams_from_manual(players, partition)
+    out = format_teams_api_payload(teams_nested, team_names)
+    return {
+        "meetup_id": meetup_id,
+        "content_revision": rev or 0,
+        "teams": out,
+    }
 
 
 @router.patch("/{meetup_id}")

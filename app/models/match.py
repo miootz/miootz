@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,6 +45,9 @@ class MeetupMatch(Base):
 
     #: "pending" | "active" | "time_up" | "completed"
     status: Mapped[str] = mapped_column(String, default="pending")
+    #: True when the match ended level and the template records draws —
+    #: statistics show a draw while the away team still holds the win.
+    was_draw: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Timer
     #: Total match duration in seconds (from meetup.match_duration_minutes).

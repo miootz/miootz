@@ -34,9 +34,14 @@ def validate_team_partition(
     confirmed_ids: set[int],
     max_teams: int | None = None,
 ) -> bool:
-    """Teams must partition `confirmed_ids` with sizes matching team_counts(n)."""
+    """Teams must partition `confirmed_ids` (no duplicates, everyone placed).
+
+    With *max_teams* set, the stored layout is N playing teams plus at most
+    ONE (possibly incomplete) bench team — sizes are the admin's intent, so
+    only the team COUNT is checked. Without it, sizes must match the
+    balanced team_counts(n) algorithm.
+    """
     n = len(confirmed_ids)
-    expected = team_counts(n, max_teams=max_teams)
     if n == 0:
         return teams == []
 
@@ -45,6 +50,10 @@ def validate_team_partition(
         return False
     if set(flat) != confirmed_ids:
         return False
+    if max_teams is not None:
+        # N playing teams + optional single bench team (any size, even one).
+        return max_teams <= len(teams) <= max_teams + 1
+    expected = team_counts(n, max_teams=max_teams)
     if len(teams) != len(expected):
         return False
     if sorted(len(t) for t in teams) != sorted(expected):

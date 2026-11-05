@@ -473,6 +473,16 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE meetups ADD COLUMN match_duration_minutes INTEGER")
         )
 
+    # ── Draws: template flag + per-match record ────────────────────────
+    if not await has_column("game_templates", "allows_draws"):
+        await conn.execute(
+            text("ALTER TABLE game_templates ADD COLUMN allows_draws BOOLEAN DEFAULT 0")
+        )
+    if not await has_column("meetup_matches", "was_draw"):
+        await conn.execute(
+            text("ALTER TABLE meetup_matches ADD COLUMN was_draw BOOLEAN DEFAULT 0")
+        )
+
     # ── Weather: cached forecast + recorded actuals ───────────────────
     if not await has_column("meetups", "weather_forecast_temp_c"):
         await conn.execute(

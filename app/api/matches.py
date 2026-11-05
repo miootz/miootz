@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, insert, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import cast
 
 from app.api.deps import (
@@ -243,6 +244,7 @@ def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
         },
         "score_a": match.score_a,
         "score_b": match.score_b,
+        "was_draw": match.was_draw,
         "status": match.status,
         "timer_total_seconds": match.timer_total_seconds,
         "timer_seconds_remaining": _compute_timer_remaining(match),
@@ -529,6 +531,7 @@ async def create_new_pending_match(
         getattr(meetup, "manual_teams_json", None),
         mode,
         players,
+        max_teams=getattr(meetup, "max_teams", None),
     )
     team_names = get_team_names(meetup)
 
@@ -586,8 +589,17 @@ async def create_new_pending_match(
 
         import random as _random
 
+        # A bench team (partition larger than max_teams) is not a playing
+        # candidate — it exists for pre-start substitutions only.
+        bench_idx = (
+            len(teams_nested) - 1
+            if meetup.max_teams and len(teams_nested) > meetup.max_teams
+            else None
+        )
         unplayed_indices = [
-            idx for idx in range(len(teams_nested)) if idx not in used_team_indices
+            idx
+            for idx in range(len(teams_nested))
+            if idx not in used_team_indices and idx != bench_idx
         ]
         if unplayed_indices:
             next_team_idx = unplayed_indices[0]
@@ -595,7 +607,8 @@ async def create_new_pending_match(
             available = [
                 idx
                 for idx in range(len(teams_nested))
-                if set(p["user_id"] for p in teams_nested[idx]) != set(winner_users)
+                if idx != bench_idx
+                and set(p["user_id"] for p in teams_nested[idx]) != set(winner_users)
             ]
             if not available:
                 raise HTTPException(
@@ -1249,19 +1262,31 @@ async def end_match(
     if match.status in ("completed",):
         raise HTTPException(status_code=409, detail="Match already completed.")
 
-    # Determine winner
+    # Determine winner. A tie goes to the away team — the home side must win
+    # to stay on the pitch (an explicit winner_team override is honoured).
+    is_tie = match.score_a == match.score_b
     if match.score_a > match.score_b:
         winner_team = "a"
-    elif match.score_b > match.score_a:
+    elif not is_tie:
         winner_team = "b"
     else:
-        # Tie — require admin to pick
-        if not body.winner_team:
-            raise HTTPException(
-                status_code=400,
-                detail="Scores are tied. Specify winner_team: 'a' or 'b'.",
-            )
-        winner_team = body.winner_team
+        winner_team = body.winner_team or "b"
+
+    # Draws are only *recorded* (statistics) when the template allows them;
+    # the away team wins the pitch either way.
+    _meetup = (
+        await db.execute(
+            select(Meetup)
+            .options(selectinload(Meetup.game_template))
+            .where(Meetup.id == meetup_id)
+        )
+    ).scalar_one_or_none()
+    was_draw = bool(
+        is_tie
+        and _meetup is not None
+        and _meetup.game_template is not None
+        and _meetup.game_template.allows_draws
+    )
 
     # Complete current match — guarded UPDATE: under a double-tap / two
     # devices, exactly one request flips the row; the loser gets 409.
@@ -1272,7 +1297,7 @@ async def end_match(
             MeetupMatch.id == match.id,
             MeetupMatch.status != "completed",
         )
-        .values(status="completed", completed_at=now)
+        .values(status="completed", completed_at=now, was_draw=was_draw)
     )
     if cast(CursorResult, res).rowcount != 1:
         await db.rollback()
@@ -1287,7 +1312,6 @@ async def end_match(
     winner_name = match.team_a_name if winner_team == "a" else match.team_b_name
 
     # Get all teams for this meetup to find next team
-    _meetup = await db.get(Meetup, meetup_id)
     _result = await db.execute(
         select(User)
         .join(Attendance, Attendance.user_id == User.id)
@@ -1310,6 +1334,7 @@ async def end_match(
         getattr(_meetup, "manual_teams_json", None),
         _mode,
         _players,
+        max_teams=getattr(_meetup, "max_teams", None),
     )
     team_names = get_team_names(_meetup)
 
@@ -1332,11 +1357,17 @@ async def end_match(
             if team_user_ids == ma_users or team_user_ids == mb_users:
                 used_team_indices.add(idx)
 
-    # Find next unplayed team
+    # Find next unplayed team (a bench team — partition larger than
+    # max_teams — is only a substitution pool, never a playing candidate)
+    _bench_idx = (
+        len(teams) - 1
+        if getattr(_meetup, "max_teams", None) and len(teams) > _meetup.max_teams
+        else None
+    )
     next_team = None
     next_team_idx = None
     for idx, team in enumerate(teams):
-        if idx not in used_team_indices:
+        if idx not in used_team_indices and idx != _bench_idx:
             next_team = team
             next_team_idx = idx
             break

@@ -1,3 +1,4 @@
+import { Volleyball } from "lucide-react";
 import type { GoalRow } from "../api/stewardApi";
 
 interface GoalListProps {
@@ -50,6 +51,7 @@ export function GoalList({
               >
                 {sideA ? (
                   <>
+                    <Volleyball className="h-3.5 w-3.5 shrink-0 self-center text-ink-faint" aria-hidden />
                     <span className="text-xs font-bold tabular-nums text-ink-faint shrink-0">
                       {g.clock_minute}&prime;
                     </span>
@@ -64,7 +66,7 @@ export function GoalList({
                   </>
                 ) : (
                   /* Away (right) side is mirrored: name first, minute on the
-                     right of the name, text right-aligned. */
+                     right of the name, ball after the minute, right-aligned. */
                   <>
                     <span
                       className={`text-sm font-bold truncate ${
@@ -77,6 +79,7 @@ export function GoalList({
                     <span className="text-xs font-bold tabular-nums text-ink-faint shrink-0">
                       {g.clock_minute}&prime;
                     </span>
+                    <Volleyball className="h-3.5 w-3.5 shrink-0 self-center text-ink-faint" aria-hidden />
                   </>
                 )}
               </span>

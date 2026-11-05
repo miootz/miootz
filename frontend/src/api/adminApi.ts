@@ -51,6 +51,8 @@ export interface GameTemplatePayload {
   team_assignment_mode: TeamAssignmentMode;
   is_active: boolean;
   match_duration_minutes?: number;
+  /** When true, a tie is additionally recorded as a draw for statistics. */
+  allows_draws?: boolean;
 }
 
 export type GameTemplateRow = GameTemplatePayload & {

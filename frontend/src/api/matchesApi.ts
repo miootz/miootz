@@ -13,6 +13,8 @@ export interface MatchSummary {
   team_b: MatchTeamInfo;
   score_a: number;
   score_b: number;
+  /** True when the match ended level and the template records draws. */
+  was_draw?: boolean;
   status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;

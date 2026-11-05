@@ -57,6 +57,7 @@ def _template_json(t: GameTemplate, *, meetup_count: int | None = None) -> dict:
         "is_active": t.is_active,
         "match_duration_minutes": getattr(t, "match_duration_minutes", None)
         or 10,
+        "allows_draws": getattr(t, "allows_draws", False),
         "next_announce_at": (
             next_announce_occurrence_utc(t, utcnow()).isoformat()
             if t.is_active
@@ -88,6 +89,7 @@ class GameTemplateCreate(BaseModel):
     team_assignment_mode: str = Field(default="balanced")
     is_active: bool = True
     match_duration_minutes: int = Field(default=10, ge=1, le=60)
+    allows_draws: bool = False
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
@@ -137,6 +139,7 @@ class GameTemplateUpdate(BaseModel):
     team_assignment_mode: str | None = None
     is_active: bool | None = None
     match_duration_minutes: int | None = Field(default=None, ge=1, le=60)
+    allows_draws: bool | None = None
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
@@ -218,6 +221,7 @@ async def create_game_template(
         team_assignment_mode=body.team_assignment_mode,
         is_active=body.is_active,
         match_duration_minutes=body.match_duration_minutes,
+        allows_draws=body.allows_draws,
     )
     db.add(t)
     await db.commit()

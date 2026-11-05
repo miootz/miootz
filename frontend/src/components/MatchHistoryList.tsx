@@ -291,6 +291,11 @@ function MatchResultRow({
         <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
           Match {match.match_number}
         </span>
+        {match.was_draw && (
+          <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1.5 py-0.5">
+            Draw
+          </span>
+        )}
         {timeLabel && (
           <>
             <span className="text-ink-faint">·</span>

@@ -118,8 +118,10 @@ export function PlayerApp() {
       });
       const upcoming = upcomingRes.items;
       if (upcoming.length === 0) {
-        // A meetup whose presence window (start −15 min … end +30 min,
-        // mirroring app/api/deps.py) is open is still home, not history.
+        // A meetup from start −15 min onward is still home, not history —
+        // through the match and until the NEXT signup opens (the template
+        // announce that materializes the following meetup). Without a
+        // template, fall back to end +30 min.
         const anyRes = await fetchMeetups({
           status: "all",
           order: "desc",
@@ -131,7 +133,13 @@ export function PlayerApp() {
           if (Number.isNaN(start)) return false;
           const close =
             start + ((m.duration_minutes ?? 120) + 30) * 60_000;
-          return start - 15 * 60_000 <= now && now <= close;
+          const nextSignup = m.game_template?.next_announce_at
+            ? Date.parse(m.game_template.next_announce_at)
+            : NaN;
+          const until = Number.isFinite(nextSignup)
+            ? Math.max(close, nextSignup)
+            : close;
+          return start - 15 * 60_000 <= now && now <= until;
         });
         if (current) {
           await loadMeetup(current.id);

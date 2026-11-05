@@ -44,6 +44,8 @@ export interface GameTemplateInfo {
   announce_minute: number;
   is_active: boolean;
   team_assignment_mode?: string;
+  /** When true, a tie is additionally recorded as a draw for statistics. */
+  allows_draws?: boolean;
   /** Next scheduled announce run (UTC ISO), null when template inactive/unscheduled. */
   next_announce_at?: string | null;
 }
@@ -250,6 +252,20 @@ export async function patchMeetupTeams(
   const r = await apiFetch(`/meetups/${id}/teams`, {
     method: "PATCH",
     body: JSON.stringify({ teams }),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+/** Mid-meetup reshape: N teams of M players; leftovers form a bench team.
+ *  Requires N × M <= confirmed. Rewrites pending matches. */
+export async function reshapeMeetupTeams(
+  id: number,
+  body: { team_count: number; team_size: number },
+): Promise<TeamsResponse> {
+  const r = await apiFetch(`/meetups/${id}/teams/reshape`, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();

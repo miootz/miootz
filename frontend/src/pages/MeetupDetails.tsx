@@ -464,10 +464,45 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	const { me } = useAuth();
 	const meetupIdNum = Number.parseInt(meetup.id, 10);
 
+	// Slow tick — only the T-15 min boundary flip depends on it.
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const iv = setInterval(() => setNow(Date.now()), 30_000);
+		return () => clearInterval(iv);
+	}, []);
+
+	// From 15 minutes before kickoff the overview is about the match:
+	// results take the attendance card's place and teams go away.
+	// (PlayerApp keeps this meetup home until the next signup opens.)
+	const startMs = meetup.startTime ? Date.parse(meetup.startTime) : NaN;
+	const resultsMode =
+		Number.isFinite(startMs) && now >= startMs - 15 * 60_000;
+
 	return (
 		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8">
-			{/* 1. Join / Leave / Plus-one */}
-			{onRosterUpdated && (
+			{/* 1. Match results — from T-15 min, in place of attendance */}
+			{resultsMode && !isNaN(meetupIdNum) && (
+				<section className="space-y-3">
+					<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+						<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
+						Match results
+						{me?.is_admin && (
+							<Link
+								to={`/meetup-matches/${meetupIdNum}`}
+								className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
+							>
+								<Shield size={13} />
+								Referee
+							</Link>
+						)}
+					</h2>
+					<LiveMatchBanner meetupId={meetup.id} />
+					<MatchHistoryList meetupId={meetupIdNum} />
+				</section>
+			)}
+
+			{/* 2. Join / Leave / Plus-one — before T-15 min only */}
+			{!resultsMode && onRosterUpdated && (
 				<MeetupAttendanceActions
 					meetupId={meetup.id}
 					myAttendance={meetup.myAttendance}
@@ -476,41 +511,19 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 				/>
 			)}
 
-			{/* 2. Teams */}
-			<section className="space-y-3">
-				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-					<Users className="h-5 w-5 text-ink-dim" aria-hidden />
-					Teams
-				</h2>
-				<DraggableTeams
-					meetup={meetup}
-					canDragTeams={false}
-					currentUserId={me ? String(me.user.id) : undefined}
-				/>
-			</section>
-
-			{/* 3. Match results */}
-			{!isNaN(meetupIdNum) && (
-				<>
-					<hr className="border-line" />
-					<section className="space-y-3">
-						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
-							Match results
-							{me?.is_admin && (
-								<Link
-									to={`/meetup-matches/${meetupIdNum}`}
-									className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
-								>
-									<Shield size={13} />
-									Referee
-								</Link>
-							)}
-						</h2>
-						<LiveMatchBanner meetupId={meetup.id} />
-						<MatchHistoryList meetupId={meetupIdNum} />
-					</section>
-				</>
+			{/* 3. Teams — before T-15 min only */}
+			{!resultsMode && (
+				<section className="space-y-3">
+					<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+						<Users className="h-5 w-5 text-ink-dim" aria-hidden />
+						Teams
+					</h2>
+					<DraggableTeams
+						meetup={meetup}
+						canDragTeams={false}
+						currentUserId={me ? String(me.user.id) : undefined}
+					/>
+				</section>
 			)}
 
 			{/* 4. Chat */}

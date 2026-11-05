@@ -48,6 +48,10 @@ class GameTemplate(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     #: Default match duration in minutes for live team-vs-team matches.
     match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: When True, a 0-0 style tie is additionally recorded as a draw for
+    #: statistics. Either way the away team takes the de-facto win (the home
+    #: side must win to stay on the pitch).
+    allows_draws: Mapped[bool] = mapped_column(Boolean, default=False)
 
     meetups: Mapped[list[Meetup]] = relationship(
         "Meetup", back_populates="game_template"

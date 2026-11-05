@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
@@ -29,8 +29,11 @@ import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
 import { GoalEntrySheet } from "../components/GoalEntrySheet";
 import { leaseBusyLabel } from "../utils/lease";
+import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
+import { playFinalWhistle, playHalfTimeWhistle } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
+import { TeamReshapeSheet } from "../components/TeamReshapeSheet";
 import { AuthContext } from "../auth/auth-context";
 import {
   ArrowLeft,
@@ -44,6 +47,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -62,52 +66,20 @@ function getTimerColor(seconds: number, total: number): string {
   return "text-danger";
 }
 
-// ── Winner Picker Modal ──────────────────────────────────────────
-
-function WinnerPickerModal({
-  match,
-  onPick,
-  onCancel,
-}: {
-  match: MatchSummary;
-  onPick: (winner: "a" | "b") => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-sm bg-panel border border-line shadow-xl p-6 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-bold text-ink text-center">
-          Pick the winner
-        </h3>
-        <p className="text-sm text-ink-dim text-center">
-          Match {match.match_number} ended {match.score_a} — {match.score_b}.
-          Who won?
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => onPick("a")}
-            className="py-4 bg-team-a text-white font-bold text-lg hover:bg-team-a/90 active:scale-[0.98] transition-transform"
-          >
-            {match.team_a.name}
-          </button>
-          <button
-            type="button"
-            onClick={() => onPick("b")}
-            className="py-4 bg-team-b text-white font-bold text-lg hover:bg-team-b/90 active:scale-[0.98] transition-transform"
-          >
-            {match.team_b.name}
-          </button>
-        </div>
-      </div>
-    </div>
+/** Roster sorted by skill rating, descending (missing ratings last). */
+function sortRosterBySkill(
+  users: { id: number }[],
+  skillById: Map<number, number>,
+) {
+  return [...users].sort(
+    (a, b) => (skillById.get(b.id) ?? 0) - (skillById.get(a.id) ?? 0),
   );
+}
+
+/** Discreet rating label: whole numbers plain, calculated skills 1dp. */
+function skillLabel(v: number | undefined): string {
+  if (v == null) return "";
+  return v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1);
 }
 
 // ── Manual Match Form ────────────────────────────────────────────
@@ -388,6 +360,10 @@ export function RefereePage() {
   const [isPaused, setIsPaused] = useState(false);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const prevRatioRef = useRef<number | null>(null);
+  // Match id for which the final-whistle auto-end already fired (guards the
+  // race between the local tick crossing zero and the SSE expiry event).
+  const finalFiredForRef = useRef<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { kind: "end" }
     | { kind: "reset" }
@@ -396,10 +372,6 @@ export function RefereePage() {
   >(null);
   const [timerEndsAt, setTimerEndsAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [showWinnerPicker, setShowWinnerPicker] = useState(false);
-  const [pendingEndMatch, setPendingEndMatch] = useState<MatchSummary | null>(
-    null,
-  );
   const [showManualForm, setShowManualForm] = useState(false);
   const [editingMatch, setEditingMatch] = useState<MatchSummary | null>(null);
   const [halfTimeFlash, setHalfTimeFlash] = useState(false);
@@ -413,6 +385,9 @@ export function RefereePage() {
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
   const [showSubstitutions, setShowSubstitutions] = useState(false);
+  const [showReshape, setShowReshape] = useState(false);
+  // Shared line-up accordion under the scoreboard band (default: closed).
+  const [rostersOpen, setRostersOpen] = useState(false);
   const [goalSheet, setGoalSheet] = useState<{
     match: MatchSummary;
     goal: GoalRow | null;
@@ -623,9 +598,11 @@ export function RefereePage() {
     const prev = prevRatioRef.current;
     prevRatioRef.current = ratio;
     if (prev != null && prev > 0.5 && ratio <= 0.5) {
-      // Just crossed the 50% mark — one-shot half-time flash
+      // Just crossed the 50% mark — half-time flash, double whistle, haptic
       halfTimeTriggeredAt.current = Date.now();
       setHalfTimeFlash(true);
+      playHalfTimeWhistle();
+      hapticHalfTime();
     }
   }, [timerSeconds, currentMatch, isPaused]);
 
@@ -636,6 +613,45 @@ export function RefereePage() {
     return () => clearTimeout(t);
   }, [halfTimeFlash]);
 
+  // iOS has no Web Vibration API: WebKit's native switch control plays the
+  // system taptic tick when a real finger toggles it. Overlay an invisible
+  // switch on every button so a tap lands on the control (click still
+  // bubbles to the button). Runs after every render because React's
+  // reconciliation can drop the DOM nodes we inject.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
+      if (btn.disabled || btn.querySelector("input[data-tap-tick]")) return;
+      if (getComputedStyle(btn).position === "static") btn.style.position = "relative";
+      const inp = document.createElement("input");
+      inp.type = "checkbox";
+      inp.setAttribute("switch", "");
+      inp.dataset.tapTick = "1";
+      inp.tabIndex = -1;
+      inp.setAttribute("aria-hidden", "true");
+      Object.assign(inp.style, {
+        position: "absolute",
+        inset: "0",
+        width: "100%",
+        height: "100%",
+        opacity: "0",
+        margin: "0",
+        padding: "0",
+        border: "0",
+        appearance: "none",
+        cursor: "inherit",
+      });
+      // Reset outside the gesture so the re-check doesn't fire a second tick.
+      inp.addEventListener("change", () => {
+        requestAnimationFrame(() => {
+          inp.checked = false;
+        });
+      });
+      btn.appendChild(inp);
+    });
+  });
+
   // Re-sync with the server when the tab comes back into view
   useEffect(() => {
     const onVisibility = () => {
@@ -645,17 +661,20 @@ export function RefereePage() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [loadMatches]);
 
-  const run = async (label: string, fn: () => Promise<unknown>) => {
-    setBusy(label);
-    try {
-      await fn();
-      await loadMatches();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Request failed", "error");
-    } finally {
-      setBusy(null);
-    }
-  };
+  const run = useCallback(
+    async (label: string, fn: () => Promise<unknown>) => {
+      setBusy(label);
+      try {
+        await fn();
+        await loadMatches();
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Request failed", "error");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [loadMatches, showToast],
+  );
 
   const handleStartAll = async (body?: {
     team_a_idx?: number;
@@ -703,25 +722,40 @@ export function RefereePage() {
     });
   };
 
-  const handleEndMatch = () => {
+  const handleEndMatch = useCallback(() => {
     if (!currentMatch) return;
-    if (currentMatch.score_a !== currentMatch.score_b) {
-      // Clear winner — end directly
-      void (async () => {
-        await run("Ending match...", async () => {
-          const res = await endMatch(sid, currentMatch.id);
-          showToast(
-            `Match ${currentMatch.match_number} over! Winner: ${res.winner_name}`,
-            "success",
-          );
-        });
-      })();
-    } else {
-      // Tie — show picker
-      setPendingEndMatch(currentMatch);
-      setShowWinnerPicker(true);
+    // Ties end with the away team as de-facto winner (server decides; a draw
+    // is recorded for stats only when the template allows it).
+    void (async () => {
+      await run("Ending match...", async () => {
+        const res = await endMatch(sid, currentMatch.id);
+        showToast(
+          `Match ${currentMatch.match_number} over! Winner: ${res.winner_name}`,
+          "success",
+        );
+      });
+    })();
+  }, [currentMatch, run, sid, showToast]);
+
+  // Full-time: long whistle + haptic, and the match ends automatically.
+  // Fires on the first render where an active/time_up match reads zero —
+  // whether that comes from the local tick or the SSE expiry event.
+  useEffect(() => {
+    if (
+      !currentMatch ||
+      (currentMatch.status !== "active" && currentMatch.status !== "time_up")
+    ) {
+      finalFiredForRef.current = null;
+      return;
     }
-  };
+    if (finalFiredForRef.current === currentMatch.id) return;
+    if (timerSeconds <= 0) {
+      finalFiredForRef.current = currentMatch.id;
+      playFinalWhistle();
+      hapticFinal();
+      handleEndMatch();
+    }
+  }, [timerSeconds, currentMatch, handleEndMatch]);
 
   const handleDeleteMatch = async (matchId: number) => {
     await run("Deleting...", async () => {
@@ -729,19 +763,6 @@ export function RefereePage() {
       showToast("Match deleted", "success");
       setShowManualForm(false);
       setEditingMatch(null);
-    });
-  };
-
-  const handlePickWinner = async (winner: "a" | "b") => {
-    setShowWinnerPicker(false);
-    if (!pendingEndMatch) return;
-    await run("Ending match...", async () => {
-      const res = await endMatch(sid, pendingEndMatch.id, winner);
-      showToast(
-        `Match ${pendingEndMatch.match_number} over! Winner: ${res.winner_name}`,
-        "success",
-      );
-      setPendingEndMatch(null);
     });
   };
 
@@ -821,6 +842,23 @@ export function RefereePage() {
   // window may use the controls; locked users see a named reason line.
   const canControl = !!steward?.can_control;
 
+  // Reshape sheet: total confirmed count (the sheet only manages sizes).
+  const reshapeTotalPlayers = useMemo(
+    () =>
+      (meetupDetail?.attendees ?? []).filter((a) => a.status === "confirmed")
+        .length,
+    [meetupDetail],
+  );
+  // Skill ratings by user id (from the meetup teams payload) — the match
+  // roster snapshot doesn't carry skills.
+  const skillById = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const t of teamsData ?? [])
+      for (const p of t.players)
+        m.set(Number(p.id), p.calculatedSkill ?? p.skillScore);
+    return m;
+  }, [teamsData]);
+
   if (!canControl) {
     const loading = steward == null;
     const line = loading
@@ -885,7 +923,15 @@ export function RefereePage() {
   );
 
   return (
-    <div className="min-h-screen bg-board">
+    <div
+      ref={rootRef}
+      className="min-h-screen bg-board"
+      onClickCapture={(e) => {
+        // Web Vibration (Android/desktop) on any button press; the switch
+        // overlay above covers iOS.
+        if ((e.target as HTMLElement).closest("button")) hapticLight();
+      }}
+    >
       {/* Header — painted scoreboard band */}
       <div className="sticky top-0 z-40 border-b border-line bg-board">
         <div className="max-w-lg mx-auto">
@@ -910,25 +956,36 @@ export function RefereePage() {
                     : "No active match"}
               </p>
             </div>
-            {currentMatch && (
+            {isAdmin && (
               <button
                 type="button"
-                onClick={() => setConfirmAction({ kind: "reset" })}
-                disabled={busy !== null}
-                className="p-2 text-ink hover:bg-raised disabled:opacity-40 active:scale-95 transition-transform"
-                aria-label="Reset match"
+                onClick={() => setShowReshape(true)}
+                className="p-2 text-ink hover:bg-raised active:scale-95 transition-transform"
+                aria-label="Team settings"
               >
-                <RotateCcw className="h-5 w-5" />
+                <Settings className="h-5 w-5" />
               </button>
             )}
           </div>
           {currentMatch && (
             <div className="flex items-stretch mt-2">
-              <div className="flex flex-1 items-center justify-end bg-team-a px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setRostersOpen((o) => !o)}
+                aria-expanded={rostersOpen}
+                aria-controls="match-rosters"
+                className="flex flex-1 items-center justify-end gap-1 bg-team-a px-3 py-2 active:brightness-110"
+              >
                 <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
                   {currentMatch.team_a.name}
                 </p>
-              </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
+                    rostersOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden
+                />
+              </button>
               <div className="flex shrink-0 items-center gap-2 border-x border-line bg-board px-3">
                 <span className="text-3xl font-extrabold tabular-nums text-ink">
                   {currentMatch.score_a}
@@ -938,10 +995,69 @@ export function RefereePage() {
                   {currentMatch.score_b}
                 </span>
               </div>
-              <div className="flex flex-1 items-center bg-team-b px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setRostersOpen((o) => !o)}
+                aria-expanded={rostersOpen}
+                aria-controls="match-rosters"
+                className="flex flex-1 items-center justify-start gap-1 bg-team-b px-3 py-2 active:brightness-110"
+              >
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
+                    rostersOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden
+                />
                 <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
                   {currentMatch.team_b.name}
                 </p>
+              </button>
+            </div>
+          )}
+          {currentMatch && rostersOpen && (
+            <div
+              id="match-rosters"
+              className="mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-team-a">
+                  {currentMatch.team_a.name} · {currentMatch.team_a.users.length}
+                </p>
+                <ul className="mt-1 text-sm text-ink">
+                  {sortRosterBySkill(currentMatch.team_a.users, skillById).map(
+                    (u) => (
+                      <li
+                        key={u.id}
+                        className="flex min-w-0 items-baseline gap-1.5"
+                      >
+                        <span className="truncate">{u.display_name}</span>
+                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
+                          {skillLabel(skillById.get(u.id))}
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </div>
+              <div className="min-w-0">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-right text-team-b">
+                  {currentMatch.team_b.name} · {currentMatch.team_b.users.length}
+                </p>
+                <ul className="mt-1 text-sm text-ink">
+                  {sortRosterBySkill(currentMatch.team_b.users, skillById).map(
+                    (u) => (
+                      <li
+                        key={u.id}
+                        className="flex min-w-0 items-baseline justify-end gap-1.5"
+                      >
+                        <span className="truncate">{u.display_name}</span>
+                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
+                          {skillLabel(skillById.get(u.id))}
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ul>
               </div>
             </div>
           )}
@@ -1220,15 +1336,18 @@ export function RefereePage() {
         ) : (
           /* Active or pending match */
           <>
-            {/* TV-style goal list — directly below the score; tap a goal to
-                open the sheet in edit mode (delete lives inside the sheet). */}
-            <div className="border border-line bg-panel px-4 py-2">
-              <GoalList
-                goals={goals}
-                canEdit={canControl}
-                onEdit={(g) => setGoalSheet({ match: currentMatch, goal: g })}
-              />
-            </div>
+            {/* TV-style goal list — directly below the score; hidden until a
+                goal is logged; tap a goal to open the sheet in edit mode
+                (delete lives inside the sheet). */}
+            {goals.length > 0 && (
+              <div className="border border-line bg-panel px-4 py-2">
+                <GoalList
+                  goals={goals}
+                  canEdit={canControl}
+                  onEdit={(g) => setGoalSheet({ match: currentMatch, goal: g })}
+                />
+              </div>
+            )}
 
             {/* Parallel pending matches (4+ teams) — pick which one to run. */}
             {currentMatch.status === "pending" && pendingMatches.length > 1 && (
@@ -1367,30 +1486,43 @@ export function RefereePage() {
 
             {/* Score is driven by the goal log — the ±steppers are gone. */}
 
-            {/* End match */}
+            {/* End match — neutral: finishing is routine, not destructive */}
             <button
               type="button"
               onClick={() => setConfirmAction({ kind: "end" })}
               disabled={busy !== null}
-              className="w-full py-5 border-2 border-danger/40 text-danger text-xl font-bold hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
+              className="w-full py-5 border-2 border-ink/30 text-ink text-xl font-bold hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
             >
               <Flag className="h-6 w-6" />
               End Match
             </button>
 
-            {/* Delete match */}
-            <button
-              type="button"
-              onClick={() =>
-                currentMatch &&
-                setConfirmAction({ kind: "delete", matchId: currentMatch.id })
-              }
-              disabled={busy !== null}
-              className="w-full py-3 border border-danger/40 text-danger text-sm font-semibold hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete match
-            </button>
+            {/* Reset / Delete — borderless, side by side */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  currentMatch && setConfirmAction({ kind: "reset" })
+                }
+                disabled={busy !== null}
+                className="flex-1 py-3 text-ink-dim text-sm font-semibold hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  currentMatch &&
+                  setConfirmAction({ kind: "delete", matchId: currentMatch.id })
+                }
+                disabled={busy !== null}
+                className="flex-1 py-3 text-danger text-sm font-semibold hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
 
             {/* Next match preview */}
             {nextMatch && (
@@ -1421,8 +1553,15 @@ export function RefereePage() {
                     hasWinner ? "bg-raised" : "bg-panel"
                   }`}
                 >
-                  <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums shrink-0">
-                    Match {m.match_number}
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
+                      Match {m.match_number}
+                    </span>
+                    {m.was_draw && (
+                      <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1 py-0.5">
+                        Draw
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-sm font-semibold truncate">
@@ -1440,29 +1579,17 @@ export function RefereePage() {
                     </span>
                   </div>
                   {!isPastDeadline && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingMatch(m);
-                          setShowManualForm(true);
-                        }}
-                        className="p-1.5 hover:bg-raised shrink-0"
-                        aria-label={`Edit match ${m.match_number}`}
-                      >
-                        <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setConfirmAction({ kind: "delete", matchId: m.id })
-                        }
-                        className="p-1.5 hover:bg-danger/10 shrink-0"
-                        aria-label={`Delete match ${m.match_number}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-ink-faint hover:text-danger" />
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMatch(m);
+                        setShowManualForm(true);
+                      }}
+                      className="p-1.5 hover:bg-raised shrink-0"
+                      aria-label={`Edit match ${m.match_number}`}
+                    >
+                      <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
+                    </button>
                   )}
                 </div>
               );
@@ -1517,14 +1644,21 @@ export function RefereePage() {
         />
       )}
 
-      {/* Winner picker modal */}
-      {showWinnerPicker && pendingEndMatch && (
-        <WinnerPickerModal
-          match={pendingEndMatch}
-          onPick={handlePickWinner}
-          onCancel={() => {
-            setShowWinnerPicker(false);
-            setPendingEndMatch(null);
+      {/* Mid-meetup team reshape — admin only, from the header gear */}
+      {isAdmin && (
+        <TeamReshapeSheet
+          open={showReshape}
+          meetupId={sid}
+          totalPlayers={reshapeTotalPlayers}
+          currentTeamCount={teamsData?.length ?? 2}
+          liveMatchNumber={
+            matches.find((m) => m.status === "active")?.match_number ?? null
+          }
+          onClose={() => setShowReshape(false)}
+          onSaved={() => {
+            setShowReshape(false);
+            void loadMatches();
+            showToast("Teams updated", "success");
           }}
         />
       )}
