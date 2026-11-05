@@ -292,7 +292,7 @@ export function MeetupTeamsPanel({
       <div className="space-y-3 p-4">
         {/* Team capacity — header + stats always visible; buttons and notes
             collapse in an accordion */}
-        <div className="border border-line bg-panel overflow-hidden">
+        <div>
           <button
             type="button"
             onClick={() => setCapOpen((o) => !o)}

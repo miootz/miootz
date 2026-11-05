@@ -239,3 +239,117 @@ async def test_rankings_require_auth():
     async with await client() as ac:
         r = await ac.get("/rankings")
         assert r.status_code == 401
+
+
+async def seed_draw_meetups(ac: AsyncClient) -> dict[str, int]:
+    """Two 1-1 meetups: one recorded as a draw, one not (default template)."""
+    ids = await ids_for(TOKENS)
+    m_draw = Meetup(
+        id=4, start_time=datetime(2026, 1, 4, 19), location="Pitch",
+        min_players=1, max_players=10,
+    )
+    m_nodraw = Meetup(
+        id=5, start_time=datetime(2026, 1, 5, 19), location="Pitch",
+        min_players=1, max_players=10,
+    )
+    async with AsyncSession(engine) as db:
+        db.add_all([m_draw, m_nodraw])
+        db.add_all([
+            Attendance(meetup_id=4, user_id=ids[t], status="confirmed")
+            for t in ("p1", "p2")
+        ])
+        db.add_all([
+            Attendance(meetup_id=5, user_id=ids[t], status="confirmed")
+            for t in ("p1", "p2")
+        ])
+        m4 = MeetupMatch(
+            meetup_id=4, match_number=1,
+            team_a_users=json.dumps([ids["p1"]]),
+            team_b_users=json.dumps([ids["p2"]]),
+            team_a_name="A", team_b_name="B",
+            score_a=1, score_b=1, status="completed", was_draw=True,
+            timer_total_seconds=600, timer_seconds_remaining=0,
+            created_at=datetime(2026, 1, 4, 19, 10), completed_at=datetime(2026, 1, 4, 20),
+        )
+        m5 = MeetupMatch(
+            meetup_id=5, match_number=1,
+            team_a_users=json.dumps([ids["p2"]]),
+            team_b_users=json.dumps([ids["p1"]]),
+            team_a_name="C", team_b_name="D",
+            score_a=1, score_b=1, status="completed", was_draw=False,
+            timer_total_seconds=600, timer_seconds_remaining=0,
+            created_at=datetime(2026, 1, 5, 19, 10), completed_at=datetime(2026, 1, 5, 20),
+        )
+        db.add_all([m4, m5])
+        await db.commit()
+    return ids
+
+
+@pytest.mark.asyncio
+async def test_wins_and_night_block():
+    """Wins follow the de-facto winner (tie → away); night block aggregates."""
+    async with await client() as ac:
+        await seed(ac)
+        await seed_draw_meetups(ac)
+
+        # 2025: m1 A=[p1,p2] vs B=[p3], 1-0 → A roster wins.
+        j = (await ac.get("/rankings?year=2025", headers=hdr("p1"))).json()
+        rows = rows_by_name(j)
+        assert rows["P1"]["wins"] == 1 and rows["P2"]["wins"] == 1
+        assert rows["P3"]["wins"] == 0
+        assert all(rows[n]["matches"] == 1 for n in rows)
+        assert rows["P1"]["win_rate"] == 1.0 and rows["P3"]["win_rate"] == 0.0
+
+        # Night block for meetup 1 (2025, single match).
+        j = (await ac.get("/meetups/1/rankings", headers=hdr("p1"))).json()
+        kpis = j["night"]["kpis"]
+        assert kpis == {"matches": 1, "goals": 1, "players": 3, "one_goal_wins": 1, "draws": 0}
+        teams = {t["name"]: t for t in j["night"]["teams"]}
+        assert teams["A"]["wins"] == 1
+        assert (teams["A"]["goals_for"], teams["A"]["goals_against"], teams["A"]["goal_diff"]) == (1, 0, 1)
+        assert teams["A"]["clean_sheets"] == 1
+        assert {u["id"] for u in teams["A"]["roster"]} == {rows["P1"]["user"]["id"], rows["P2"]["user"]["id"]}
+        assert teams["B"]["wins"] == 0 and teams["B"]["goal_diff"] == -1
+
+        # Draws: the away roster takes the de-facto win either way; was_draw
+        # only shows up in the draw count.
+        j = (await ac.get("/meetups/4/rankings", headers=hdr("p1"))).json()
+        assert j["night"]["kpis"]["draws"] == 1
+        t = {x["name"]: x for x in j["night"]["teams"]}
+        assert t["B"]["wins"] == 1 and t["A"]["wins"] == 0
+
+        j = (await ac.get("/meetups/5/rankings", headers=hdr("p1"))).json()
+        assert j["night"]["kpis"]["draws"] == 0
+        t = {x["name"]: x for x in j["night"]["teams"]}
+        # Away team D (p1) still wins the tie without a draw record.
+        assert t["D"]["wins"] == 1 and t["C"]["wins"] == 0
+
+        # All-time win_rate sorting.
+        j = (await ac.get("/rankings?year=all&sort=win_rate&order=desc", headers=hdr("p1"))).json()
+        names = [r["user"]["display_name"] for r in j["rows"]]
+        # P1: 3 wins / 4 matches, P2: 2 / 3, P3: 0 / 1.
+        assert names == ["P1", "P2", "P3"]
+
+
+@pytest.mark.asyncio
+async def test_highlights():
+    """Top-3 lists over the full scope, win rate needs 2+ matches."""
+    async with await client() as ac:
+        await seed(ac)
+        await seed_draw_meetups(ac)
+
+        j = (await ac.get("/rankings?year=all", headers=hdr("p1"))).json()
+        h = j["highlights"]
+        assert h["goals"][0] == {"name": "P1", "value": 2}  # own goal excluded by default
+        assert h["wins"][0]["name"] == "P1"
+        assert h["wins"][0]["value"] == "3 of 5"
+        assert h["matches"][0] == {"name": "P1", "value": 5}
+        assert h["win_rate"][0] == {"name": "P1", "value": "60%"}
+        # P3 has 1 match — excluded from the win-rate highlight.
+        assert all(e["name"] != "P3" for e in h["win_rate"])
+        assert h["attendances"][0] == {"name": "P1", "value": 5}
+
+        # Empty scope (year with no data) → safe empty lists.
+        j = (await ac.get("/rankings?year=2020", headers=hdr("p1"))).json()
+        assert j["rows"] == []
+        assert all(v == [] for v in j["highlights"].values())

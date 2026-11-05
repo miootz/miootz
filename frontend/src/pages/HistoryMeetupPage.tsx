@@ -5,12 +5,24 @@ import { format } from "date-fns";
 import { fetchMeetupDetail, type MeetupDetail } from "../api/meetupsApi";
 import {
   fetchMeetupRankings,
+  type NightStats,
   type RankingRow,
   type RankingSort,
 } from "../api/rankingsApi";
 import { MeetupDetailPanel } from "../components/MeetupDetailPanel";
 import { RankingsTable } from "../components/RankingsTable";
 import { parseMeetupStart } from "../utils/datetime";
+
+function KpiTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border border-line bg-panel px-3 py-2.5 text-center">
+      <p className="text-xl font-bold text-ink tabular-nums">{value}</p>
+      <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+        {label}
+      </p>
+    </div>
+  );
+}
 
 export function HistoryMeetupPage() {
   const { meetupId } = useParams<{ meetupId: string }>();
@@ -23,6 +35,7 @@ export function HistoryMeetupPage() {
 
   // Per-meetup top performers (hidden when the meetup has no completed matches).
   const [performers, setPerformers] = useState<RankingRow[] | null>(null);
+  const [night, setNight] = useState<NightStats | null>(null);
   const [pSort, setPSort] = useState<RankingSort>("goals");
   const [pOrder, setPOrder] = useState<"asc" | "desc">("desc");
 
@@ -49,10 +62,14 @@ export function HistoryMeetupPage() {
     let cancelled = false;
     void fetchMeetupRankings(id)
       .then((res) => {
-        if (!cancelled) setPerformers(res.rows);
+        if (cancelled) return;
+        setPerformers(res.rows);
+        setNight(res.night);
       })
       .catch(() => {
-        if (!cancelled) setPerformers(null);
+        if (cancelled) return;
+        setPerformers(null);
+        setNight(null);
       });
     return () => {
       cancelled = true;
@@ -138,6 +155,52 @@ export function HistoryMeetupPage() {
         meetupTime={timeLabel}
         meetupFee={detail.fee}
       />
+
+      {/* Night KPIs + team records (hidden without completed matches) */}
+      {night && (
+        <>
+          <section>
+            <h2 className="text-lg font-bold text-ink mb-2">The night</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <KpiTile label="Matches" value={night.kpis.matches} />
+              <KpiTile label="Goals" value={night.kpis.goals} />
+              <KpiTile label="Players" value={night.kpis.players} />
+              <KpiTile label="One-goal wins" value={night.kpis.one_goal_wins} />
+            </div>
+            {night.kpis.draws > 0 && (
+              <p className="text-xs text-ink-dim mt-2 tabular-nums">
+                {night.kpis.draws} draw{night.kpis.draws > 1 ? "s" : ""} recorded
+                (away team takes the de-facto win)
+              </p>
+            )}
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-bold text-ink">The teams</h2>
+            {night.teams.map((t) => (
+              <div key={t.name} className="border border-line bg-panel p-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-bold text-ink truncate">
+                    {t.name}
+                  </span>
+                  <span className="text-2xs text-ink-dim tabular-nums shrink-0">
+                    {t.wins} {t.wins === 1 ? "win" : "wins"} / {t.matches}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-dim tabular-nums mt-0.5">
+                  Goals {t.goals_for} – {t.goals_against} · GD{" "}
+                  {t.goal_diff > 0 ? `+${t.goal_diff}` : t.goal_diff}
+                  {t.clean_sheets > 0 &&
+                    ` · ${t.clean_sheets} clean sheet${t.clean_sheets > 1 ? "s" : ""}`}
+                </p>
+                <p className="text-xs text-ink-faint mt-1 break-words">
+                  {t.roster.map((u) => u.display_name).join(" · ")}
+                </p>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
 
       {/* Top performers for this meetup (hidden without completed matches) */}
       {sortedPerformers && sortedPerformers.length > 0 && (

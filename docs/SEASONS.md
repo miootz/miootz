@@ -190,10 +190,10 @@ pages; default sort is attendances desc.
 
 Plan to bring the meetup history, the self-profile and the season-wide
 rankings up to the stats level of a reference "night report" (per-meetup
-night stats + season-so-far highlights). Almost all of it is query-time
-aggregation over data we already store — the only storage change is one
-additive `MeetupMatch.winner_team` column so win stats stay deterministic
-for tied matches (see §3).
+night stats + season-so-far highlights). All of it is query-time
+aggregation over data we already store — **no new tables, no new columns**
+(the draw support already landed in `8f6bdb8`:
+`GameTemplate.allows_draws` + `MeetupMatch.was_draw`).
 
 ## 1. Deterministic statistics in the reference report
 
@@ -241,22 +241,22 @@ completed matches by team name). Nothing requires new storage.
 
 ## 3. Crediting rules (additions)
 
-- **Match winner**: the source of truth is a new
-  `MeetupMatch.winner_team: "a" | "b" | None` column (additive migration,
-  same pattern as `is_own_goal`), written by `end_match`: derived from the
-  scores when there is no tie, taken from the required `body.winner_team`
-  when the score is tied. Today that tie-break decision exists only in
-  memory (response + next-match build) — persisting it is what makes win
-  stats deterministic. Stats fall back to the score columns when
-  `winner_team` is null (rows completed before the migration).
-- **Draws**: match prep already treats a tie as home-side-lost —
-  `create_new_pending_match` auto-picks `team_b` whenever
-  `score_a > score_b` is false (matches.py:560). Supporting true draws
-  (tie stands, no winner) is a **separate change** behind a
-  `GameTemplate.allows_draws` toggle (default `False` = home-team-loses, no
-  draws). Stats rule for when it lands: a completed match with a tied score
-  and `winner_team IS NULL` is a draw — no wins credited, not a
-  one-goal-margin win; everything else unchanged.
+- **Match winner** (for win crediting): the de-facto winner, same rule
+  `end_match` and match prep already use — `score_a > score_b` → team A,
+  otherwise team B (a tie goes to the away team: the home side must win to
+  stay on the pitch). `was_draw` (set by `end_match` when the tie is
+  recorded per `GameTemplate.allows_draws`) is **statistics information
+  only**: it counts as a draw in KPIs/team records and draws the "Draw"
+  chip, but the away roster still receives the win.
+- **Known divergence (accepted):** `end_match` still honours an explicit
+  `body.winner_team` override on a tie (matches.py), which is not
+  persisted — so a tie ended with `winner_team="a"` via the raw API
+  credits the *away* roster in stats. The UI no longer sends the override
+  (winner picker removed in `8f6bdb8`), so this is API-only; fixing it
+  needs persisting the decision, which this change deliberately skips.
+- **Draws**: shipped in `8f6bdb8` — `GameTemplate.allows_draws` (default
+  `False`) + `MeetupMatch.was_draw`; the winner picker modal is gone, a tie
+  ends with the away team as de-facto winner. No further work here.
 - **Wins**: a completed match credits a win to every member of the **final**
   winning roster (winner per above). Substituted (swapped) players are
   credited via the final roster — the same convention the existing
@@ -278,49 +278,46 @@ completed matches by team name). Nothing requires new storage.
 
 ## 4. Backend (extend `app/services/rankings_service.py`)
 
-1. `MeetupMatch.winner_team: str | None` — new nullable column
-   (`app/models/match.py`) + additive `ALTER TABLE` in
-   `app/core/migrations.py`. `end_match` (`app/api/matches.py`) sets it:
-   derived from the scores on a decisive result, from the required
-   `body.winner_team` on a tie (the decision already exists there, it just
-   is not persisted). `_aggregate` winner resolution: `winner_team` if set,
-   else the score columns; tied score + null winner = draw (no wins).
+1. No storage change: winner resolution is derived from the scores (per §3);
+   `was_draw` feeds the draw counts only.
 2. `_aggregate` — add `wins` and `matches` to every per-user dict: loop the
    completed matches, +1 `matches` to each final-roster member, +1 `wins` to
-   the winning roster (winner per 1). (Own-goal toggle does not affect
-   wins.)
+   the de-facto winning roster (tie → away, per §3). (Own-goal toggle does
+   not affect wins.)
 3. `SORTABLE_COLUMNS` — add `wins`, `win_rate` (computed = wins / matches),
    `goal_assists` (goals + assists, toggle-aware). Tie-break chain extends
    with `wins` under the existing goals/assists/clean-sheets order.
 4. `get_rankings` — envelope gains `highlights`: top-3 lists (name + value)
-   for `goals`, `assists`, `goal_assists`, `wins` ("N of M"), `win_rate`
+   for `goals`, `assists`, `goal_assists`, `wins` ("N of M"), `matches` (matches played), `win_rate`
    (2+ matches only), `attendances` — computed from the full in-scope row
    set, not the current page, so the page needs no extra request.
 5. `get_meetup_rankings` — response gains a `night` block:
-   `kpis {matches, goals, players, one_goal_wins}` and
+   `kpis {matches, goals, players, one_goal_wins, draws}` and
    `teams [{name, wins, matches, goals_for, goals_against, goal_diff,
    clean_sheets, roster [{id, display_name}]}]`, teams sorted by wins desc
    then goal_diff desc. `players` = distinct user ids across all final
-   rosters; `one_goal_wins` = matches where the score difference is 1.
+   rosters; `one_goal_wins` = matches where the score difference is 1;
+   `draws` = matches with `was_draw`.
 6. `app/schemas/rankings.py` — `RankingRow` += `wins`, `matches`,
-   `win_rate`; new `NightStats` / `TeamNightRecord` models;
-   `RankingsResponse` += optional `night`, `highlights` (both nullable —
-   season-scoped responses keep the old shape where `night` is absent).
+   `win_rate`, `goal_assists`; new `NightStats` / `TeamNightRecord` /
+   `HighlightEntry` models; `RankingsResponse` += optional `night`,
+   `highlights` (both nullable — season-scoped responses keep the old shape
+   where `night` is absent).
 7. `get_user_metrics` — passes the new fields through unchanged; extend
    `UserStats` (`app/schemas/stats.py`) and `get_user_statistics`
    (`app/services/stats_service.py`) with `wins`, `matches`, `win_rate`
    (all-time + season) — the profile already renders `UserStats`, so this is
    fields, not a new surface.
-8. Personal per-meetup stats — extend `GET /users/{user_id}/history`
-   (`admin_get_player_history` in `app/api/users.py`):
+8. Personal per-meetup stats — new
+   `rankings_service.get_user_meetup_metrics(db, user_id, meetup_ids)`
+   (reuses `_load_scope` + `_aggregate` per meetup group), and
+   `GET /users/{user_id}/history` (`admin_get_player_history` in
+   `app/api/users.py`) extended:
    - Access: `require_admin` → **admin OR self** (`user_id == current
      user.id`); other users' history stays admin-only.
    - Each history row gains the player's per-meetup metrics
-     `{matches, wins, goals, assists, clean_sheets, goals_conceded}` —
-     computed in one batch for the page's meetup ids: `_load_scope` gains an
-     optional `meetup_ids: list[int]` filter, and per-meetup metrics come
-     from grouping the scoped matches/goals by `meetup_id`. No per-row
-     queries.
+     `{matches, wins, goals, assists, clean_sheets, goals_conceded,
+     win_rate}` in one batch for the page's meetup ids. No per-row queries.
 
 Router (`app/api/rankings.py`): no signature changes — both endpoints keep
 their contracts, the envelopes just carry the extra blocks.
@@ -367,24 +364,22 @@ two teams, neutral ink for the rest (meetups can have up to 5 teams).
 
 ## 6. Tests
 
-- `app/tests/test_live_scoring.py` (or `test_rankings.py`): `end_match`
-  persists `winner_team` — decisive result derived from scores, tie taken
-  from `body.winner_team`; the additive migration fires on an old-schema DB.
+- `app/tests/test_draws.py` (or `test_rankings.py`): a `was_draw` match
+  counts as a draw in KPIs/team records while the away roster keeps the
+  win; a tie with `was_draw` False (default template) is a plain away win.
 - `app/tests/test_rankings.py`:
-  - wins crediting: only the final winning roster; a draw (tied score, null
-    `winner_team`) credits no wins; swapped-out player (absent from final
-    roster) gets no win; legacy rows (null `winner_team`, decisive score)
-    fall back to the score columns.
+  - wins crediting: only the de-facto winning roster; tie → away roster;
+    swapped-out player (absent from final roster) gets no win.
   - `win_rate` / `goal_assists` sorting, including the tie-break order.
-  - night block: KPIs (one-goal-win count), team record
+  - night block: KPIs (one-goal-win count, draws), team record
     (wins / GF / GA / GD / clean sheets / union roster), team ordering.
   - highlights: top-3 truncation, win-rate 2+ matches threshold, empty-scope
     safety.
 - `app/tests/test_player_history.py`:
   - extended `UserStats` key set (all-time + season wins / matches /
     win_rate).
-  - self access: a non-admin can fetch `GET /users/me/history` for
-    themselves, gets 403/404 for another player; admin access unchanged.
+  - self access: a non-admin can fetch `GET /users/{me}/history` for
+    themselves, gets 403 for another player; admin access unchanged.
   - history rows carry the per-meetup metrics and they match the
     meetup-scoped rankings for the same player.
 - Frontend: `npm run lint` + build (no new component tests, matching the
@@ -392,12 +387,9 @@ two teams, neutral ink for the rest (meetups can have up to 5 teams).
 
 ## 7. Out of scope
 
-- The `GameTemplate.allows_draws` toggle itself (enabling true draws,
-  end-match UI for a standing tie, next-matchup selection without a winner) —
-  a separate change; stats already handle the resulting draw rows (tied
-  score + null `winner_team`).
 - The reference's "draw goes to the fresh team" rule (its stay-on/fresh
-  format).
+  format) — our shipped rule is away-wins-the-tie with `was_draw` recorded
+  for statistics.
 - Per-player night swap-path labels ("B → C") — covered by the existing
   per-match substitution log in `MatchHistoryList`.
 - Goals/assists bar charts — the per-player table carries the same numbers;
@@ -406,13 +398,12 @@ two teams, neutral ink for the rest (meetups can have up to 5 teams).
 
 ## 8. Order of work
 
-1. `MeetupMatch.winner_team`: model + migration + `end_match` persistence.
-2. Service: `wins` / `matches` in `_aggregate`, sortable columns, `night`
-   block, `highlights` — with backend tests.
-3. Schemas + router envelope plumbing.
-4. `UserStats` / `get_user_statistics` + `GET /users/{id}/history`
+1. Service: `wins` / `matches` in `_aggregate`, sortable columns, `night`
+   block, `highlights`, `get_user_meetup_metrics` — with backend tests.
+2. Schemas + router envelope plumbing.
+3. `UserStats` / `get_user_statistics` + `GET /users/{id}/history`
    self-access + per-meetup row metrics.
-5. Frontend: `rankingsApi` types + `RankingsTable` columns +
+4. Frontend: `rankingsApi` types + `RankingsTable` columns +
    `RankingsPage` highlights card.
-6. `HistoryMeetupPage` KPI tiles + team cards.
-7. `ProfilePage` season tiles + paginated attendance history.
+5. `HistoryMeetupPage` KPI tiles + team cards.
+6. `ProfilePage` season tiles + paginated attendance history.

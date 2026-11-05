@@ -145,10 +145,16 @@ async def test_admin_player_history():
             "assists",
             "clean_sheets",
             "goals_conceded",
+            "wins",
+            "matches",
+            "win_rate",
             "season_goals",
             "season_assists",
             "season_clean_sheets",
             "season_goals_conceded",
+            "season_wins",
+            "season_matches",
+            "season_win_rate",
         }
         assert data["history"]["total"] == 2
         items = data["history"]["items"]
@@ -161,6 +167,18 @@ async def test_admin_player_history():
         assert attended["score_individual"] == 5
         assert attended["rating_avg"] == 4.0
         assert attended["location"] == "Hall 1"
+        # Per-meetup metrics present (no matches seeded → all zeros)
+        assert set(attended["metrics"]) == {
+            "attendances",
+            "goals",
+            "assists",
+            "clean_sheets",
+            "goals_conceded",
+            "wins",
+            "matches",
+            "win_rate",
+        }
+        assert attended["metrics"]["goals"] == 0
 
         # Pagination: limit=1 returns one row, total unchanged
         r2 = await ac.get(
@@ -183,3 +201,39 @@ async def test_admin_player_history_404():
             headers={"Authorization": "Bearer admintoken"},
         )
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_player_history_self_access():
+    """A non-admin member can view their own history, not someone else's."""
+    from sqlalchemy import select
+
+    from app.models.user import User
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # JIT-provision the member via any authenticated call.
+        assert (await ac.get("/rankings", headers={"Authorization": "Bearer user"})).status_code == 200
+        async with AsyncSession(engine) as db:
+            me = (
+                await db.execute(select(User).where(User.pocket_id_sub == "user-uuid"))
+            ).scalar_one()
+            other_r = await ac.post(
+                "/users",
+                json={"first_name": "Other", "last_name": "Player"},
+                headers={"Authorization": "Bearer admintoken"},
+            )
+            other_id = other_r.json()["id"]
+
+        # Self → 200, rows carry metrics.
+        r = await ac.get(f"/users/{me.id}/history", headers={"Authorization": "Bearer user"})
+        assert r.status_code == 200, r.text
+        assert r.json()["user"]["id"] == me.id
+        for item in r.json()["history"]["items"]:
+            assert "metrics" in item
+
+        # Someone else → 403 for a member, 200 for an admin.
+        r = await ac.get(f"/users/{other_id}/history", headers={"Authorization": "Bearer user"})
+        assert r.status_code == 403
+        r = await ac.get(f"/users/{other_id}/history", headers={"Authorization": "Bearer admintoken"})
+        assert r.status_code == 200

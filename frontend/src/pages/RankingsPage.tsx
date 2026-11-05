@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 import {
   fetchRankings,
+  type HighlightEntry,
   type RankingRow,
   type RankingSort,
   type RankingsResponse,
@@ -10,6 +11,46 @@ import {
 import { RankingsTable } from "../components/RankingsTable";
 
 const PER_PAGE = 25;
+
+const HIGHLIGHT_LABELS: Record<string, string> = {
+  goals: "Goals",
+  assists: "Assists",
+  goal_assists: "Goals + assists",
+  wins: "Most wins",
+  matches: "Most matches",
+  win_rate: "Win rate",
+  attendances: "Most meetups",
+};
+
+function SeasonHighlights({ highlights }: { highlights: Record<string, HighlightEntry[]> }) {
+  const entries = Object.entries(highlights).filter(([, v]) => v.length > 0);
+  if (entries.length === 0) return null;
+  return (
+    <section className="border border-line bg-panel p-4 space-y-2.5">
+      <h2 className="text-lg font-bold text-ink">
+        Season highlights
+      </h2>
+      {entries.map(([key, list]) => (
+        <div
+          key={key}
+          className="grid grid-cols-[110px_1fr] gap-2 items-baseline text-sm"
+        >
+          <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+            {HIGHLIGHT_LABELS[key] ?? key}
+          </span>
+          <span className="text-ink-dim">
+            {list.map((e, i) => (
+              <span key={e.name}>
+                {i > 0 && " · "}
+                <span className="font-semibold text-ink">{e.name}</span> {e.value}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 type YearSel = number | "all";
 
@@ -146,6 +187,9 @@ export function RankingsPage() {
         </p>
       ) : (
         <div className="space-y-3">
+          {data?.highlights && (
+            <SeasonHighlights highlights={data.highlights} />
+          )}
           <RankingsTable
             rows={(data?.rows ?? []) as RankingRow[]}
             sort={sort}

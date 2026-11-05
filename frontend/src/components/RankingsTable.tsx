@@ -2,16 +2,25 @@ import { useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { RankingRow, RankingSort } from "../api/rankingsApi";
 
-const COLUMNS: { key: RankingSort; label: string; short: string }[] = [
+const COLUMNS: { key: RankingSort; label: string; short: string; pct?: boolean }[] = [
   { key: "attendances", label: "Attendances", short: "Att." },
   { key: "goals", label: "Goals scored", short: "Goals" },
   { key: "assists", label: "Assists", short: "Assists" },
+  { key: "wins", label: "Wins", short: "Wins" },
+  { key: "matches", label: "Matches played", short: "Matches" },
+  { key: "win_rate", label: "Win %", short: "Win %", pct: true },
   { key: "clean_sheets", label: "Clean sheets", short: "Clean" },
   { key: "goals_conceded", label: "Goals conceded", short: "Conceded" },
 ];
 
 // Mobile tabs: clean sheets are a team credit and only show in the wide table.
 const MOBILE_TABS = COLUMNS.filter((c) => c.key !== "clean_sheets");
+
+function cellValue(row: RankingRow, key: RankingSort, pct?: boolean): string {
+  const v = row[key];
+  if (pct) return `${Math.round(v * 100)}%`;
+  return String(v);
+}
 
 interface RankingsTableProps {
   rows: RankingRow[];
@@ -80,7 +89,7 @@ export function RankingsTable({
               </span>
               <PlayerBadge row={r} />
               <span className="ml-auto text-base font-bold text-ink tabular-nums">
-                {r[mobileTab]}
+                {cellValue(r, mobileTab, MOBILE_TABS.find((c) => c.key === mobileTab)?.pct)}
               </span>
             </li>
           ))}
@@ -92,10 +101,10 @@ export function RankingsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left">
-              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-wide text-ink-faint w-10">
+              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim w-10">
                 #
               </th>
-              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-wide text-ink-faint">
+              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                 Player
               </th>
               {COLUMNS.map((c) => (
@@ -127,7 +136,7 @@ export function RankingsTable({
                 </td>
                 {COLUMNS.map((c) => (
                   <td key={c.key} className="px-3 py-2 text-right tabular-nums text-ink">
-                    {r[c.key]}
+                    {cellValue(r, c.key, c.pct)}
                   </td>
                 ))}
               </tr>
@@ -173,7 +182,7 @@ function SortableHeader({
 }) {
   if (!onSort) {
     return (
-      <th className={`px-3 py-2.5 text-2xs font-bold uppercase tracking-wide text-ink-faint ${className}`}>
+      <th className={`px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim ${className}`}>
         {label}
       </th>
     );
@@ -186,7 +195,7 @@ function SortableHeader({
         title={`Sort by ${full}`}
         aria-label={`Sort by ${full}`}
         className={`inline-flex items-center gap-0.5 min-h-[32px] transition-colors ${
-          active ? "text-live" : "text-ink-faint hover:text-ink"
+          active ? "text-live" : "text-ink-dim hover:text-ink"
         }`}
       >
         {label}

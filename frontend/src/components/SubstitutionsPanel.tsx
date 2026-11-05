@@ -237,7 +237,7 @@ export function SubstitutionsPanel({
           {r.users.length}
         </span>
       </div>
-      <ul className="divide-y divide-line border border-line bg-panel">
+      <ul className="divide-y divide-line bg-panel">
         {r.users.map((u) => {
           const isSelected = selected?.id === u.id;
           return (

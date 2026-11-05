@@ -11,10 +11,16 @@ class UserStats(BaseModel):
     assists: int = 0
     clean_sheets: int = 0
     goals_conceded: int = 0
+    wins: int = 0
+    matches: int = 0
+    win_rate: float = 0.0
     season_goals: int = 0
     season_assists: int = 0
     season_clean_sheets: int = 0
     season_goals_conceded: int = 0
+    season_wins: int = 0
+    season_matches: int = 0
+    season_win_rate: float = 0.0
 
 
 class MatchScoreReport(BaseModel):

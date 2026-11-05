@@ -21,6 +21,7 @@ from app.schemas.user import SPECIALTY_OPTIONS, UserProfileUpdate
 from app.models.invite import InviteToken
 from app.models.meetup import Attendance, MatchScore, Meetup
 from app.models.rating import Rating
+from app.services import rankings_service
 from app.services.pocket_id_client import (
     create_signup_token,
     delete_user,
@@ -563,12 +564,17 @@ async def list_users_admin(
 @router.get("/{user_id}/history")
 async def admin_get_player_history(
     user_id: int,
+    request: Request,
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
-    """Player detail payload: profile + stats + paginated attendance history (admin only)."""
+    """Player detail payload: profile + stats + paginated attendance history.
+
+    Admins see anyone; a member may view their own history (self-profile)."""
+    if not getattr(request.state, "is_admin", False) and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Admin only")
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -617,7 +623,11 @@ async def admin_get_player_history(
         }
 
     items = []
+    metrics_map = await rankings_service.get_user_meetup_metrics(
+        db, user_id, meetup_ids
+    )
     for att, m in att_rows:
+        pm = metrics_map.get(m.id, {k: 0 for k in rankings_service.METRIC_KEYS})
         items.append(
             {
                 "meetup_id": m.id,
@@ -629,6 +639,12 @@ async def admin_get_player_history(
                 "score_team": score_map.get((m.id, "team")),
                 "score_individual": score_map.get((m.id, "individual")),
                 "rating_avg": rating_map.get(m.id),
+                "metrics": {
+                    **pm,
+                    "win_rate": round(pm["wins"] / pm["matches"], 3)
+                    if pm["matches"]
+                    else 0.0,
+                },
             }
         )
 

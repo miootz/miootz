@@ -437,7 +437,7 @@ function MatchResultRow({
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
             {goals && goals.length > 0 && (
-              <div className="border border-line bg-raised px-3 py-1">
+              <div className="bg-raised px-3 py-1">
                 <GoalList
                   goals={goals}
                   canEdit={false}

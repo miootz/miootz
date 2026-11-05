@@ -59,6 +59,9 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
     all_time = await rankings_service.get_user_metrics(db, user_id)
     season = await rankings_service.get_user_metrics(db, user_id, year=now.year)
 
+    def _rate(m: dict[str, int]) -> float:
+        return round(m["wins"] / m["matches"], 3) if m["matches"] else 0.0
+
     return {
         "games_played": games_played,
         "season_games": season_games,
@@ -69,8 +72,14 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
         "assists": all_time["assists"],
         "clean_sheets": all_time["clean_sheets"],
         "goals_conceded": all_time["goals_conceded"],
+        "wins": all_time["wins"],
+        "matches": all_time["matches"],
+        "win_rate": _rate(all_time),
         "season_goals": season["goals"],
         "season_assists": season["assists"],
         "season_clean_sheets": season["clean_sheets"],
         "season_goals_conceded": season["goals_conceded"],
+        "season_wins": season["wins"],
+        "season_matches": season["matches"],
+        "season_win_rate": _rate(season),
     }

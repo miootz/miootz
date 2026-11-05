@@ -67,10 +67,10 @@ function getTimerColor(seconds: number, total: number): string {
 }
 
 /** Roster sorted by skill rating, descending (missing ratings last). */
-function sortRosterBySkill(
-  users: { id: number }[],
+function sortRosterBySkill<T extends { id: number }>(
+  users: T[],
   skillById: Map<number, number>,
-) {
+): T[] {
   return [...users].sort(
     (a, b) => (skillById.get(b.id) ?? 0) - (skillById.get(a.id) ?? 0),
   );

@@ -14,6 +14,42 @@ export interface RankingRow {
   assists: number;
   clean_sheets: number;
   goals_conceded: number;
+  wins: number;
+  matches: number;
+  win_rate: number;
+  goal_assists: number;
+}
+
+export interface HighlightEntry {
+  name: string;
+  value: string | number;
+}
+
+export interface TeamRosterUser {
+  id: number;
+  display_name: string;
+}
+
+export interface TeamNightRecord {
+  name: string;
+  wins: number;
+  matches: number;
+  goals_for: number;
+  goals_against: number;
+  goal_diff: number;
+  clean_sheets: number;
+  roster: TeamRosterUser[];
+}
+
+export interface NightStats {
+  kpis: {
+    matches: number;
+    goals: number;
+    players: number;
+    one_goal_wins: number;
+    draws: number;
+  };
+  teams: TeamNightRecord[];
 }
 
 export interface RankingsResponse {
@@ -24,6 +60,10 @@ export interface RankingsResponse {
   page: number;
   per_page: number;
   total: number;
+  /** Per-meetup night stats (meetup-scoped endpoint only). */
+  night: NightStats | null;
+  /** Top-3 per category over the full scope (season/all-time views). */
+  highlights: Record<string, HighlightEntry[]> | null;
   rows: RankingRow[];
 }
 
@@ -32,7 +72,11 @@ export type RankingSort =
   | "goals"
   | "assists"
   | "clean_sheets"
-  | "goals_conceded";
+  | "goals_conceded"
+  | "wins"
+  | "matches"
+  | "win_rate"
+  | "goal_assists";
 
 export async function fetchRankings(params: {
   year?: number | "all";

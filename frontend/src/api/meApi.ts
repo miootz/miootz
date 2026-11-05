@@ -30,10 +30,55 @@ export interface UserStats {
     assists: number;
     clean_sheets: number;
     goals_conceded: number;
+    wins: number;
+    matches: number;
+    win_rate: number;
     season_goals: number;
     season_assists: number;
     season_clean_sheets: number;
     season_goals_conceded: number;
+    season_wins: number;
+    season_matches: number;
+    season_win_rate: number;
+}
+
+export interface UserHistoryItem {
+    meetup_id: number;
+    start_time: string;
+    location: string;
+    status: string;
+    previous_status: string | null;
+    score_team: number | null;
+    score_individual: number | null;
+    rating_avg: number | null;
+    metrics: {
+        attendances: number;
+        goals: number;
+        assists: number;
+        clean_sheets: number;
+        goals_conceded: number;
+        wins: number;
+        matches: number;
+        win_rate: number;
+    };
+}
+
+export interface UserHistoryResponse {
+    user: MeUser;
+    stats: UserStats;
+    history: { items: UserHistoryItem[]; total: number };
+}
+
+export async function fetchMyHistory(
+    userId: number,
+    params: { limit?: number; offset?: number },
+): Promise<UserHistoryResponse> {
+    const q = new URLSearchParams();
+    q.set("limit", String(params.limit ?? 25));
+    q.set("offset", String(params.offset ?? 0));
+    const r = await apiFetch(`/users/${userId}/history?${q.toString()}`);
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<UserHistoryResponse>;
 }
 
 export async function fetchMyStats(): Promise<UserStats> {

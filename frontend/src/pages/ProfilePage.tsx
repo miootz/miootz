@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ExternalLink, LogOut, User } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, User } from "lucide-react";
+import { format } from "date-fns";
 import { useToast } from "../context/ToastContext";
 import {
   fetchGameTemplateSubscriptions,
+  fetchMyHistory,
   fetchMyStats,
   fetchNotificationPreferences,
   patchGameTemplateSubscription,
@@ -12,6 +15,7 @@ import {
   type NotificationCategory,
   type NotificationPreferenceRow,
   type Specialty,
+  type UserHistoryItem,
   type UserStats,
 } from "../api/meApi";
 import { useAuth } from "../auth/useAuth";
@@ -475,9 +479,24 @@ export function ProfilePage() {
                   label="Season assists"
                   value={String(stats.season_assists)}
                 />
+                <StatCard
+                  label="Season wins"
+                  value={String(stats.season_wins)}
+                />
+                <StatCard
+                  label="Season matches"
+                  value={String(stats.season_matches)}
+                />
+                <StatCard
+                  label="Season win %"
+                  value={`${Math.round(stats.season_win_rate * 100)}%`}
+                />
               </div>
             </div>
           )}
+
+          {/* Attendance history (paginated) */}
+          <AttendanceHistory userId={u.id} />
 
           {/* Self vs calculated skill bars */}
           {selfSkill != null &&
@@ -742,7 +761,7 @@ export function ProfilePage() {
                 Could not load preferences.
               </p>
             ) : (
-              <ul className="divide-y divide-line border border-line overflow-hidden">
+              <ul className="divide-y divide-line">
                 {notifPrefs.map((row) => (
                   <li
                     key={row.category}
@@ -809,7 +828,7 @@ export function ProfilePage() {
               No active weekly templates yet.
             </p>
           ) : (
-            <ul className="divide-y divide-line border border-line overflow-hidden">
+            <ul className="divide-y divide-line">
               {templateSubs.map((row) => (
                 <li
                   key={row.game_template_id}
@@ -924,6 +943,125 @@ function StatCard({ label, value }: { label: string; value: string }) {
         {value}
       </p>
       <p className="text-xs text-ink-dim">{label}</p>
+    </div>
+  );
+}
+
+/* ── Attendance history (self, paginated) ─────────────────────────── */
+
+const HISTORY_PAGE_SIZE = 25;
+
+function AttendanceHistory({ userId }: { userId: number }) {
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<UserHistoryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchMyHistory(userId, {
+        limit: HISTORY_PAGE_SIZE,
+        offset: (page - 1) * HISTORY_PAGE_SIZE,
+      });
+      setItems(res.history.items);
+      setTotal(res.history.total);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load history");
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, page]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-line">
+      <h2 className="text-lg font-bold text-ink">
+        Your attendance history
+      </h2>
+      {error ? (
+        <p className="text-sm text-danger" role="alert">
+          {error}
+        </p>
+      ) : loading ? (
+        <p className="text-sm text-ink-dim">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-ink-dim">
+          No meetups in your history yet.
+        </p>
+      ) : (
+        <>
+          <ul className="divide-y divide-line">
+            {items.map((it) => {
+              const active = it.metrics.matches > 0;
+              return (
+                <li key={it.meetup_id}>
+                  <Link
+                    to={`/history/${it.meetup_id}`}
+                    className="flex items-center gap-3 px-3 py-2 min-h-[44px] hover:bg-raised transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink truncate">
+                        {format(new Date(it.start_time), "d MMM yyyy")} ·{" "}
+                        {it.location}
+                      </p>
+                      <p className="text-2xs text-ink-faint">
+                        {it.status}
+                        {it.previous_status && it.status !== "confirmed"
+                          ? ` (was ${it.previous_status})`
+                          : ""}
+                      </p>
+                    </div>
+                    {active && (
+                      <span
+                        className="text-2xs font-bold text-ink-dim tabular-nums shrink-0"
+                        title="Goals · Assists · Wins / Matches"
+                      >
+                        G {it.metrics.goals} · A {it.metrics.assists} · W{" "}
+                        {it.metrics.wins}/{it.metrics.matches}
+                      </span>
+                    )}
+                    <ChevronRight
+                      className="h-4 w-4 text-ink-faint shrink-0"
+                      aria-hidden
+                    />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          {pages > 1 && (
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 min-h-[44px] border border-line px-4 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden /> Prev
+              </button>
+              <span className="text-xs text-ink-dim tabular-nums">
+                Page {page} of {pages} · {total} meetups
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                disabled={page >= pages}
+                className="inline-flex items-center gap-1 min-h-[44px] border border-line px-4 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 transition-colors"
+              >
+                Next <ChevronRight className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
