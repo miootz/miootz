@@ -1,6 +1,7 @@
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.award import WeatherHeroAward
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
@@ -45,6 +46,15 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
     )
     total_ratings = result.scalar() or 0
 
+    weather_hero_unused = (
+        await db.execute(
+            select(func.count(WeatherHeroAward.id)).where(
+                WeatherHeroAward.user_id == user_id,
+                WeatherHeroAward.used_at.is_(None),
+            )
+        )
+    ).scalar_one()
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     skill_level = (
@@ -82,4 +92,5 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
         "season_wins": season["wins"],
         "season_matches": season["matches"],
         "season_win_rate": _rate(season),
+        "weather_hero_unused": weather_hero_unused,
     }

@@ -777,6 +777,63 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
 
 
+    # ── Penalty shootout for tied first matches ──
+    if not await has_column("meetup_matches", "penalty_winner"):
+        await conn.execute(
+            text("ALTER TABLE meetup_matches ADD COLUMN penalty_winner VARCHAR")
+        )
+    if not await has_table("match_penalties"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS match_penalties (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    match_id INTEGER NOT NULL REFERENCES meetup_matches(id),
+                    team VARCHAR NOT NULL,
+                    scored BOOLEAN NOT NULL,
+                    scorer_id INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_match_penalties_match_id "
+                "ON match_penalties (match_id)"
+            )
+        )
+
+    # ── Mid-match (timer-paused) substitutions carry the match clock ──
+    if not await has_column("match_substitutions", "clock_secs"):
+        await conn.execute(
+            text("ALTER TABLE match_substitutions ADD COLUMN clock_secs INTEGER")
+        )
+
+    # ── Weather Hero award (stacking spot guarantee) ──
+    if not await has_table("weather_hero_awards"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS weather_hero_awards (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    granted_meetup_id INTEGER REFERENCES meetups(id),
+                    granted_at DATETIME NOT NULL,
+                    used_meetup_id INTEGER REFERENCES meetups(id),
+                    used_at DATETIME
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_weather_hero_awards_user_id "
+                "ON weather_hero_awards (user_id)"
+            )
+        )
+
+
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""
     try:

@@ -4,6 +4,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
   ArrowLeft,
   ClipboardList,
+  CloudRain,
   ExternalLink,
   LayoutGrid,
   Loader2,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   fetchMeetupDetail,
+  grantWeatherHero,
   type MeetupDetail,
 } from "../../api/meetupsApi";
 import {
@@ -600,11 +602,59 @@ export function AdminMeetupDetailPage() {
       {/* ── Attendance tab ──────────────────────────────────────── */}
 
       {tab === "attendance" && (
-        <MeetupAttendancePanel
-          meetupId={id}
-          detail={detail}
-          onChanged={load}
-        />
+        <div className="space-y-4">
+          {/* Weather Hero — one button grants every confirmed attendee */}
+          <div className="border border-line bg-panel p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <CloudRain className="h-5 w-5 text-ink-dim flex-shrink-0" aria-hidden />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">Weather Hero</p>
+                <p className="text-xs text-ink-dim">
+                  {detail.weather_hero_granted
+                    ? "Granted to all confirmed attendees. Waitlisted holders can burn one to jump the queue."
+                    : "Guarantees a spot: a waitlisted holder can redeem it to bump the last joiner out."}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setSavingMeta(true);
+                try {
+                  const res = await grantWeatherHero(id);
+                  showToast(
+                    res.granted > 0
+                      ? `Weather Hero granted to ${res.granted} attendees`
+                      : "All confirmed attendees already have it",
+                    "success",
+                  );
+                  await load();
+                } catch (e) {
+                  showToast(
+                    e instanceof Error ? e.message : "Grant failed",
+                    "error",
+                  );
+                } finally {
+                  setSavingMeta(false);
+                }
+              }}
+              disabled={savingMeta}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-ink text-board text-xs font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] flex-shrink-0"
+            >
+              {savingMeta ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CloudRain className="h-3.5 w-3.5" />
+              )}
+              {detail.weather_hero_granted ? "Grant to new" : "Grant to all"}
+            </button>
+          </div>
+          <MeetupAttendancePanel
+            meetupId={id}
+            detail={detail}
+            onChanged={load}
+          />
+        </div>
       )}
 
       {/* ── Teams tab ───────────────────────────────────────────── */}

@@ -30,6 +30,7 @@ from app.core.json_column import loads_int_list
 from app.models.game_template import GameTemplate
 from app.models.meetup import Meetup, Attendance, MatchScore
 from app.models.match import MeetupMatch
+from app.models.award import WeatherHeroAward
 from app.models.user import User
 from app.models.chat import ChatMessage
 from app.models.guest_plus_one import GuestPlusOne
@@ -60,6 +61,7 @@ from app.services.web_push import (
     notify_new_meetup_invites,
     notify_meetup_cancelled_recipients,
     notify_meetup_chat_recipients,
+    notify_demoted_to_waitlist,
 )
 from app.services.recurring_meetups import (
     materialize_next_meetup_and_notify,
@@ -430,6 +432,7 @@ async def get_meetup(
 
     my_attendance = None
     my_waitlist_position = None
+    my_weather_hero_unused = 0
     user = getattr(request.state, "user", None)
     if user is not None:
         for att, u in rows:
@@ -440,6 +443,26 @@ async def get_meetup(
             waitlist = [u.id for att, u in rows if att.status == "waitlisted"]
             if user.id in waitlist:
                 my_waitlist_position = waitlist.index(user.id) + 1
+        my_weather_hero_unused = (
+            await db.execute(
+                select(func.count(WeatherHeroAward.id)).where(
+                    WeatherHeroAward.user_id == user.id,
+                    WeatherHeroAward.used_at.is_(None),
+                )
+            )
+        ).scalar_one()
+
+    weather_hero_granted = (
+        (
+            await db.execute(
+                select(func.count(WeatherHeroAward.id)).where(
+                    WeatherHeroAward.granted_meetup_id == meetup_id
+                )
+            )
+        )
+        .scalar_one()
+        > 0
+    )
 
     # Current active/pending match
     current_match = None
@@ -515,6 +538,8 @@ async def get_meetup(
         "attendees": attendees,
         "my_attendance": my_attendance,
         "my_waitlist_position": my_waitlist_position,
+        "my_weather_hero_unused": my_weather_hero_unused,
+        "weather_hero_granted": weather_hero_granted,
         "current_match": current_match,
     }
 
@@ -1112,6 +1137,163 @@ async def leave_meetup(
         await handle_leave_or_cancel(db, meetup, prev)
 
     return {"status": "left"}
+
+
+@router.post("/{meetup_id}/awards/weather-hero")
+async def grant_weather_hero(
+    meetup_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Award Weather Hero to every confirmed attendee (admin, one button).
+
+    Idempotent per meetup: re-granting only reaches new confirmed attendees.
+    """
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    already = set(
+        (
+            await db.execute(
+                select(WeatherHeroAward.user_id).where(
+                    WeatherHeroAward.granted_meetup_id == meetup_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    confirmed = (
+        (
+            await db.execute(
+                select(Attendance.user_id).where(
+                    Attendance.meetup_id == meetup_id,
+                    Attendance.status == "confirmed",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    granted = 0
+    for uid in confirmed:
+        if uid in already:
+            continue
+        db.add(WeatherHeroAward(user_id=uid, granted_meetup_id=meetup_id))
+        granted += 1
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+    return {"granted": granted}
+
+
+@router.post("/{meetup_id}/awards/weather-hero/redeem")
+async def redeem_weather_hero(
+    meetup_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Burn one unused Weather Hero award to upgrade from the waitlist to a
+    confirmed spot. If the meetup is at capacity, the most-recently-joined
+    confirmed player is demoted to the waitlist in exchange."""
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+
+    attendance = (
+        (
+            await db.execute(
+                select(Attendance).where(
+                    Attendance.meetup_id == meetup_id,
+                    Attendance.user_id == user.id,
+                )
+            )
+        )
+        .scalar_one_or_none()
+    )
+    if not attendance or attendance.status != "waitlisted":
+        raise HTTPException(
+            status_code=409, detail="Only a waitlisted entry can redeem an award."
+        )
+
+    award = (
+        (
+            await db.execute(
+                select(WeatherHeroAward)
+                .where(
+                    WeatherHeroAward.user_id == user.id,
+                    WeatherHeroAward.used_at.is_(None),
+                )
+                .order_by(WeatherHeroAward.granted_at.asc(), WeatherHeroAward.id.asc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if award is None:
+        raise HTTPException(
+            status_code=409, detail="You have no unused Weather Hero award."
+        )
+
+    now = utcnow()
+    attendance.status = "confirmed"
+    attendance.joined_at = now
+    attendance.previous_status = None
+    award.used_meetup_id = meetup_id
+    award.used_at = now
+
+    demoted: Attendance | None = None
+    confirmed_others = (
+        await db.execute(
+            select(func.count(Attendance.id)).where(
+                Attendance.meetup_id == meetup_id,
+                Attendance.status == "confirmed",
+                Attendance.user_id != user.id,
+            )
+        )
+    ).scalar_one()
+    if confirmed_others >= meetup.max_players:
+        demoted = (
+            (
+                await db.execute(
+                    select(Attendance)
+                    .where(
+                        Attendance.meetup_id == meetup_id,
+                        Attendance.status == "confirmed",
+                        Attendance.user_id != user.id,
+                    )
+                    .order_by(Attendance.joined_at.desc(), Attendance.id.desc())
+                    .limit(1)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if demoted is not None:
+            demoted.status = "waitlisted"
+            demoted.joined_at = now
+            demoted.previous_status = "confirmed"
+
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+    if demoted is not None:
+        demoted_user = await db.get(User, demoted.user_id)
+        if demoted_user is not None:
+            await notify_demoted_to_waitlist(db, meetup, demoted_user)
+        await recalculate_skills_for_attendance_change(db, meetup_id, demoted.user_id)
+    await recalculate_skills_for_attendance_change(db, meetup_id, user.id)
+
+    return {
+        "status": "confirmed",
+        "demoted_user_id": demoted.user_id if demoted is not None else None,
+    }
 
 
 @router.post("/{meetup_id}/admin/move")

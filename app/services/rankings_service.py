@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.match import MeetupMatch
+from app.models.match import MeetupMatch, MatchSubstitution
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
@@ -47,6 +47,49 @@ def _zero() -> dict[str, int]:
     return {k: 0 for k in METRIC_KEYS}
 
 
+def _match_winner_side(match: MeetupMatch) -> str:
+    """De-facto winner: a decided shootout overrides the score rule
+    (a tie goes to the away team)."""
+    if match.penalty_winner is not None:
+        return match.penalty_winner
+    return "a" if match.score_a > match.score_b else "b"
+
+
+def _eligible_players(
+    match: MeetupMatch, subs: list[MatchSubstitution]
+) -> set[int] | None:
+    """Users on the pitch for ≥50% of the match's elapsed clock.
+
+    None when the match has no clocked mid-match subs — then every roster
+    member is credited, exactly as before substitutions existed.
+    """
+    clocked = sorted(
+        (s for s in subs if s.clock_secs is not None), key=lambda s: (s.clock_secs, s.id)
+    )
+    if not clocked:
+        return None
+    elapsed = match.timer_total_seconds - (match.timer_seconds_remaining or 0)
+    if elapsed <= 0:
+        return None
+    # First clocked row's "old" state is the starting lineup (pre-start
+    # swaps are pending-only and carry no clock).
+    first = clocked[0]
+    on_at: dict[int, int] = {
+        uid: 0 for uid in json.loads(first.old_team_a_users) + json.loads(first.old_team_b_users)
+    }
+    on_pitch: dict[int, int] = {}
+    for s in clocked:
+        old = set(json.loads(s.old_team_a_users)) | set(json.loads(s.old_team_b_users))
+        new = set(json.loads(s.new_team_a_users)) | set(json.loads(s.new_team_b_users))
+        for uid in old - new:
+            on_pitch[uid] = on_pitch.get(uid, 0) + s.clock_secs - on_at.pop(uid)
+        for uid in new - old:
+            on_at[uid] = s.clock_secs
+    for uid, t in on_at.items():
+        on_pitch[uid] = on_pitch.get(uid, 0) + elapsed - t
+    return {uid for uid, secs in on_pitch.items() if secs * 2 >= elapsed}
+
+
 def _year_bounds(year: int) -> tuple[datetime, datetime]:
     return datetime(year, 1, 1), datetime(year, 12, 31, 23, 59, 59, 999999)
 
@@ -56,8 +99,9 @@ async def _load_scope(
     bounds: tuple[datetime, datetime] | None,
     meetup_id: int | None = None,
     meetup_ids: list[int] | None = None,
-) -> tuple[dict[int, int], list[MeetupMatch], list[MatchGoal]]:
-    """Confirmed-attendance counts, completed matches and live goals for the scope."""
+) -> tuple[dict[int, int], list[MeetupMatch], list[MatchGoal], list[MatchSubstitution]]:
+    """Confirmed-attendance counts, completed matches, live goals and
+    substitutions for the scope."""
     att_q = (
         select(Attendance.user_id, func.count(Attendance.id))
         .join(Meetup, Meetup.id == Attendance.meetup_id)
@@ -82,6 +126,7 @@ async def _load_scope(
     matches = list((await db.execute(match_q)).scalars().all())
 
     goals: list[MatchGoal] = []
+    subs: list[MatchSubstitution] = []
     if matches:
         goals = list(
             (
@@ -93,7 +138,16 @@ async def _load_scope(
                 )
             ).scalars().all()
         )
-    return attendances, matches, goals
+        subs = list(
+            (
+                await db.execute(
+                    select(MatchSubstitution).where(
+                        MatchSubstitution.match_id.in_([m.id for m in matches])
+                    )
+                )
+            ).scalars().all()
+        )
+    return attendances, matches, goals, subs
 
 
 def _aggregate(
@@ -101,13 +155,19 @@ def _aggregate(
     matches: list[MeetupMatch],
     goals: list[MatchGoal],
     include_own_goals: bool,
+    subs: list[MatchSubstitution] | None = None,
 ) -> dict[int, dict[str, int]]:
     """Per-user metrics. Strict crediting: only explicitly mentioned players.
 
-    Wins follow the de-facto winner used by end_match / match prep:
+    Wins follow the de-facto winner: a decided shootout's winner, else
     score_a > score_b → team A, else team B (a tie goes to the away team).
     ``was_draw`` is statistics information only and never changes crediting.
+    With mid-match subs, only players on the pitch ≥50% of the match count.
     """
+    subs = subs or []
+    subs_by_match: dict[int, list[MatchSubstitution]] = {}
+    for s in subs:
+        subs_by_match.setdefault(s.match_id, []).append(s)
     stats: dict[int, dict[str, int]] = {
         uid: {**_zero(), "attendances": n} for uid, n in attendances.items()
     }
@@ -122,12 +182,16 @@ def _aggregate(
     # Per match: matches played, wins (de-facto winner) and clean sheets
     # (zero goals against a team — credited to the whole roster, not just
     # the keeper).
+    winner_side = {m.id: _match_winner_side(m) for m in matches}
     for m in matches:
+        eligible = _eligible_players(m, subs_by_match.get(m.id, []))
         for side in ("a", "b"):
             roster = json.loads((m.team_a_users if side == "a" else m.team_b_users) or "[]")
             conceded = m.score_b if side == "a" else m.score_a
-            is_winner = m.score_a > m.score_b if side == "a" else m.score_b >= m.score_a
+            is_winner = winner_side[m.id] == side
             for uid in roster:
+                if eligible is not None and uid not in eligible:
+                    continue
                 s = stats.setdefault(uid, _zero())
                 s["matches"] += 1
                 if is_winner:
@@ -226,7 +290,7 @@ async def _night_block(
             roster = json.loads((m.team_a_users if side == "a" else m.team_b_users) or "[]")
             gf = m.score_a if side == "a" else m.score_b
             ga = m.score_b if side == "a" else m.score_a
-            is_winner = m.score_a > m.score_b if side == "a" else m.score_b >= m.score_a
+            is_winner = _match_winner_side(m) == side
             rec = teams.setdefault(
                 name,
                 {"wins": 0, "matches": 0, "goals_for": 0, "goals_against": 0,
@@ -324,8 +388,8 @@ async def get_rankings(
         sort = "attendances"
     order = order if order in ("asc", "desc") else "desc"
     bounds = _year_bounds(year) if year else None
-    attendances, matches, goals = await _load_scope(db, bounds)
-    stats = _aggregate(attendances, matches, goals, include_own_goals)
+    attendances, matches, goals, subs = await _load_scope(db, bounds)
+    stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
     # Players with 0 attendance in scope never appear in the tables.
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), sort, order)
@@ -341,10 +405,10 @@ async def get_rankings(
 
 async def get_meetup_rankings(db: AsyncSession, meetup_id: int) -> dict | None:
     """Per-meetup rankings + night block; None when there is nothing to rank."""
-    attendances, matches, goals = await _load_scope(db, None, meetup_id=meetup_id)
+    attendances, matches, goals, subs = await _load_scope(db, None, meetup_id=meetup_id)
     if not matches:
         return None
-    stats = _aggregate(attendances, matches, goals, include_own_goals=True)
+    stats = _aggregate(attendances, matches, goals, include_own_goals=True, subs=subs)
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), "goals", "desc")
     night = await _night_block(db, matches, goals)
@@ -360,8 +424,8 @@ async def get_user_metrics(
 ) -> dict[str, int]:
     """One user's scoped metrics (all zeros when they have no activity)."""
     bounds = _year_bounds(year) if year else None
-    attendances, matches, goals = await _load_scope(db, bounds)
-    stats = _aggregate(attendances, matches, goals, include_own_goals)
+    attendances, matches, goals, subs = await _load_scope(db, bounds)
+    stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
     return stats.get(user_id, _zero())
 
 
@@ -373,11 +437,14 @@ async def get_user_meetup_metrics(
     """Per-meetup metrics for one user, in one batch (own goals included)."""
     if not meetup_ids:
         return {}
-    attendances, matches, goals = await _load_scope(db, None, meetup_ids=list(meetup_ids))
+    attendances, matches, goals, subs = await _load_scope(db, None, meetup_ids=list(meetup_ids))
     out: dict[int, dict[str, int]] = {}
     ids_by_meetup: dict[int, set[int]] = {}
+    subs_by_match: dict[int, list[MatchSubstitution]] = {}
     for m in matches:
         ids_by_meetup.setdefault(m.meetup_id, set()).add(m.id)
+    for s in subs:
+        subs_by_match.setdefault(s.match_id, []).append(s)
     for mid in meetup_ids:
         mids = ids_by_meetup.get(mid)
         if not mids:
@@ -385,7 +452,8 @@ async def get_user_meetup_metrics(
             continue
         ms = [m for m in matches if m.id in mids]
         gs = [g for g in goals if g.match_id in mids]
-        out[mid] = _aggregate(attendances, ms, gs, include_own_goals=True).get(
+        msubs = [s for m in ms for s in subs_by_match.get(m.id, [])]
+        out[mid] = _aggregate(attendances, ms, gs, include_own_goals=True, subs=msubs).get(
             user_id, _zero()
         )
     return out

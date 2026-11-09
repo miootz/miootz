@@ -105,6 +105,10 @@ export interface MeetupDetail extends MeetupListItem {
   my_attendance: AttendanceStatus | null;
   /** 1-based position in the waitlist when `my_attendance === 'waitlisted'`. */
   my_waitlist_position?: number | null;
+  /** Caller's unused Weather Hero awards (authenticated requests only). */
+  my_weather_hero_unused?: number;
+  /** True once an admin has granted Weather Hero for this meetup. */
+  weather_hero_granted?: boolean;
 }
 
 export interface MeetupHistorySummary {
@@ -284,6 +288,28 @@ export async function leaveMeetup(id: number): Promise<{ status: string }> {
   const r = await apiFetch(`/meetups/${id}/leave`, { method: "DELETE" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string }>;
+}
+
+/** Admin: grant the Weather Hero award to every confirmed attendee. */
+export async function grantWeatherHero(
+  id: number,
+): Promise<{ granted: number }> {
+  const r = await apiFetch(`/meetups/${id}/awards/weather-hero`, {
+    method: "POST",
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+/** Burn an unused Weather Hero award to upgrade from the waitlist. */
+export async function redeemWeatherHero(
+  id: number,
+): Promise<{ status: string; demoted_user_id?: number | null }> {
+  const r = await apiFetch(`/meetups/${id}/awards/weather-hero/redeem`, {
+    method: "POST",
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
 }
 
 export async function postMeetupChatTyping(

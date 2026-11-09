@@ -40,6 +40,7 @@ export interface UserStats {
     season_wins: number;
     season_matches: number;
     season_win_rate: number;
+    weather_hero_unused: number;
 }
 
 export interface UserHistoryItem {

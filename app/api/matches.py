@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, insert, or_, select, text, update
+from sqlalchemy import delete, func, insert, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,7 +25,7 @@ from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.meetup_data_manager import meetup_data_manager
 from app.core.timeutil import utcnow
-from app.models.match import MeetupMatch, MatchSubstitution
+from app.models.match import MeetupMatch, MatchPenalty, MatchSubstitution
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
@@ -54,6 +54,13 @@ class MatchTeamSwap(BaseModel):
 class MatchEndBody(BaseModel):
     #: Required only when scores are tied. "a" or "b".
     winner_team: str | None = None
+
+
+class PenaltyShotBody(BaseModel):
+    team: str = Field(pattern=r"^[ab]$")
+    scored: bool
+    #: The taker — chosen per shot, order is decided on the pitch.
+    scorer_id: int
 
 
 class MatchScoreDelta(BaseModel):
@@ -245,6 +252,7 @@ def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
         "score_a": match.score_a,
         "score_b": match.score_b,
         "was_draw": match.was_draw,
+        "penalty_winner": match.penalty_winner,
         "status": match.status,
         "timer_total_seconds": match.timer_total_seconds,
         "timer_seconds_remaining": _compute_timer_remaining(match),
@@ -731,19 +739,25 @@ async def swap_match_teams(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    """Substitute players between teams before the match starts (admin).
+    """Substitute players between teams — before start, or mid-match while
+    the timer is paused (admin).
 
-    Records a before/after snapshot in match_substitutions (for rankings)
-    and persists the new partition to meetup.manual_teams_json so future
-    rounds inherit it.
+    Records a before/after snapshot in match_substitutions (for rankings);
+    pre-start swaps are also persisted to meetup.manual_teams_json so future
+    rounds inherit them (mid-match swaps are match-local). Mid-match rows
+    carry the match clock, which drives ≥50%-played credit in rankings.
     """
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
-    if match.status != "pending":
+    if match.status not in ("pending", "active"):
         raise HTTPException(
             status_code=409,
             detail=f"Cannot swap teams for a {match.status} match.",
+        )
+    if match.status == "active" and not _is_currently_paused(match):
+        raise HTTPException(
+            status_code=409, detail="Pause the timer to substitute mid-match."
         )
 
     old_a = _loads_int_list(match.team_a_users)
@@ -785,6 +799,11 @@ async def swap_match_teams(
     if lease.holder_id != _user.id:
         return await _lease_busy_response(db, match.id, now)
 
+    clock_secs = None
+    if match.status == "active":
+        # Stored remaining is authoritative while paused (only changes at
+        # start/pause/resume) — the clock at this swap.
+        clock_secs = match.timer_total_seconds - (match.timer_seconds_remaining or 0)
     db.add(
         MatchSubstitution(
             meetup_id=meetup_id,
@@ -794,13 +813,33 @@ async def swap_match_teams(
             new_team_a_users=json.dumps(new_a),
             new_team_b_users=json.dumps(new_b),
             recorded_by=_user.id,
+            clock_secs=clock_secs,
         )
     )
     match.team_a_users = json.dumps(new_a)
     match.team_b_users = json.dumps(new_b)
 
-    # Propagate the swap to the meetup-level partition (future rounds).
+    if match.status == "pending":
+        # Propagate the swap to the meetup-level partition (future rounds).
+        await _propagate_swap_to_meetup(db, meetup_id, old_a, old_b, new_a, new_b)
+
+    await bump_and_notify(db, meetup_id)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return _match_json(match, users_by_id)
+
+
+async def _propagate_swap_to_meetup(
+    db: AsyncSession,
+    meetup_id: int,
+    old_a: list[int],
+    old_b: list[int],
+    new_a: list[int],
+    new_b: list[int],
+) -> None:
+    """Persist a pre-start swap to the meetup-level partition (future rounds)."""
     meetup = await db.get(Meetup, meetup_id)
+    if meetup is None:
+        return
     result = await db.execute(
         select(User)
         .join(Attendance, Attendance.user_id == User.id)
@@ -834,10 +873,6 @@ async def swap_match_teams(
         max_teams=meetup.max_teams,
     )
 
-    await bump_and_notify(db, meetup_id)
-    users_by_id = await _load_users_for_meetup(db, meetup_id)
-    return _match_json(match, users_by_id)
-
 
 @router.get("/{meetup_id}/matches/{match_id}/substitutions")
 async def list_match_substitutions(
@@ -868,6 +903,7 @@ async def list_match_substitutions(
                 if by_id[s.recorded_by]
                 else None,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
+                "clock_secs": s.clock_secs,
                 "old_team_a_users": _loads_int_list(s.old_team_a_users),
                 "old_team_b_users": _loads_int_list(s.old_team_b_users),
                 "new_team_a_users": _loads_int_list(s.new_team_a_users),
@@ -876,6 +912,224 @@ async def list_match_substitutions(
             for s in rows
         ]
     }
+
+
+# ── Penalty shootout (tied first match) ────────────────────────────
+
+
+def _shootout_winner(shots: list[tuple[str, bool]]) -> str | None:
+    """First side with an uncatchable lead, if any.
+
+    Standard rules: five shots per side, then sudden death — a lead bigger
+    than the opponent's remaining shots of their five clinches it.
+    """
+    a = b = taken_a = taken_b = 0
+    for team, scored in shots:
+        if team == "a":
+            a += int(scored)
+            taken_a += 1
+        else:
+            b += int(scored)
+            taken_b += 1
+        if a > b and a - b > max(0, 5 - taken_b):
+            return "a"
+        if b > a and b - a > max(0, 5 - taken_a):
+            return "b"
+    return None
+
+
+async def _penalty_base(db: AsyncSession, meetup_id: int, match_id: int):
+    """Match + ordered shots, validated for an open shootout."""
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if match.status != "completed" or match.match_number != 1:
+        raise HTTPException(
+            status_code=409, detail="The shootout is for the first match only."
+        )
+    if match.score_a != match.score_b:
+        raise HTTPException(status_code=409, detail="The match did not end in a draw.")
+    shots = list(
+        (
+            await db.execute(
+                select(MatchPenalty)
+                .where(MatchPenalty.match_id == match.id)
+                .order_by(MatchPenalty.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return match, shots
+
+
+def _penalty_json(match: MeetupMatch, shots: list[MatchPenalty], users_by_id: dict[int, dict]) -> dict:
+    return {
+        "available": (
+            match.status == "completed"
+            and match.match_number == 1
+            and match.score_a == match.score_b
+            and match.penalty_winner is None
+        ),
+        "winner": match.penalty_winner,
+        "shots": [
+            {
+                "id": s.id,
+                "team": s.team,
+                "scored": s.scored,
+                "scorer": users_by_id.get(
+                    s.scorer_id,
+                    {"id": s.scorer_id, "display_name": f"User {s.scorer_id}"},
+                ),
+            }
+            for s in shots
+        ],
+        "counts": {
+            "a": sum(1 for s in shots if s.team == "a"),
+            "b": sum(1 for s in shots if s.team == "b"),
+        },
+        "decided": _shootout_winner([(s.team, s.scored) for s in shots]) is not None,
+    }
+
+
+@router.get("/{meetup_id}/matches/{match_id}/penalty")
+async def get_penalty_shootout(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    shots = list(
+        (
+            await db.execute(
+                select(MatchPenalty)
+                .where(MatchPenalty.match_id == match.id)
+                .order_by(MatchPenalty.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return _penalty_json(match, shots, users_by_id)
+
+
+@router.post("/{meetup_id}/matches/{match_id}/penalty/shots")
+async def add_penalty_shot(
+    meetup_id: int,
+    match_id: int,
+    body: PenaltyShotBody,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    match, shots = await _penalty_base(db, meetup_id, match_id)
+    if match.penalty_winner is not None:
+        raise HTTPException(status_code=409, detail="The shootout is already finished.")
+    n_a = sum(1 for s in shots if s.team == "a")
+    n_b = len(shots) - n_a
+    next_team = "a" if n_a == n_b else "b"
+    if body.team != next_team:
+        raise HTTPException(status_code=400, detail=f"Team {next_team.upper()} shoots next.")
+    roster = set(
+        _loads_int_list(match.team_a_users if body.team == "a" else match.team_b_users)
+    )
+    if body.scorer_id not in roster:
+        raise HTTPException(status_code=400, detail="Scorer must be on the shooting team.")
+    shot = MatchPenalty(
+        match_id=match.id, team=body.team, scored=body.scored, scorer_id=body.scorer_id
+    )
+    db.add(shot)
+    await db.commit()
+    shots.append(shot)
+    await _broadcast_match_event(
+        meetup_id,
+        {"type": "match_penalty_shots", "match_id": match.id},
+    )
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return _penalty_json(match, shots, users_by_id)
+
+
+@router.post("/{meetup_id}/matches/{match_id}/penalty/undo")
+async def undo_penalty_shot(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    match, shots = await _penalty_base(db, meetup_id, match_id)
+    if match.penalty_winner is not None:
+        raise HTTPException(status_code=409, detail="The shootout is already finished.")
+    if not shots:
+        raise HTTPException(status_code=400, detail="No shots to undo.")
+    await db.execute(delete(MatchPenalty).where(MatchPenalty.id == shots[-1].id))
+    await db.commit()
+    await _broadcast_match_event(
+        meetup_id,
+        {"type": "match_penalty_shots", "match_id": match.id},
+    )
+    shots.pop()
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return _penalty_json(match, shots, users_by_id)
+
+
+@router.post("/{meetup_id}/matches/{match_id}/penalty/finish")
+async def finish_penalty_shootout(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Lock in the shootout winner: they take the de-facto match win and
+    stay on the pitch for the next match."""
+    match, shots = await _penalty_base(db, meetup_id, match_id)
+    if match.penalty_winner is not None:
+        raise HTTPException(status_code=409, detail="The shootout is already finished.")
+    winner = _shootout_winner([(s.team, s.scored) for s in shots])
+    if winner is None:
+        raise HTTPException(status_code=400, detail="The shootout is not decided yet.")
+    match.penalty_winner = winner
+
+    # end_match auto-created the next match with the default tie winner
+    # (away team) on pitch — put the shootout winner there instead.
+    next_match = (
+        await db.execute(
+            select(MeetupMatch).where(
+                MeetupMatch.meetup_id == meetup_id,
+                MeetupMatch.match_number == match.match_number + 1,
+                MeetupMatch.status == "pending",
+            )
+        )
+    ).scalars().first()
+    if next_match is not None:
+        winner_users = _loads_int_list(
+            match.team_a_users if winner == "a" else match.team_b_users
+        )
+        if winner_users != _loads_int_list(next_match.team_a_users):
+            next_match.team_a_users, next_match.team_b_users = (
+                next_match.team_b_users,
+                next_match.team_a_users,
+            )
+            next_match.team_a_name, next_match.team_b_name = (
+                next_match.team_b_name,
+                next_match.team_a_name,
+            )
+            next_match.team_a_users = json.dumps(winner_users)
+            next_match.team_a_name = (
+                match.team_a_name if winner == "a" else match.team_b_name
+            )
+
+    await db.commit()
+    await _broadcast_match_event(
+        meetup_id,
+        {"type": "match_penalty_finished", "match_id": match.id, "winner": winner},
+    )
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    result: dict = {"winner": winner, "match": _match_json(match, users_by_id)}
+    if next_match is not None:
+        result["next_match"] = _match_json(next_match, users_by_id)
+    return result
 
 
 @router.post("/{meetup_id}/matches/{match_id}/timer/start")
@@ -1421,6 +1675,10 @@ async def end_match(
         "match": _match_json(match, users_by_id),
         "winner_team": winner_team,
         "winner_name": winner_name,
+        # A tied first match goes to a penalty shootout (referee UI shows it
+        # automatically); the winner takes the de-facto win afterwards.
+        "penalty_due": match.match_number == 1 and is_tie
+        and match.penalty_winner is None,
     }
     if next_match_data:
         result["next_match"] = next_match_data

@@ -259,6 +259,27 @@ async def notify_auto_promoted(
     await _send_push_to_users(db, {user.id}, data, category="waitlist")
 
 
+async def notify_demoted_to_waitlist(
+    db: AsyncSession,
+    meetup: Meetup,
+    user: User,
+) -> None:
+    """Push a player demoted to the waitlist by a Weather Hero redemption."""
+    if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
+        return
+
+    loc = (meetup.location or "Meetup")[:80]
+    data = _payload(
+        title="Miootz: back to the waitlist",
+        body=f"A Weather Hero took your spot — {loc}",
+        url=f"/meetups/{meetup.id}",
+        actions=[
+            _action("view", "View", meetup),
+        ],
+    )
+    await _send_push_to_users(db, {user.id}, data, category="waitlist")
+
+
 async def notify_meetup_chat_recipients(
     db: AsyncSession,
     meetup_id: int,

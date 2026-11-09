@@ -155,6 +155,7 @@ async def test_admin_player_history():
             "season_wins",
             "season_matches",
             "season_win_rate",
+            "weather_hero_unused",
         }
         assert data["history"]["total"] == 2
         items = data["history"]["items"]

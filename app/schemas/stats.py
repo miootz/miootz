@@ -21,6 +21,7 @@ class UserStats(BaseModel):
     season_wins: int = 0
     season_matches: int = 0
     season_win_rate: float = 0.0
+    weather_hero_unused: int = 0
 
 
 class MatchScoreReport(BaseModel):

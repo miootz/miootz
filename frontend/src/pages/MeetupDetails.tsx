@@ -19,7 +19,13 @@ import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
-import { addPlusOne, joinMeetup, leaveMeetup } from "../api/meetupsApi";
+import {
+	addPlusOne,
+	joinMeetup,
+	leaveMeetup,
+	redeemWeatherHero,
+} from "../api/meetupsApi";
+import { CloudRain } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
 import { Link } from "react-router-dom";
@@ -296,11 +302,13 @@ function MeetupAttendanceActions({
 	myAttendance,
 	onUpdated,
 	myWaitlistPosition,
+	myWeatherHeroUnused,
 }: {
 	meetupId: string;
 	myAttendance: Meetup["myAttendance"];
 	onUpdated: () => void;
 	myWaitlistPosition?: number | null;
+	myWeatherHeroUnused?: number | null;
 }) {
 	const { showToast } = useToast();
 	const [busy, setBusy] = useState(false);
@@ -369,6 +377,26 @@ function MeetupAttendanceActions({
 		}
 	};
 
+	const runRedeemWeatherHero = async () => {
+		setFeedback(null);
+		setBusy(true);
+		try {
+			const res = await redeemWeatherHero(sid);
+			setOpt(res.status === "confirmed" ? "confirmed" : status);
+			hapticSuccess();
+			setCelebrate(true);
+			window.setTimeout(() => setCelebrate(false), 2200);
+			showToast("Weather Hero used — you're on the list!", "success");
+			onUpdated();
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : "Request failed";
+			setFeedback(msg);
+			showToast(msg, "error");
+		} finally {
+			setBusy(false);
+		}
+	};
+
 	const meta = STATUS_META[status ?? "none"];
 	const MetaIcon = meta.icon;
 
@@ -418,6 +446,18 @@ function MeetupAttendanceActions({
 								{status === "cancelled" ? "Join again" : "Join meetup"}
 							</button>
 						)}
+						{status === "waitlisted" &&
+							(myWeatherHeroUnused ?? 0) > 0 && (
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() => void runRedeemWeatherHero()}
+									className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
+								>
+									<CloudRain size={14} aria-hidden />
+									Use Weather Hero spot
+								</button>
+							)}
 						{(status === "confirmed" || status === "waitlisted") && (
 							<>
 								{status === "confirmed" && (
@@ -507,6 +547,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					meetupId={meetup.id}
 					myAttendance={meetup.myAttendance}
 					myWaitlistPosition={meetup.myWaitlistPosition}
+					myWeatherHeroUnused={meetup.myWeatherHeroUnused}
 					onUpdated={onRosterUpdated}
 				/>
 			)}

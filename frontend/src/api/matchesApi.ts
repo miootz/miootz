@@ -15,6 +15,8 @@ export interface MatchSummary {
   score_b: number;
   /** True when the match ended level and the template records draws. */
   was_draw?: boolean;
+  /** 'a' | 'b' when a penalty shootout resolved a tied first match. */
+  penalty_winner?: "a" | "b" | null;
   status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;
@@ -107,6 +109,8 @@ export interface MatchSubstitution {
   id: number;
   recorded_by: string | null;
   created_at: string | null;
+  /** Match-clock seconds for a mid-match (timer-paused) swap; null pre-start. */
+  clock_secs?: number | null;
   old_team_a_users: number[];
   old_team_b_users: number[];
   new_team_a_users: number[];
@@ -209,6 +213,8 @@ export async function endMatch(
   match: MatchSummary;
   winner_team: "a" | "b";
   winner_name: string;
+  /** True when a tied first match goes to a penalty shootout. */
+  penalty_due?: boolean;
   next_match?: MatchSummary;
   all_matches_complete?: boolean;
 }> {
@@ -230,4 +236,78 @@ export async function deleteMatch(
     method: "DELETE",
   });
   if (!r.ok) throw new Error(await parseApiError(r));
+}
+
+// ── Penalty shootout (tied first match) ───────────────────────────
+
+export interface PenaltyShot {
+  id: number;
+  team: "a" | "b";
+  scored: boolean;
+  scorer: { id: number; display_name: string; avatar_url?: string | null };
+}
+
+export interface PenaltyState {
+  available: boolean;
+  winner: "a" | "b" | null;
+  shots: PenaltyShot[];
+  counts: { a: number; b: number };
+  /** A side has an uncatchable lead — finish is allowed. */
+  decided: boolean;
+}
+
+async function penaltyFetch<T>(
+  meetupId: number,
+  matchId: number,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/penalty${path}`,
+    {
+      method: body === undefined ? "GET" : "POST",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export function fetchPenalty(
+  meetupId: number,
+  matchId: number,
+): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "");
+}
+
+export function addPenaltyShot(
+  meetupId: number,
+  matchId: number,
+  team: "a" | "b",
+  scored: boolean,
+  scorerId: number,
+): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "/shots", {
+    team,
+    scored,
+    scorer_id: scorerId,
+  });
+}
+
+export function undoPenaltyShot(
+  meetupId: number,
+  matchId: number,
+): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "/undo");
+}
+
+export function finishPenaltyShootout(
+  meetupId: number,
+  matchId: number,
+): Promise<{
+  winner: "a" | "b";
+  match: MatchSummary;
+  next_match?: MatchSummary;
+}> {
+  return penaltyFetch(meetupId, matchId, "/finish");
 }

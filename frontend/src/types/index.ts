@@ -63,6 +63,8 @@ export interface Meetup {
   myAttendance?: MyAttendanceStatus | null;
   /** 1-based waitlist position when the viewer is waitlisted. */
   myWaitlistPosition?: number | null;
+  /** The viewer's unused Weather Hero awards (from GET /meetups/:id). */
+  myWeatherHeroUnused?: number | null;
   /** Live match summaries when the viewer is on the matches surface. */
   matches?: MatchSummary[];
 }

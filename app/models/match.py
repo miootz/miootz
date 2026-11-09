@@ -48,6 +48,9 @@ class MeetupMatch(Base):
     #: True when the match ended level and the template records draws —
     #: statistics show a draw while the away team still holds the win.
     was_draw: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: 'a' | 'b' when a penalty shootout resolved a tied first match. The
+    #: shootout winner takes the de-facto win (stats + pitch rotation).
+    penalty_winner: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Timer
     #: Total match duration in seconds (from meetup.match_duration_minutes).
@@ -83,4 +86,24 @@ class MatchSubstitution(Base):
     new_team_a_users: Mapped[str] = mapped_column(Text)
     new_team_b_users: Mapped[str] = mapped_column(Text)
     recorded_by: Mapped[int] = mapped_column(Integer)
+    #: Match-clock seconds when a mid-match (timer-paused) swap happened;
+    #: NULL for pre-start swaps. Drives ≥50%-played credit in rankings.
+    clock_secs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class MatchPenalty(Base):
+    """One penalty shootout shot for a tied first match.
+
+    Shots are logged in turn (teams alternate, team A first); the scorer is
+    chosen per shot — order is decided on the pitch. Undo = delete last row.
+    """
+
+    __tablename__ = "match_penalties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("meetup_matches.id"), index=True)
+    team: Mapped[str] = mapped_column(String)  # 'a' | 'b'
+    scored: Mapped[bool] = mapped_column(Boolean)
+    scorer_id: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

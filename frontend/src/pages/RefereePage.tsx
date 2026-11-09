@@ -33,6 +33,7 @@ import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
 import { playFinalWhistle, playHalfTimeWhistle } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
+import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
 import { TeamReshapeSheet } from "../components/TeamReshapeSheet";
 import { AuthContext } from "../auth/auth-context";
 import {
@@ -358,6 +359,9 @@ export function RefereePage() {
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  // A tied first match goes to penalties — the panel shows automatically
+  // (also on reload mid-shootout; it clears once the winner is locked).
+  const [penaltyMatch, setPenaltyMatch] = useState<MatchSummary | null>(null);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const prevRatioRef = useRef<number | null>(null);
   // Match id for which the final-whistle auto-end already fired (guards the
@@ -477,6 +481,16 @@ export function RefereePage() {
         setTimerSeconds(0);
         setIsPaused(false);
       }
+      // Resume an interrupted shootout: completed tied first match with no
+      // locked winner.
+      const shoot = res.matches.find(
+        (m) =>
+          m.status === "completed" &&
+          m.match_number === 1 &&
+          m.score_a === m.score_b &&
+          m.penalty_winner == null,
+      );
+      setPenaltyMatch(shoot ?? null);
     } catch (e) {
       showToast(
         e instanceof Error ? e.message : "Failed to load matches",
@@ -551,6 +565,8 @@ export function RefereePage() {
           case "match_created":
           case "match_reset":
           case "match_score_updated":
+          case "match_penalty_shots":
+          case "match_penalty_finished":
             void loadMatches();
             break;
         }
@@ -1065,6 +1081,16 @@ export function RefereePage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+        {penaltyMatch && !isPastDeadline && (
+          <PenaltyShootoutPanel
+            meetupId={sid}
+            match={penaltyMatch}
+            onFinished={() => {
+              setPenaltyMatch(null);
+              void loadMatches();
+            }}
+          />
+        )}
         {isPastDeadline ? (
           /* Locked — past deadline */
           <div className="space-y-4">
@@ -1378,8 +1404,11 @@ export function RefereePage() {
               </div>
             )}
 
-            {/* Pre-start substitutions — admin only, hidden while a match runs */}
-            {currentMatch.status === "pending" && isAdmin && (
+            {/* Substitutions — admin only: pre-start, or mid-match while the
+                timer is paused. Same button + panel in both. */}
+            {(currentMatch.status === "pending" ||
+              (currentMatch.status === "active" && isPaused)) &&
+            isAdmin && (
               <div className="space-y-3">
                 <button
                   type="button"

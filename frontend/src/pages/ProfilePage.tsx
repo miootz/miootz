@@ -491,6 +491,10 @@ export function ProfilePage() {
                   label="Season win %"
                   value={`${Math.round(stats.season_win_rate * 100)}%`}
                 />
+                <StatCard
+                  label="Weather Hero unused"
+                  value={String(stats.weather_hero_unused)}
+                />
               </div>
             </div>
           )}

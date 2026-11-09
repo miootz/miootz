@@ -61,6 +61,7 @@ function mapDetailToMeetup(detail: MeetupDetail, teams: Team[]): Meetup {
     teamAssignmentMode:
       detail.team_assignment_mode === "random" ? "random" : "balanced",
     myWaitlistPosition: detail.my_waitlist_position ?? null,
+    myWeatherHeroUnused: detail.my_weather_hero_unused ?? null,
   };
 }
 
