@@ -18,7 +18,10 @@ from app.services.recurrence_scheduler import (
     register_game_template_job,
     unregister_game_template_job,
 )
-from app.services.recurring_meetups import next_announce_occurrence_utc
+from app.services.recurring_meetups import (
+    next_announce_occurrence_utc,
+    next_occurrence_utc,
+)
 from app.core.timeutil import utcnow
 
 router = APIRouter(prefix="/game-templates", tags=["game-templates"])
@@ -60,6 +63,12 @@ def _template_json(t: GameTemplate, *, meetup_count: int | None = None) -> dict:
         "allows_draws": getattr(t, "allows_draws", False),
         "next_announce_at": (
             next_announce_occurrence_utc(t, utcnow()).isoformat()
+            if t.is_active
+            else None
+        ),
+        # Next scheduled kickoff (the meetup materializes at the announce run).
+        "next_occurrence_at": (
+            next_occurrence_utc(t, utcnow()).isoformat()
             if t.is_active
             else None
         ),

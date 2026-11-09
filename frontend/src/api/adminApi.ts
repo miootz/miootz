@@ -60,6 +60,8 @@ export type GameTemplateRow = GameTemplatePayload & {
   materialized_meetup_count?: number;
   /** Next scheduled announce run (UTC ISO), null when template inactive. */
   next_announce_at?: string | null;
+  /** Next scheduled kickoff (UTC ISO), null when template inactive. */
+  next_occurrence_at?: string | null;
 };
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {

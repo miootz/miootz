@@ -268,7 +268,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
 
       {/* Scoreboard — team slabs + the big numbers */}
       <div className="flex items-stretch">
-        <div className="flex flex-1 items-center justify-end bg-team-a px-3 py-2.5">
+        <div className="flex min-w-0 flex-1 items-center justify-end bg-team-a px-3 py-2.5">
           <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
             {currentMatch.team_a.name}
           </p>
@@ -282,7 +282,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
             {currentMatch.score_b}
           </span>
         </div>
-        <div className="flex flex-1 items-center bg-team-b px-3 py-2.5">
+        <div className="flex min-w-0 flex-1 items-center bg-team-b px-3 py-2.5">
           <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
             {currentMatch.team_b.name}
           </p>

@@ -156,6 +156,7 @@ export function AdminDashboard() {
   const activeTemplate =
     templates?.find((t) => t.is_active) ?? templates?.[0] ?? null;
   const nextAnnounceAt = activeTemplate?.next_announce_at ?? null;
+  const nextOccurrenceAt = activeTemplate?.next_occurrence_at ?? null;
 
   // SAFETY: the meetups API may include an undeclared `current_match` object
   // ({ status, match_number }) in the detail payload; the TS type lags behind.
@@ -281,13 +282,33 @@ export function AdminDashboard() {
           </div>
         </>
       ) : (
-        /* ── No upcoming meetup ─────────────────────────── */
+        /* ── No upcoming meetup (next one not materialized yet) ── */
         <section className="mb-4 border border-line bg-panel p-6">
-          <h2 className="text-xl font-bold text-ink">No upcoming meetup</h2>
+          {nextOccurrenceAt ? (
+            <>
+              <h2 className="text-xl font-bold text-ink">
+                Next meetup — {format(new Date(nextOccurrenceAt), "EEEE, d MMMM")}
+                <span className="ml-2 text-lg font-semibold text-ink-dim tabular-nums">
+                  {format(new Date(nextOccurrenceAt), "HH:mm")}
+                </span>
+              </h2>
+              <p className="mt-1 text-sm text-ink-dim flex items-center gap-1.5">
+                <MapPin
+                  className="w-3.5 h-3.5 text-ink-faint shrink-0"
+                  aria-hidden
+                />
+                <span>{activeTemplate?.location}</span>
+              </p>
+            </>
+          ) : (
+            <h2 className="text-xl font-bold text-ink">No upcoming meetup</h2>
+          )}
           <p className="mt-1 text-sm text-ink-dim">
             {nextAnnounceAt
               ? `Signups open ${format(new Date(nextAnnounceAt), "EEEE, d MMMM · HH:mm")}.`
-              : "Activate a template to schedule meetups automatically."}
+              : nextOccurrenceAt
+                ? "Scheduled from the active template."
+                : "Activate a template to schedule meetups automatically."}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Link

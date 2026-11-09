@@ -1,6 +1,8 @@
-"""Local showcase runner: python -m app.demo --scenario full.
+"""Local showcase runner: python -m app.demo [--scenario full].
 
 This entrypoint alone installs demo adapters. The production app never imports it.
+One server hosts every scenario: the /api/demo menu picks the scenario (which
+wipes and re-seeds the temporary database) and then the demo account.
 Every run owns a fresh temporary database and binds both servers to loopback,
 unless the DEMO_BIND_HOST / DEMO_TRUSTED_HOSTS / DEMO_PUBLIC_APP_URL env vars
 override it (e.g. when served from a container behind a reverse proxy).
@@ -90,7 +92,7 @@ async def prepare(
     from app.api.main import app
     from app.api import middleware, users
     from app.core.database import Base, async_session, engine
-    from app.demo_data import ACTORS, NAMES, seed_demo
+    from app.demo_data import ACTORS, NAMES, SCENARIOS, seed_demo
     from app.services import pocket_id_jwt, weather_service
     from fastapi import HTTPException
     from fastapi.responses import HTMLResponse, RedirectResponse
@@ -142,7 +144,7 @@ async def prepare(
     # Authorization header; the demo owns these routes, so mark them public.
     middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {"/demo"}
     middleware._PUBLIC_PATH_PREFIXES = (
-        middleware._PUBLIC_PATH_PREFIXES + ("/demo/login/",)
+        middleware._PUBLIC_PATH_PREFIXES + ("/demo/login/", "/demo/scenario/")
     )
     if enable_push:
         middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {
@@ -157,6 +159,25 @@ async def prepare(
     pocket_id_jwt._fetch_jwks = no_jwks
     weather_service.fetch_forecast = sample_weather
     weather_service.fetch_current = sample_weather
+
+    # Scenarios differ only in the seeded data, so switching one on the
+    # menu wipes the temporary database and re-seeds it at "now".
+    current = {"scenario": scenario, "manifest": manifest}
+    reseed_lock = asyncio.Lock()
+
+    async def reseed(name: str) -> None:
+        if name not in SCENARIOS:
+            raise HTTPException(status_code=404, detail="Unknown demo scenario")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        async with async_session() as db:
+            new_manifest = await seed_demo(
+                db,
+                anchor=datetime.now(UTC).replace(tzinfo=None, microsecond=0),
+                scenario=name,
+            )
+        current.update(scenario=name, manifest=new_manifest)
 
     if simulate_invites:
 
@@ -188,6 +209,10 @@ async def prepare(
 
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_menu():
+        scenario_buttons = "".join(
+            f'<form method="post" action="/api/demo/scenario/{name}"><button>{html.escape(name.title())}{" — current" if name == current["scenario"] else ""}</button></form>'
+            for name in SCENARIOS
+        )
         buttons = "".join(
             f'<form method="post" action="/api/demo/login/{role}"><button>{html.escape(role.title())} · {html.escape(NAMES[uid - 1])}</button></form>'
             for role, uid in ACTORS.items()
@@ -209,15 +234,25 @@ async def prepare(
         )
         return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
         <style>body{{font:16px system-ui;max-width:600px;margin:48px auto;padding:24px;color:#262033;background:#faf8ff}}button{{padding:14px;width:100%;margin:6px 0;background:#7c3aed;color:white;border:0;border-radius:12px;font:inherit;text-align:left}}a{{color:#6d28d9}}</style></head>
-        <body><h1>Miootz demo</h1><p>Scenario: <strong>{scenario}</strong>. Sample accounts named after footballers; sample venue and weather. All changes stay in this temporary database.</p>
-        {buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
-        <p>Use this menu to switch accounts. Restart the runner to reset the scenario.</p>
+        <body><h1>Miootz demo</h1><p>Sample accounts named after footballers; sample venue and weather. All changes stay in this temporary database.</p>
+        {scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>Signing in re-seeds the selected scenario at "now", so the demo is always fresh — an idle server never shows an expired state. The guest button opens the reservation; other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
+
+    @app.post("/demo/scenario/{name}", response_class=HTMLResponse)
+    async def demo_switch_scenario(name: str):
+        if name not in SCENARIOS:
+            raise HTTPException(status_code=404, detail="Unknown demo scenario")
+        current["scenario"] = name
+        return await demo_menu()
 
     @app.post("/demo/login/{role}", response_class=HTMLResponse)
     async def demo_login(role: str):
         if role not in ACTORS:
             raise HTTPException(status_code=404, detail="Unknown demo account")
+        # A fresh seed on every sign-in: the chosen scenario is anchored to
+        # "now", so a server that has sat idle never shows an expired demo.
+        async with reseed_lock:
+            await reseed(current["scenario"])
         try:
             expires_at_ms = int(
                 (datetime.now(UTC) + timedelta(hours=12)).timestamp() * 1000
@@ -254,12 +289,32 @@ def check_port(port: int) -> None:
         probe.bind(("127.0.0.1", port))
 
 
+def ensure_dev_certs(root: Path) -> tuple[str, str]:
+    """mkcert pair (reused across runs) covering the WireGuard IP + loopback."""
+    cert_dir = root / "data" / "demo-certs"
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    key = cert_dir / "demo-key.pem"
+    cert = cert_dir / "demo-cert.pem"
+    if not key.exists() or not cert.exists():
+        subprocess.run(
+            [
+                "mkcert",
+                "-key-file", str(key),
+                "-cert-file", str(cert),
+                "127.0.0.1", "127.0.0.1", "localhost",
+            ],
+            check=True,
+        )
+    return str(key), str(cert)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
         choices=["open", "full", "broadcast", "random", "live", "kickoff"],
         default="full",
+        help="Scenario loaded at startup; the demo menu can switch any of them.",
     )
     parser.add_argument("--api-port", type=int, default=8010)
     parser.add_argument("--frontend-port", type=int, default=5180)
@@ -272,6 +327,11 @@ def main() -> None:
         "--simulate-invites",
         action="store_true",
         help="Record the real admin UI with simulated Pocket ID responses and nonfunctional .example links.",
+    )
+    parser.add_argument(
+        "--https",
+        action="store_true",
+        help="Serve the frontend over HTTPS (mkcert) so phones get a secure context.",
     )
     args = parser.parse_args()
     bind_host = os.environ.get("DEMO_BIND_HOST", "127.0.0.1")
@@ -296,13 +356,23 @@ def main() -> None:
             )
         )
         print(json.dumps(manifest, indent=2), flush=True)
-        print(f"Open http://127.0.0.1:{args.frontend_port}/api/demo", flush=True)
+        scheme = "https" if args.https else "http"
+        print(
+            f"Open {scheme}://127.0.0.1:{args.frontend_port}/api/demo "
+            f"(or {scheme}://127.0.0.1:{args.frontend_port}/api/demo)",
+            flush=True,
+        )
         frontend_env = dict(
             os.environ,
             VITE_DOCKER_DEV="0",
             MIOOTZ_API_PROXY_TARGET=f"http://127.0.0.1:{args.api_port}",
             VITE_API_BASE="/api",
+            VITE_ALLOWED_HOSTS=bind_host,
+            VITE_HTTPS_BOUNCE="0",
         )
+        if args.https:
+            key, cert = ensure_dev_certs(root)
+            frontend_env.update(VITE_SSL_KEYFILE=key, VITE_SSL_CERTFILE=cert)
         frontend_args = ["npm", "run", "dev", "--"]
         if args.enable_push:
             output = str(Path(directory) / "frontend")

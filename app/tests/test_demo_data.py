@@ -26,7 +26,9 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
     async with async_sessionmaker(engine, expire_on_commit=False)() as db:
         manifest = await seed_demo(db, anchor=anchor, scenario=scenario)
         assert manifest["confirmed"] == (
-            15 if scenario in ("full", "broadcast") else 12
+            16 if scenario in ("live", "kickoff")
+            else 15 if scenario in ("full", "broadcast")
+            else 12
         )
         assert manifest["waitlisted"] == (3 if scenario in ("full", "broadcast") else 0)
         current = await db.get(Meetup, 1)
@@ -65,7 +67,11 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         teams = json.loads(current.manual_teams_json)
         assert set(uid for team in teams for uid in team) == confirmed
         assert sum(len(team) for team in teams) == len(confirmed)
-        assert max(map(len, teams)) - min(map(len, teams)) <= 1
+        if scenario in ("live", "kickoff"):
+            # 3 teams of 5 + a 1-player bench pool.
+            assert sorted(len(team) for team in teams) == [1, 5, 5, 5]
+        else:
+            assert max(map(len, teams)) - min(map(len, teams)) <= 1
         assert await db.scalar(select(func.count()).select_from(MeetupMatch)) == (
             19 if scenario in ("live", "kickoff") else 18
         )

@@ -11,8 +11,11 @@
 // Plain HTTP (non-localhost) is not a secure context: crypto.subtle /
 // crypto.randomUUID don't exist, so sign-in can never start. The local dev
 // stack serves the same app over mkcert HTTPS on :8443 — bounce there once
-// instead of failing inside authorize().
+// instead of failing inside authorize(). The isolated demo never runs OIDC
+// (tokens are injected by its login page), so it opts out via
+// VITE_HTTPS_BOUNCE=0.
 if (
+  import.meta.env.VITE_HTTPS_BOUNCE !== "0" &&
   window.location.protocol === "http:" &&
   !["localhost", "127.0.0.1"].includes(window.location.hostname)
 ) {

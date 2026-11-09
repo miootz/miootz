@@ -78,10 +78,10 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     db.add(template)
     await db.flush()
 
-    def meetup(sid: int, start: datetime) -> Meetup:
+    def meetup(sid: int, start: datetime, max_players: int = 15) -> Meetup:
         return Meetup(
             id=sid, game_template_id=1, start_time=start, location=template.location,
-            fee=5, min_players=10, max_players=15, latitude=template.latitude, longitude=template.longitude,
+            fee=5, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
             waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
             team_assignment_mode='random' if scenario == 'random' and sid == 1 else 'balanced',
             duration_minutes=120, match_duration_minutes=10, max_teams=3,
@@ -91,14 +91,17 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     # 'kickoff': the meetup starts right now; the first match is prepared
     # (pending) and the live-match/steward controls are unlocked at launch.
     upcoming_start = anchor if scenario == 'kickoff' else kickoff
-    upcoming = meetup(1, upcoming_start)
+    live_like = scenario in ('live', 'kickoff')
+    # live/kickoff: a full 16-player house (the headroom comes from the
+    # bumped max_players below), fielded as 3 teams of 5 + 1 bench player.
+    upcoming = meetup(1, upcoming_start, max_players=16 if live_like else 15)
     upcoming.weather_forecast_temp_c = 22
     upcoming.weather_forecast_code = 1
     upcoming.weather_forecast_label = 'Mainly clear'
     upcoming.weather_forecast_fetched_at = anchor
     db.add(upcoming)
     full = scenario in ('full', 'broadcast')
-    confirmed = list(range(1, 15 if full else 12)) + [21]
+    confirmed = list(range(1, 16 if live_like else 15 if full else 12)) + [21]
     waitlisted = [16, 17, 18] if full else []
     for index, uid in enumerate(confirmed + waitlisted):
         db.add(Attendance(meetup_id=1, user_id=uid,
@@ -175,7 +178,13 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         await update_user_calculated_skill(db, member.id, commit=False)
 
     players = [{'id': u.id, 'skill': u.calculated_skill or u.self_assessed_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
-    if scenario == 'random':
+    if live_like:
+        # 3 teams of 5 (skill-snake) + the lowest-rated player as the bench
+        # pool — a 1-person bench is valid per validate_team_partition.
+        ordered = sorted(players, key=lambda p: float(p['skill']), reverse=True)
+        teams = [[p['id'] for p in t] for t in assign_teams_snake(ordered[:15], max_teams=3)]
+        teams.append([ordered[15]['id']])
+    elif scenario == 'random':
         order = confirmed[:]
         random.Random(2026).shuffle(order)
         teams = [order[i::3] for i in range(3)]
@@ -194,9 +203,10 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             created_at=paused - timedelta(seconds=198),
         ))
     if scenario == 'kickoff':
-        # First round prepared, not started — one match per pitch pair.
+        # First round prepared, not started — one match per pitch pair. The
+        # final partition is the bench pool, never a playing side.
         for idx, (a, b) in enumerate([(0, 1), (2, 3)]):
-            if b >= len(teams):
+            if b >= len(teams) - 1:
                 break
             db.add(MeetupMatch(
                 meetup_id=1, match_number=idx + 1,

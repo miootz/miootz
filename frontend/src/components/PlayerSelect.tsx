@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { Avatar } from "./Avatar";
 
@@ -131,17 +137,23 @@ export function PlayerSelect({
             <ul>
               {shown.map((p) => {
                 const isSel = selected?.id === p.id;
+                // onMouseDown beats the document click-outside handler on
+                // desktop; onClick is the touch path — phones fire click (the
+                // tap-tick checkbox overlay eats the synthetic mousedown), so
+                // both. The first to fire closes the list, so the other
+                // cannot double-fire.
+                const pick = (e: ReactMouseEvent) => {
+                  e.preventDefault();
+                  onSelect(p);
+                  setOpen(false);
+                  setQuery("");
+                };
                 return (
                   <li key={p.id}>
                     <button
                       type="button"
-                      // mousedown so it beats the document click-outside handler.
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onSelect(p);
-                        setOpen(false);
-                        setQuery("");
-                      }}
+                      onMouseDown={pick}
+                      onClick={pick}
                       className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                         isSel
                           ? "bg-live/15 text-live font-semibold"
@@ -170,6 +182,11 @@ export function PlayerSelect({
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
+                  onClear?.();
+                  setOpen(false);
+                  setQuery("");
+                }}
+                onClick={() => {
                   onClear?.();
                   setOpen(false);
                   setQuery("");
