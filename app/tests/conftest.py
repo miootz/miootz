@@ -12,6 +12,9 @@ _db_path = _root / "data" / "pytest_miootz.db"
 _db_path.parent.mkdir(parents=True, exist_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_db_path}"
 
+# Separate audit database for tests (same pattern as the main DB above).
+os.environ["AUDIT_DATABASE_URL"] = f"sqlite+aiosqlite:///{_root / 'data' / 'pytest_audit.db'}"
+
 # Avoid background scheduler threads during pytest unless explicitly enabled.
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 

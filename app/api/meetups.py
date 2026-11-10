@@ -71,6 +71,7 @@ from app.services.recurring_meetups import (
 )
 from app.services import weather_service
 from app.core.timeutil import to_utc, utcnow
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/meetups", tags=["meetups"])
 
@@ -260,6 +261,7 @@ def _game_template_json(t: GameTemplate | None) -> dict | None:
 @router.post("/", status_code=201)
 async def create_meetup(
     meetup_data: MeetupCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -272,6 +274,14 @@ async def create_meetup(
     await db.flush()
     await db.commit()
     await db.refresh(new_meetup)
+    log_action(
+        request,
+        "meetup",
+        "meetup.created",
+        f"Created meetup '{new_meetup.location}' for {new_meetup.start_time:%Y-%m-%d %H:%M} UTC "
+        f"({new_meetup.min_players}-{new_meetup.max_players} players)",
+        meetup_id=new_meetup.id,
+    )
 
     if meetup_data.send_push_notifications:
         result = await db.execute(select(User))
@@ -688,6 +698,7 @@ async def get_meetup_scores(meetup_id: int, db: AsyncSession = Depends(get_db)):
 async def patch_meetup_teams(
     meetup_id: int,
     body: TeamsUpdateBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -737,6 +748,14 @@ async def patch_meetup_teams(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "teams",
+        "teams.lineup_saved",
+        f"Saved team lineups for '{meetup.location}' "
+        f"({len(int_teams)} teams, {len(confirmed_ids)} players)",
+        meetup_id=meetup_id,
+    )
 
     teams_nested = build_teams_from_manual(players, int_teams)
     out = format_teams_api_payload(teams_nested)
@@ -750,6 +769,7 @@ async def patch_meetup_teams(
 @router.post("/{meetup_id}/teams/reshuffle")
 async def reshuffle_meetup_teams(
     meetup_id: int,
+    request: Request,
     body: TeamsReshuffleBody | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
@@ -837,6 +857,16 @@ async def reshuffle_meetup_teams(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "teams",
+        "teams.reshuffled",
+        f"Reshuffled teams for '{meetup.location}' "
+        + ("(full redraw)"
+           if not body or not body.teams
+           else f"(rebalanced around {len(body.locked)} locked players)"),
+        meetup_id=meetup_id,
+    )
     return {"status": "reshuffled", "content_revision": rev}
 
 
@@ -844,6 +874,7 @@ async def reshuffle_meetup_teams(
 async def adjust_meetup_teams(
     meetup_id: int,
     body: TeamsAdjustBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -873,6 +904,18 @@ async def adjust_meetup_teams(
     if "error" in outcome:
         raise HTTPException(status_code=400, detail=outcome["error"])
 
+    promoted = outcome.get("promoted", [])
+    returned = outcome.get("returned", [])
+    log_action(
+        request,
+        "teams",
+        "teams.adjusted",
+        f"{'Expanded' if op == 'expand' else 'Contracted'} teams for '{meetup.location}' "
+        f"by {body.num_teams} team(s)"
+        + (f"; promoted: {', '.join(promoted)}" if promoted else "")
+        + (f"; back to waitlist: {', '.join(returned)}" if returned else ""),
+        meetup_id=meetup_id,
+    )
     return outcome
 
 
@@ -880,6 +923,7 @@ async def adjust_meetup_teams(
 async def reshape_meetup_teams(
     meetup_id: int,
     body: TeamsReshapeBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -971,6 +1015,14 @@ async def reshape_meetup_teams(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "teams",
+        "teams.reshaped",
+        f"Reshaped '{meetup.location}' into {body.team_count}×{body.team_size} "
+        f"({len(partition)} teams incl. bench, {len(leftover)} on bench)",
+        meetup_id=meetup_id,
+    )
 
     teams_nested = build_teams_from_manual(players, partition)
     out = format_teams_api_payload(teams_nested, team_names)
@@ -985,6 +1037,7 @@ async def reshape_meetup_teams(
 async def update_meetup(
     meetup_id: int,
     update_data: MeetupUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -1022,6 +1075,13 @@ async def update_meetup(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "meetup",
+        "meetup.updated",
+        f"Updated '{meetup.location}' — changed: {', '.join(sorted(data))}",
+        meetup_id=meetup_id,
+    )
     if "start_time" in data or "duration_minutes" in data:
         # Re-point the durable rating-reminder job at the new end time
         from app.services.rating_reminder_scheduler import register_rating_reminder
@@ -1033,6 +1093,7 @@ async def update_meetup(
 @router.post("/{meetup_id}/skip")
 async def skip_meetup(
     meetup_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -1057,6 +1118,15 @@ async def skip_meetup(
     # template's announce schedule. Idempotent per kickoff instant.
     if meetup.game_template_id:
         await materialize_next_meetup(meetup.game_template_id)
+    log_action(
+        request,
+        "meetup",
+        "meetup.skipped",
+        f"Skipped '{meetup.location}' ({meetup.start_time:%Y-%m-%d %H:%M} UTC); "
+        "hidden from listings"
+        + ("; next occurrence materialized" if meetup.game_template_id else ""),
+        meetup_id=meetup_id,
+    )
     return {"status": "skipped"}
 
 
@@ -1117,6 +1187,13 @@ async def join_meetup(
                 await notify_meetup_data_changed(meetup_id, rev)
             await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
             await db.refresh(attendance)
+            log_action(
+                request,
+                "attendance",
+                "attendance.joined",
+                f"Re-joined '{meetup.location}' as {attendance.status}",
+                meetup_id=meetup_id,
+            )
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined meetup")
 
@@ -1155,6 +1232,13 @@ async def join_meetup(
         await notify_meetup_data_changed(meetup_id, rev)
     await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
     await db.refresh(new_attendance)
+    log_action(
+        request,
+        "attendance",
+        "attendance.joined",
+        f"Joined '{meetup.location}' as {new_attendance.status}",
+        meetup_id=meetup_id,
+    )
 
     return {"status": new_attendance.status, "attendance_id": new_attendance.id}
 
@@ -1199,12 +1283,21 @@ async def leave_meetup(
     if prev == "confirmed":
         await handle_leave_or_cancel(db, meetup, prev)
 
+    log_action(
+        request,
+        "attendance",
+        "attendance.left",
+        f"Cancelled attendance for '{meetup.location}' (was {prev})"
+        + ("; a waitlisted player was promoted" if prev == "confirmed" else ""),
+        meetup_id=meetup_id,
+    )
     return {"status": "left"}
 
 
 @router.post("/{meetup_id}/awards/weather-hero")
 async def grant_weather_hero(
     meetup_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -1248,6 +1341,14 @@ async def grant_weather_hero(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "attendance",
+        "award.weather_hero_granted",
+        f"Granted Weather Hero to {granted} confirmed attendee(s) of '{meetup.location}'"
+        + (" (all already held one)" if granted == 0 else ""),
+        meetup_id=meetup_id,
+    )
     return {"granted": granted}
 
 
@@ -1353,6 +1454,18 @@ async def redeem_weather_hero(
         await recalculate_skills_for_attendance_change(db, meetup_id, demoted.user_id)
     await recalculate_skills_for_attendance_change(db, meetup_id, user.id)
 
+    demoted_name = None
+    if demoted is not None:
+        demoted_user = await db.get(User, demoted.user_id)
+        demoted_name = demoted_user.display_name if demoted_user else str(demoted.user_id)
+    log_action(
+        request,
+        "attendance",
+        "award.weather_hero_redeemed",
+        f"Redeemed Weather Hero for '{meetup.location}', upgraded to confirmed"
+        + (f"; demoted {demoted_name} to waitlist" if demoted_name else ""),
+        meetup_id=meetup_id,
+    )
     return {
         "status": "confirmed",
         "demoted_user_id": demoted.user_id if demoted is not None else None,
@@ -1364,6 +1477,7 @@ async def move_attendance(
     meetup_id: int,
     user_id: int,
     new_status: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -1400,11 +1514,21 @@ async def move_attendance(
         meetup = meetup_res.scalar_one_or_none()
         if meetup:
             await handle_leave_or_cancel(db, meetup, prev)
+    target = await db.get(User, user_id)
+    log_action(
+        request,
+        "attendance",
+        "attendance.moved",
+        f"Moved {target.display_name if target else f'user {user_id}'} from {prev} "
+        f"to {new_status}",
+        meetup_id=meetup_id,
+    )
     return {"status": "moved"}
 
 
 @router.post("/recurring/run-now")
 async def run_recurring_meetups_now(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -1418,6 +1542,13 @@ async def run_recurring_meetups_now(
         if await materialize_next_meetup(tmpl.id):
             created += 1
         await notify_new_meetup(tmpl.id)
+    log_action(
+        request,
+        "template",
+        "template.run_now",
+        f"Ran recurring materialization now: {created} meetup(s) created "
+        f"from {len(templates)} active template(s)",
+    )
     return {
         "status": "ok",
         "templates_checked": len(templates),
@@ -1428,12 +1559,15 @@ async def run_recurring_meetups_now(
 @router.delete("/{meetup_id}")
 async def delete_meetup(
     meetup_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+    del_location = meetup.location
+    del_time = meetup.start_time
 
     await notify_meetup_cancelled_recipients(db, meetup)
     await notify_meetup_deleted(meetup_id)
@@ -1448,6 +1582,14 @@ async def delete_meetup(
     await delete_meetup_children(db, meetup_id)
     await db.delete(meetup)
     await db.commit()
+    log_action(
+        request,
+        "meetup",
+        "meetup.deleted",
+        f"Deleted meetup '{del_location}' ({del_time:%Y-%m-%d %H:%M} UTC) "
+        "and all its matches, goals, ratings and chat",
+        meetup_id=meetup_id,
+    )
     return {"status": "deleted"}
 
 
@@ -1750,6 +1892,14 @@ async def add_plus_one(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "plus_one",
+        "plus_one.added",
+        f"Reserved a plus-one for {first_name} {last_name} at '{meetup.location}' "
+        f"(guest {attendance.status})",
+        meetup_id=meetup_id,
+    )
 
     # Build claim URL (frontend handles the claim page)
     claim_url = f"/plus-one/{claim_token}"
@@ -1871,6 +2021,13 @@ async def cancel_plus_one(
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "plus_one",
+        "plus_one.cancelled",
+        f"Cancelled plus-one for {plus_one.first_name} {plus_one.last_name}",
+        meetup_id=meetup_id,
+    )
 
     return {"status": "cancelled"}
 
@@ -1943,6 +2100,14 @@ async def claim_plus_one(
     await db.commit()
     if revision is not None:
         await notify_meetup_data_changed(plus_one.meetup_id, revision)
+    log_action(
+        request,
+        "plus_one",
+        "plus_one.claimed",
+        f"Claimed plus-one for {plus_one.first_name} {plus_one.last_name} "
+        f"(reserved spot transferred to their account)",
+        meetup_id=plus_one.meetup_id,
+    )
 
     return {
         "status": "claimed",

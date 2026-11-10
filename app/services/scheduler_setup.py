@@ -32,8 +32,17 @@ def start_scheduler() -> AsyncIOScheduler | None:
         id="job_queue_poll",
         replace_existing=True,
     )
+    from app.services.audit import prune_audit_log
+
+    scheduler.add_job(
+        prune_audit_log,
+        IntervalTrigger(hours=1),
+        args=[settings.AUDIT_RETENTION_DAYS],
+        id="audit_prune",
+        replace_existing=True,
+    )
     logger.info(
-        "Scheduler started (%s); kickoff 1h reminders every 1m; durable job queue polled every 30s; game templates register weekly jobs; rating reminders queued per-meetup",
+        "Scheduler started (%s); kickoff 1h reminders every 1m; durable job queue polled every 30s; audit log pruned hourly; game templates register weekly jobs; rating reminders queued per-meetup",
         settings.SCHEDULER_TIMEZONE,
     )
     return scheduler

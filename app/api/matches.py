@@ -37,6 +37,7 @@ from app.services.manual_teams import (
     resolve_meetup_teams_nested,
 )
 from app.services.meetup_revision import bump_and_notify
+from app.services.audit import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +355,7 @@ async def get_match(
 @router.post("/{meetup_id}/matches/start", status_code=201)
 async def start_matches(
     meetup_id: int,
+    request: Request,
     body: StartMatchesBody | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
@@ -456,6 +458,14 @@ async def start_matches(
     db.add(match)
     await db.commit()
     await db.refresh(match)
+    log_action(
+        request,
+        "match",
+        "match.started",
+        f"Started match meetups at '{meetup.location}': "
+        f"{match.team_a_name} vs {match.team_b_name}",
+        meetup_id=meetup_id,
+    )
 
     # Notify
     await bump_and_notify(db, meetup_id)
@@ -475,6 +485,7 @@ async def start_matches(
 @router.post("/{meetup_id}/matches/new", status_code=201)
 async def create_new_pending_match(
     meetup_id: int,
+    request: Request,
     body: CreatePendingMatchBody | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
@@ -652,6 +663,14 @@ async def create_new_pending_match(
     db.add(new_match)
     await db.commit()
     await db.refresh(new_match)
+    log_action(
+        request,
+        "match",
+        "match.created_pending",
+        f"Created match #{new_match.match_number}: "
+        f"{new_match.team_a_name} vs {new_match.team_b_name}",
+        meetup_id=meetup_id,
+    )
 
     await bump_and_notify(db, meetup_id)
 
@@ -663,6 +682,7 @@ async def create_new_pending_match(
 async def delete_match(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -672,16 +692,26 @@ async def delete_match(
         raise HTTPException(status_code=404, detail="Match not found")
     from app.services.deletes import delete_match_children
 
+    del_number = match.match_number
+    del_teams = f"{match.team_a_name} vs {match.team_b_name} ({match.score_a}-{match.score_b})"
     await delete_match_children(db, match_id)
     await db.delete(match)
     await db.commit()
     await bump_and_notify(db, meetup_id)
+    log_action(
+        request,
+        "match",
+        "match.deleted",
+        f"Deleted match #{del_number} ({del_teams}) and its goals and penalties",
+        meetup_id=meetup_id,
+    )
 
 
 @router.post("/{meetup_id}/matches/create", status_code=201)
 async def create_match(
     meetup_id: int,
     body: MatchCreateBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -724,6 +754,14 @@ async def create_match(
     db.add(match)
     await db.commit()
     await db.refresh(match)
+    log_action(
+        request,
+        "match",
+        "match.created_retro",
+        f"Retroactively created match #{match.match_number}: "
+        f"{match.team_a_name} {match.score_a}-{match.score_b} {match.team_b_name}",
+        meetup_id=meetup_id,
+    )
 
     await bump_and_notify(db, meetup_id)
 
@@ -736,6 +774,7 @@ async def swap_match_teams(
     meetup_id: int,
     match_id: int,
     body: MatchTeamSwap,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -823,8 +862,18 @@ async def swap_match_teams(
         # Propagate the swap to the meetup-level partition (future rounds).
         await _propagate_swap_to_meetup(db, meetup_id, old_a, old_b, new_a, new_b)
 
+    moved = len((set(new_a) ^ set(old_a)))
     await bump_and_notify(db, meetup_id)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
+    log_action(
+        request,
+        "match",
+        "match.teams_swapped",
+        f"Substituted players in match #{match.match_number} "
+        f"({match.team_a_name} vs {match.team_b_name}, {moved} player change(s))"
+        + ("; mid-match" if match.status == "active" else "; pre-start"),
+        meetup_id=meetup_id,
+    )
     return _match_json(match, users_by_id)
 
 
@@ -1021,6 +1070,7 @@ async def add_penalty_shot(
     meetup_id: int,
     match_id: int,
     body: PenaltyShotBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1043,11 +1093,20 @@ async def add_penalty_shot(
     db.add(shot)
     await db.commit()
     shots.append(shot)
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    scorer = users_by_id.get(shot.scorer_id, {}).get("name", str(shot.scorer_id))
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_shot",
+        f"Penalty #{len(shots)} in match #{match.match_number}: "
+        f"{scorer} ({shot.team.upper()}) {'scored' if shot.scored else 'missed'}",
+        meetup_id=meetup_id,
+    )
     await _broadcast_match_event(
         meetup_id,
         {"type": "match_penalty_shots", "match_id": match.id},
     )
-    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return _penalty_json(match, shots, users_by_id)
 
 
@@ -1055,6 +1114,7 @@ async def add_penalty_shot(
 async def undo_penalty_shot(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1063,8 +1123,17 @@ async def undo_penalty_shot(
         raise HTTPException(status_code=409, detail="The shootout is already finished.")
     if not shots:
         raise HTTPException(status_code=400, detail="No shots to undo.")
-    await db.execute(delete(MatchPenalty).where(MatchPenalty.id == shots[-1].id))
+    undone = shots[-1]
+    await db.execute(delete(MatchPenalty).where(MatchPenalty.id == undone.id))
     await db.commit()
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_undone",
+        f"Undid penalty #{len(shots)} "
+        f"({undone.team.upper()}) in match #{match.match_number}",
+        meetup_id=meetup_id,
+    )
     await _broadcast_match_event(
         meetup_id,
         {"type": "match_penalty_shots", "match_id": match.id},
@@ -1078,6 +1147,7 @@ async def undo_penalty_shot(
 async def finish_penalty_shootout(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1126,6 +1196,14 @@ async def finish_penalty_shootout(
         {"type": "match_penalty_finished", "match_id": match.id, "winner": winner},
     )
     users_by_id = await _load_users_for_meetup(db, meetup_id)
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_finished",
+        f"Penalty shootout in match #{match.match_number} finished: "
+        f"{match.team_a_name if winner == 'a' else match.team_b_name} wins",
+        meetup_id=meetup_id,
+    )
     result: dict = {"winner": winner, "match": _match_json(match, users_by_id)}
     if next_match is not None:
         result["next_match"] = _match_json(next_match, users_by_id)
@@ -1136,6 +1214,7 @@ async def finish_penalty_shootout(
 async def start_timer(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -1166,6 +1245,14 @@ async def start_timer(
     match.timer_pause_intervals = "[]"
     match.status = "active"
     await db.commit()
+    log_action(
+        request,
+        "referee",
+        "referee.timer_started",
+        f"Started the clock for match #{match.match_number} "
+        f"({match.team_a_name} vs {match.team_b_name})",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1194,6 +1281,7 @@ async def start_timer(
 async def pause_timer(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -1262,6 +1350,14 @@ async def pause_timer(
     match.timer_pause_intervals = new_intervals
     match.timer_seconds_remaining = remaining
     await db.commit()
+    minute = (match.timer_total_seconds - remaining) // 60
+    log_action(
+        request,
+        "referee",
+        "referee.timer_paused",
+        f"Paused the clock for match #{match.match_number} at minute {minute}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1289,6 +1385,7 @@ async def pause_timer(
 async def resume_timer(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -1327,6 +1424,14 @@ async def resume_timer(
     match.timer_seconds_remaining = remaining
 
     await db.commit()
+    minute = (match.timer_total_seconds - remaining) // 60
+    log_action(
+        request,
+        "referee",
+        "referee.timer_resumed",
+        f"Resumed the clock for match #{match.match_number} at minute {minute}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1354,6 +1459,7 @@ async def resume_timer(
 async def reset_timer(
     meetup_id: int,
     match_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -1395,6 +1501,13 @@ async def reset_timer(
     await db.flush()
     await _recompute_scores(db, match)
     await db.commit()
+    log_action(
+        request,
+        "referee",
+        "referee.timer_reset",
+        f"Reset the clock and scores for match #{match.match_number}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1415,6 +1528,7 @@ async def increment_score(
     meetup_id: int,
     match_id: int,
     body: MatchScoreDelta,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1444,6 +1558,15 @@ async def increment_score(
     else:
         match.score_offset_b = match.score_b - count_b
     await db.commit()
+    log_action(
+        request,
+        "match",
+        "match.score_incremented",
+        f"Score {'+' if body.delta >= 0 else '−'}{abs(body.delta)} for "
+        f"{match.team_a_name if body.team == 'a' else match.team_b_name} "
+        f"in match #{match.match_number} → {match.score_a}-{match.score_b}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1469,6 +1592,7 @@ async def set_score(
     meetup_id: int,
     match_id: int,
     body: MatchScoreSet,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1477,11 +1601,20 @@ async def set_score(
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     count_a, count_b = await _goal_counts(db, match)
+    old_score = f"{match.score_a}-{match.score_b}"
     match.score_a = body.score_a
     match.score_b = body.score_b
     match.score_offset_a = body.score_a - count_a
     match.score_offset_b = body.score_b - count_b
     await db.commit()
+    log_action(
+        request,
+        "match",
+        "match.score_set",
+        f"Set score in match #{match.match_number} from {old_score} "
+        f"to {match.score_a}-{match.score_b}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -1506,6 +1639,7 @@ async def end_match(
     meetup_id: int,
     match_id: int,
     body: MatchEndBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
@@ -1655,6 +1789,20 @@ async def end_match(
         next_match_data = _match_json(next_match, users_by_id)
 
     await db.commit()
+    log_action(
+        request,
+        "match",
+        "match.ended",
+        f"Ended match #{match.match_number}: {match.score_a}-{match.score_b}, "
+        f"{winner_name} wins"
+        + (" (draw)" if is_tie else "")
+        + (
+            f"; next match queued vs {next_match_data['team_b']['name']}"
+            if next_match_data
+            else "; all matches complete"
+        ),
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -2022,6 +2170,7 @@ async def create_goal(
     meetup_id: int,
     match_id: int,
     body: GoalCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -2130,6 +2279,16 @@ async def create_goal(
     lease.expires_at = utcnow()
     lease.release_token = ""
     await db.commit()
+    scorer_name = users_by_id.get(body.scorer_id, {}).get("name", str(body.scorer_id))
+    log_action(
+        request,
+        "referee",
+        "referee.goal_added",
+        f"Goal in match #{match.match_number}: {scorer_name} "
+        f"({match.team_a_name if body.team == 'a' else match.team_b_name}) "
+        f"at {clock_minute}{'+' if after_whistle else ''} → {score_a}-{score_b}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -2185,6 +2344,7 @@ async def update_goal(
     match_id: int,
     goal_id: int,
     body: GoalUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_present_member),
 ):
@@ -2230,6 +2390,15 @@ async def update_goal(
     lease.expires_at = utcnow()
     lease.release_token = ""
     await db.commit()
+    scorer_name = users_by_id.get(goal.scorer_id, {}).get("name", str(goal.scorer_id))
+    log_action(
+        request,
+        "referee",
+        "referee.goal_edited",
+        f"Edited goal in match #{match.match_number}: now {scorer_name} "
+        f"at {goal.clock_minute}' → {score_a}-{score_b}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,
@@ -2276,6 +2445,7 @@ async def remove_goal(
     meetup_id: int,
     match_id: int,
     goal_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_require_goal_deleter),
 ):
@@ -2298,6 +2468,14 @@ async def remove_goal(
     await db.flush()
     score_a, score_b = await _recompute_scores(db, match)
     await db.commit()
+    log_action(
+        request,
+        "referee",
+        "referee.goal_removed",
+        f"Removed goal in match #{match.match_number} ({goal.clock_minute}') → "
+        f"{score_a}-{score_b}",
+        meetup_id=meetup_id,
+    )
 
     await _broadcast_match_event(
         meetup_id,

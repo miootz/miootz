@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Miootz API"
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/miootz.db"
+    #: Separate SQLite database for the audit log (pruned independently of game data)
+    AUDIT_DATABASE_URL: str = "sqlite+aiosqlite:///./data/audit.db"
+    #: Audit rows older than this are pruned by the hourly job
+    AUDIT_RETENTION_DAYS: int = 90
 
     # Optional: restrict Host header (comma-separated). Empty = disabled.
     TRUSTED_HOSTS: str = ""

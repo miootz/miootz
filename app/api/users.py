@@ -30,6 +30,7 @@ from app.services.pocket_id_client import (
 from app.services.skill_service import update_user_calculated_skill
 from app.services.stats_service import get_user_statistics
 from app.services.template_subscriptions import user_wants_template_notifications
+from app.services.audit import log_action
 from pydantic import BaseModel, ConfigDict, Field
 from app.core.timeutil import utcnow
 
@@ -63,6 +64,7 @@ class AdminUserCreate(BaseModel):
 @router.post("")
 async def admin_create_user(
     body: AdminUserCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -80,6 +82,12 @@ async def admin_create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    log_action(
+        request,
+        "user",
+        "user.created",
+        f"Created user '{first_name} {last_name}' (no Pocket ID link yet)",
+    )
 
     return {
         "id": user.id,
@@ -99,6 +107,7 @@ async def admin_create_user(
 @router.post("/{user_id}/invite")
 async def admin_generate_invite(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -156,6 +165,13 @@ async def admin_generate_invite(
     )
     db.add(invite)
     await db.commit()
+    log_action(
+        request,
+        "user",
+        "user.invite_generated",
+        f"Generated a Pocket ID invite link for {display} "
+        f"(expires {expires_at:%Y-%m-%d})",
+    )
 
     base = settings.POCKET_ID_APP_URL.rstrip("/")
     invite_link = f"{base}/st/{token}"
@@ -659,6 +675,7 @@ async def admin_get_player_history(
 async def admin_update_user(
     user_id: int,
     body: AdminUserUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -691,6 +708,13 @@ async def admin_update_user(
     await db.refresh(user)
     if skill_changed:
         await update_user_calculated_skill(db, user_id=user.id)
+    changed = ", ".join(sorted(body.model_dump(exclude_unset=True)))
+    log_action(
+        request,
+        "user",
+        "user.updated",
+        f"Updated user '{user.sso_display_name or user.id}' — changed: {changed}",
+    )
     return {"message": "User updated successfully"}
 
 
@@ -698,6 +722,7 @@ async def admin_update_user(
 async def admin_set_self_assessed_skill(
     user_id: int,
     body: AdminSelfAssessedBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -705,15 +730,24 @@ async def admin_set_self_assessed_skill(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    old_skill = user.self_assessed_skill
     user.self_assessed_skill = body.self_assessed_skill
     await db.commit()
     await update_user_calculated_skill(db, user_id=user_id)
+    log_action(
+        request,
+        "user",
+        "user.skill_set",
+        f"Set self-assessed skill of '{user.sso_display_name or user.id}' "
+        f"from {old_skill} to {body.self_assessed_skill}",
+    )
     return {"message": "Self-assessed skill updated"}
 
 
 @router.delete("/{user_id}")
 async def admin_delete_user(
     user_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -721,6 +755,7 @@ async def admin_delete_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    del_name = user.sso_display_name or str(user.id)
     # Remove from Pocket ID first
     if user.pocket_id_sub:
         await delete_user(user.pocket_id_sub)
@@ -729,4 +764,11 @@ async def admin_delete_user(
     await delete_user_children(db, user.id)
     await db.delete(user)
     await db.commit()
+    log_action(
+        request,
+        "user",
+        "user.deleted",
+        f"Deleted user '{del_name}' from the app"
+        + (" and Pocket ID" if user.pocket_id_sub else ""),
+    )
     return {"message": "User deleted successfully"}

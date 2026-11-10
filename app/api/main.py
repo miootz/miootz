@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.api import (
+    audit,
     game_templates,
     invites,
     matches,
@@ -35,6 +36,9 @@ from app.services.scheduler_setup import shutdown_scheduler, start_scheduler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    from app.core.audit_db import init_audit_db
+
+    await init_audit_db()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await run_sqlite_migrations(conn)
@@ -88,6 +92,7 @@ if _hosts:
 app.add_middleware(PocketIdAuthMiddleware)
 
 app.include_router(invites.router)
+app.include_router(audit.router)
 app.include_router(game_templates.router)
 app.include_router(meetups.router)
 app.include_router(matches.router)

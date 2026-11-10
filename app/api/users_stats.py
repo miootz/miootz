@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.meetup import MatchScore, Attendance
 from app.schemas.stats import UserStats, MatchScoreReport
 from app.services.stats_service import get_user_statistics
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -73,4 +74,12 @@ async def report_match_score(
         db.add(new_score)
 
     await db.commit()
+    log_action(
+        request,
+        "rating",
+        "rating.score_reported",
+        f"Reported {report.type} score {report.score}/5 for player "
+        f"{report.player_id}",
+        meetup_id=report.meetup_id,
+    )
     return {"status": "success", "message": "Score reported successfully"}

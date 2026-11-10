@@ -12,6 +12,7 @@ import { AdminMeetupDetailPage } from './pages/admin/AdminMeetupDetailPage';
 import { AdminPlayersPage } from './pages/admin/AdminPlayersPage';
 import { AdminPlayerDetailPage } from './pages/admin/AdminPlayerDetailPage';
 import { AdminToolsPage } from './pages/admin/AdminToolsPage';
+import { AdminAuditPage } from './pages/admin/AdminAuditPage';
 import { AdminGameTemplatesPage } from './pages/admin/AdminGameTemplatesPage';
 import { AdminGameTemplateEditPage } from './pages/admin/AdminGameTemplateEditPage';
 import { RefereePage } from './pages/RefereePage';
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="players" element={<AdminPlayersPage />} />
             <Route path="players/:userId" element={<AdminPlayerDetailPage />} />
             <Route path="tools" element={<AdminToolsPage />} />
+            <Route path="audit" element={<AdminAuditPage />} />
           </Route>
           <Route path="/" element={<MemberLayout />}>
             <Route index element={<PlayerHome />} />

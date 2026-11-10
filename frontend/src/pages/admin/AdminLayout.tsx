@@ -11,6 +11,7 @@ import {
   UserCircle,
   Wrench,
   X,
+  ScrollText,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { logout } from "../../auth/pocketIdOidc";
@@ -52,6 +53,10 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
       <NavLink to="/admin/tools" className={navCls} onClick={onNavigate}>
         <Wrench className="w-4 h-4 shrink-0" />
         Tools
+      </NavLink>
+      <NavLink to="/admin/audit" className={navCls} onClick={onNavigate}>
+        <ScrollText className="w-4 h-4 shrink-0" />
+        Audit
       </NavLink>
       <NavLink to="/profile" className={navCls} onClick={onNavigate}>
         <UserCircle className="w-4 h-4 shrink-0" />

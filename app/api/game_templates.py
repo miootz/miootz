@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from app.services.recurring_meetups import (
     next_occurrence_utc,
 )
 from app.core.timeutil import utcnow
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/game-templates", tags=["game-templates"])
 
@@ -222,6 +223,7 @@ async def list_game_templates(
 @router.post("/", status_code=201)
 async def create_game_template(
     body: GameTemplateCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -253,6 +255,13 @@ async def create_game_template(
     await db.refresh(t)
     if t.is_active:
         register_game_template_job(t)
+    log_action(
+        request,
+        "template",
+        "template.created",
+        f"Created recurring template '{t.name}' "
+        f"({t.weekday} {t.hour:02d}:{t.minute:02d} {t.timezone}, {t.location})",
+    )
     return _template_json(t, meetup_count=0)
 
 
@@ -277,6 +286,7 @@ async def get_game_template(
 async def update_game_template(
     template_id: int,
     body: GameTemplateUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -298,6 +308,12 @@ async def update_game_template(
         register_game_template_job(t)
     else:
         unregister_game_template_job(t.id)
+    log_action(
+        request,
+        "template",
+        "template.updated",
+        f"Updated recurring template '{t.name}' — changed: {', '.join(sorted(data))}",
+    )
     n = await db.scalar(
         select(func.count())
         .select_from(Meetup)
@@ -309,6 +325,7 @@ async def update_game_template(
 @router.delete("/{template_id}")
 async def delete_game_template(
     template_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -337,4 +354,10 @@ async def delete_game_template(
     )
     await db.delete(t)
     await db.commit()
+    log_action(
+        request,
+        "template",
+        "template.deleted",
+        f"Deleted recurring template '{t.name}'",
+    )
     return {"status": "deleted"}

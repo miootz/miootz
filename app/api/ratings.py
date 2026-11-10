@@ -22,6 +22,7 @@ from app.services.rating_windows import (
 )
 from app.services.skill_service import update_user_calculated_skill
 from app.core.timeutil import utcnow
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -38,6 +39,7 @@ def get_current_user(request: Request) -> User:
 @router.post("/", response_model=RatingResponse)
 async def upsert_rating(
     rating_data: RatingCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -92,12 +94,22 @@ async def upsert_rating(
         )
     )
     existing = result.scalar_one_or_none()
+    ratee = await db.get(User, rating_data.ratee_id)
+    ratee_name = ratee.display_name if ratee else str(rating_data.ratee_id)
     if existing:
         existing.score = rating_data.score
         existing.updated_at = utcnow()
         await db.commit()
         await db.refresh(existing)
         await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
+        log_action(
+            request,
+            "rating",
+            "rating.updated",
+            f"Updated rating of {ratee_name} for '{meetup.location}' to "
+            f"{rating_data.score}/5",
+            meetup_id=rating_data.meetup_id,
+        )
         return existing
 
     new_rating = Rating(
@@ -111,6 +123,13 @@ async def upsert_rating(
     await db.refresh(new_rating)
 
     await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
+    log_action(
+        request,
+        "rating",
+        "rating.submitted",
+        f"Rated {ratee_name} {rating_data.score}/5 for '{meetup.location}'",
+        meetup_id=rating_data.meetup_id,
+    )
 
     return new_rating
 
