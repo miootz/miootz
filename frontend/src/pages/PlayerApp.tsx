@@ -243,6 +243,7 @@ export function PlayerApp() {
       line1,
       location: meetup.location || undefined,
       fee: meetup.fee ?? undefined,
+      fee_text: meetup.fee_text ?? undefined,
       meetupId: activeMeetupNumericId ?? undefined,
       sseLive: rosterChannelLive,
     });

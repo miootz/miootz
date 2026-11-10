@@ -65,14 +65,14 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
 
     local_anchor = anchor.replace(tzinfo=ZoneInfo('UTC')).astimezone(ZoneInfo('UTC'))
     days_until_friday = (4 - local_anchor.weekday()) % 7 or 7
-    local = (local_anchor + timedelta(days=days_until_monday)).replace(hour=19, minute=30, second=0, microsecond=0)
+    local = (local_anchor + timedelta(days=days_until_friday)).replace(hour=18, minute=30, second=0, microsecond=0)
     kickoff = local.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
     template = GameTemplate(
         id=1, name='Demo football', timezone='UTC', weekday=4,
-        hour=local.hour, minute=30, announce_timezone='UTC',
+        hour=18, minute=30, announce_timezone='UTC',
         announce_weekday=3, announce_hour=10, announce_minute=0,
-        location='Riverside Sports Ground · Pitch 2', fee=5, min_players=10, max_players=15,
-        latitude=44.4268, longitude=26.1025, waitlist_mode='auto_promote',
+        location='Example Sports Centre', fee=25, fee_text='8 credits', min_players=10, max_players=15,
+        latitude=0.125, longitude=-0.25, waitlist_mode='auto_promote',
         team_assignment_mode='balanced', match_duration_minutes=10, is_active=True,
     )
     db.add(template)
@@ -81,7 +81,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     def meetup(sid: int, start: datetime, max_players: int = 15) -> Meetup:
         return Meetup(
             id=sid, game_template_id=1, start_time=start, location=template.location,
-            fee=5, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
+            fee=25, fee_text=template.fee_text, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
             waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
             team_assignment_mode='random' if scenario == 'random' and sid == 1 else 'balanced',
             duration_minutes=120, match_duration_minutes=10, max_teams=3,

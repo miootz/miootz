@@ -88,6 +88,7 @@ class MeetupCreate(BaseModel):
     start_time: datetime
     location: str
     fee: float = 0.0
+    fee_text: str | None = None
     min_players: int = Field(default=10, ge=1, le=50)
     max_players: int = Field(default=15, ge=1, le=50)
     latitude: float | None = None
@@ -122,6 +123,7 @@ class MeetupUpdate(BaseModel):
     start_time: datetime | None = None
     location: str | None = None
     fee: float | None = None
+    fee_text: str | None = None
     min_players: int | None = Field(default=None, ge=1, le=50)
     max_players: int | None = Field(default=None, ge=1, le=50)
     latitude: float | None = None
@@ -287,6 +289,7 @@ async def create_meetup(
         "start_time": new_meetup.start_time,
         "location": new_meetup.location,
         "fee": new_meetup.fee,
+        "fee_text": new_meetup.fee_text,
         "min_players": new_meetup.min_players,
         "max_players": new_meetup.max_players,
         "latitude": new_meetup.latitude,
@@ -378,6 +381,7 @@ async def list_meetups(
             "duration_minutes": s.duration_minutes,
             "location": s.location,
             "fee": s.fee,
+            "fee_text": s.fee_text,
             "min_players": s.min_players,
             "max_players": s.max_players,
             "latitude": s.latitude,
@@ -551,6 +555,7 @@ async def get_meetup(
         "start_time": meetup.start_time,
         "location": meetup.location,
         "fee": meetup.fee,
+        "fee_text": meetup.fee_text,
         "min_players": meetup.min_players,
         "max_players": meetup.max_players,
         "latitude": meetup.latitude,

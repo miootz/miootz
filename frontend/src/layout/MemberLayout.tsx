@@ -113,16 +113,20 @@ function MemberChrome() {
                       </span>
                     )}
                     {header.location != null &&
-                      (header.fee != null || header.meetupId != null) && (
+                      (header.fee_text != null ||
+                        (header.fee != null && header.fee > 0) ||
+                        header.meetupId != null) && (
                         <span className="shrink-0 text-ink-faint">&middot;</span>
                       )}
-                    {header.fee != null && header.fee > 0 && (
+                    {(header.fee_text != null ||
+                      (header.fee != null && header.fee > 0)) && (
                       <span className="shrink-0 font-medium tabular-nums text-ink">
-                        ${header.fee.toFixed(0)}
+                        {header.fee_text ??
+                          `$${(header.fee as number).toFixed(0)}`}
                       </span>
                     )}
-                    {header.fee != null &&
-                      header.fee > 0 &&
+                    {(header.fee_text != null ||
+                      (header.fee != null && header.fee > 0)) &&
                       header.meetupId != null && (
                         <span className="shrink-0 text-ink-faint">
                           &middot;

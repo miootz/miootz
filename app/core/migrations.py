@@ -838,6 +838,12 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE meetups ADD COLUMN skipped BOOLEAN DEFAULT 0")
         )
 
+    if not await has_column("meetups", "fee_text"):
+        await conn.execute(text("ALTER TABLE meetups ADD COLUMN fee_text VARCHAR"))
+
+    if not await has_column("game_templates", "fee_text"):
+        await conn.execute(text("ALTER TABLE game_templates ADD COLUMN fee_text VARCHAR"))
+
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""

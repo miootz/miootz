@@ -68,7 +68,7 @@ export function AdminMeetupDetailPage() {
       setDetail(d);
       setStartLocal(meetupStartToDatetimeLocalValue(d.start_time));
       setLocation(d.location);
-      setFee(String(d.fee));
+      setFee(d.fee_text ?? String(d.fee));
       setMinPlayers(String(d.min_players));
       setMaxPlayers(String(d.max_players));
       setWaitlistMode(
@@ -103,6 +103,7 @@ export function AdminMeetupDetailPage() {
         start_time: new Date(startLocal).toISOString(),
         location: location.trim(),
         fee: Number(fee) || 0,
+        fee_text: fee.trim() || null,
         min_players: min,
         max_players: max,
         waitlist_mode: waitlistMode,
@@ -387,7 +388,7 @@ export function AdminMeetupDetailPage() {
                       Fee
                     </span>
                     <p className="text-ink mt-0.5 tabular-nums">
-                      ${Number(fee).toFixed(0)}
+                      {fee.trim() ? fee : '$0'}
                     </p>
                   </div>
                   <div>
@@ -511,9 +512,8 @@ export function AdminMeetupDetailPage() {
                       Fee
                     </label>
                     <input
-                      type="number"
-                      min={0}
-                      step="0.01"
+                      type="text"
+                      placeholder="e.g. 8 credits"
                       value={fee}
                       onChange={(e) => setFee(e.target.value)}
                       className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"

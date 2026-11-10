@@ -142,8 +142,12 @@ export function HistoryMeetupPage() {
         </h1>
         <p className="text-sm text-ink-dim mt-0.5">
           {detail.location}
-          {detail.fee != null && detail.fee > 0 && (
-            <span className="tabular-nums"> · ${detail.fee.toFixed(0)}</span>
+          {(detail.fee_text != null ||
+            (detail.fee != null && detail.fee > 0)) && (
+            <span className="tabular-nums">
+              {' '}
+              · {detail.fee_text ?? `$${(detail.fee as number).toFixed(0)}`}
+            </span>
           )}
         </p>
       </header>

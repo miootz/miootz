@@ -40,6 +40,8 @@ class Meetup(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
     location: Mapped[str] = mapped_column(String)
     fee: Mapped[float] = mapped_column(Float, default=0.0)
+    #: Free-text price label (e.g. "8 credits") shown instead of the numeric fee.
+    fee_text: Mapped[str | None] = mapped_column(String, nullable=True)
     min_players: Mapped[int] = mapped_column(Integer, default=10)
     max_players: Mapped[int] = mapped_column(Integer, default=15)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

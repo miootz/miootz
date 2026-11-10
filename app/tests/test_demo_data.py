@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
 from app.demo_data import seed_demo, SCENARIOS
+from app.models.game_template import GameTemplate
 from app.models.meetup import Attendance, Meetup
 from app.models.match import MeetupMatch
 from app.models.match_goal import MatchGoal
@@ -35,6 +36,12 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         recent = await db.get(Meetup, 2)
         assert current is not None
         assert recent is not None
+        template = await db.get(GameTemplate, 1)
+        assert template is not None
+        assert template.weekday == 0 and (template.hour, template.minute) == (20, 0)
+        assert template.fee == 25 and template.fee_text == "8 credits"
+        assert template.location.startswith("Football Academy")
+        assert current.fee_text == "8 credits"
         assert current.start_time >= anchor
         if scenario == "kickoff":
             # In progress: starts at the run's now; first round is prepared.

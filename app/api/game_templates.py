@@ -50,6 +50,7 @@ def _template_json(t: GameTemplate, *, meetup_count: int | None = None) -> dict:
         "announce_minute": t.announce_minute,
         "location": t.location,
         "fee": t.fee,
+        "fee_text": t.fee_text,
         "min_players": t.min_players,
         "max_players": t.max_players,
         "latitude": t.latitude,
@@ -91,6 +92,7 @@ class GameTemplateCreate(BaseModel):
     announce_minute: int | None = Field(default=None, ge=0, le=59)
     location: str = Field(min_length=1)
     fee: float = 0.0
+    fee_text: str | None = None
     min_players: int = Field(default=10, ge=1, le=50)
     max_players: int = Field(default=15, ge=1, le=50)
     latitude: float | None = None
@@ -152,6 +154,7 @@ class GameTemplateUpdate(BaseModel):
     announce_minute: int | None = Field(default=None, ge=0, le=59)
     location: str | None = None
     fee: float | None = None
+    fee_text: str | None = None
     min_players: int | None = Field(default=None, ge=1, le=50)
     max_players: int | None = Field(default=None, ge=1, le=50)
     latitude: float | None = None
@@ -234,6 +237,7 @@ async def create_game_template(
         announce_minute=body.announce_minute,
         location=body.location.strip(),
         fee=body.fee,
+        fee_text=body.fee_text,
         min_players=body.min_players,
         max_players=body.max_players,
         latitude=body.latitude,

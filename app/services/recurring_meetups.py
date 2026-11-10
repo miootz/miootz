@@ -111,6 +111,7 @@ async def _create_template_meetup(
         start_time=t,
         location=template.location,
         fee=template.fee,
+        fee_text=template.fee_text,
         min_players=template.min_players,
         max_players=template.max_players,
         latitude=template.latitude,

@@ -8,6 +8,8 @@ export interface MeetupCreateBody {
   start_time: string;
   location: string;
   fee?: number;
+  /** Free-text price label (e.g. "8 credits") — shown instead of the numeric fee. */
+  fee_text?: string | null;
   min_players?: number;
   max_players?: number;
   latitude?: number | null;
@@ -22,6 +24,8 @@ export interface MeetupUpdateBody {
   start_time?: string;
   location?: string;
   fee?: number;
+  /** Free-text price label (e.g. "8 credits") — shown instead of the numeric fee. */
+  fee_text?: string | null;
   min_players?: number;
   max_players?: number;
   latitude?: number | null;
@@ -43,6 +47,8 @@ export interface GameTemplatePayload {
   announce_minute: number;
   location: string;
   fee: number;
+  /** Free-text price label (e.g. "8 credits") — shown instead of the numeric fee. */
+  fee_text?: string | null;
   min_players: number;
   max_players: number;
   latitude?: number | null;

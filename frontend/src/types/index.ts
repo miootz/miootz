@@ -55,6 +55,8 @@ export interface Meetup {
   latitude?: number | null;
   longitude?: number | null;
   fee?: number;
+  /** Free-text price label (e.g. "8 credits") — shown instead of the numeric fee. */
+  fee_text?: string | null;
   minPlayers?: number;
   maxPlayers?: number;
   /** From GET /meetups/:id — how server builds teams. */

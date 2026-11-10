@@ -84,7 +84,7 @@ export function AdminGameTemplateEditPage() {
       } else {
         setCoords(null);
       }
-      setFee(String(t.fee));
+      setFee(t.fee_text ?? String(t.fee));
       setMinPlayers(String(t.min_players));
       setMaxPlayers(String(t.max_players));
       setWaitlistMode(
@@ -140,6 +140,7 @@ export function AdminGameTemplateEditPage() {
       latitude: coords?.lat ?? null,
       longitude: coords?.lng ?? null,
       fee: Number(fee) || 0,
+      fee_text: fee.trim() || null,
       min_players: min,
       max_players: max,
       waitlist_mode: waitlistMode,
@@ -309,9 +310,8 @@ export function AdminGameTemplateEditPage() {
             Fee
           </label>
           <input
-            type="number"
-            min={0}
-            step="0.01"
+            type="text"
+            placeholder="e.g. 8 credits"
             value={fee}
             onChange={(e) => setFee(e.target.value)}
             className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"

@@ -81,7 +81,7 @@ def _format_meetup_summary(meetup: Meetup) -> str:
     when = meetup.start_time
     if isinstance(when, datetime):
         when = when.isoformat(timespec="minutes")
-    return f"{when} @ {meetup.location} (fee: {meetup.fee})"
+    return f"{when} @ {meetup.location} (fee: {meetup.fee_text or meetup.fee})"
 
 
 async def user_wants_notification(
