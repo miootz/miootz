@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     Float,
     ForeignKey,
     Integer,
@@ -69,6 +70,9 @@ class Meetup(Base):
     #: Upper bound on number of teams. When None, team count is purely algorithmic (≤10→2, 11–15→3).
     #: When set, the admin can expand/contract teams and waitlisted players are auto-promoted/returned.
     max_teams: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Admin skip: hidden from all listings and history (no trace). Undo = one-off
+    #: meetup created at the same date via the standard create form.
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # ── Weather ────────────────────────────────────────────────────
     #: Cached forecast temperature (°C) for the meetup date.

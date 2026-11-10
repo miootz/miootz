@@ -69,6 +69,8 @@ export interface MeetupListItem {
   game_template?: GameTemplateInfo | null;
   /** Confirmed roster count (list endpoint only; defaults to 0 if omitted). */
   confirmed_count?: number;
+  /** Admin overview: the meetup's local day (location tz) has begun. */
+  is_current?: boolean;
 }
 
 export interface MeetupListResponse {
@@ -286,6 +288,13 @@ export async function joinMeetup(id: number): Promise<{
 
 export async function leaveMeetup(id: number): Promise<{ status: string }> {
   const r = await apiFetch(`/meetups/${id}/leave`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<{ status: string }>;
+}
+
+/** Admin: skip a meetup — hidden from all listings and history (no trace). */
+export async function skipMeetup(id: number): Promise<{ status: string }> {
+  const r = await apiFetch(`/meetups/${id}/skip`, { method: "POST" });
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string }>;
 }

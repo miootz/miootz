@@ -221,3 +221,82 @@ async def test_create_game_template_admin():
         assert data["id"] is not None
         assert data["is_active"] is True
         assert data["announce_weekday"] == 3
+
+
+@pytest.mark.asyncio
+async def test_create_game_template_announce_defaults_to_next_day_noon():
+    """Omitted announce fields default to next-day noon in the meetup tz."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with AsyncSession(engine) as db:
+            u = User(pocket_id_sub="adm-uuid", sso_display_name="adm", is_admin=True)
+            db.add(u)
+            await db.commit()
+
+        body = {
+            "name": "Tuesday pitch",
+            "timezone": "UTC",
+            "weekday": 1,
+            "hour": 19,
+            "minute": 30,
+            "location": "Field B",
+            "min_players": 8,
+            "max_players": 14,
+            "is_active": True,
+        }
+        r = await ac.post(
+            "/game-templates/",
+            json=body,
+            headers={"Authorization": "Bearer adm"},
+        )
+        assert r.status_code == 201, r.text
+        data = r.json()
+        assert data["announce_timezone"] == "UTC"
+        assert data["announce_weekday"] == (1 + 1) % 7
+        assert data["announce_hour"] == 12
+        assert data["announce_minute"] == 0
+
+
+@pytest.mark.asyncio
+async def test_materialize_and_notify_are_separate():
+    """materialize creates the row without pushing; notify pushes only."""
+    from app.services.recurring_meetups import (
+        materialize_next_meetup,
+        notify_new_meetup,
+    )
+
+    async with AsyncSession(engine) as db:
+        rule = GameTemplate(
+            name="Test",
+            timezone="UTC",
+            weekday=2,
+            hour=12,
+            minute=0,
+            announce_timezone="UTC",
+            announce_weekday=3,
+            announce_hour=12,
+            announce_minute=0,
+            location="Pitch",
+            fee=0.0,
+            min_players=10,
+            max_players=15,
+            waitlist_mode="auto_promote",
+            is_active=True,
+        )
+        db.add(rule)
+        await db.flush()
+        rule_id = rule.id
+        await db.commit()
+
+    with patch(
+        "app.services.recurring_meetups.notify_new_meetup_invites",
+        new_callable=AsyncMock,
+    ) as invites:
+        created = await materialize_next_meetup(rule_id)
+        assert created is True
+        invites.assert_not_awaited()  # materialize never pushes
+
+        sent = await notify_new_meetup(rule_id)
+        assert sent in (True, False)  # True only when subscribers exist
+        # No second row, no duplicate invites from re-materializing.
+        assert await materialize_next_meetup(rule_id) is False

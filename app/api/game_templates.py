@@ -84,10 +84,11 @@ class GameTemplateCreate(BaseModel):
     weekday: int = Field(ge=0, le=6)
     hour: int = Field(ge=0, le=23)
     minute: int = Field(ge=0, le=59)
-    announce_timezone: str = "UTC"
-    announce_weekday: int = Field(ge=0, le=6)
-    announce_hour: int = Field(ge=0, le=23)
-    announce_minute: int = Field(ge=0, le=59)
+    # Optional — default to next-day noon in the meetup's own timezone.
+    announce_timezone: str | None = None
+    announce_weekday: int | None = Field(default=None, ge=0, le=6)
+    announce_hour: int | None = Field(default=None, ge=0, le=23)
+    announce_minute: int | None = Field(default=None, ge=0, le=59)
     location: str = Field(min_length=1)
     fee: float = 0.0
     min_players: int = Field(default=10, ge=1, le=50)
@@ -102,7 +103,9 @@ class GameTemplateCreate(BaseModel):
 
     @field_validator("timezone", "announce_timezone")
     @classmethod
-    def tz_ok(cls, v: str) -> str:
+    def tz_ok(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         try:
             ZoneInfo(v)
         except ZoneInfoNotFoundError as e:
@@ -125,6 +128,15 @@ class GameTemplateCreate(BaseModel):
     def caps(self):
         if self.max_players < self.min_players:
             raise ValueError("max_players must be >= min_players")
+        # Default announce slot: next-day noon in the meetup's timezone.
+        if self.announce_timezone is None:
+            self.announce_timezone = self.timezone
+        if self.announce_weekday is None:
+            self.announce_weekday = (self.weekday + 1) % 7
+        if self.announce_hour is None:
+            self.announce_hour = 12
+        if self.announce_minute is None:
+            self.announce_minute = 0
         return self
 
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -7,12 +7,14 @@ import {
   Play,
   Plus,
   Repeat,
+  SkipForward,
   Users,
   Wrench,
 } from "lucide-react";
 import {
   fetchMeetupDetail,
   fetchMeetups,
+  skipMeetup,
   type MeetupDetail,
   type MeetupListItem,
 } from "../../api/meetupsApi";
@@ -99,8 +101,17 @@ export function AdminDashboard() {
   const [err, setErr] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const [detailFetchedAt, setDetailFetchedAt] = useState(0);
+  const [confirmingSkip, setConfirmingSkip] = useState(false);
+  const skipResetTimer = useRef<number | null>(null);
 
-  const nextId = upcoming?.[0]?.id ?? null;
+  useEffect(
+    () => () => {
+      if (skipResetTimer.current) window.clearTimeout(skipResetTimer.current);
+    },
+    [],
+  );
+
+  const nextId = detail?.id ?? null;
 
   const loadDetail = useCallback(async (id: number) => {
     const d = await fetchMeetupDetail(id);
@@ -112,12 +123,14 @@ export function AdminDashboard() {
     setErr(null);
     try {
       const [up, tpls] = await Promise.all([
-        fetchMeetups({ status: "upcoming", order: "asc", limit: 5 }),
+        fetchMeetups({ status: "all", order: "asc", limit: 20 }),
         adminListGameTemplates(),
       ]);
       setUpcoming(up.items);
       setTemplates(tpls.items);
-      const next = up.items[0];
+      // "Current" = first meetup whose local day (location timezone) has begun —
+      // midnight ending the last meetup day through the night of the next one.
+      const next = up.items.find((m) => m.is_current) ?? null;
       if (next) {
         await loadDetail(next.id);
       } else {
@@ -127,6 +140,26 @@ export function AdminDashboard() {
       setErr(e instanceof Error ? e.message : "Failed to load");
     }
   }, [loadDetail]);
+
+  const onSkip = useCallback(async () => {
+    if (!detail) return;
+    if (!confirmingSkip) {
+      setConfirmingSkip(true);
+      skipResetTimer.current = window.setTimeout(
+        () => setConfirmingSkip(false),
+        4000,
+      );
+      return;
+    }
+    if (skipResetTimer.current) window.clearTimeout(skipResetTimer.current);
+    setConfirmingSkip(false);
+    setDetail(null);
+    try {
+      await skipMeetup(detail.id);
+    } finally {
+      await load();
+    }
+  }, [detail, confirmingSkip, load]);
 
   useEffect(() => {
     // Data-fetching effect: populating state is the effect's purpose, not the
@@ -156,7 +189,6 @@ export function AdminDashboard() {
   const activeTemplate =
     templates?.find((t) => t.is_active) ?? templates?.[0] ?? null;
   const nextAnnounceAt = activeTemplate?.next_announce_at ?? null;
-  const nextOccurrenceAt = activeTemplate?.next_occurrence_at ?? null;
 
   // SAFETY: the meetups API may include an undeclared `current_match` object
   // ({ status, match_number }) in the detail payload; the TS type lags behind.
@@ -248,6 +280,18 @@ export function AdminDashboard() {
                   />
                   <span>{detail.location}</span>
                 </p>
+                <button
+                  type="button"
+                  onClick={() => void onSkip()}
+                  className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 py-2 text-sm font-bold border transition-colors active:scale-[0.98] ${
+                    confirmingSkip
+                      ? "border-danger bg-danger/15 text-danger"
+                      : "border-line text-ink-dim hover:bg-raised hover:text-ink"
+                  }`}
+                >
+                  <SkipForward className="w-4 h-4" aria-hidden />
+                  {confirmingSkip ? "Tap again to skip" : "Skip"}
+                </button>
                 <MeetupWeatherBadge meetupId={detail.id} />
               </div>
             </div>
@@ -282,33 +326,13 @@ export function AdminDashboard() {
           </div>
         </>
       ) : (
-        /* ── No upcoming meetup (next one not materialized yet) ── */
+        /* ── No materialized meetup at all ── */
         <section className="mb-4 border border-line bg-panel p-6">
-          {nextOccurrenceAt ? (
-            <>
-              <h2 className="text-xl font-bold text-ink">
-                Next meetup — {format(new Date(nextOccurrenceAt), "EEEE, d MMMM")}
-                <span className="ml-2 text-lg font-semibold text-ink-dim tabular-nums">
-                  {format(new Date(nextOccurrenceAt), "HH:mm")}
-                </span>
-              </h2>
-              <p className="mt-1 text-sm text-ink-dim flex items-center gap-1.5">
-                <MapPin
-                  className="w-3.5 h-3.5 text-ink-faint shrink-0"
-                  aria-hidden
-                />
-                <span>{activeTemplate?.location}</span>
-              </p>
-            </>
-          ) : (
-            <h2 className="text-xl font-bold text-ink">No upcoming meetup</h2>
-          )}
+          <h2 className="text-xl font-bold text-ink">No upcoming meetup</h2>
           <p className="mt-1 text-sm text-ink-dim">
             {nextAnnounceAt
               ? `Signups open ${format(new Date(nextAnnounceAt), "EEEE, d MMMM · HH:mm")}.`
-              : nextOccurrenceAt
-                ? "Scheduled from the active template."
-                : "Activate a template to schedule meetups automatically."}
+              : "Activate a template to schedule meetups automatically."}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Link

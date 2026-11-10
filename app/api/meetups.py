@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import hashlib
 import logging
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
 import json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.api.deps import require_admin
 from app.api.matches import _compute_timer_remaining, _is_currently_paused
@@ -64,7 +65,8 @@ from app.services.web_push import (
     notify_demoted_to_waitlist,
 )
 from app.services.recurring_meetups import (
-    materialize_next_meetup_and_notify,
+    materialize_next_meetup,
+    notify_new_meetup,
     next_announce_occurrence_utc,
 )
 from app.services import weather_service
@@ -183,6 +185,21 @@ class PlusOneClaim(BaseModel):
     The guest must already have a Pocket ID account.
     Their pocket_id_sub is extracted from the auth middleware.
     """
+
+
+def _location_day_started(start_time: datetime, tz_name: str | None, now: datetime) -> bool:
+    """True while the meetup's local date (location timezone) is today or later.
+
+    ``start_time`` is naive UTC; the window runs from midnight of the previous
+    day in the location tz (template timezone, UTC for one-off meetups) through
+    the end of the meetup's own day."""
+    try:
+        tz = ZoneInfo(tz_name or "UTC")
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+    local = start_time.replace(tzinfo=timezone.utc).astimezone(tz)
+    now_local = now.replace(tzinfo=timezone.utc).astimezone(tz)
+    return local.date() >= now_local.date()
 
 
 def _name_color(name: str) -> str:
@@ -312,6 +329,10 @@ async def list_meetups(
     count_stmt = select(func.count()).select_from(Meetup)
     stmt = select(Meetup).options(selectinload(Meetup.game_template))
 
+    # Skipped meetups leave no trace in any listing (past, upcoming, all).
+    count_stmt = count_stmt.where(Meetup.skipped.is_(False))
+    stmt = stmt.where(Meetup.skipped.is_(False))
+
     if q and (q := q.strip()):
         count_stmt = count_stmt.where(Meetup.location.contains(q))
         stmt = stmt.where(Meetup.location.contains(q))
@@ -368,6 +389,13 @@ async def list_meetups(
             "game_template_id": s.game_template_id,
             "game_template": _game_template_json(s.game_template),
             "confirmed_count": confirmed_by_meetup.get(s.id, 0),
+            # Admin overview "current" flag: the meetup's local date (location
+            # tz) is today or later.
+            "is_current": _location_day_started(
+                s.start_time,
+                s.game_template.timezone if s.game_template else None,
+                now,
+            ),
         }
         for s in meetups
     ]
@@ -389,7 +417,7 @@ async def get_meetup(
         .where(Meetup.id == meetup_id)
     )
     meetup = result.scalar_one_or_none()
-    if not meetup:
+    if not meetup or meetup.skipped:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
     result = await db.execute(
@@ -997,6 +1025,36 @@ async def update_meetup(
     return {"status": "updated"}
 
 
+@router.post("/{meetup_id}/skip")
+async def skip_meetup(
+    meetup_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Hide a meetup from all listings and history (no trace). Undo: create a
+    one-off meetup at the same date via the standard create form."""
+    result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
+    meetup = result.scalar_one_or_none()
+    if not meetup:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    # Only today's or future meetups skip — past ones keep their history.
+    day_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    if meetup.start_time < day_start:
+        raise HTTPException(
+            status_code=400, detail="Only today's or future meetups can be skipped"
+        )
+    if not meetup.skipped:
+        meetup.skipped = True
+        await db.commit()
+    # The overview must always have a next meetup: pull the upcoming
+    # occurrence forward (normally created at end-of-meetup-day) so the admin
+    # can manage signups right away. No push — invites go out on the
+    # template's announce schedule. Idempotent per kickoff instant.
+    if meetup.game_template_id:
+        await materialize_next_meetup(meetup.game_template_id)
+    return {"status": "skipped"}
+
+
 @router.post("/{meetup_id}/join")
 async def join_meetup(
     meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
@@ -1352,8 +1410,9 @@ async def run_recurring_meetups_now(
     templates = result.scalars().all()
     created = 0
     for tmpl in templates:
-        if await materialize_next_meetup_and_notify(tmpl.id):
+        if await materialize_next_meetup(tmpl.id):
             created += 1
+        await notify_new_meetup(tmpl.id)
     return {
         "status": "ok",
         "templates_checked": len(templates),

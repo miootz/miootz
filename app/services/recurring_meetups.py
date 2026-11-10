@@ -139,11 +139,11 @@ async def _create_template_meetup(
     return meetup
 
 
-async def materialize_next_meetup_and_notify(template_id: int) -> bool:
-    """
-    If the next weekly kickoff slot has no meetup row yet, create it (details from the template)
-    and notify users who subscribe to this template. Idempotent for that kickoff instant.
-    Returns True if a new meetup row was created.
+async def materialize_next_meetup(template_id: int) -> bool:
+    """Create the next kickoff row if missing (details from the template).
+
+    Idempotent for that kickoff instant. Returns True if a new row was created.
+    No push — notification is a separate concern (see notify_new_meetup).
     """
     async with async_session() as db:
         template = await db.get(GameTemplate, template_id)
@@ -182,17 +182,6 @@ async def materialize_next_meetup_and_notify(template_id: int) -> bool:
         if meetup is None:
             return False
 
-        result = await db.execute(select(User))
-        all_users = result.scalars().all()
-        if all_users:
-            ids = [u.id for u in all_users]
-            allowed = set(
-                await filter_users_by_template_subscription(db, ids, template.id)
-            )
-            recipients = [u for u in all_users if u.id in allowed]
-            if recipients:
-                await notify_new_meetup_invites(db, meetup, recipients)
-
         logger.info(
             "Game template %s: created meetup %s at %s",
             template_id,
@@ -200,3 +189,58 @@ async def materialize_next_meetup_and_notify(template_id: int) -> bool:
             t.isoformat(),
         )
         return True
+
+
+async def notify_new_meetup(template_id: int) -> bool:
+    """Push sign-up invites for the template's next materialized meetup.
+
+    Sends to subscribers only. Returns True if invites went out.
+    """
+    async with async_session() as db:
+        template = await db.get(GameTemplate, template_id)
+        if not template or not template.is_active:
+            return False
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        row = (
+            await db.execute(
+                select(Meetup)
+                .where(
+                    Meetup.game_template_id == template_id,
+                    Meetup.skipped.is_(False),
+                    Meetup.start_time >= now,
+                )
+                .order_by(Meetup.start_time.asc())
+            )
+        ).scalars().first()
+        if row is None:
+            return False
+
+        result = await db.execute(select(User))
+        all_users = result.scalars().all()
+        if not all_users:
+            return False
+        ids = [u.id for u in all_users]
+        allowed = set(await filter_users_by_template_subscription(db, ids, template.id))
+        recipients = [u for u in all_users if u.id in allowed]
+        if not recipients:
+            return False
+        await notify_new_meetup_invites(db, row, recipients)
+        logger.info(
+            "Game template %s: sign-up invites sent for meetup %s to %d user(s)",
+            template_id,
+            row.id,
+            len(recipients),
+        )
+        return True
+
+
+async def materialize_next_meetup_and_notify(template_id: int) -> bool:
+    """Create the next kickoff row if missing, then send sign-up invites.
+
+    Kept for callers that want both in one shot (admin run-now, tests).
+    Returns True if a new meetup row was created.
+    """
+    created = await materialize_next_meetup(template_id)
+    await notify_new_meetup(template_id)
+    return created

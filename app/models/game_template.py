@@ -31,7 +31,7 @@ class GameTemplate(Base):
     # When each week to create the next meetup + notify subscribers (APScheduler cron in this TZ)
     announce_timezone: Mapped[str] = mapped_column(String, default="UTC")
     announce_weekday: Mapped[int] = mapped_column(Integer, default=0)
-    announce_hour: Mapped[int] = mapped_column(Integer, default=9)
+    announce_hour: Mapped[int] = mapped_column(Integer, default=12)
     announce_minute: Mapped[int] = mapped_column(Integer, default=0)
 
     location: Mapped[str] = mapped_column(String)

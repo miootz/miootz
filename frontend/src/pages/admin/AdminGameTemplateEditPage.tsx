@@ -66,8 +66,8 @@ export function AdminGameTemplateEditPage() {
       ? Intl.DateTimeFormat().resolvedOptions().timeZone
       : "UTC",
   );
-  const [announceWeekday, setAnnounceWeekday] = useState(0);
-  const [announceHour, setAnnounceHour] = useState(9);
+  const [announceWeekday, setAnnounceWeekday] = useState(1);
+  const [announceHour, setAnnounceHour] = useState(12);
   const [announceMinute, setAnnounceMinute] = useState(0);
 
   const [meetupCount, setMeetupCount] = useState<number | null>(null);

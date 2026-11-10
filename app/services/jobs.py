@@ -2,7 +2,10 @@ import logging
 
 from app.core.database import async_session
 from app.services.kickoff_reminders import scan_and_send_kickoff_reminders
-from app.services.recurring_meetups import materialize_next_meetup_and_notify
+from app.services.recurring_meetups import (
+    materialize_next_meetup,
+    notify_new_meetup,
+)
 from app.services.web_push import notify_rating_reminder_for_meetup
 from app.core.timeutil import utcnow
 
@@ -93,11 +96,22 @@ async def send_rating_reminder_for_meetup(meetup_id: int) -> None:
             logger.exception("Rating reminder failed for meetup %s: %s", meetup_id, e)
 
 
-async def run_game_template_job(template_id: int) -> None:
-    """Weekly cron: create next kickoff if missing, then send push notifications."""
-    created = await materialize_next_meetup_and_notify(template_id)
+async def run_game_template_materialize_job(template_id: int) -> None:
+    """Cron (midnight after the meetup day, location tz): create the next
+    kickoff row if missing so the overview always shows a next meetup."""
+    created = await materialize_next_meetup(template_id)
     logger.info(
-        "Game template job template_id=%s created_meetup=%s",
+        "Game template materialize template_id=%s created_meetup=%s",
         template_id,
         created,
+    )
+
+
+async def run_game_template_announce_job(template_id: int) -> None:
+    """Cron (template announce_* wall time): send sign-up push notifications."""
+    sent = await notify_new_meetup(template_id)
+    logger.info(
+        "Game template announce template_id=%s invites_sent=%s",
+        template_id,
+        sent,
     )
