@@ -22,6 +22,7 @@ class RankingRow(BaseModel):
 
 
 class HighlightEntry(BaseModel):
+    user_id: int
     name: str
     value: str | int
 
@@ -46,13 +47,22 @@ class NightKpis(BaseModel):
     matches: int
     goals: int
     players: int
-    one_goal_wins: int
     draws: int
+
+
+class DrawMatch(BaseModel):
+    team_a: str
+    score_a: int
+    team_b: str
+    score_b: int
+    #: Away side advances to the next match.
+    advancer: str
 
 
 class NightStats(BaseModel):
     kpis: NightKpis
     teams: list[TeamNightRecord] = []
+    draw_matches: list[DrawMatch] = []
 
 
 class RankingsResponse(BaseModel):

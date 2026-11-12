@@ -260,7 +260,12 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
         eligible = [r for r in rows if r["matches"] >= min_matches]
         ordered = sorted(eligible, key=lambda r: (-r[key], r["user"]["display_name"]))
         return [
-            {"name": r["user"]["display_name"], "value": fmt(r)} for r in ordered[:3]
+            {
+                "user_id": r["user"]["id"],
+                "name": r["user"]["display_name"],
+                "value": fmt(r),
+            }
+            for r in ordered[:3]
         ]
 
     return {
@@ -321,17 +326,27 @@ async def _night_block(
             }
         )
     team_rows.sort(key=lambda t: (-t["wins"], -t["goal_diff"], t["name"]))
+    draw_matches = [
+        {
+            "team_a": m.team_a_name,
+            "score_a": m.score_a,
+            "team_b": m.team_b_name,
+            "score_b": m.score_b,
+            # A recorded draw always sends the away side to the next match.
+            "advancer": m.team_b_name,
+        }
+        for m in sorted(matches, key=lambda m: m.match_number)
+        if m.was_draw
+    ]
     return {
         "kpis": {
             "matches": len(matches),
             "goals": len(goals),
             "players": len(all_player_ids),
-            "one_goal_wins": sum(
-                1 for m in matches if abs(m.score_a - m.score_b) == 1
-            ),
             "draws": sum(1 for m in matches if m.was_draw),
         },
         "teams": team_rows,
+        "draw_matches": draw_matches,
     }
 
 

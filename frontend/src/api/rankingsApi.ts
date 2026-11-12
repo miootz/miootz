@@ -21,6 +21,7 @@ export interface RankingRow {
 }
 
 export interface HighlightEntry {
+  user_id: number;
   name: string;
   value: string | number;
 }
@@ -41,15 +42,24 @@ export interface TeamNightRecord {
   roster: TeamRosterUser[];
 }
 
+export interface DrawMatch {
+  team_a: string;
+  score_a: number;
+  team_b: string;
+  score_b: number;
+  /** Away side advances to the next match. */
+  advancer: string;
+}
+
 export interface NightStats {
   kpis: {
     matches: number;
     goals: number;
     players: number;
-    one_goal_wins: number;
     draws: number;
   };
   teams: TeamNightRecord[];
+  draw_matches: DrawMatch[];
 }
 
 export interface RankingsResponse {

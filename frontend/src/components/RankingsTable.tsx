@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { RankingRow, RankingSort } from "../api/rankingsApi";
+import { Avatar } from "./Avatar";
 
 const COLUMNS: { key: RankingSort; label: string; short: string; pct?: boolean }[] = [
   { key: "attendances", label: "Attendances", short: "Att." },
@@ -12,9 +13,6 @@ const COLUMNS: { key: RankingSort; label: string; short: string; pct?: boolean }
   { key: "clean_sheets", label: "Clean sheets", short: "Clean" },
   { key: "goals_conceded", label: "Goals conceded", short: "Conceded" },
 ];
-
-// Mobile tabs: clean sheets are a team credit and only show in the wide table.
-const MOBILE_TABS = COLUMNS.filter((c) => c.key !== "clean_sheets");
 
 function cellValue(row: RankingRow, key: RankingSort, pct?: boolean): string {
   const v = row[key];
@@ -31,6 +29,8 @@ interface RankingsTableProps {
   /** Row belonging to the signed-in player gets a highlight. */
   highlightUserId?: number;
   emptyLabel?: string;
+  /** Columns to hide entirely (e.g. attendances in a single-meetup scope). */
+  excludeColumns?: RankingSort[];
 }
 
 export function RankingsTable({
@@ -40,11 +40,20 @@ export function RankingsTable({
   onSortChange,
   highlightUserId,
   emptyLabel = "No players with attendance in this scope.",
+  excludeColumns = [],
 }: RankingsTableProps) {
+  const columns = COLUMNS.filter((c) => !excludeColumns.includes(c.key));
+  const mobileTabs = columns.filter((c) => c.key !== "clean_sheets");
+
   // Mobile tab (below sm); clean sheets lives in the wide table only.
   const [mobileTab, setMobileTab] = useState<RankingSort>(
-    MOBILE_TABS.find((c) => c.key === sort)?.key ?? "attendances",
+    mobileTabs.find((c) => c.key === sort)?.key ?? mobileTabs[0]?.key ?? "goals",
   );
+  // Follow external sort changes (desktop headers) so the tab reflects the sort.
+  useEffect(() => {
+    if (sort && mobileTabs.some((c) => c.key === sort)) setMobileTab(sort);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort]);
 
   if (rows.length === 0) {
     return <p className="text-center text-ink-dim py-8">{emptyLabel}</p>;
@@ -59,13 +68,17 @@ export function RankingsTable({
           role="tablist"
           aria-label="Ranking category"
         >
-          {MOBILE_TABS.map((c) => (
+          {mobileTabs.map((c) => (
             <button
               key={c.key}
               type="button"
               role="tab"
               aria-selected={mobileTab === c.key}
-              onClick={() => setMobileTab(c.key)}
+              onClick={() => {
+                setMobileTab(c.key);
+                // Switching category re-sorts by that metric (descending).
+                if (sort !== c.key) onSortChange?.(c.key, "desc");
+              }}
               className={`shrink-0 border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
                 mobileTab === c.key
                   ? "border-live bg-live/15 text-live"
@@ -87,9 +100,9 @@ export function RankingsTable({
               <span className="w-6 text-right text-2xs font-bold text-ink-faint tabular-nums">
                 {r.rank}
               </span>
-              <PlayerBadge row={r} />
+              <PlayerBadge row={r} isMe={r.user.id === highlightUserId} />
               <span className="ml-auto text-base font-bold text-ink tabular-nums">
-                {cellValue(r, mobileTab, MOBILE_TABS.find((c) => c.key === mobileTab)?.pct)}
+                {cellValue(r, mobileTab, mobileTabs.find((c) => c.key === mobileTab)?.pct)}
               </span>
             </li>
           ))}
@@ -107,7 +120,7 @@ export function RankingsTable({
               <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                 Player
               </th>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <SortableHeader
                   key={c.key}
                   label={c.short}
@@ -132,9 +145,9 @@ export function RankingsTable({
                   {r.rank}
                 </td>
                 <td className="px-3 py-2">
-                  <PlayerBadge row={r} />
+                  <PlayerBadge row={r} isMe={r.user.id === highlightUserId} />
                 </td>
-                {COLUMNS.map((c) => (
+                {columns.map((c) => (
                   <td key={c.key} className="px-3 py-2 text-right tabular-nums text-ink">
                     {cellValue(r, c.key, c.pct)}
                   </td>
@@ -148,19 +161,14 @@ export function RankingsTable({
   );
 }
 
-function PlayerBadge({ row }: { row: RankingRow }) {
+function PlayerBadge({ row, isMe }: { row: RankingRow; isMe?: boolean }) {
   return (
     <span className="flex items-center gap-2 min-w-0">
-      {row.user.avatar_url ? (
-        <img
-          src={row.user.avatar_url}
-          alt=""
-          className="h-7 w-7 rounded-full object-cover shrink-0"
-        />
-      ) : (
-        <span className="h-7 w-7 rounded-full bg-raised shrink-0" />
-      )}
+      <Avatar url={row.user.avatar_url} username={row.user.display_name} size="sm" />
       <span className="truncate font-medium text-ink">{row.user.display_name}</span>
+      {isMe && (
+        <span className="text-2xs font-bold text-live shrink-0">You</span>
+      )}
     </span>
   );
 }

@@ -22,7 +22,13 @@ const HIGHLIGHT_LABELS: Record<string, string> = {
   attendances: "Most meetups",
 };
 
-function SeasonHighlights({ highlights }: { highlights: Record<string, HighlightEntry[]> }) {
+function SeasonHighlights({
+  highlights,
+  meId,
+}: {
+  highlights: Record<string, HighlightEntry[]>;
+  meId?: number;
+}) {
   const entries = Object.entries(highlights).filter(([, v]) => v.length > 0);
   if (entries.length === 0) return null;
   return (
@@ -31,21 +37,28 @@ function SeasonHighlights({ highlights }: { highlights: Record<string, Highlight
         Season highlights
       </h2>
       {entries.map(([key, list]) => (
-        <div
-          key={key}
-          className="grid grid-cols-[110px_1fr] gap-2 items-baseline text-sm"
-        >
+        <div key={key} className="space-y-1">
           <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
             {HIGHLIGHT_LABELS[key] ?? key}
           </span>
-          <span className="text-ink-dim">
-            {list.map((e, i) => (
-              <span key={e.name}>
-                {i > 0 && " · "}
-                <span className="font-semibold text-ink">{e.name}</span> {e.value}
-              </span>
+          <ul className="space-y-0.5">
+            {list.map((e) => (
+              <li
+                key={e.user_id}
+                className={`flex items-baseline justify-between gap-2 text-sm ${
+                  e.user_id === meId ? "bg-live/10" : ""
+                }`}
+              >
+                <span className="font-semibold text-ink">
+                  {e.name}
+                  {e.user_id === meId && (
+                    <span className="text-2xs font-bold text-live ml-1.5">You</span>
+                  )}
+                </span>
+                <span className="text-ink-dim tabular-nums">{e.value}</span>
+              </li>
             ))}
-          </span>
+          </ul>
         </div>
       ))}
     </section>
@@ -61,7 +74,7 @@ export function RankingsPage() {
   const [data, setData] = useState<RankingsResponse | null>(null);
 
   const [yearSel, setYearSel] = useState<YearSel | null>(null); // null → server default (current season)
-  const [includeOwnGoals, setIncludeOwnGoals] = useState(false);
+  const [seasonYear, setSeasonYear] = useState<number | null>(null); // server's current season, stable
   const [sort, setSort] = useState<RankingSort>("attendances");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
@@ -72,7 +85,6 @@ export function RankingsPage() {
     try {
       const res = await fetchRankings({
         year: yearSel ?? undefined,
-        includeOwnGoals,
         sort,
         order,
         page,
@@ -80,13 +92,14 @@ export function RankingsPage() {
       });
       setData(res);
       setYearSel((cur) => cur ?? (res.year === null ? "all" : res.year));
+      setSeasonYear((cur) => cur ?? (res.year === null ? null : res.year));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load rankings");
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [yearSel, includeOwnGoals, sort, order, page]);
+  }, [yearSel, sort, order, page]);
 
   useEffect(() => {
     void load();
@@ -138,7 +151,11 @@ export function RankingsPage() {
         <button
           type="button"
           aria-pressed={selected === "all"}
-          onClick={() => (setYearSel("all"), setPage(1))}
+          // Toggling off returns to the current season.
+          onClick={() => {
+            setYearSel(selected === "all" ? (seasonYear ?? new Date().getFullYear()) : "all");
+            setPage(1);
+          }}
           className={`border px-3 py-2 text-xs font-medium transition-colors ${
             selected === "all"
               ? "border-live bg-live/15 text-live"
@@ -146,34 +163,6 @@ export function RankingsPage() {
           }`}
         >
           All time
-        </button>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={includeOwnGoals}
-          onClick={() => {
-            setIncludeOwnGoals((v) => !v);
-            setPage(1);
-          }}
-          className={`ml-auto inline-flex items-center gap-1.5 border px-3 py-2 text-xs font-medium transition-colors ${
-            includeOwnGoals
-              ? "border-live bg-live/15 text-live"
-              : "border-line text-ink-dim hover:bg-raised hover:text-ink"
-          }`}
-        >
-          Include own goals
-          <span
-            className={`relative inline-flex h-4 w-7 items-center ${
-              includeOwnGoals ? "bg-live" : "bg-line"
-            }`}
-            aria-hidden
-          >
-            <span
-              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                includeOwnGoals ? "translate-x-3.5" : "translate-x-0.5"
-              }`}
-            />
-          </span>
         </button>
       </div>
 
@@ -188,7 +177,7 @@ export function RankingsPage() {
       ) : (
         <div className="space-y-3">
           {data?.highlights && (
-            <SeasonHighlights highlights={data.highlights} />
+            <SeasonHighlights highlights={data.highlights} meId={me?.user?.id} />
           )}
           <RankingsTable
             rows={(data?.rows ?? []) as RankingRow[]}

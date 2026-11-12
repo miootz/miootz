@@ -33,17 +33,19 @@ function PlayerRow({
     ratingMode,
     currentRating,
     onRatingChange,
+    isMe,
 }: {
     player: User;
     ratingMode: "none" | "popover" | "inline";
     currentRating: number | null;
     onRatingChange?: (score: number) => void;
+    isMe?: boolean;
 }) {
     const rating = formatRating(player);
     const positions = formatPositions(player);
 
     return (
-        <div className="flex items-center gap-2.5 px-3 py-2">
+        <div className={`flex items-center gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
             {/* Profile picture */}
             <div className="relative shrink-0">
                 <PlayerAvatarFace
@@ -65,6 +67,11 @@ function PlayerRow({
                 <span className="text-sm font-medium text-ink truncate">
                     {player.name}
                 </span>
+                {isMe && (
+                    <span className="text-2xs font-bold text-live shrink-0">
+                        You
+                    </span>
+                )}
                 {positions && (
                     <span className="text-2xs text-ink-faint shrink-0">
                         {positions}
@@ -101,6 +108,7 @@ export function TeamRoster({
     ratingScores,
     onRatingChange,
     droppable,
+    currentUserId,
 }: {
     players: User[];
     /** Called when a player chip is tapped (for popover rating). */
@@ -114,6 +122,8 @@ export function TeamRoster({
     ratingScores?: Record<string, number | null>;
     /** Called when an inline star rating changes. */
     onRatingChange?: (playerId: string, score: number) => void;
+    /** Signed-in player's id; their row gets a highlight + "You" chip. */
+    currentUserId?: number;
     /** Droppable container props from dnd-kit (optional). */
     droppable?: {
         setNodeRef: (el: HTMLElement | null) => void;
@@ -144,6 +154,7 @@ export function TeamRoster({
                     <PlayerRow
                         key={player.id}
                         player={player}
+                        isMe={currentUserId != null && player.id === String(currentUserId)}
                         ratingMode={
                             ratingMode === "inline" &&
                             !Object.hasOwn(ratingScores ?? {}, player.id)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "../auth/useAuth";
 import { fetchMeetupDetail, type MeetupDetail } from "../api/meetupsApi";
 import {
   fetchMeetupRankings,
@@ -25,6 +26,7 @@ function KpiTile({ label, value }: { label: string; value: number }) {
 }
 
 export function HistoryMeetupPage() {
+  const { me } = useAuth();
   const { meetupId } = useParams<{ meetupId: string }>();
   const navigate = useNavigate();
   const id = Number(meetupId);
@@ -152,59 +154,44 @@ export function HistoryMeetupPage() {
         </p>
       </header>
 
-      {/* Detail panel */}
+      {/* Night KPIs (hidden without completed matches) */}
+      {night && (
+        <section>
+          <h2 className="text-lg font-bold text-ink mb-2">The night</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <KpiTile label="Matches" value={night.kpis.matches} />
+            <KpiTile label="Goals" value={night.kpis.goals} />
+            <KpiTile label="Players" value={night.kpis.players} />
+            <KpiTile label="Draws" value={night.kpis.draws} />
+          </div>
+          {night.draw_matches.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {night.draw_matches.map((m) => (
+                <li
+                  key={`${m.team_a}-${m.team_b}`}
+                  className="text-xs text-ink-dim tabular-nums"
+                >
+                  <span className="font-medium text-ink">{m.team_a}</span> {m.score_a} –{" "}
+                  {m.score_b} <span className="font-medium text-ink">{m.team_b}</span>
+                  {" → "}
+                  <span className="font-medium text-live">{m.advancer}</span> advances
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* Detail panel (starting teams get the night stats merged in) */}
       <MeetupDetailPanel
         meetupId={id}
         meetupLocation={detail.location}
         meetupTime={timeLabel}
         meetupFee={detail.fee}
+        meetupFeeText={detail.fee_text}
+        teamStats={night?.teams}
+        currentUserId={me?.user?.id}
       />
-
-      {/* Night KPIs + team records (hidden without completed matches) */}
-      {night && (
-        <>
-          <section>
-            <h2 className="text-lg font-bold text-ink mb-2">The night</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiTile label="Matches" value={night.kpis.matches} />
-              <KpiTile label="Goals" value={night.kpis.goals} />
-              <KpiTile label="Players" value={night.kpis.players} />
-              <KpiTile label="One-goal wins" value={night.kpis.one_goal_wins} />
-            </div>
-            {night.kpis.draws > 0 && (
-              <p className="text-xs text-ink-dim mt-2 tabular-nums">
-                {night.kpis.draws} draw{night.kpis.draws > 1 ? "s" : ""} recorded
-                (away team takes the de-facto win)
-              </p>
-            )}
-          </section>
-
-          <section className="space-y-2">
-            <h2 className="text-lg font-bold text-ink">The teams</h2>
-            {night.teams.map((t) => (
-              <div key={t.name} className="border border-line bg-panel p-4">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-bold text-ink truncate">
-                    {t.name}
-                  </span>
-                  <span className="text-2xs text-ink-dim tabular-nums shrink-0">
-                    {t.wins} {t.wins === 1 ? "win" : "wins"} / {t.matches}
-                  </span>
-                </div>
-                <p className="text-xs text-ink-dim tabular-nums mt-0.5">
-                  Goals {t.goals_for} – {t.goals_against} · GD{" "}
-                  {t.goal_diff > 0 ? `+${t.goal_diff}` : t.goal_diff}
-                  {t.clean_sheets > 0 &&
-                    ` · ${t.clean_sheets} clean sheet${t.clean_sheets > 1 ? "s" : ""}`}
-                </p>
-                <p className="text-xs text-ink-faint mt-1 break-words">
-                  {t.roster.map((u) => u.display_name).join(" · ")}
-                </p>
-              </div>
-            ))}
-          </section>
-        </>
-      )}
 
       {/* Top performers for this meetup (hidden without completed matches) */}
       {sortedPerformers && sortedPerformers.length > 0 && (
@@ -218,6 +205,8 @@ export function HistoryMeetupPage() {
               setPSort(s);
               setPOrder(o);
             }}
+            highlightUserId={me?.user?.id}
+            excludeColumns={["attendances"]}
             emptyLabel="No ranked players for this meetup."
           />
         </section>

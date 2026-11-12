@@ -303,7 +303,8 @@ async def test_wins_and_night_block():
         # Night block for meetup 1 (2025, single match).
         j = (await ac.get("/meetups/1/rankings", headers=hdr("p1"))).json()
         kpis = j["night"]["kpis"]
-        assert kpis == {"matches": 1, "goals": 1, "players": 3, "one_goal_wins": 1, "draws": 0}
+        assert kpis == {"matches": 1, "goals": 1, "players": 3, "draws": 0}
+        assert j["night"]["draw_matches"] == []
         teams = {t["name"]: t for t in j["night"]["teams"]}
         assert teams["A"]["wins"] == 1
         assert (teams["A"]["goals_for"], teams["A"]["goals_against"], teams["A"]["goal_diff"]) == (1, 0, 1)
@@ -315,11 +316,16 @@ async def test_wins_and_night_block():
         # only shows up in the draw count.
         j = (await ac.get("/meetups/4/rankings", headers=hdr("p1"))).json()
         assert j["night"]["kpis"]["draws"] == 1
+        # The recorded draw lists the match with the away side advancing.
+        assert j["night"]["draw_matches"] == [
+            {"team_a": "A", "score_a": 1, "team_b": "B", "score_b": 1, "advancer": "B"}
+        ]
         t = {x["name"]: x for x in j["night"]["teams"]}
         assert t["B"]["wins"] == 1 and t["A"]["wins"] == 0
 
         j = (await ac.get("/meetups/5/rankings", headers=hdr("p1"))).json()
         assert j["night"]["kpis"]["draws"] == 0
+        assert j["night"]["draw_matches"] == []
         t = {x["name"]: x for x in j["night"]["teams"]}
         # Away team D (p1) still wins the tie without a draw record.
         assert t["D"]["wins"] == 1 and t["C"]["wins"] == 0
@@ -340,14 +346,24 @@ async def test_highlights():
 
         j = (await ac.get("/rankings?year=all", headers=hdr("p1"))).json()
         h = j["highlights"]
-        assert h["goals"][0] == {"name": "P1", "value": 2}  # own goal excluded by default
+        rows = rows_by_name(j)
+        # Entries carry the user id so the client can mark the signed-in player.
+        assert h["goals"][0] == {  # own goal excluded by default
+            "user_id": rows["P1"]["user"]["id"], "name": "P1", "value": 2
+        }
         assert h["wins"][0]["name"] == "P1"
         assert h["wins"][0]["value"] == "3 of 5"
-        assert h["matches"][0] == {"name": "P1", "value": 5}
-        assert h["win_rate"][0] == {"name": "P1", "value": "60%"}
+        assert h["matches"][0] == {
+            "user_id": rows["P1"]["user"]["id"], "name": "P1", "value": 5
+        }
+        assert h["win_rate"][0] == {
+            "user_id": rows["P1"]["user"]["id"], "name": "P1", "value": "60%"
+        }
         # P3 has 1 match — excluded from the win-rate highlight.
         assert all(e["name"] != "P3" for e in h["win_rate"])
-        assert h["attendances"][0] == {"name": "P1", "value": 5}
+        assert h["attendances"][0] == {
+            "user_id": rows["P1"]["user"]["id"], "name": "P1", "value": 5
+        }
 
         # Empty scope (year with no data) → safe empty lists.
         j = (await ac.get("/rankings?year=2020", headers=hdr("p1"))).json()

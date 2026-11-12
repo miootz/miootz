@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock, Loader2, MapPin, MessageSquare, Trophy } from "lucide-react";
 import type { User } from "../types";
 import { fetchMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
+import type { TeamNightRecord } from "../api/rankingsApi";
 import {
   fetchRatingContext,
   submitRating,
@@ -52,6 +53,11 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
   const { me } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  // Truncate past 2 messages; tapping opens the full read-only history inline.
+  const showAll = expanded || messages.length <= 2;
+  const visible = showAll ? messages : messages.slice(-2);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +82,7 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
   if (messages.length === 0) return null;
 
   const grouped = groupMessages(
-    messages.map((m) => ({
+    visible.map((m) => ({
       id: m.id,
       userId: m.user_id,
       username: m.username,
@@ -97,6 +103,24 @@ function ChatHistorySection({ meetupId }: { meetupId: number }) {
           {messages.length} message{messages.length !== 1 ? "s" : ""}
         </span>
       </h2>
+      {!showAll && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mb-2 text-xs font-medium text-live hover:underline"
+        >
+          View all {messages.length} messages
+        </button>
+      )}
+      {showAll && messages.length > 2 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="mb-2 text-xs font-medium text-ink-dim hover:underline"
+        >
+          Show less
+        </button>
+      )}
       <div className="space-y-4">
         {grouped.map((group) => {
           const firstMsg = group.messages[0];
@@ -150,11 +174,20 @@ export function MeetupDetailPanel({
   meetupLocation,
   meetupTime,
   meetupFee,
+  meetupFeeText,
+  teamStats,
+  currentUserId,
 }: {
   meetupId: number;
   meetupLocation?: string;
   meetupTime?: string;
   meetupFee?: number;
+  /** Free-text fee label (e.g. "8 credits") shown instead of the numeric fee. */
+  meetupFeeText?: string | null;
+  /** Per-team night stats (history page) rendered above each roster. */
+  teamStats?: TeamNightRecord[];
+  /** Highlight the signed-in player's row in the rosters. */
+  currentUserId?: number;
 }) {
   const { showToast } = useToast();
   const [teams, setTeams] = useState<TeamsResponse["teams"] | null>(null);
@@ -286,11 +319,18 @@ export function MeetupDetailPanel({
                 <span className="truncate">{meetupLocation}</span>
               </div>
             )}
-            {meetupFee != null && meetupFee > 0 && (
+            {meetupFeeText ? (
               <div className="flex items-center gap-1.5 text-ink-dim">
-                <span className="text-ink-faint">$</span>
-                <span className="tabular-nums">{meetupFee.toFixed(0)}</span>
+                <span>{meetupFeeText}</span>
               </div>
+            ) : (
+              meetupFee != null &&
+              meetupFee > 0 && (
+                <div className="flex items-center gap-1.5 text-ink-dim">
+                  <span className="text-ink-faint">$</span>
+                  <span className="tabular-nums">{meetupFee.toFixed(0)}</span>
+                </div>
+              )
             )}
             {weatherData && weatherData.temperature_c != null && (
               <div className="flex items-center gap-1.5">
@@ -305,11 +345,11 @@ export function MeetupDetailPanel({
         </section>
       )}
 
-      {/* ── Teams on pitch ─────────────────────────────── */}
+      {/* ── Starting teams ─────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
-          Teams
+          Starting Teams
           {viewerAttended && ratingsLocked && (
             <span className="text-2xs font-normal text-ink-faint ml-auto">
               Ratings final
@@ -326,6 +366,10 @@ export function MeetupDetailPanel({
           <div className="space-y-3">
             {teams.map((team) => {
               const players = mapTeamPlayers(team);
+              // Best effort: night stats are keyed by the name as recorded on the match.
+              const stats =
+                teamStats?.find((t) => t.name === (team.name ?? String(team.id))) ??
+                null;
               return (
                 <div key={team.id} className="space-y-1.5">
                   <div className="text-xs font-bold uppercase tracking-wide text-ink text-center">
@@ -334,11 +378,21 @@ export function MeetupDetailPanel({
                       ({players.length})
                     </span>
                   </div>
+                  {stats && (
+                    <p className="text-xs text-ink-dim tabular-nums text-center">
+                      {stats.wins} {stats.wins === 1 ? "win" : "wins"} / {stats.matches}{" "}
+                      · Goals {stats.goals_for} – {stats.goals_against} · GD{" "}
+                      {stats.goal_diff > 0 ? `+${stats.goal_diff}` : stats.goal_diff}
+                      {stats.clean_sheets > 0 &&
+                        ` · ${stats.clean_sheets} clean sheet${stats.clean_sheets > 1 ? "s" : ""}`}
+                    </p>
+                  )}
                   <TeamRoster
                     players={players}
                     ratingMode={canRate ? "inline" : "none"}
                     ratingScores={canRate ? scoreMap : undefined}
                     onRatingChange={canRate ? handleRatingChange : undefined}
+                    currentUserId={currentUserId}
                   />
                 </div>
               );

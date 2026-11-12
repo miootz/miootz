@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, User } from "lucide-react";
 import { format } from "date-fns";
@@ -20,8 +20,6 @@ import {
 } from "../api/meApi";
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
-import { StarRating } from "../components/StarRating";
-import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import {
   pushSupported,
@@ -171,7 +169,6 @@ export function ProfilePage() {
   const { showToast } = useToast();
 
   // Profile field state
-  const [selfAssessed, setSelfAssessed] = useState<number | "">("");
   const [primarySpecialty, setPrimarySpecialty] = useState<Specialty | "">("");
   const [secondarySpecialty, setSecondarySpecialty] = useState<Specialty | "">(
     "",
@@ -205,16 +202,10 @@ export function ProfilePage() {
     null,
   );
 
-  const skillSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skillSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [skillSaved, setSkillSaved] = useState(false);
-
   /* ── Effects ───────────────────────────────────────────────────── */
 
   useEffect(() => {
     if (!me) return;
-    const sa = me.user.self_assessed_skill;
-    setSelfAssessed(sa != null && sa >= 1 && sa <= 5 ? sa : "");
     setPrimarySpecialty(me.user.primary_specialty ?? "");
     setSecondarySpecialty(me.user.secondary_specialty ?? "");
   }, [me]);
@@ -308,12 +299,6 @@ export function ProfilePage() {
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (skillSaveTimerRef.current) clearTimeout(skillSaveTimerRef.current);
-    };
-  }, []);
-
   /* ── Handlers ──────────────────────────────────────────────────── */
 
   const saveSpecialty = async (
@@ -338,37 +323,6 @@ export function ProfilePage() {
     }
   };
 
-  const onSkillChange = (v: number) => {
-    setSelfAssessed(v);
-    if (skillSaveTimerRef.current) clearTimeout(skillSaveTimerRef.current);
-    skillSaveTimerRef.current = setTimeout(() => {
-      skillSaveTimerRef.current = null;
-      void (async () => {
-        const baseline = u.self_assessed_skill;
-        if (baseline != null && v === baseline) return;
-        if (v < 1 || v > 5) return;
-        setSaving(true);
-        setError(null);
-        try {
-          await patchMyProfile({ self_assessed_skill: v });
-          setSkillSaved(true);
-          if (skillSavedTimerRef.current)
-            clearTimeout(skillSavedTimerRef.current);
-          skillSavedTimerRef.current = setTimeout(
-            () => setSkillSaved(false),
-            1500,
-          );
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Save failed";
-          setError(msg);
-          showToast(msg, "error");
-        } finally {
-          setSaving(false);
-        }
-      })();
-    }, 450);
-  };
-
   /* ── Early return ──────────────────────────────────────────────── */
 
   if (!me) {
@@ -382,8 +336,6 @@ export function ProfilePage() {
   const u = me.user;
   const displayName = u.display_name ?? u.pocket_id_sub ?? "—";
   const avatarUrl = u.avatar_url ?? undefined;
-  const selfSkill = u.self_assessed_skill;
-  const calcSkill = u.calculated_skill;
   const pocketIdSettingsUrl = `${getPocketIdUrl()}/settings/account`;
 
   const pushEnabled = import.meta.env.PROD && pushSupported();
@@ -502,73 +454,11 @@ export function ProfilePage() {
           {/* Attendance history (paginated) */}
           <AttendanceHistory userId={u.id} />
 
-          {/* Self vs calculated skill bars */}
-          {selfSkill != null &&
-            calcSkill != null &&
-            selfSkill >= 1 &&
-            selfSkill <= 5 && (
-              <div className="space-y-3 pt-2 border-t border-line">
-                <h2 className="text-lg font-bold text-ink">
-                  Skill comparison
-                </h2>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-ink-dim">
-                    <span>Self-assessed</span>
-                    <span className="font-medium text-ink tabular-nums">
-                      {selfSkill}/5
-                    </span>
-                  </div>
-                  <div className="h-2 w-full bg-raised">
-                    <div
-                      className="h-full bg-ink"
-                      style={{ width: `${(selfSkill / 5) * 100}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-ink-dim">
-                    <span>Calculated (peers)</span>
-                    <span className="font-medium text-ink tabular-nums">
-                      {calcSkill.toFixed(1)}/5
-                    </span>
-                  </div>
-                  <div className="h-2 w-full bg-raised">
-                    <div
-                      className="h-full bg-team-a"
-                      style={{
-                        width: `${Math.min(100, Math.max(0, (calcSkill / 5) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-          {/* Skill editor + positions */}
+          {/* Positions editor */}
           <div className="space-y-4 pt-2 border-t border-line">
             <h2 className="text-lg font-bold text-ink">
               Edit profile
             </h2>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs text-ink-dim">
-                Self-assessed skill (1–5)
-              </span>
-              <StarRating
-                value={selfAssessed === "" ? 0 : selfAssessed}
-                onChange={onSkillChange}
-                label="Skill rating"
-              />
-              <span className="text-2xs text-ink-dim">
-                {SKILL_SCALE_BLURB}
-              </span>
-              {skillSaved && (
-                <span
-                  className="text-xs font-medium text-team-a"
-                  role="status"
-                >
-                  Saved ✓
-                </span>
-              )}
-            </label>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -882,40 +772,6 @@ export function ProfilePage() {
         </CollapsibleSection>
 
         {/* ── Zone 4: Account footer ────────────────────────────── */}
-
-        {me.auth_groups.length > 0 && (
-          <CollapsibleSection title="Debug info">
-            <dl className="grid gap-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-dim">Admin</dt>
-                <dd className="text-right">
-                  {me.is_admin ? (
-                    <span className="text-team-a font-medium">
-                      Yes
-                    </span>
-                  ) : (
-                    <span className="text-ink-dim">No</span>
-                  )}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-dim">Groups</dt>
-                <dd className="text-right">
-                  <div className="flex flex-wrap gap-1.5 justify-end">
-                    {me.auth_groups.map((g) => (
-                      <span
-                        key={g}
-                        className="inline-block px-2 py-0.5 text-xs font-medium bg-raised text-ink-dim"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </dd>
-              </div>
-            </dl>
-          </CollapsibleSection>
-        )}
 
         {error && (
           <p className="text-sm text-danger">{error}</p>
