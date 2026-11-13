@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, UTC
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.match import MeetupMatch
-from app.models.meetup import Attendance
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 
@@ -39,7 +39,9 @@ async def make_meetup(
     min_players: int = 1,
     with_match: bool = False,
 ):
-    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=0)
+    # Future start: joins are pre-meetup; the with_match path shifts the
+    # start into the past (presence window) before match ops.
+    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
     r = await ac.post(
         "/meetups/",
         json={
@@ -69,6 +71,12 @@ async def make_meetup(
             .id
             for t in tokens
         }
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
     half = max(len(tokens) // 2, 1)
     teams = [
         [str(ids[t]) for t in tokens[:half]],

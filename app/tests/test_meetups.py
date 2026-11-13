@@ -115,7 +115,10 @@ async def test_admin_override():
         resp = await ac.post(
             "/meetups/",
             json={
-                "start_time": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+                # Future start: player joins are pre-meetup.
+                "start_time": (
+                    datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
+                ).isoformat(),
                 "location": "Override Pitch",
                 "min_players": 1,
                 "max_players": 1,

@@ -43,6 +43,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         await run_sqlite_migrations(conn)
 
+    # Fail fast on a Pocket ID config that would silently skip iss/aud checks.
+    from app.services.pocket_id_jwt import assert_oidc_config
+
+    assert_oidc_config()
+
     # Pre-fetch Pocket ID JWKS so the first auth request isn't blocked
     try:
         from app.services.pocket_id_jwt import _fetch_jwks

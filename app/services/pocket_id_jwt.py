@@ -10,6 +10,27 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+def assert_oidc_config() -> None:
+    """Fail fast at startup if JWT validation would silently degrade.
+
+    With Pocket ID configured, an empty issuer/client-id makes iss/aud
+    validation skip (accepting tokens minted for other clients), so the
+    deployment should refuse to boot instead of running with a hole.
+    """
+    if not settings.POCKET_ID_INTERNAL_URL:
+        return  # no Pocket ID at all (e.g. the isolated demo)
+    missing = [
+        name
+        for name in ("POCKET_ID_OIDC_ISSUER", "POCKET_ID_OIDC_CLIENT_ID")
+        if not getattr(settings, name)
+    ]
+    if missing:
+        raise RuntimeError(
+            f"{', '.join(missing)} must be set when POCKET_ID_INTERNAL_URL "
+            "is configured — iss/aud validation is skipped without them"
+        )
+
+
 # Cache JWKS keys with TTL
 _jwks_cache: dict[str, Any] | None = None
 _jwks_cache_ttl: float = 0

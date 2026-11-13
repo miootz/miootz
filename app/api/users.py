@@ -316,6 +316,32 @@ class PushSubscriptionIn(BaseModel):
     keys: dict[str, str]
 
 
+def _validate_push_endpoint(endpoint: str) -> None:
+    """Reject push endpoints outside the configured host allowlist.
+
+    The server POSTs a VAPID-signed request to this URL, so an arbitrary
+    endpoint is a blind SSRF to the internal network.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Invalid push endpoint")
+    host = parsed.hostname.lower()
+    allowed = [
+        h.strip().lower()
+        for h in settings.PUSH_ENDPOINT_HOSTS.split(",")
+        if h.strip()
+    ]
+    if not any(
+        host == h.lstrip(".") or host.endswith(h) for h in allowed
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Push endpoint host not allowed",
+        )
+
+
 @router.get("/me/push/config")
 async def push_config(_: User = Depends(get_current_user)):
     """VAPID public key for `PushManager.subscribe` (null if Web Push is disabled)."""
@@ -339,12 +365,18 @@ async def save_push_subscription(
     if not p256dh or not auth:
         raise HTTPException(status_code=400, detail="Missing p256dh or auth key")
 
+    _validate_push_endpoint(body.endpoint)
+
     result = await db.execute(
         select(WebPushSubscription).where(WebPushSubscription.endpoint == body.endpoint)
     )
     row = result.scalar_one_or_none()
     if row:
-        row.user_id = current_user.id
+        if row.user_id != current_user.id:
+            raise HTTPException(
+                status_code=409,
+                detail="This push endpoint is already registered to another account",
+            )
         row.p256dh = p256dh
         row.auth = auth
     else:

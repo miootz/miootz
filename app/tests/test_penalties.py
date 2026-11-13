@@ -5,12 +5,13 @@ from datetime import datetime, timedelta, UTC
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.match import MeetupMatch
+from app.models.meetup import Meetup
 from app.models.user import User
 from app.services import rankings_service
 
@@ -33,7 +34,9 @@ async def client() -> AsyncClient:
 
 async def make_tied_first_match(ac: AsyncClient):
     """Meetup, 3 manual teams, match 1 started — 1-1 draw to end."""
-    start = datetime.now(UTC).replace(tzinfo=None)
+    # Future start: player joins are pre-meetup, then the start time is
+    # shifted into the past (inside the presence window) before match ops.
+    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
     r = await ac.post(
         "/meetups/",
         json={
@@ -62,6 +65,12 @@ async def make_tied_first_match(ac: AsyncClient):
             ).scalar_one().id
             for token in ("p1", "p2", "p3", "p4", "p5")
         }
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
 
     teams = [
         [str(ids["p1"])],

@@ -435,10 +435,11 @@ async def test_swap_completed_match_409_and_non_admin_403():
         b1, b2 = b_ids
         swap = {"team_a_users": [a2, b1], "team_b_users": [b2, a1]}
 
+        # Non-attending player is 403 (attending players now get match CRUD).
         r = await ac.patch(
             f"/meetups/{sid}/matches/{mid}/teams",
             json=swap,
-            headers=hdr("p1"),
+            headers=hdr("viewer"),
         )
         assert r.status_code == 403, r.text
 

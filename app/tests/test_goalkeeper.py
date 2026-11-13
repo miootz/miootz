@@ -46,8 +46,12 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
     from app.models.user import User
     from sqlalchemy import select
 
-    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(
-        minutes=start_offset_minutes
+    # Future start: joins are pre-meetup; the start is shifted into the
+    # presence window after joins, before match ops.
+    start = (
+        datetime.now(UTC).replace(tzinfo=None)
+        + timedelta(hours=1)
+        + timedelta(minutes=start_offset_minutes)
     )
     r = await ac.post(
         "/meetups/",
@@ -75,6 +79,16 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
                 select(User).where(User.pocket_id_sub == f"{t}-uuid")
             )
             ids[t] = res.scalar_one().id
+        from sqlalchemy import update
+
+        from app.models.meetup import Meetup
+
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
     half = max(len(tokens) // 2, 1)
     teams = [
         [str(ids[t]) for t in tokens[:half]],
@@ -130,7 +144,7 @@ async def test_goal_with_valid_conceding_keeper():
         assert "avatar_url" in goal["goalkeeper"]
 
         # Shown in the public goal log too.
-        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("p1"))
         assert rp.status_code == 200
         rows = rp.json()["goals"]
         assert len(rows) == 1
@@ -164,7 +178,7 @@ async def test_keeper_from_scoring_team_refused():
         assert r.status_code == 400, r.text
         assert "conceding" in r.json()["detail"].lower()
         # Nothing was stored.
-        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("p1"))
         assert rp.json()["goals"] == []
 
 
@@ -332,7 +346,7 @@ async def test_own_goal_scorer_must_be_on_conceding_team():
         )
         assert r2.status_code == 201, r2.text
         assert r2.json()["goal"]["is_own_goal"] is True
-        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("p1"))
         assert rp.json()["goals"][0]["is_own_goal"] is True
 
 

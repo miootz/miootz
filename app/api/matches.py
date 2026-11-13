@@ -18,8 +18,7 @@ from typing import cast
 
 from app.api.deps import (
     presence_for_meetup,
-    require_admin,
-    require_present_member,
+    require_admin_or_present_member,
 )
 from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
@@ -358,7 +357,7 @@ async def start_matches(
     request: Request,
     body: StartMatchesBody | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Start the match meetup. Creates the first match (Team 1 vs Team 2 by default,
     or the given team indices when provided)."""
@@ -488,7 +487,7 @@ async def create_new_pending_match(
     request: Request,
     body: CreatePendingMatchBody | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Create a fresh pending match for the next round.
 
@@ -684,7 +683,7 @@ async def delete_match(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Delete a match (admin only)."""
     match = await db.get(MeetupMatch, match_id)
@@ -713,7 +712,7 @@ async def create_match(
     body: MatchCreateBody,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Create a completed match directly (admin, for retroactive score entry)."""
     meetup = await db.get(Meetup, meetup_id)
@@ -776,7 +775,7 @@ async def swap_match_teams(
     body: MatchTeamSwap,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Substitute players between teams — before start, or mid-match while
     the timer is paused (admin).
@@ -1072,7 +1071,7 @@ async def add_penalty_shot(
     body: PenaltyShotBody,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     match, shots = await _penalty_base(db, meetup_id, match_id)
     if match.penalty_winner is not None:
@@ -1116,7 +1115,7 @@ async def undo_penalty_shot(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     match, shots = await _penalty_base(db, meetup_id, match_id)
     if match.penalty_winner is not None:
@@ -1149,7 +1148,7 @@ async def finish_penalty_shootout(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Lock in the shootout winner: they take the de-facto match win and
     stay on the pitch for the next match."""
@@ -1216,7 +1215,7 @@ async def start_timer(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Start the match timer (any present member, idempotent)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1227,7 +1226,7 @@ async def start_timer(
     if match.status == "time_up":
         raise HTTPException(
             status_code=409,
-            detail="Time is up — only an admin can open extra time.",
+            detail="Time is up — use timer/reset to restart the match.",
         )
     if match.status == "active":
         # Double tap: never restart a running/paused timer.
@@ -1283,7 +1282,7 @@ async def pause_timer(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Pause the match timer (any present member, idempotent)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1387,7 +1386,7 @@ async def resume_timer(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Resume the match timer (any present member, idempotent)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1461,7 +1460,7 @@ async def reset_timer(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Reset timer and scores for a match (present member, idempotent)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1530,7 +1529,7 @@ async def increment_score(
     body: MatchScoreDelta,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Increment score for a team (+1 by default)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1594,7 +1593,7 @@ async def set_score(
     body: MatchScoreSet,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """Set scores directly (bulk correction)."""
     match = await db.get(MeetupMatch, match_id)
@@ -1641,7 +1640,7 @@ async def end_match(
     body: MatchEndBody,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_admin_or_present_member),
 ):
     """End the current match. Winner stays on pitch; next team enters."""
     match = await db.get(MeetupMatch, match_id)
@@ -1925,7 +1924,7 @@ async def acquire_lease(
     meetup_id: int,
     match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Claim the one-writer goal-entry lease.
 
@@ -1986,7 +1985,7 @@ async def renew_lease(
     body: LeaseTokenBody,
     match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Extend the lease by another 45 s — token checked, holder only.
 
@@ -2021,7 +2020,7 @@ async def release_lease(
     body: LeaseTokenBody,
     match_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Give the lease up immediately — token checked, then broadcast.
 
@@ -2172,7 +2171,7 @@ async def create_goal(
     body: GoalCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Log one goal (caller must hold the live lease; idempotent via intent).
 
@@ -2320,7 +2319,7 @@ async def list_goals(
     match_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Live goal log for one match (public, ordered by minute)."""
+    """Live goal log for one match (authenticated, ordered by minute)."""
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -2346,7 +2345,7 @@ async def update_goal(
     body: GoalUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_present_member),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Edit a logged goal (caller must hold the live lease, like create)."""
     match = await db.get(MeetupMatch, match_id)
@@ -2423,23 +2422,6 @@ async def update_goal(
     }
 
 
-async def _require_goal_deleter(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> User:
-    """Any present member while the presence window is open; admin only after."""
-    user = getattr(request.state, "user", None)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    if getattr(request.state, "is_admin", False):
-        return user
-    ok, reason = await presence_for_meetup(
-        db, int(request.path_params["meetup_id"]), user
-    )
-    if not ok:
-        raise HTTPException(status_code=403, detail=reason)
-    return user
-
-
 @router.delete("/{meetup_id}/matches/{match_id}/goals/{goal_id}", status_code=204)
 async def remove_goal(
     meetup_id: int,
@@ -2447,7 +2429,7 @@ async def remove_goal(
     goal_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(_require_goal_deleter),
+    user: User = Depends(require_admin_or_present_member),
 ):
     """Soft-delete one goal, recompute counters, broadcast ``goal_removed``."""
     res = await db.execute(

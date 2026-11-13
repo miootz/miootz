@@ -1,11 +1,13 @@
 """Shared auth dependencies.
 
-Two tiers:
-- ``require_admin``   — admin console endpoints.
-- ``require_present_member`` — "steward" gate for live match mutations
-  (plan §7): the caller must have ``attendance.status == "confirmed"`` for
-  the meetup AND the request must land inside the presence window
-  ``[start_time - 15 min, start_time + duration + 30 min]``.
+Three tiers:
+- ``require_admin``                    — admin console endpoints.
+- ``require_present_member``           — "steward" gate for live match
+  mutations (plan §7): the caller must have ``attendance.status ==
+  "confirmed"`` for the meetup AND the request must land inside the presence
+  window ``[start_time - 15 min, start_time + duration + 30 min]``.
+- ``require_admin_or_present_member``  — live match CRUD: admin at all
+  times, attending (present) members inside the window.
 """
 
 from __future__ import annotations
@@ -79,6 +81,35 @@ async def require_present_member(request: Request, db: AsyncSession = Depends(ge
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="require_present_member used on a path without {meetup_id}",
+        )
+    ok, reason = await presence_for_meetup(db, int(sid), user)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+    return user
+
+
+async def require_admin_or_present_member(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Gate for live-match CRUD: admin always, else present member (plan §7).
+
+    Attending players get full match CRUD (matches, score, teams, penalty,
+    goals, timer) while the presence window is open; admins keep it at all
+    times.
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    if getattr(request.state, "is_admin", False):
+        return user
+    sid = request.path_params.get("meetup_id")
+    if sid is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="require_admin_or_present_member used on a path without {meetup_id}",
         )
     ok, reason = await presence_for_meetup(db, int(sid), user)
     if not ok:

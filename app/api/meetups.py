@@ -1130,6 +1130,23 @@ async def skip_meetup(
     return {"status": "skipped"}
 
 
+def _meetup_started(meetup: Meetup) -> bool:
+    """True once the meetup's start time has passed (stored naive-UTC)."""
+    start = meetup.start_time
+    if start.tzinfo is not None:  # defensive: normalize to naive UTC
+        start = (start - (start.utcoffset() or timedelta(0))).replace(tzinfo=None)
+    return utcnow() >= start
+
+
+def _require_pre_start_or_admin(meetup: Meetup, request: Request) -> None:
+    """Player attendance changes are pre-meetup; admins keep them at all times."""
+    if _meetup_started(meetup) and not getattr(request.state, "is_admin", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Meetup already started — only admins can change attendance",
+        )
+
+
 @router.post("/{meetup_id}/join")
 async def join_meetup(
     meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
@@ -1145,6 +1162,7 @@ async def join_meetup(
     meetup = result_meetup.scalar_one_or_none()
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+    _require_pre_start_or_admin(meetup, request)
 
     result_attendance = await db.execute(
         select(Attendance).where(
@@ -1270,6 +1288,7 @@ async def leave_meetup(
     meetup = result_meetup.scalar_one_or_none()
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+    _require_pre_start_or_admin(meetup, request)
 
     prev = attendance.status
     attendance.previous_status = prev

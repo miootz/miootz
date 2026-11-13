@@ -32,7 +32,8 @@ async def client() -> AsyncClient:
 
 
 async def make_meetup(ac: AsyncClient, max_players: int) -> int:
-    start = datetime.now(UTC).replace(tzinfo=None)
+    # Future start: these tests only join + grant/redeem (no presence gate).
+    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
     r = await ac.post(
         "/meetups/",
         json={
@@ -195,7 +196,7 @@ async def test_redeem_with_space_does_not_demote():
         # Broadcast mode: opening a spot only notifies, nobody is
         # auto-promoted — so after p5 is moved to the waitlist, space
         # remains and the redemption demotes no one.
-        start = datetime.now(UTC).replace(tzinfo=None)
+        start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
         r = await ac.post(
             "/meetups/",
             json={

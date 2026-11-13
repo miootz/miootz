@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 from typing import Any
 
 from fastapi import Request
@@ -67,14 +66,20 @@ _pending_sso_syncs: set[asyncio.Task] = set()
 
 #: Minimum interval between Pocket ID admin-API refreshes per user.
 _SSO_SYNC_INTERVAL_SECONDS = 6 * 3600
+#: Admin-flagged accounts poll tighter: Pocket ID has no webhook, so a group
+#: removal (demotion) propagates within one poll. Small user count, cheap call.
+_SSO_SYNC_ADMIN_INTERVAL_SECONDS = 5 * 60
 
 
 def _background_sync_sso(user: User, pocket_id_sub: str) -> None:
     """Fire-and-forget throttled background SSO refresh (for existing users)."""
+    interval = _SSO_SYNC_INTERVAL_SECONDS
+    if "admins" in (user.sso_groups or []) or user.is_admin:
+        interval = _SSO_SYNC_ADMIN_INTERVAL_SECONDS
     last = user.sso_synced_at
     if last is not None:
         try:
-            if (utcnow() - last).total_seconds() < _SSO_SYNC_INTERVAL_SECONDS:
+            if (utcnow() - last).total_seconds() < interval:
                 return
         except TypeError:
             pass  # unexpected tz-aware legacy value — refresh instead of stalling
@@ -260,10 +265,6 @@ _PUBLIC_PATH_PREFIXES = (
     "/meetups/plus-one/",  # guest claim preview — claim_token is the capability
 )
 
-#: Live goal log is readable without auth (plan §4: watchers at home, shared
-#: link). GET only — mutating the log still requires a present member/admin.
-_PUBLIC_GET_PATH_RES = (re.compile(r"^/meetups/\d+/matches/\d+/goals$"),)
-
 #: SSE endpoints: EventSource cannot send Authorization headers, so the access
 #: token is accepted from the `access_token` query param *only* on these paths.
 _SSE_TOKEN_QUERY_SUFFIXES = ("/data/events", "/chat/events")
@@ -297,10 +298,6 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
         is_public = (
             path in _PUBLIC_EXACT_PATHS
             or path.startswith(_PUBLIC_PATH_PREFIXES)
-            or (
-                request.method == "GET"
-                and any(rx.match(path) for rx in _PUBLIC_GET_PATH_RES)
-            )
         )
 
         # Extract the token: Authorization header first; `access_token` query

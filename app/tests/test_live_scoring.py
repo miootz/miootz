@@ -3,7 +3,7 @@
 Covers the plan §2/§4 surface:
 - lease single-winner under concurrency, expiry steal, token checks
 - goal intent replay, 90 s dedupe + force, score counters vs COUNT
-- steward-state reasons, public goal log, idempotent timer
+- steward-state reasons, goal log (authenticated), idempotent timer
 """
 
 import asyncio
@@ -21,6 +21,7 @@ from app.core.timeutil import utcnow
 from app.models.match import MeetupMatch
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
+from app.models.meetup import Meetup
 from app.models.user import User
 
 
@@ -46,10 +47,21 @@ async def user_id_by_sub(db, sub: str) -> int:
     return u.id
 
 
-async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int = 0):
-    """Meetup + joins + two manual teams + match 1 created. Returns (sid, mid, ids)."""
-    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(
-        minutes=start_offset_minutes
+async def make_live_setup(
+    ac: AsyncClient,
+    tokens,
+    *,
+    start_offset_minutes: int = 0,
+    in_window: bool = True,
+):
+    """Meetup + joins + two manual teams + match 1 created. Returns (sid, mid, ids).
+
+    Future start so joins are pre-meetup; when ``in_window`` the start is
+    shifted into the presence window after joins, before match ops."""
+    start = (
+        datetime.now(UTC).replace(tzinfo=None)
+        + timedelta(hours=1)
+        + timedelta(minutes=start_offset_minutes)
     )
     r = await ac.post(
         "/meetups/",
@@ -73,6 +85,13 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
     # Two manual teams so matches/start is deterministic.
     async with AsyncSession(engine) as db:
         ids = {t: await user_id_by_sub(db, f"{t}-uuid") for t in tokens}
+        if in_window:
+            await db.execute(
+                update(Meetup)
+                .where(Meetup.id == sid)
+                .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+            )
+            await db.commit()
     half = max(len(tokens) // 2, 1)
     teams = [
         [str(ids[t]) for t in tokens[:half]],
@@ -360,8 +379,8 @@ async def test_score_counters_match_count_after_add_and_delete():
         assert r2.json()["score_a"] == 1 and r2.json()["score_b"] == 1
         goal_b = r2.json()["goal"]["id"]
 
-        # Public GET (no auth): exactly the two live rows, ordered by minute.
-        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        # Authenticated GET: exactly the two live rows, ordered by minute.
+        rp = await ac.get(f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("viewer"))
         assert rp.status_code == 200
         rows = rp.json()["goals"]
         assert [g["id"] for g in rows] == sorted(
@@ -375,7 +394,9 @@ async def test_score_counters_match_count_after_add_and_delete():
             f"/meetups/{sid}/matches/{mid}/goals/{goal_a}", headers=hdr("p3")
         )
         assert rd.status_code == 204
-        rp2 = await ac.get(f"/meetups/{sid}/matches/{mid}/goals")
+        rp2 = await ac.get(
+            f"/meetups/{sid}/matches/{mid}/goals", headers=hdr("viewer")
+        )
         assert [g["id"] for g in rp2.json()["goals"]] == [goal_b]
         assert rp2.json()["score_a"] == 0 and rp2.json()["score_b"] == 1
 
@@ -496,7 +517,10 @@ async def test_steward_state_reasons():
         assert r0.status_code == 401
 
         sid_out, _, ids = await make_live_setup(
-            ac, ["p1", "p2"], start_offset_minutes=2 * 24 * 60
+            ac,
+            ["p1", "p2"],
+            start_offset_minutes=2 * 24 * 60,
+            in_window=False,
         )
         # Confirmed attendee but the window has not opened: outside_window.
         r1 = await ac.get(f"/meetups/{sid_out}/steward-state", headers=hdr("p1"))

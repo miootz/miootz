@@ -53,6 +53,22 @@ async def report_match_score(
     if not 1 <= report.score <= 5:
         raise HTTPException(status_code=400, detail="Score must be between 1 and 5")
 
+    # Players may only score confirmed attendees of the same meetup;
+    # admins may score anyone.
+    if not is_admin:
+        player_att = await db.execute(
+            select(Attendance).where(
+                Attendance.meetup_id == report.meetup_id,
+                Attendance.user_id == report.player_id,
+                Attendance.status == "confirmed",
+            )
+        )
+        if not player_att.scalar_one_or_none():
+            raise HTTPException(
+                status_code=403,
+                detail="Player is not a confirmed attendee of this meetup",
+            )
+
     # Upsert: replace existing score for this player+meetup+type
     existing = await db.execute(
         select(MatchScore).where(

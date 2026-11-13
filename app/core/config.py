@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     VAPID_PRIVATE_KEY: str = ""
     #: Contact for push (e.g. mailto:admin@example.com)
     VAPID_SUBJECT: str = "mailto:noreply@localhost"
+    #: Host suffix allowlist for user-supplied push endpoints (the server POSTs
+    #: to them). Comma-separated; a leading `.` matches subdomains. Override to
+    #: add self-hosted push services (e.g. Red Push).
+    PUSH_ENDPOINT_HOSTS: str = (
+        "fcm.googleapis.com,fcm.x.io,api.push.apple.com,.moeapp.net,.up.pushin.ca"
+    )
 
     # APScheduler default timezone (per-rule recurrence jobs use their own announce_timezone)
     SCHEDULER_ENABLED: bool = True

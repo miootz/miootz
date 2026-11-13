@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, UTC
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
@@ -33,7 +33,9 @@ async def client() -> AsyncClient:
 
 
 async def make_tied_match(ac: AsyncClient, *, allows_draws: bool):
-    start = datetime.now(UTC).replace(tzinfo=None)
+    # Future start: joins are pre-meetup; the start is shifted into the
+    # presence window after joins, before match ops.
+    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
     r = await ac.post(
         "/meetups/",
         json={
@@ -86,6 +88,12 @@ async def make_tied_match(ac: AsyncClient, *, allows_draws: bool):
             ).scalar_one().id
             for token in ("p1", "p2", "p3", "p4", "p5")
         }
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
     # Three teams: match 1 is teams[0] vs teams[1]; teams[2] is the
     # entering side, so end_match has a next match to build.
     teams = [

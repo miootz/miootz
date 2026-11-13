@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, UTC
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
@@ -32,8 +32,11 @@ async def client() -> AsyncClient:
 
 
 async def make_running_match(ac: AsyncClient):
-    """Meetup with two teams + a bench player; match 1 started."""
-    start = datetime.now(UTC).replace(tzinfo=None)
+    """Meetup with two teams + a bench player; match 1 started.
+
+    Future start so joins are pre-meetup; start is shifted into the
+    presence window after joins, before match ops."""
+    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
     r = await ac.post(
         "/meetups/",
         json={
@@ -62,6 +65,12 @@ async def make_running_match(ac: AsyncClient):
             ).scalar_one().id
             for token in ("p1", "p2", "p3", "p4")
         }
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
 
     # p1 attends AND administers: the swap is admin-gated but lease-held,
     # and the lease only goes to present members.

@@ -207,15 +207,12 @@ function normalizeGoal(v: unknown): GoalRow | null {
   };
 }
 
-/** Public GET — returns the full goal list for a match (already ordered). */
+/** Authenticated GET — returns the full goal list for a match (ordered). */
 export async function fetchGoals(
   meetupId: number,
   matchId: number,
 ): Promise<GoalRow[]> {
-  const r = await apiFetch(
-    `/meetups/${meetupId}/matches/${matchId}/goals`,
-    { skipAuth: true },
-  );
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goals`);
   if (!r.ok) throw new Error(await parseApiError(r));
   const j = (await r.json()) as { goals?: unknown[] } | unknown[];
   const arr = Array.isArray(j) ? j : Array.isArray(j?.goals) ? j.goals : [];

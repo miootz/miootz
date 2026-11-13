@@ -9,14 +9,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
 from app.models.match import MeetupMatch
 from app.models.match_goal import MatchGoal
-from app.models.meetup import Attendance
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
 
@@ -42,9 +42,14 @@ async def user_id_by_sub(db, sub: str) -> int:
 
 
 async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int = 0):
-    """Meetup + joins + two manual teams + active match. Returns (sid, mid, ids)."""
-    start = datetime.now(UTC).replace(tzinfo=None) + timedelta(
-        minutes=start_offset_minutes
+    """Meetup + joins + two manual teams + active match. Returns (sid, mid, ids).
+
+    Future start so joins are pre-meetup; start is shifted into the
+    presence window after joins, before match ops."""
+    start = (
+        datetime.now(UTC).replace(tzinfo=None)
+        + timedelta(hours=1)
+        + timedelta(minutes=start_offset_minutes)
     )
     r = await ac.post(
         "/meetups/",
@@ -66,6 +71,12 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
 
     async with AsyncSession(engine) as db:
         ids = {t: await user_id_by_sub(db, f"{t}-uuid") for t in tokens}
+        await db.execute(
+            update(Meetup)
+            .where(Meetup.id == sid)
+            .values(start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=15))
+        )
+        await db.commit()
     half = max(len(tokens) // 2, 1)
     teams = [
         [str(ids[t]) for t in tokens[:half]],
