@@ -17,7 +17,7 @@ async def test_admin_list_players_paginated():
             first, last = name.split(maxsplit=1)
             r = await ac.post(
                 "/users",
-                json={"first_name": first, "last_name": last},
+                json={"first_name": first, "last_name": last, "calculated_skill": 3},
                 headers={"Authorization": "Bearer admintoken"},
             )
             assert r.status_code == 200
@@ -83,7 +83,7 @@ async def test_admin_player_history():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         create_r = await ac.post(
             "/users",
-            json={"first_name": "History", "last_name": "Player"},
+            json={"first_name": "History", "last_name": "Player", "calculated_skill": 3},
             headers={"Authorization": "Bearer admintoken"},
         )
         assert create_r.status_code == 200
@@ -221,7 +221,7 @@ async def test_player_history_self_access():
             ).scalar_one()
             other_r = await ac.post(
                 "/users",
-                json={"first_name": "Other", "last_name": "Player"},
+                json={"first_name": "Other", "last_name": "Player", "calculated_skill": 3},
                 headers={"Authorization": "Bearer admintoken"},
             )
             other_id = other_r.json()["id"]

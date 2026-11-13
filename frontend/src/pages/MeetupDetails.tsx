@@ -107,7 +107,7 @@ function PlusOneModal({
 			const res = await addPlusOne(sid, {
 				first_name: firstName.trim(),
 				last_name: lastName.trim(),
-				self_assessed_skill: skill,
+				skill: skill,
 			});
 			setResult({ claim_url: res.claim_url });
 			hapticSuccess();

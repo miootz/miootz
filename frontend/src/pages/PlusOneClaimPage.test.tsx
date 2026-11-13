@@ -17,7 +17,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState({}, '', '/plus-one/test-claim');
   vi.mocked(useAuth).mockReturnValue(signedOut);
-  vi.mocked(checkPlusOneClaim).mockResolvedValue({ id: 1, status: 'pending', first_name: 'Ioana', last_name: 'Radu', self_assessed_skill: 3, meetup_id: 1, inviter_display_name: 'Mara', guest_display_name: 'Ioana Radu' });
+  vi.mocked(checkPlusOneClaim).mockResolvedValue({ id: 1, status: 'pending', first_name: 'Ioana', last_name: 'Radu', skill: 3, meetup_id: 1, inviter_display_name: 'Mara', guest_display_name: 'Ioana Radu' });
 });
 
 function openClaim() {
@@ -34,8 +34,8 @@ it('shows the inviter and saves the reservation path before sign-in', async () =
 });
 
 it('claims with the signed-in identity without asking for a username', async () => {
-  vi.mocked(useAuth).mockReturnValue({ ...signedOut, me: { user: { id: 20, display_name: 'Ioana Radu', pocket_id_sub: 'guest', avatar_url: null, self_assessed_skill: 3, calculated_skill: null, primary_specialty: null, secondary_specialty: null, is_admin: false }, is_admin: false, auth_groups: ['members'] } });
-  vi.mocked(claimPlusOne).mockResolvedValue({ status: 'claimed', user_id: 20, display_name: 'Ioana Radu', self_assessed_skill: 3 });
+  vi.mocked(useAuth).mockReturnValue({ ...signedOut, me: { user: { id: 20, display_name: 'Ioana Radu', pocket_id_sub: 'guest', avatar_url: null, calculated_skill: null, primary_specialty: null, secondary_specialty: null, is_admin: false }, is_admin: false, auth_groups: ['members'] } });
+  vi.mocked(claimPlusOne).mockResolvedValue({ status: 'claimed', user_id: 20, display_name: 'Ioana Radu', calculated_skill: 3 });
   openClaim();
   fireEvent.click(await screen.findByRole('button', { name: 'Claim my reservation' }));
   expect(await screen.findByRole('heading', { name: 'Your reservation is claimed' })).toBeInTheDocument();

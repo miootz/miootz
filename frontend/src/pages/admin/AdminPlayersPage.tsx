@@ -11,6 +11,8 @@ import {
 	Users,
 	XCircle,
 } from "lucide-react";
+import { SKILL_SCALE_BLURB } from "../../components/OnboardingCard";
+import { StarRating } from "../../components/StarRating";
 import {
 	adminCreateUser,
 	adminListInvites,
@@ -27,13 +29,6 @@ import { useToast } from "../../context/ToastContext";
 const PAGE_SIZE = 25;
 
 function skillOf(user: AdminUserRow): number | null {
-	if (
-		user.self_assessed_skill != null &&
-		user.self_assessed_skill >= 1 &&
-		user.self_assessed_skill <= 5
-	) {
-		return user.self_assessed_skill;
-	}
 	if (user.calculated_skill != null) {
 		return Math.min(5, Math.max(1, Math.round(user.calculated_skill)));
 	}
@@ -55,6 +50,7 @@ export function AdminPlayersPage() {
 	// --- Create player ---
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
+	const [skill, setSkill] = useState(3);
 	const [userLoading, setUserLoading] = useState(false);
 	const [userError, setUserError] = useState("");
 
@@ -128,9 +124,10 @@ export function AdminPlayersPage() {
 		setUserError("");
 		setUserLoading(true);
 		try {
-			await adminCreateUser({ first_name: fn, last_name: ln });
+			await adminCreateUser({ first_name: fn, last_name: ln, calculated_skill: skill });
 			setFirstName("");
 			setLastName("");
+			setSkill(3);
 			showToast("Player created.", "success");
 			void loadUsers(appliedQ, page);
 		} catch (err) {
@@ -198,6 +195,21 @@ export function AdminPlayersPage() {
 							className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
 						/>
 					</div>
+				</div>
+
+				<div>
+					<label className="block text-xs font-medium text-ink-dim mb-1">
+						Skill (1–5)
+					</label>
+					<StarRating
+						value={skill}
+						onChange={setSkill}
+						size={28}
+						label="Skill rating"
+					/>
+					<p className="mt-1 text-2xs text-ink-faint">
+						{SKILL_SCALE_BLURB}
+					</p>
 				</div>
 
 				{userError && (

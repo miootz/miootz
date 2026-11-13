@@ -27,7 +27,6 @@ from app.services.pocket_id_client import (
     delete_user,
     get_user_by_id,
 )
-from app.services.skill_service import update_user_calculated_skill
 from app.services.stats_service import get_user_statistics
 from app.services.template_subscriptions import user_wants_template_notifications
 from app.services.audit import log_action
@@ -59,6 +58,7 @@ def _synthetic_email(first_name: str, last_name: str) -> str:
 class AdminUserCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=80)
     last_name: str = Field(..., min_length=1, max_length=80)
+    calculated_skill: int = Field(..., ge=1, le=5)
 
 
 @router.post("")
@@ -78,6 +78,7 @@ async def admin_create_user(
 
     user = User(
         sso_display_name=f"{first_name} {last_name}",
+        calculated_skill=float(body.calculated_skill),
     )
     db.add(user)
     await db.commit()
@@ -95,7 +96,6 @@ async def admin_create_user(
         "display_name": user.sso_display_name,
         "username": None,
         "avatar_url": user.avatar_url,
-        "self_assessed_skill": user.self_assessed_skill,
         "calculated_skill": user.calculated_skill,
         "primary_specialty": user.primary_specialty,
         "secondary_specialty": user.secondary_specialty,
@@ -202,7 +202,6 @@ async def get_my_profile(
             "pocket_id_sub": current_user.pocket_id_sub,
             "display_name": getattr(request.state, "sso_display_name", None),
             "avatar_url": current_user.avatar_url,
-            "self_assessed_skill": current_user.self_assessed_skill,
             "calculated_skill": current_user.calculated_skill,
             "primary_specialty": current_user.primary_specialty,
             "secondary_specialty": current_user.secondary_specialty,
@@ -291,12 +290,6 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="User not found")
 
     dumped = update_data.model_dump(exclude_unset=True)
-    skill_changed = False
-    if "self_assessed_skill" in dumped:
-        v = dumped.pop("self_assessed_skill")
-        if v is not None:
-            user.self_assessed_skill = v
-            skill_changed = True
 
     for key, value in dumped.items():
         if key in ("primary_specialty", "secondary_specialty") and value == "":
@@ -305,8 +298,6 @@ async def update_profile(
 
     await db.commit()
     await db.refresh(user)
-    if skill_changed:
-        await update_user_calculated_skill(db, user_id=user.id)
 
     return {"message": "Profile updated successfully"}
 
@@ -521,7 +512,6 @@ class AdminUserListOut(BaseModel):
     display_name: str | None = None
     username: str | None = None
     avatar_url: str | None = None
-    self_assessed_skill: int | None = None
     calculated_skill: float | None = None
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
@@ -530,15 +520,11 @@ class AdminUserListOut(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
-    self_assessed_skill: int | None = Field(None, ge=1, le=5)
+    calculated_skill: float | None = Field(None, ge=0, le=5)
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool | None = None
     display_name: str | None = None
-
-
-class AdminSelfAssessedBody(BaseModel):
-    self_assessed_skill: int = Field(..., ge=1, le=5)
 
 
 def _user_out(user: User, sso: dict[str, Any] | None) -> dict[str, Any]:
@@ -717,17 +703,10 @@ async def admin_update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     dumped = body.model_dump(exclude_unset=True)
-    skill_changed = False
 
     for key in ("primary_specialty", "secondary_specialty"):
         if key in dumped and dumped[key] == "":
             dumped[key] = None
-
-    if "self_assessed_skill" in dumped:
-        v = dumped.pop("self_assessed_skill")
-        if v is not None:
-            user.self_assessed_skill = v
-            skill_changed = True
 
     if "display_name" in dumped:
         val = dumped.pop("display_name")
@@ -738,8 +717,6 @@ async def admin_update_user(
 
     await db.commit()
     await db.refresh(user)
-    if skill_changed:
-        await update_user_calculated_skill(db, user_id=user.id)
     changed = ", ".join(sorted(body.model_dump(exclude_unset=True)))
     log_action(
         request,
@@ -748,32 +725,6 @@ async def admin_update_user(
         f"Updated user '{user.sso_display_name or user.id}' — changed: {changed}",
     )
     return {"message": "User updated successfully"}
-
-
-@router.patch("/{user_id}/self-assessed-skill")
-async def admin_set_self_assessed_skill(
-    user_id: int,
-    body: AdminSelfAssessedBody,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """Deprecated — use PATCH /users/{user_id} instead."""
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    old_skill = user.self_assessed_skill
-    user.self_assessed_skill = body.self_assessed_skill
-    await db.commit()
-    await update_user_calculated_skill(db, user_id=user_id)
-    log_action(
-        request,
-        "user",
-        "user.skill_set",
-        f"Set self-assessed skill of '{user.sso_display_name or user.id}' "
-        f"from {old_skill} to {body.self_assessed_skill}",
-    )
-    return {"message": "Self-assessed skill updated"}
 
 
 @router.delete("/{user_id}")

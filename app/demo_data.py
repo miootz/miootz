@@ -55,10 +55,10 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         id=i, pocket_id_sub=f'showcase-{i}', sso_display_name=name,
         sso_preferred_username=name.lower().replace(' ', '.'),
         sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
-        self_assessed_skill=2 + i % 4, primary_specialty=POSITIONS[i - 1],
+        calculated_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
     ) for i, name in enumerate(NAMES, 1)]
-    members[19].self_assessed_skill = None
-    placeholder = User(id=21, pocket_id_sub='showcase-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], self_assessed_skill=3)
+    members[19].calculated_skill = None
+    placeholder = User(id=21, pocket_id_sub='showcase-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], calculated_skill=3.0)
     unlinked = User(id=22, sso_display_name='Demo Player 21')
     db.add_all([*members, placeholder, unlinked])
     await db.flush()
@@ -110,7 +110,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     db.add(Attendance(meetup_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
     db.add(GuestPlusOne(
         meetup_id=1, inviter_id=2, guest_user_id=21, first_name='Marco', last_name='van Basten',
-        self_assessed_skill=3, claim_token='showcase-guest-reservation', status='pending', created_at=anchor,
+        skill=3, claim_token='showcase-guest-reservation', status='pending', created_at=anchor,
     ))
     db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))
     db.add(GameTemplateSubscription(user_id=19, game_template_id=1, notifications_enabled=False))
@@ -177,7 +177,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     for member in members[:15]:
         await update_user_calculated_skill(db, member.id, commit=False)
 
-    players = [{'id': u.id, 'skill': u.calculated_skill or u.self_assessed_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
+    players = [{'id': u.id, 'skill': u.calculated_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
     if live_like:
         # 3 teams of 5 (skill-snake) + the lowest-rated player as the bench
         # pool — a 1-person bench is valid per validate_team_partition.

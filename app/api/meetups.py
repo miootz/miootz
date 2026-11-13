@@ -179,7 +179,8 @@ class ChatTypingBody(BaseModel):
 class PlusOneCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=80)
     last_name: str = Field(..., min_length=1, max_length=80)
-    self_assessed_skill: int = Field(..., ge=1, le=5)
+    #: Seeded skill for the guest's computed rating (1–5).
+    skill: int = Field(..., ge=1, le=5)
 
 
 class PlusOneClaim(BaseModel):
@@ -226,14 +227,10 @@ async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
 
 
 def _user_skill(u: User) -> float:
-    """Single display skill for matchmaking: calculated first, then fallbacks."""
+    """Single display skill for matchmaking: calculated, with fallback."""
     if u.calculated_skill is not None:
-        v = u.calculated_skill
-    elif u.self_assessed_skill is not None:
-        v = u.self_assessed_skill
-    else:
-        v = None
-    return v if v is not None else 50.0
+        return u.calculated_skill
+    return 50.0
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
@@ -464,7 +461,6 @@ async def get_meetup(
                 "status": att.status,
                 "joined_at": att.joined_at.isoformat() if att.joined_at else None,
                 "skill": _user_skill(user),
-                "self_assessed_skill": user.self_assessed_skill,
                 "calculated_skill": user.calculated_skill,
                 "is_plus_one": user.id in plus_one_user_ids,
                 "primary_specialty": user.primary_specialty,
@@ -1857,7 +1853,7 @@ async def add_plus_one(
     guest_user = User(
         pocket_id_sub=guest_sub,
         sso_display_name=f"{first_name} {last_name}",
-        self_assessed_skill=body.self_assessed_skill,
+        calculated_skill=float(body.skill),
     )
     db.add(guest_user)
     await db.flush()
@@ -1881,7 +1877,7 @@ async def add_plus_one(
         guest_user_id=guest_user.id,
         first_name=first_name,
         last_name=last_name,
-        self_assessed_skill=body.self_assessed_skill,
+        skill=body.skill,
         claim_token=claim_token,
         status="pending",
     )
@@ -1928,7 +1924,7 @@ async def add_plus_one(
         "guest_user_id": guest_user.id,
         "first_name": first_name,
         "last_name": last_name,
-        "self_assessed_skill": body.self_assessed_skill,
+        "skill": body.skill,
         "claim_token": claim_token,
         "claim_url": claim_url,
         "attendance_status": attendance.status,
@@ -1966,7 +1962,7 @@ async def list_plus_ones(
             "guest_user_id": po.guest_user_id,
             "first_name": po.first_name,
             "last_name": po.last_name,
-            "self_assessed_skill": po.self_assessed_skill,
+            "skill": po.skill,
             "inviter_id": po.inviter_id,
             "inviter_display_name": po.inviter.display_name,
             "claim_token": po.claim_token,
@@ -2074,7 +2070,7 @@ async def check_plus_one_claim(
         "status": plus_one.status,
         "first_name": plus_one.first_name,
         "last_name": plus_one.last_name,
-        "self_assessed_skill": plus_one.self_assessed_skill,
+        "skill": plus_one.skill,
         "meetup_id": plus_one.meetup_id,
         "inviter_display_name": plus_one.inviter.display_name,
         "guest_display_name": plus_one.guest_user.display_name,
@@ -2132,7 +2128,7 @@ async def claim_plus_one(
         "status": "claimed",
         "user_id": member.id,
         "display_name": member.display_name,
-        "self_assessed_skill": member.self_assessed_skill,
+        "calculated_skill": member.calculated_skill,
     }
 
 

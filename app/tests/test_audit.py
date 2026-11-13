@@ -80,7 +80,7 @@ async def test_admin_action_is_logged():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
             "/users",
-            json={"first_name": "Audited", "last_name": "Player"},
+            json={"first_name": "Audited", "last_name": "Player", "calculated_skill": 3},
             headers=ADMIN,
         )
         assert r.status_code == 200, r.text
@@ -134,7 +134,7 @@ async def test_audit_write_failure_does_not_block_action(monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
             "/users",
-            json={"first_name": "Resilient", "last_name": "Player"},
+            json={"first_name": "Resilient", "last_name": "Player", "calculated_skill": 3},
             headers=ADMIN,
         )
         assert r.status_code == 200, r.text

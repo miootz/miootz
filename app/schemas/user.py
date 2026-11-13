@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 SPECIALTY_OPTIONS = Literal["ATT", "MID", "DEF", "GK"]
 
@@ -16,7 +16,6 @@ class UserMe(BaseModel):
     display_name: str | None = None
     #: Pocket ID avatar URL (computed from pocket_id_sub)
     avatar_url: str | None = None
-    self_assessed_skill: int | None = None
     calculated_skill: float | None = None
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
@@ -26,6 +25,5 @@ class UserMe(BaseModel):
 class UserProfileUpdate(BaseModel):
     """User-editable profile fields (identity is managed by Pocket ID)."""
 
-    self_assessed_skill: int | None = Field(None, ge=1, le=5)
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None

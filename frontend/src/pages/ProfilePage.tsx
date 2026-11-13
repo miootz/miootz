@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, LogOut, User } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, LogOut, User, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "../context/ToastContext";
 import {
@@ -407,6 +407,14 @@ export function ProfilePage() {
                 Your stats
               </h2>
               <div className="grid grid-cols-2 gap-3">
+                <StatCard
+                  label="Skill rating"
+                  value={
+                    u.calculated_skill != null
+                      ? u.calculated_skill.toFixed(1)
+                      : "—"
+                  }
+                />
                 <StatCard
                   label="Meetups played"
                   value={String(stats.games_played)}
@@ -861,24 +869,49 @@ function AttendanceHistory({ userId }: { userId: number }) {
           <ul className="divide-y divide-line">
             {items.map((it) => {
               const active = it.metrics.matches > 0;
+              const StatusIcon =
+                it.status === "confirmed"
+                  ? CheckCircle2
+                  : it.status === "waitlisted"
+                    ? Clock
+                    : XCircle;
+              const statusLabel =
+                it.status === "confirmed"
+                  ? "Confirmed"
+                  : it.status === "waitlisted"
+                    ? "Waitlisted"
+                    : "Cancelled";
               return (
                 <li key={it.meetup_id}>
                   <Link
                     to={`/history/${it.meetup_id}`}
                     className="flex items-center gap-3 px-3 py-2 min-h-[44px] hover:bg-raised transition-colors"
                   >
+                    <StatusIcon
+                      className={`h-4 w-4 shrink-0 ${
+                        it.status === "cancelled" ? "text-danger" : "text-ink-dim"
+                      }`}
+                      aria-label={statusLabel}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-ink truncate">
-                        {format(new Date(it.start_time), "d MMM yyyy")} ·{" "}
-                        {it.location}
+                        {format(new Date(it.start_time), "d MMM yyyy")}
                       </p>
-                      <p className="text-2xs text-ink-faint">
-                        {it.status}
-                        {it.previous_status && it.status !== "confirmed"
-                          ? ` (was ${it.previous_status})`
-                          : ""}
-                      </p>
+                      {it.status !== "confirmed" &&
+                        it.previous_status && (
+                          <p className="text-2xs text-ink-faint">
+                            (was {it.previous_status})
+                          </p>
+                        )}
                     </div>
+                    {it.rating_avg != null && (
+                      <span
+                        className="text-2xs font-bold text-ink-dim tabular-nums shrink-0"
+                        title="Average peer rating for this meetup"
+                      >
+                        ★ {it.rating_avg.toFixed(1)}
+                      </span>
+                    )}
                     {active && (
                       <span
                         className="text-2xs font-bold text-ink-dim tabular-nums shrink-0"

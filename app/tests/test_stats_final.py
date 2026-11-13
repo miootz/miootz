@@ -67,7 +67,6 @@ async def auth_user(db: AsyncSession):
     user = User(
         pocket_id_sub="tester-uuid",
         sso_display_name="tester",
-        self_assessed_skill=3,
         calculated_skill=3,
     )
     db.add(user)

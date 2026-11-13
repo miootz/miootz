@@ -29,7 +29,7 @@ async def test_profile_update():
     ) as ac:
         response = await ac.patch(
             "/users/me",
-            json={"self_assessed_skill": 3},
+            json={"primary_specialty": "ATT"},
             headers=_auth_headers(),
         )
         assert response.status_code == 200

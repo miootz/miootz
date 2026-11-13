@@ -31,10 +31,10 @@ async def claim_data():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with async_sessionmaker(engine, expire_on_commit=False)() as db:
-        host = User(pocket_id_sub="host", self_assessed_skill=4)
+        host = User(pocket_id_sub="host")
         guest = User(pocket_id_sub="placeholder")
         member = User(
-            pocket_id_sub="member", sso_display_name="Mara", self_assessed_skill=2
+            pocket_id_sub="member", sso_display_name="Mara"
         )
         meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1),
@@ -55,7 +55,7 @@ async def claim_data():
             guest_user_id=guest.id,
             first_name="Demo",
             last_name="Guest",
-            self_assessed_skill=3,
+            skill=3,
             claim_token="test-claim",
             status="pending",
         )
@@ -114,7 +114,8 @@ async def test_claim_transfers_place_and_results_without_replacing_identity(
     assert result["display_name"] == "Mara"
     assert d.member.pocket_id_sub == "member"
     assert d.guest.pocket_id_sub == "placeholder"
-    assert d.member.self_assessed_skill == 2
+    # Peer rating (4) drives the recalculated skill once votes exist.
+    assert d.member.calculated_skill == 4.0
     assert d.attendance.user_id == d.member.id
     assert d.attendance.status == status
     assert d.attendance.joined_at == datetime(2026, 1, 1)
@@ -144,7 +145,7 @@ async def test_existing_attendee_cannot_take_a_second_place(claim_data, status):
 @pytest.mark.asyncio
 async def test_cancelled_attendance_is_replaced_and_missing_skill_is_filled(claim_data):
     d = claim_data
-    d.member.self_assessed_skill = None
+    d.member.calculated_skill = None
     d.db.add(
         Attendance(meetup_id=d.meetup.id, user_id=d.member.id, status="cancelled")
     )
@@ -155,7 +156,7 @@ async def test_cancelled_attendance_is_replaced_and_missing_skill_is_filled(clai
     ).all()
     assert len(entries) == 1
     assert entries[0].status == "confirmed"
-    assert d.member.self_assessed_skill == 3
+    assert d.member.calculated_skill == 4.0
 
 
 @pytest.mark.asyncio

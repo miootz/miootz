@@ -123,7 +123,6 @@ async def get_me(request: Request):
             "pocket_id_sub": user.pocket_id_sub,
             "display_name": getattr(request.state, "sso_display_name", None),
             "avatar_url": user.avatar_url,
-            "self_assessed_skill": user.self_assessed_skill,
             "calculated_skill": user.calculated_skill,
             "primary_specialty": user.primary_specialty,
             "secondary_specialty": user.secondary_specialty,

@@ -844,6 +844,43 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     if not await has_column("game_templates", "fee_text"):
         await conn.execute(text("ALTER TABLE game_templates ADD COLUMN fee_text VARCHAR"))
 
+    # ── Single calculated rating: drop users.self_assessed_skill ──────
+    if await has_column("users", "self_assessed_skill"):
+        r = await conn.execute(text("SELECT sqlite_version()"))
+        version = r.scalar_one_or_none() or ""
+        if _parse_sqlite_version(version) >= (3, 35, 0):
+            await conn.execute(
+                text("ALTER TABLE users DROP COLUMN self_assessed_skill")
+            )
+        else:
+            # SQLite < 3.35 can't DROP COLUMN - leave stale column
+            logger.warning(
+                "Cannot drop column 'self_assessed_skill' from users (SQLite < 3.35)"
+            )
+
+    # ── Plus-one: rename self_assessed_skill to skill ─────────────────
+    if await has_column("guest_plus_ones", "self_assessed_skill"):
+        r = await conn.execute(text("SELECT sqlite_version()"))
+        version = r.scalar_one_or_none() or ""
+        if _parse_sqlite_version(version) >= (3, 25, 0):
+            await conn.execute(
+                text(
+                    "ALTER TABLE guest_plus_ones "
+                    "RENAME COLUMN self_assessed_skill TO skill"
+                )
+            )
+        else:
+            # SQLite < 3.25 can't RENAME COLUMN - add + copy
+            if not await has_column("guest_plus_ones", "skill"):
+                await conn.execute(
+                    text("ALTER TABLE guest_plus_ones ADD COLUMN skill INTEGER")
+                )
+                await conn.execute(
+                    text(
+                        "UPDATE guest_plus_ones SET skill = self_assessed_skill"
+                    )
+                )
+
 
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""

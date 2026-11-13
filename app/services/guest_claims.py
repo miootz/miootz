@@ -86,8 +86,8 @@ async def claim_reservation(
     if existing:
         await db.delete(existing)
     attendance.user_id = member.id  # Preserve status and original waitlist ordering.
-    if member.self_assessed_skill is None:
-        member.self_assessed_skill = reservation.self_assessed_skill
+    if member.calculated_skill is None:
+        member.calculated_skill = float(reservation.skill)
 
     meetup = await db.get(Meetup, sid)
     if meetup is None:

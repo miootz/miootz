@@ -392,7 +392,7 @@ async def start_matches(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or u.self_assessed_skill or 3),
+            "skill": (u.calculated_skill or 3),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -534,7 +534,7 @@ async def create_new_pending_match(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or u.self_assessed_skill or 3),
+            "skill": (u.calculated_skill or 3),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -901,7 +901,7 @@ async def _propagate_swap_to_meetup(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or u.self_assessed_skill or 3),
+            "skill": (u.calculated_skill or 3),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -1711,7 +1711,7 @@ async def end_match(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or u.self_assessed_skill or 3),
+            "skill": (u.calculated_skill or 3),
             "user_id": u.id,
         }
         for u in _result.scalars().all()

@@ -98,7 +98,6 @@ export interface MeetupDetail extends MeetupListItem {
     status: string;
     joined_at: string | null;
     skill: number;
-    self_assessed_skill?: number | null;
     calculated_skill?: number | null;
     /** True when this attendee is a plus-one guest reservation. */
     is_plus_one?: boolean;
@@ -137,7 +136,7 @@ export async function fetchMeetupHistorySummary(
 export interface PlusOneCreate {
   first_name: string;
   last_name: string;
-  self_assessed_skill: number;
+  skill: number;
 }
 
 export interface PlusOneRecord {
@@ -145,7 +144,7 @@ export interface PlusOneRecord {
   guest_user_id: number;
   first_name: string;
   last_name: string;
-  self_assessed_skill: number;
+  skill: number;
   inviter_id: number;
   inviter_username: string;
   claim_token: string;
@@ -158,7 +157,7 @@ export interface PlusOneClaimCheck {
   status: string;
   first_name: string;
   last_name: string;
-  self_assessed_skill: number;
+  skill: number;
   meetup_id: number;
   inviter_display_name: string;
   guest_display_name: string;
@@ -344,7 +343,7 @@ export async function addPlusOne(
   guest_user_id: number;
   first_name: string;
   last_name: string;
-  self_assessed_skill: number;
+  skill: number;
   claim_token: string;
   claim_url: string;
   attendance_status: string;
@@ -388,7 +387,7 @@ export async function claimPlusOne(claimToken: string): Promise<{
   status: string;
   user_id: number;
   display_name: string;
-  self_assessed_skill: number;
+  calculated_skill?: number | null;
 }> {
   const r = await apiFetch(`/meetups/plus-one/${claimToken}/claim`, {
     method: "POST",

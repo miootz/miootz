@@ -44,8 +44,8 @@ class GuestPlusOne(Base):
     first_name: Mapped[str] = mapped_column(String)
     last_name: Mapped[str] = mapped_column(String)
 
-    #: Guest's self-assessed skill (1–5, provided by inviter).
-    self_assessed_skill: Mapped[int] = mapped_column(Integer)
+    #: Guest's skill (1–5, provided by inviter) — seeds the computed rating.
+    skill: Mapped[int] = mapped_column(Integer)
 
     #: Unique claim token (shared via link/SMS).
     claim_token: Mapped[str] = mapped_column(String, unique=True, index=True)

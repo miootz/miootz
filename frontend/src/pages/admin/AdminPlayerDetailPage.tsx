@@ -103,7 +103,7 @@ export function AdminPlayerDetailPage() {
 				setData(r);
 				setNotFound(false);
 				setEditDisplayName(r.user.display_name || "");
-				setEditSkill(r.user.self_assessed_skill ?? 0);
+				setEditSkill(r.user.calculated_skill != null ? Math.min(5, Math.max(1, Math.round(r.user.calculated_skill))) : 0);
 				setEditPrimary(r.user.primary_specialty || "");
 				setEditSecondary(r.user.secondary_specialty || "");
 				setEditIsAdmin(r.user.is_admin);
@@ -133,7 +133,7 @@ export function AdminPlayerDetailPage() {
 		try {
 			const body: AdminUserUpdate = {};
 			body.display_name = editDisplayName.trim() || null;
-			body.self_assessed_skill = editSkill > 0 ? editSkill : null;
+			body.calculated_skill = editSkill > 0 ? editSkill : null;
 			body.primary_specialty =
 				(editPrimary as AdminUserUpdate["primary_specialty"]) || null;
 			body.secondary_specialty =
@@ -259,9 +259,9 @@ export function AdminPlayerDetailPage() {
 				<div className="min-w-0 flex-1">
 					<h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-ink tracking-tight">
 						<span className="min-w-0 truncate">{displayName}</span>
-						{user.self_assessed_skill != null && (
+						{user.calculated_skill != null && (
 							<SkillBadge
-								score={user.self_assessed_skill}
+								score={Math.min(5, Math.max(1, Math.round(user.calculated_skill)))}
 								size="md"
 							/>
 						)}
@@ -327,7 +327,7 @@ export function AdminPlayerDetailPage() {
 
 				<div>
 					<span className="block text-xs font-medium text-ink-dim mb-1.5">
-						Self skill
+						Skill
 					</span>
 					<StarRating
 						value={editSkill}

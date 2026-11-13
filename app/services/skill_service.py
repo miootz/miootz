@@ -130,7 +130,7 @@ async def update_user_calculated_skill(
 ) -> None:
     """
     Recalculates the 'calculated_skill' for a user based on:
-    (self_assessed_skill * 0.4 + weighted_avg_peer_rating * 0.6) - miss_decay
+    recency-weighted_avg_peer_rating - miss_decay
 
     Peer ratings are recency-weighted: ratings from the user's 4 most recent
     confirmed attendances carry full weight; older ratings carry half weight.
@@ -138,35 +138,27 @@ async def update_user_calculated_skill(
     Miss decay: for consecutive locked meetups where the player has no
     confirmed attendance, subtract 0.1 per miss beyond the first,
     capped at 1.0.  One miss is forgiven; the penalty compounds from the second.
+
+    With no peer ratings the stored value is left untouched — that is the
+    admin seed (player creation / guest invite) or the admin's last edit.
     """
     user = await db.get(User, user_id)
     if not user:
         return
 
     avg_peer = await _get_weighted_peer_average(db, user_id)
-
     if avg_peer is None:
-        if user.self_assessed_skill is not None:
-            user.calculated_skill = user.self_assessed_skill
-            if commit:
-                await db.commit()
-            else:
-                await db.flush()
         return
 
-    W_SELF = 0.4
-    W_PEER = 0.6
-    self_val = user.self_assessed_skill if user.self_assessed_skill is not None else 0
     try:
         peer_val = float(avg_peer)
     except TypeError, ValueError:
         peer_val = 0.0
-    base_skill = (self_val * W_SELF) + (peer_val * W_PEER)
 
     # Miss decay
     streak = await get_consecutive_miss_streak(db, user_id)
     decay = min(_MAX_MISS_DECAY, max(0, streak - 1) * 0.1)
-    new_skill = base_skill - decay
+    new_skill = peer_val - decay
     user.calculated_skill = round(max(0, new_skill), 1)
     if commit:
         await db.commit()

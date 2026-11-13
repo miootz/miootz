@@ -6,6 +6,7 @@ from app.api.main import app
 from app.core.database import Base, async_session, engine
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.skill_service import update_user_calculated_skill
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -22,10 +23,10 @@ async def test_skill_score_calculation_logic():
         auth_user = User(
             pocket_id_sub="tester-uuid",
             sso_display_name="tester",
-            self_assessed_skill=3,
         )
+        # Seed rating as an admin would at player creation.
         player = User(
-            pocket_id_sub="test-p1", sso_display_name="p1", self_assessed_skill=3
+            pocket_id_sub="test-p1", sso_display_name="p1", calculated_skill=3.0
         )
         rater1 = User(pocket_id_sub="test-r1", sso_display_name="r1")
         db.add_all([auth_user, player, rater1])
@@ -66,6 +67,23 @@ async def test_skill_score_calculation_logic():
     async with async_session() as db:
         player_row = await db.get(User, player_id)
         assert player_row is not None
-        assert player_row.calculated_skill is not None, (
-            f"calculated_skill was None (self_assessed={player_row.self_assessed_skill})"
+        # Peer votes overwrite the admin seed: single rating of 5.
+        assert player_row.calculated_skill == 5.0
+
+
+@pytest.mark.asyncio
+async def test_seed_skill_persists_without_peer_ratings():
+    async with async_session() as db:
+        player = User(
+            pocket_id_sub="test-p1", sso_display_name="p1", calculated_skill=3.0
         )
+        db.add(player)
+        await db.commit()
+        await db.refresh(player)
+
+        await update_user_calculated_skill(db, user_id=player.id)
+
+        player_row = await db.get(User, player.id)
+        assert player_row is not None
+        # No peer ratings: the admin seed is left untouched.
+        assert player_row.calculated_skill == 3.0

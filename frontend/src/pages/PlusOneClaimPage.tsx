@@ -148,7 +148,7 @@ export function PlusOneClaimPage() {
           <p className="font-medium">
             {guestInfo.first_name} {guestInfo.last_name}
           </p>
-          <p className="tabular-nums">Skill level: {guestInfo.self_assessed_skill}/5</p>
+          <p className="tabular-nums">Skill level: {guestInfo.skill}/5</p>
           <p className="text-xs text-ink-dim">
             {SKILL_SCALE_BLURB}
           </p>

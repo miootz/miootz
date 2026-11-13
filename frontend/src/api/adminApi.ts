@@ -146,17 +146,6 @@ export async function adminAdjustTeams(
   return jsonOrThrow(r);
 }
 
-export async function adminSetUserSelfAssessedSkill(
-  userId: number,
-  selfAssessedSkill: number
-): Promise<{ message: string }> {
-  const r = await apiFetch(`/users/${userId}/self-assessed-skill`, {
-    method: 'PATCH',
-    body: JSON.stringify({ self_assessed_skill: selfAssessedSkill }),
-  });
-  return jsonOrThrow(r);
-}
-
 export async function adminMoveAttendance(
   meetupId: number,
   userId: number,
@@ -224,6 +213,7 @@ export async function adminRunRecurringNow(): Promise<{
 export async function adminCreateUser(body: {
   first_name: string;
   last_name: string;
+  calculated_skill: number;
 }): Promise<AdminUserRow> {
   const r = await apiFetch('/users', {
     method: 'POST',
@@ -247,7 +237,6 @@ export type AdminUserRow = {
   display_name: string | null;
   username: string | null;
   avatar_url: string | null;
-  self_assessed_skill: number | null;
   calculated_skill: number | null;
   primary_specialty: string | null;
   secondary_specialty: string | null;
@@ -257,7 +246,7 @@ export type AdminUserRow = {
 };
 
 export interface AdminUserUpdate {
-  self_assessed_skill?: number | null;
+  calculated_skill?: number | null;
   primary_specialty?: string | null;
   secondary_specialty?: string | null;
   is_admin?: boolean;

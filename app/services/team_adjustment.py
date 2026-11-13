@@ -43,9 +43,7 @@ async def _load_meetup_players(
     rows = result.all()
 
     def _player_dict(u: User) -> dict[str, Any]:
-        skill = u.calculated_skill if u.calculated_skill is not None else (
-            float(u.self_assessed_skill) if u.self_assessed_skill is not None else 50.0
-        )
+        skill = u.calculated_skill if u.calculated_skill is not None else 50.0
         return {
             "id": str(u.id),
             "name": u.display_name,
@@ -124,9 +122,7 @@ async def expand_teams(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else (
-                float(u.self_assessed_skill) if u.self_assessed_skill is not None else 50.0
-            ),
+            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -224,9 +220,7 @@ async def contract_teams(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else (
-                float(u.self_assessed_skill) if u.self_assessed_skill is not None else 50.0
-            ),
+            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,

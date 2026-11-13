@@ -32,7 +32,7 @@ async def test_admin_create_user(monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
             "/users",
-            json={"first_name": "New", "last_name": "Player"},
+            json={"first_name": "New", "last_name": "Player", "calculated_skill": 3},
             headers={"Authorization": "Bearer admintoken"},
         )
         assert r.status_code == 200, r.text
@@ -50,7 +50,7 @@ async def test_admin_create_user_requires_names():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
             "/users",
-            json={"first_name": "", "last_name": "Player"},
+            json={"first_name": "", "last_name": "Player", "calculated_skill": 3},
             headers={"Authorization": "Bearer admintoken"},
         )
         assert r.status_code == 422, r.text  # Pydantic min_length validation
@@ -79,7 +79,7 @@ async def test_admin_create_user_requires_admin(monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
             "/users",
-            json={"first_name": "User", "last_name": "Test"},
+            json={"first_name": "User", "last_name": "Test", "calculated_skill": 3},
             headers={"Authorization": "Bearer usertoken"},
         )
         assert r.status_code == 403, r.text
@@ -109,7 +109,7 @@ async def test_admin_generate_invite_for_user(monkeypatch):
         # First create a user
         create_r = await ac.post(
             "/users",
-            json={"first_name": "Invited", "last_name": "Player"},
+            json={"first_name": "Invited", "last_name": "Player", "calculated_skill": 3},
             headers={"Authorization": "Bearer admintoken"},
         )
         assert create_r.status_code == 200
@@ -175,7 +175,7 @@ async def test_admin_list_invites(monkeypatch):
         # Create user + invite
         create_r = await ac.post(
             "/users",
-            json={"first_name": "List", "last_name": "Test"},
+            json={"first_name": "List", "last_name": "Test", "calculated_skill": 3},
             headers={"Authorization": "Bearer admintoken"},
         )
         user_id = create_r.json()["id"]

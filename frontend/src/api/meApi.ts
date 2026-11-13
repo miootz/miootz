@@ -7,7 +7,6 @@ export interface MeUser {
     pocket_id_sub: string;
     display_name?: string | null;
     avatar_url?: string | null;
-    self_assessed_skill?: number | null;
     calculated_skill?: number | null;
     primary_specialty?: Specialty | null;
     secondary_specialty?: Specialty | null;
