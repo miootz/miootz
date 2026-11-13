@@ -365,6 +365,7 @@ def main() -> None:
         frontend_env = dict(
             os.environ,
             VITE_DOCKER_DEV="0",
+            VITE_DEMO="1",
             MIOOTZ_API_PROXY_TARGET=f"http://127.0.0.1:{args.api_port}",
             VITE_API_BASE="/api",
             VITE_ALLOWED_HOSTS=bind_host,

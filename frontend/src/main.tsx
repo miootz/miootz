@@ -7,6 +7,7 @@ import { AuthProvider } from './auth/AuthProvider';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { ToastProvider } from './context/ToastContext';
 import { UpdateChecker } from './components/UpdateChecker';
+import { DemoModeBar } from './components/DemoModeBar';
 import { applyThemeClass, readStoredTheme } from './theme/themeStorage';
 import { processOutbox } from './offline/outbox';
 
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <ToastProvider>
           <UpdateChecker />
+          <DemoModeBar />
           <AuthProvider>
             <App />
           </AuthProvider>
