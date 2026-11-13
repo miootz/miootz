@@ -30,10 +30,10 @@ App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — account 
 | `full` | 15 confirmed, three waitlisted | Open Waitlisted to see position #2; leave as Member to promote the first waiting player |
 | `broadcast` | 15 confirmed, three waitlisted; broadcast policy | Leave as Member, then join as Waitlisted to claim the opening. Actual notification delivery is disabled |
 | `random` | 12 confirmed, saved random lineups | Open Admin → Sessions → next meetup → Teams to reshuffle |
-| `live` | 12 confirmed, active rehearsal match, score 2–1 | View the member live banner and admin match controls. Timer starts paused at 6:42; resume it to demonstrate timing |
+| `live` | Meetup started 20 min ago, active match, score 2–1 | View the member live banner and the Referee match controls. Timer starts paused at 6:42; resume it to demonstrate timing |
 | `kickoff` | 12 confirmed, prepared first match, meetup in progress | The meetup starts at launch and the first match is ready (pending), so the referee and match-control UI are unlocked. Use for the referee and match-control UI |
 
-The live scenario deliberately rehearses a match before the meetup's scheduled kickoff, so it remains on the existing member home screen. It does not represent a game currently taking place.
+The live scenario seeds the meetup as having started 20 minutes before the run began, so the presence window (T-15 min head) and the overview's results mode are open and the Referee view accepts scoring.
 
 All scenarios include the same sample roster using classic footballer names, venue, chat, weekly template, a pending guest reservation, three past meetups and 18 completed matches (`live` and `kickoff` add one active match). The latest past meetup ended two hours before the run began, so its ratings are editable until the next kickoff. Dates are relative to launch; names, attendance, scores and ratings follow fixed rules. The `seed_demo` function accepts an explicit UTC anchor for automated tests and refuses nonempty databases.
 

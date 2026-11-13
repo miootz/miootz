@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 import {
@@ -78,6 +78,9 @@ export function RankingsPage() {
   const [sort, setSort] = useState<RankingSort>("attendances");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
+  // Restore scroll after a rubric change re-renders the table with a new row
+  // order (year/page changes intentionally scroll to the top).
+  const restoreScroll = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +107,13 @@ export function RankingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!loading && restoreScroll.current != null) {
+      window.scrollTo({ top: restoreScroll.current });
+      restoreScroll.current = null;
+    }
+  }, [loading]);
 
   const years = data?.available_years ?? [];
   const selected = yearSel === null ? (data?.year ?? new Date().getFullYear()) : yearSel;
@@ -184,6 +194,7 @@ export function RankingsPage() {
             sort={sort}
             order={order}
             onSortChange={(s, o) => {
+              restoreScroll.current = window.scrollY;
               setSort(s);
               setOrder(o);
               setPage(1);

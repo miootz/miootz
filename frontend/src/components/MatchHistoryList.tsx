@@ -314,17 +314,8 @@ function MatchResultRow({
         </span>
       </button>
       <div className="px-4 py-3 flex flex-col gap-2">
-        {/* Score row */}
-        <div className="flex items-center gap-3">
-          {/* Team A */}
-          <div className="flex-1 min-w-0 text-right">
-            <span className="text-sm font-semibold truncate block text-team-a">
-              {match.team_a.name}
-            </span>
-          </div>
-
-          {/* Score */}
-          <div className="flex items-center gap-2 shrink-0">
+        {/* Score — larger, centred, above the team names */}
+        <div className="flex items-center justify-center gap-2">
             {isEditing ? (
               <EditableScore
                 value={match.score_a}
@@ -342,7 +333,7 @@ function MatchResultRow({
                       }
                     : undefined
                 }
-                className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
+                className={`text-3xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
                     ? "cursor-pointer text-ink hover:text-live"
                     : "cursor-default text-ink"
@@ -351,7 +342,7 @@ function MatchResultRow({
                 {match.score_a}
               </button>
             )}
-            <span className="text-ink-faint text-lg font-bold select-none">
+            <span className="text-ink-faint text-xl font-bold select-none">
               :
             </span>
             {isEditing ? (
@@ -371,7 +362,7 @@ function MatchResultRow({
                       }
                     : undefined
                 }
-                className={`text-2xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
+                className={`text-3xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
                   canEdit
                     ? "cursor-pointer text-ink hover:text-live"
                     : "cursor-default text-ink"
@@ -382,8 +373,14 @@ function MatchResultRow({
             )}
           </div>
 
-          {/* Team B */}
-          <div className="flex-1 min-w-0 text-left">
+        {/* Team names — 50/50 so full names fit */}
+        <div className="flex items-center">
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold truncate block text-team-a">
+              {match.team_a.name}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0 text-right">
             <span className="text-sm font-semibold truncate block text-team-b">
               {match.team_b.name}
             </span>

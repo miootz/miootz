@@ -6,6 +6,7 @@ import App from './App.tsx';
 import { AuthProvider } from './auth/AuthProvider';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { ToastProvider } from './context/ToastContext';
+import { UpdateChecker } from './components/UpdateChecker';
 import { applyThemeClass, readStoredTheme } from './theme/themeStorage';
 import { processOutbox } from './offline/outbox';
 
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
+          <UpdateChecker />
           <AuthProvider>
             <App />
           </AuthProvider>

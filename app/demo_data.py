@@ -88,9 +88,16 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             team_names_json=json.dumps(TEAM_NAMES),
         )
 
-    # 'kickoff': the meetup starts right now; the first match is prepared
-    # (pending) and the live-match/steward controls are unlocked at launch.
-    upcoming_start = anchor if scenario == 'kickoff' else kickoff
+    # 'live': the meetup started 20 min ago, so the presence window (T-15 min
+    # head) and the overview's results mode are both open around the live
+    # rehearsal match. 'kickoff': starts right now; the first match is
+    # prepared (pending) and the live-match/steward controls are unlocked.
+    if scenario == 'live':
+        upcoming_start = anchor - timedelta(minutes=20)
+    elif scenario == 'kickoff':
+        upcoming_start = anchor
+    else:
+        upcoming_start = kickoff
     live_like = scenario in ('live', 'kickoff')
     # live/kickoff: a full 16-player house (the headroom comes from the
     # bumped max_players below), fielded as 3 teams of 5 + 1 bench player.

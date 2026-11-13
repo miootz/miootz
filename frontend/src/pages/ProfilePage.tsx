@@ -428,10 +428,6 @@ export function ProfilePage() {
                   value={stats.average_rating.toFixed(1)}
                 />
                 <StatCard
-                  label="Ratings received"
-                  value={String(stats.total_ratings)}
-                />
-                <StatCard
                   label="Season goals"
                   value={String(stats.season_goals)}
                 />

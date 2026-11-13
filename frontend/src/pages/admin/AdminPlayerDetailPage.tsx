@@ -103,7 +103,7 @@ export function AdminPlayerDetailPage() {
 				setData(r);
 				setNotFound(false);
 				setEditDisplayName(r.user.display_name || "");
-				setEditSkill(r.user.calculated_skill != null ? Math.min(5, Math.max(1, Math.round(r.user.calculated_skill))) : 0);
+				setEditSkill(r.user.calculated_skill != null ? Math.min(5, Math.max(1, r.user.calculated_skill)) : 0);
 				setEditPrimary(r.user.primary_specialty || "");
 				setEditSecondary(r.user.secondary_specialty || "");
 				setEditIsAdmin(r.user.is_admin);
@@ -334,6 +334,7 @@ export function AdminPlayerDetailPage() {
 						onChange={(v) => setEditSkill(v)}
 						size={28}
 						label="Skill rating"
+						halfSteps
 					/>
 				</div>
 

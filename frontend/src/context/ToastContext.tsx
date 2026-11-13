@@ -15,10 +15,17 @@ export interface ToastItem {
   id: number;
   message: string;
   variant: ToastVariant;
+  action?: { label: string; onClick: () => void };
 }
 
 interface ToastContextValue {
-  showToast: (message: string, variant?: ToastVariant) => void;
+  /** duration: auto-dismiss ms; 0 = stay until dismissed or action tapped. */
+  showToast: (
+    message: string,
+    variant?: ToastVariant,
+    duration?: number,
+    action?: ToastItem['action'],
+  ) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -53,11 +60,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, variant: ToastVariant = 'default') => {
+    (
+      message: string,
+      variant: ToastVariant = 'default',
+      duration = 4000,
+      action?: ToastItem['action'],
+    ) => {
       const id = ++idRef.current;
-      setToasts((prev) => [...prev, { id, message, variant }]);
-      const handle = setTimeout(() => dismiss(id), 4000);
-      timers.current.set(id, handle);
+      setToasts((prev) => [...prev, { id, message, variant, action }]);
+      if (duration > 0) {
+        const handle = setTimeout(() => dismiss(id), duration);
+        timers.current.set(id, handle);
+      }
     },
     [dismiss]
   );
@@ -78,7 +92,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="status"
           >
             <VariantIcon variant={t.variant} />
-            <p className="flex-1 text-left">{t.message}</p>
+            <p className="flex-1 text-left">
+              {t.message}
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    t.action?.onClick();
+                    dismiss(t.id);
+                  }}
+                  className="ml-2 font-bold text-live hover:underline"
+                >
+                  {t.action.label}
+                </button>
+              )}
+            </p>
             <button
               type="button"
               onClick={() => dismiss(t.id)}

@@ -984,50 +984,49 @@ export function RefereePage() {
             )}
           </div>
           {currentMatch && (
-            <div className="flex items-stretch mt-2">
-              <button
-                type="button"
-                onClick={() => setRostersOpen((o) => !o)}
-                aria-expanded={rostersOpen}
-                aria-controls="match-rosters"
-                className="flex flex-1 items-center justify-end gap-1 bg-team-a px-3 py-2 active:brightness-110"
-              >
-                <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
-                  {currentMatch.team_a.name}
-                </p>
-                <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
-                    rostersOpen ? "rotate-180" : ""
-                  }`}
-                  aria-hidden
-                />
-              </button>
-              <div className="flex shrink-0 items-center gap-2 border-x border-line bg-board px-3">
-                <span className="text-3xl font-extrabold tabular-nums text-ink">
-                  {currentMatch.score_a}
-                </span>
-                <span className="text-base text-ink-faint">—</span>
-                <span className="text-3xl font-extrabold tabular-nums text-ink">
-                  {currentMatch.score_b}
-                </span>
+            <div className="mt-2">
+              {/* Score above the teams — larger, centred */}
+              <p className="py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink">
+                {currentMatch.score_a}
+                <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
+                {currentMatch.score_b}
+              </p>
+              <div className="flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => setRostersOpen((o) => !o)}
+                  aria-expanded={rostersOpen}
+                  aria-controls="match-rosters"
+                  className="flex flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110"
+                >
+                  <p className="max-w-full truncate text-sm font-extrabold uppercase tracking-wide text-white">
+                    {currentMatch.team_a.name}
+                  </p>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
+                      rostersOpen ? "rotate-180" : ""
+                    }`}
+                    aria-hidden
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRostersOpen((o) => !o)}
+                  aria-expanded={rostersOpen}
+                  aria-controls="match-rosters"
+                  className="flex flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110"
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
+                      rostersOpen ? "rotate-180" : ""
+                    }`}
+                    aria-hidden
+                  />
+                  <p className="max-w-full truncate text-sm font-extrabold uppercase tracking-wide text-white">
+                    {currentMatch.team_b.name}
+                  </p>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setRostersOpen((o) => !o)}
-                aria-expanded={rostersOpen}
-                aria-controls="match-rosters"
-                className="flex flex-1 items-center justify-start gap-1 bg-team-b px-3 py-2 active:brightness-110"
-              >
-                <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
-                    rostersOpen ? "rotate-180" : ""
-                  }`}
-                  aria-hidden
-                />
-                <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
-                  {currentMatch.team_b.name}
-                </p>
-              </button>
             </div>
           )}
           {currentMatch && rostersOpen && (

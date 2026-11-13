@@ -200,11 +200,12 @@ export function AdminDashboard() {
     : undefined;
   const matchActive =
     currentMatch?.status === "active" || currentMatch?.status === "time_up";
-  // "Has kickoff passed" — derived purely from the fetch timestamp (no impure
-  // Date.now in render).
-  const meetupActive =
+  // Same T-15 min window as the player overview's results mode — derived
+  // purely from the fetch timestamp (no impure Date.now in render).
+  const startWindowOpen =
     detail != null &&
-    parseMeetupStart(detail.start_time).getTime() <= detailFetchedAt;
+    parseMeetupStart(detail.start_time).getTime() - 15 * 60_000 <=
+      detailFetchedAt;
 
   /* ── Render ───────────────────────────────────────────── */
 
@@ -252,8 +253,7 @@ export function AdminDashboard() {
                     max={detail.max_players}
                     min={detail.min_players}
                   />
-                  {(matchActive ||
-                    (meetupActive && !currentMatch)) && (
+                  {startWindowOpen && (matchActive || !currentMatch) && (
                     <Link
                       to={`/meetup-matches/${detail.id}`}
                       className={`mt-3 inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm font-bold transition-colors active:scale-[0.98] ${

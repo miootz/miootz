@@ -266,26 +266,24 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         )}
       </div>
 
-      {/* Scoreboard — team slabs + the big numbers */}
-      <div className="flex items-stretch">
-        <div className="flex min-w-0 flex-1 items-center justify-end bg-team-a px-3 py-2.5">
-          <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
-            {currentMatch.team_a.name}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 border-x border-line bg-board px-3 sm:gap-3 sm:px-5">
-          <span className="text-4xl font-extrabold tabular-nums text-ink sm:text-5xl">
-            {currentMatch.score_a}
-          </span>
-          <span className="text-lg text-ink-faint">—</span>
-          <span className="text-4xl font-extrabold tabular-nums text-ink sm:text-5xl">
-            {currentMatch.score_b}
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-1 items-center bg-team-b px-3 py-2.5">
-          <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
-            {currentMatch.team_b.name}
-          </p>
+      {/* Scoreboard — big numbers above, team slabs 50/50 below */}
+      <div>
+        <p className="py-1.5 text-center text-4xl font-extrabold leading-none tabular-nums text-ink sm:text-5xl">
+          {currentMatch.score_a}
+          <span className="mx-2 text-xl font-bold text-ink-faint sm:text-2xl">—</span>
+          {currentMatch.score_b}
+        </p>
+        <div className="flex items-stretch border-t border-line">
+          <div className="flex min-w-0 flex-1 items-center justify-center bg-team-a px-3 py-2.5">
+            <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
+              {currentMatch.team_a.name}
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-1 items-center justify-center bg-team-b px-3 py-2.5">
+            <p className="max-w-full truncate text-base font-extrabold uppercase tracking-wide text-white sm:text-lg">
+              {currentMatch.team_b.name}
+            </p>
+          </div>
         </div>
       </div>
 

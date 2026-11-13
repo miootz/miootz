@@ -10,7 +10,6 @@ import {
   Loader2,
   Play,
   Settings2,
-  Share2,
   Trophy,
 } from "lucide-react";
 import {
@@ -33,8 +32,6 @@ import {
   parseMeetupStart,
   meetupStartToDatetimeLocalValue,
 } from "../../utils/datetime";
-import { hapticLight } from "../../utils/haptics";
-import { shareMeetup } from "../../utils/share";
 
 export function AdminMeetupDetailPage() {
   const { showToast } = useToast();
@@ -171,7 +168,6 @@ export function AdminMeetupDetailPage() {
   const countdown = kickoffFuture
     ? formatDistanceToNow(startDate, { addSuffix: true })
     : null;
-  const meetupActive = !kickoffFuture;
   // SAFETY: the meetups API may include an undeclared `current_match` object
   // ({ status, match_number }) in the meetup-detail payload; it is absent,
   // null, or that shape — never another type. The TS type lags behind the API.
@@ -185,19 +181,7 @@ export function AdminMeetupDetailPage() {
 
   // ── Shared handlers ─────────────────────────────────────────────
 
-  const handleShare = () => {
-    hapticLight();
-    void shareMeetup({
-      title: "Miootz meetup",
-      text: `${detail.location} · ${format(startDate, "EEE d MMM HH:mm")}`,
-      url: window.location.origin + "/",
-    }).then((ok) =>
-      showToast(
-        ok ? "Link copied or shared." : "Could not share.",
-        ok ? "success" : "error",
-      ),
-    );
-  };
+
 
   // ── Render ──────────────────────────────────────────────────────
 
@@ -251,23 +235,6 @@ export function AdminMeetupDetailPage() {
             Manage match {currentMatch?.match_number ?? ""}
           </Link>
         )}
-        {meetupActive && !currentMatch && (
-          <Link
-            to={`/meetup-matches/${id}`}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-team-a text-white text-xs font-bold hover:bg-team-a/90 active:scale-[0.98] transition-colors"
-          >
-            <Play className="w-3.5 h-3.5" />
-            Start matches
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={handleShare}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-line text-ink-dim hover:bg-raised hover:text-ink text-xs font-medium active:scale-[0.98] transition-colors"
-        >
-          <Share2 className="w-3.5 h-3.5" />
-          Share
-        </button>
       </div>
 
       {/* Tabs — horizontal scroll on desktop, accordion on mobile */}

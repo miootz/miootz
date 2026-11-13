@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 import json
 
 import pytest
@@ -42,8 +42,16 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert template.fee == 25 and template.fee_text == "8 credits"
         assert template.location.startswith("Football Academy")
         assert current.fee_text == "8 credits"
-        assert current.start_time >= anchor
-        if scenario == "kickoff":
+        if scenario == "live":
+            # In progress: started 20 min before the run's now, so the
+            # presence window (T-15 min head) is open around the live match.
+            assert current.start_time == anchor - timedelta(minutes=20)
+            assert (
+                await db.scalars(
+                    select(MeetupMatch.status).where(MeetupMatch.meetup_id == 1)
+                )
+            ).all() == ["active"]
+        elif scenario == "kickoff":
             # In progress: starts at the run's now; first round is prepared.
             assert current.start_time == anchor
             assert (
@@ -51,7 +59,10 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
                     select(MeetupMatch.status).where(MeetupMatch.meetup_id == 1)
                 )
             ).all() == ["pending"]
-            # Ratings lock at the next kickoff, which is exactly now.
+        else:
+            assert current.start_time >= anchor
+        if scenario in ("live", "kickoff"):
+            # The kickoff has passed, so the recent meetup's ratings lock.
             assert may_rate_or_edit(
                 anchor.replace(tzinfo=UTC), recent, current.start_time
             ) == (False, "Ratings for this meetup are locked")
