@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -25,6 +25,7 @@ class WeatherHeroAward(Base):
     granted_meetup_id: Mapped[int | None] = mapped_column(
         ForeignKey("meetups.id"), nullable=True
     )
+    import_source: Mapped[str | None] = mapped_column(String, nullable=True)
     granted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     used_meetup_id: Mapped[int | None] = mapped_column(ForeignKey("meetups.id"), nullable=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

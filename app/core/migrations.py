@@ -849,6 +849,11 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    if not await has_column("weather_hero_awards", "import_source"):
+        await conn.execute(
+            text("ALTER TABLE weather_hero_awards ADD COLUMN import_source VARCHAR")
+        )
+
     if not await has_column("meetups", "skipped"):
         await conn.execute(
             text("ALTER TABLE meetups ADD COLUMN skipped BOOLEAN DEFAULT 0")

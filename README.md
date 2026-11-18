@@ -126,6 +126,9 @@ Run the importer from the repository root on the host, with Python 3.14+ and
 `uv` installed. It reads the workbook's cached values and imports its roster,
 meetups, matches, goals and shootout kicks into an inactive `Auto team maker`
 template. The `Stats` sheet is for comparison; it does not set player stats.
+The Roster sheet's `Tokens` column supplies each player's starting balance of
+Weather Hero awards. A blank cell means zero. Reruns add any increase in the
+recorded balance and preserve redeemed awards and awards granted in Miootz.
 Save the workbook with up-to-date calculated values before importing.
 Penalty stats include scored in-game penalties and recorded shootout kicks.
 The app has no event type for a missed in-game penalty, so the importer reports

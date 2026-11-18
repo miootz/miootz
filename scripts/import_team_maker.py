@@ -21,10 +21,11 @@ import sys
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.database import Base
+from app.models.award import WeatherHeroAward
 from app.models.game_template import GameTemplate
 from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
@@ -35,6 +36,7 @@ from app.services.rankings_service import _load_scope, rank_player_metrics
 TEAMS = ("A", "B", "C")
 ADMINS = {"Alex Example", "Casey Sample"}
 SOURCE = "Auto team maker"
+AWARD_SOURCE = "team-maker:roster"
 SHOOTOUT = (date(2024, 4, 15), 1)
 Example City = ZoneInfo("UTC")
 MATCH_MINUTES = 10
@@ -55,6 +57,16 @@ WORKBOOK_METRICS = {
     "Pen %": "penalty_conversion_rate",
 }
 STAT_COLUMNS = tuple(WORKBOOK_METRICS)
+ROSTER_COLUMNS = (
+    "Name",
+    "Rating",
+    "Runs",
+    "Strength",
+    "Attendance",
+    "Att. rank (%)",
+    "Sort key",
+    "Tokens",
+)
 
 
 @dataclass
@@ -92,7 +104,13 @@ def night_date(value):
 
 
 def whole_number(value, label):
-    if not isinstance(value, (int, float)) or value < 0 or int(value) != value:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+        or int(value) != value
+    ):
         raise ValueError(f"{label}: expected a nonnegative whole number, got {value!r}")
     return int(value)
 
@@ -112,9 +130,12 @@ def read_workbook(path):
 
 def parse_workbook(workbook):
     ratings = {}
+    tokens = {}
     names = {}
     warnings = []
-    for label, (name, rating) in sheet_rows(workbook, "Roster", ("Name", "Rating")):
+    for label, (name, rating, *_, token) in sheet_rows(
+        workbook, "Roster", ROSTER_COLUMNS
+    ):
         if (
             not isinstance(name, str)
             or not name.strip()
@@ -126,6 +147,7 @@ def parse_workbook(workbook):
         name = name.strip()
         names[name.casefold()] = name
         ratings[name] = 5 * (5 - rating) / 4
+        tokens[name] = 0 if token is None else whole_number(token, f"{label} Tokens")
     if not ADMINS <= ratings.keys():
         raise ValueError(
             f"Missing administrators in Roster: {', '.join(sorted(ADMINS - ratings.keys()))}"
@@ -329,7 +351,7 @@ def parse_workbook(workbook):
         expected[name] = values
     if missing := ratings.keys() - expected.keys():
         warnings.append(f"Stats has no results for {', '.join(sorted(missing))}")
-    return ratings, nights, expected, warnings
+    return ratings, tokens, nights, expected, warnings
 
 
 async def upsert_users(db, ratings, links):
@@ -389,6 +411,22 @@ async def upsert_users(db, ratings, links):
         users[name] = user
     await db.flush()
     return {name: user.id for name, user in users.items()}
+
+
+async def import_awards(db, tokens, ids):
+    counts = dict(
+        (
+            await db.execute(
+                select(WeatherHeroAward.user_id, func.count(WeatherHeroAward.id))
+                .where(WeatherHeroAward.import_source == AWARD_SOURCE)
+                .group_by(WeatherHeroAward.user_id)
+            )
+        ).all()
+    )
+    for name, count in tokens.items():
+        user_id = ids[name]
+        for _ in range(count - counts.get(user_id, 0)):
+            db.add(WeatherHeroAward(user_id=user_id, import_source=AWARD_SOURCE))
 
 
 async def upsert_match(db, meetup, number, source, ids):
@@ -619,7 +657,7 @@ async def compare_stats(db, meetup_ids, ids, expected):
     return differences
 
 
-async def import_workbook(database, ratings, nights, expected, links):
+async def import_workbook(database, ratings, tokens, nights, expected, links):
     from app.core.migrations import run_sqlite_migrations
     from sqlalchemy.engine import URL
 
@@ -634,6 +672,7 @@ async def import_workbook(database, ratings, nights, expected, links):
             await run_sqlite_migrations(conn)
             async with AsyncSession(bind=conn) as db:
                 ids = await upsert_users(db, ratings, links)
+                await import_awards(db, tokens, ids)
                 meetup_ids = await upsert_nights(db, nights, ids)
                 differences = await compare_stats(db, meetup_ids, ids, expected)
             await conn.commit()
@@ -657,7 +696,7 @@ def main():
     )
     args = parser.parse_args()
     try:
-        ratings, nights, expected, warnings = read_workbook(args.workbook)
+        ratings, tokens, nights, expected, warnings = read_workbook(args.workbook)
         links = {}
         for link in args.link_pocket_id:
             name, _, subject = link.partition("=")
@@ -667,7 +706,7 @@ def main():
                 )
             links[name] = str(UUID(subject))
         differences = asyncio.run(
-            import_workbook(args.database, ratings, nights, expected, links)
+            import_workbook(args.database, ratings, tokens, nights, expected, links)
         )
     except (KeyError, OSError, ValueError) as exc:
         parser.exit(1, f"Import failed: {exc}\n")

@@ -6,6 +6,8 @@ from uuid import UUID
 import pytest
 
 from scripts.import_team_maker import (
+    AWARD_SOURCE,
+    ROSTER_COLUMNS,
     STAT_COLUMNS,
     import_workbook,
     night_date,
@@ -24,11 +26,11 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     workbook = {
         "Roster": Sheet(
             [
-                ("Name", "Rating"),
-                ("Alex Example", 1),
-                ("Casey Sample", 5),
-                ("Jordan Fixture", 2),
-                ("Taylor Mock", 3),
+                ROSTER_COLUMNS,
+                ("Alex Example", 1, None, None, None, None, None, 2),
+                ("Casey Sample", 5, None, None, None, None, None, 1),
+                ("Jordan Fixture", 2, None, None, None, None, None, None),
+                ("Taylor Mock", 3, None, None, None, None, None, 0),
             ]
         ),
         "Lineups": Sheet(
@@ -82,17 +84,34 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             ]
         ),
     }
-    ratings, nights, expected, warnings = parse_workbook(workbook)
+    ratings, tokens, nights, expected, warnings = parse_workbook(workbook)
     assert "matched 'Allex Example' to 'Alex Example'" in warnings[0]
+    assert tokens == {"Alex Example": 2, "Casey Sample": 1, "Jordan Fixture": 0, "Taylor Mock": 0}
     assert night_date(datetime(2024, 3, 19)).day == 12
     database = tmp_path / "miootz.db"
     subject = str(UUID(int=1))
+    with sqlite3.connect(database) as db:
+        db.execute(
+            "CREATE TABLE weather_hero_awards ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+            "granted_meetup_id INTEGER REFERENCES meetups(id), granted_at DATETIME NOT NULL, "
+            "used_meetup_id INTEGER REFERENCES meetups(id), used_at DATETIME)"
+        )
     assert (
-        await import_workbook(database, ratings, nights, expected, {"Alex Example": subject})
+        await import_workbook(
+            database, ratings, tokens, nights, expected, {"Alex Example": subject}
+        )
         == []
     )
 
     with sqlite3.connect(database) as db:
+        assert db.execute(
+            "SELECT u.historical_roster_name, COUNT(*) FROM weather_hero_awards a "
+            "JOIN users u ON u.id = a.user_id WHERE a.import_source = ? "
+            "AND a.granted_meetup_id IS NULL GROUP BY u.historical_roster_name "
+            "ORDER BY u.historical_roster_name",
+            (AWARD_SOURCE,),
+        ).fetchall() == [("Alex Example", 2), ("Casey Sample", 1)]
         assert db.execute(
             "SELECT calculated_skill FROM users WHERE is_admin ORDER BY historical_roster_name"
         ).fetchall() == [(5.0,), (0.0,)]
@@ -112,15 +131,49 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             "WHERE pocket_id_sub = ?",
             (subject,),
         )
+        db.execute(
+            "INSERT INTO weather_hero_awards (user_id, granted_meetup_id, granted_at) "
+            "SELECT id, (SELECT id FROM meetups LIMIT 1), '2026-11-18' "
+            "FROM users WHERE historical_roster_name = 'Alex Example'"
+        )
+        db.execute(
+            "UPDATE weather_hero_awards SET used_meetup_id = (SELECT id FROM meetups LIMIT 1), "
+            "used_at = '2026-11-19' WHERE id = ("
+            "SELECT MIN(a.id) FROM weather_hero_awards a JOIN users u ON u.id = a.user_id "
+            "WHERE u.historical_roster_name = 'Alex Example' AND a.import_source = ?)",
+            (AWARD_SOURCE,),
+        )
+    tokens["Alex Example"] = 3
+    assert await import_workbook(database, ratings, tokens, nights, expected, {}) == []
+    with sqlite3.connect(database) as db:
+        assert db.execute(
+            "SELECT import_source, COUNT(*), SUM(used_at IS NOT NULL), "
+            "SUM(granted_meetup_id IS NOT NULL) FROM weather_hero_awards a "
+            "JOIN users u ON u.id = a.user_id WHERE u.historical_roster_name = 'Alex Example' "
+            "GROUP BY import_source ORDER BY import_source"
+        ).fetchall() == [(None, 1, 0, 1), (AWARD_SOURCE, 3, 1, 0)]
     with sqlite3.connect(database) as db:
         before = list(db.iterdump())
 
-    assert await import_workbook(database, ratings, nights, expected, {}) == []
+    assert await import_workbook(database, ratings, tokens, nights, expected, {}) == []
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
     with pytest.raises(ValueError, match="existing Pocket ID link"):
         await import_workbook(
-            database, ratings, nights, expected, {"Alex Example": str(UUID(int=2))}
+            database, ratings, tokens, nights, expected, {"Alex Example": str(UUID(int=2))}
         )
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, "1", True, float("nan"), float("inf")])
+def test_roster_tokens_must_be_nonnegative_whole_numbers(value):
+    workbook = {
+        "Roster": Sheet(
+            [ROSTER_COLUMNS, ("Alex Example", 1, None, None, None, None, None, value)]
+        )
+    }
+    with pytest.raises(
+        ValueError, match="Roster row 2 Tokens: expected a nonnegative whole number"
+    ):
+        parse_workbook(workbook)
