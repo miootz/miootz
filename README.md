@@ -19,6 +19,13 @@ and run live matches with timer, score, and post-match peer ratings. Notificatio
 Stack: FastAPI backend (`app/`), React + Vite frontend (`frontend/`), Docker Compose
 with Traefik + Pocket ID.
 
+## Team balancing
+
+Miootz can draft confirmed players by skill or assign them in random order.
+Admins can review and adjust the lineups. The balanced draft spreads players
+by skill, and team strength can still vary. See the
+[team balancing guide](docs/TEAM_BALANCING.md) for the rules and limitations.
+
 ## Quick Start
 
 1. Prepare the local hostnames and TLS certificates as described in

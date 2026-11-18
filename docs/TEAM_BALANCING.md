@@ -1,0 +1,59 @@
+# Team balancing
+
+Miootz drafts confirmed players, including confirmed plus-ones, when it needs
+a lineup. **Balanced (skill snake)** deals players by skill. **Random order
+(snake)** shuffles players before dealing. A valid saved lineup takes priority.
+
+## How the draft works
+
+1. **Set the team sizes.** With the defaults, 0 players make 0 teams, 1 makes
+   1 team, 2–10 make 2 teams, and 11 or more make 3. With a team cap, divide the
+   player count by five, round up, apply the cap, then keep the result between
+   two teams and the number of players (one team for a solo player, none for
+   an empty roster). Team sizes differ by at most one.
+2. **Order the players.** Balanced mode sorts highest skill first. Tied players
+   retain their order from the roster query, which has no explicit tie-breaker.
+   Random mode shuffles the full roster.
+3. **Deal in alternating directions.** With three teams, the draft goes
+   1 → 2 → 3, then 3 → 2 → 1. A full team is skipped. Each new random draft
+   can differ until an admin saves a lineup.
+
+The draft spreads skill by order. Team totals can still vary, and positions
+such as goalkeeper are display information. The meetup's minimum attendance
+setting has no effect on the draft. See the
+[assignment code](../app/services/team_assignment.py).
+
+## Which skill counts
+
+- **Stored skill.** Peer ratings from 1 to 5 count. Ratings from the four most
+  recently joined confirmed meetups get full weight. Other ratings get half
+  weight. Each consecutive missed closed meetup after the first subtracts
+  0.1, up to 1.0, using up to 20 closed meetups. The result is rounded to one
+  decimal place and floored at zero. With no valid ratings, the stored skill
+  stays in place. [Skill calculation](../app/services/skill_service.py)
+- **Missing skill.** The Teams endpoint substitutes 50 for a missing value and
+  keeps zero. Match endpoints substitute 3 for either case, so an automatic
+  lineup can differ between these views.
+  [Teams endpoint](../app/api/meetups.py) · [Match endpoints](../app/api/matches.py)
+
+## How admins adjust teams
+
+| Control | What happens |
+| --- | --- |
+| **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
+| **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
+| **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-skill players before dealing. Random reshuffles shuffle all unlocked players. Locks are local, and the preview uses the default team-count rule and skill order. The server saves a changed lineup. |
+| **Change team capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
+| **Reshape during play** | Choose a team count and size. The draft includes a bench team for excess players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
+
+If attendance changes, an invalid saved lineup is ignored. It can take effect
+again if the same confirmed roster returns. A pre-start substitution updates
+the lineup for future rounds. A substitution during play updates that match.
+
+The Teams panel labels a spread of 2 or less between the highest and lowest
+team totals **Balanced** and a larger spread **Uneven**. A reshuffle that
+returns the exact same lineup says **Already balanced**.
+
+[Saved lineups](../app/services/manual_teams.py) ·
+[Capacity changes](../app/services/team_adjustment.py) ·
+[Teams panel](../frontend/src/components/MeetupTeamsPanel.tsx)
