@@ -23,7 +23,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    anchor = datetime(2026, 9, 8, 12)
+    anchor = datetime(2024, 4, 2, 12)
     async with async_sessionmaker(engine, expire_on_commit=False)() as db:
         manifest = await seed_demo(db, anchor=anchor, scenario=scenario)
         assert manifest["confirmed"] == (
@@ -38,9 +38,9 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert recent is not None
         template = await db.get(GameTemplate, 1)
         assert template is not None
-        assert template.weekday == 0 and (template.hour, template.minute) == (20, 0)
-        assert template.fee == 25 and template.fee_text == "8 credits"
-        assert template.location.startswith("Football Academy")
+        assert template.weekday == 4 and (template.hour, template.minute) == (18, 30)
+        assert template.fee == 8 and template.fee_text == "8 credits"
+        assert template.location == "Example Sports Centre"
         assert current.fee_text == "8 credits"
         if scenario == "live":
             # In progress: started 20 min before the run's now, so the

@@ -1,0 +1,62 @@
+name: Deploy demo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag (for example v1.2.3)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && startsWith(github.event.release.tag_name, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: demo
+    steps:
+      - name: Check out deployment tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select release
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a stable tag such as v1.2.3' >&2; exit 1; }
+          if [[ "$EVENT_NAME" == release ]]; then
+            [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            echo "ref=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the selected release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.ref }}
+          path: release
+          persist-credentials: false
+
+      - name: Transfer and deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+        run: scripts/deploy-remote.sh demo release

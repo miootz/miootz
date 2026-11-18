@@ -16,51 +16,74 @@ const HIGHLIGHT_LABELS: Record<string, string> = {
   goals: "Goals",
   assists: "Assists",
   goal_assists: "Goals + assists",
-  wins: "Most wins",
-  matches: "Most matches",
+  goal_assists_per_match: "Goals + assists per match",
+  wins: "Wins",
+  matches: "Matches played",
   win_rate: "Win rate",
-  attendances: "Most meetups",
+  attendances: "Meetups attended",
 };
 
 function SeasonHighlights({
   highlights,
   meId,
+  allTime,
 }: {
   highlights: Record<string, HighlightEntry[]>;
   meId?: number;
+  allTime: boolean;
 }) {
   const entries = Object.entries(highlights).filter(([, v]) => v.length > 0);
   if (entries.length === 0) return null;
   return (
-    <section className="border border-line bg-panel p-4 space-y-2.5">
-      <h2 className="text-lg font-bold text-ink">
-        Season highlights
+    <section aria-labelledby="rankings-highlights" className="@container border border-line bg-panel">
+      <h2 id="rankings-highlights" className="border-b border-line px-4 py-3 text-lg font-bold text-ink">
+        {allTime ? "All-time highlights" : "Season highlights"}
       </h2>
-      {entries.map(([key, list]) => (
-        <div key={key} className="space-y-1">
-          <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-            {HIGHLIGHT_LABELS[key] ?? key}
-          </span>
-          <ul className="space-y-0.5">
-            {list.map((e) => (
-              <li
-                key={e.user_id}
-                className={`flex items-baseline justify-between gap-2 text-sm ${
-                  e.user_id === meId ? "bg-live/10" : ""
-                }`}
-              >
-                <span className="font-semibold text-ink">
-                  {e.name}
-                  {e.user_id === meId && (
-                    <span className="text-2xs font-bold text-live ml-1.5">You</span>
-                  )}
-                </span>
-                <span className="text-ink-dim tabular-nums">{e.value}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      <div className="grid gap-px bg-line @min-[18rem]:grid-cols-2 @min-[45rem]:grid-cols-4">
+        {entries.map(([key, list]) => (
+          <div key={key} className="flex min-w-0 flex-col bg-panel">
+            <h3 className="flex min-h-12 items-end px-3 py-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+              {HIGHLIGHT_LABELS[key] ?? key}
+            </h3>
+            <ol className="divide-y divide-line border-t border-line">
+              {list.map((entry, index) => {
+                const leader = index === 0;
+                const isMe = entry.user_id === meId;
+                const value = key === "goal_assists_per_match" && typeof entry.value === "number"
+                  ? entry.value.toFixed(2)
+                  : entry.value;
+                const scoreSize = String(value).length > 6
+                  ? "text-lg @min-[21rem]:text-xl @min-[34rem]:text-2xl"
+                  : "text-2xl @min-[21rem]:text-3xl";
+                return (
+                  <li
+                    key={entry.user_id}
+                    className={`grid min-w-0 gap-x-2 px-3 ${
+                      leader ? "gap-y-1 py-3" : "grid-cols-[minmax(0,1fr)_auto] items-baseline py-2"
+                    } ${isMe ? "bg-live/10" : leader ? "bg-raised" : ""}`}
+                  >
+                    <span className={`text-xs text-ink [overflow-wrap:anywhere] @min-[21rem]:text-sm ${leader ? "order-last font-semibold" : ""}`}>
+                      {entry.name}
+                      {isMe && (
+                        <span className="ml-1.5 whitespace-nowrap text-2xs font-bold text-live">You</span>
+                      )}
+                    </span>
+                    <span
+                      className={`tabular-nums [overflow-wrap:anywhere] ${
+                        leader
+                          ? `text-left font-extrabold leading-none text-ink ${scoreSize}`
+                          : "max-w-24 text-right text-xs font-medium text-ink-dim @min-[21rem]:text-sm"
+                      }`}
+                    >
+                      {value}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -192,7 +215,11 @@ export function RankingsPage() {
       ) : (
         <div className="space-y-3" aria-busy={loading}>
           {data?.highlights && (
-            <SeasonHighlights highlights={data.highlights} meId={me?.user?.id} />
+            <SeasonHighlights
+              highlights={data.highlights}
+              meId={me?.user?.id}
+              allTime={data.year === null}
+            />
           )}
           <RankingsTable
             rows={(data?.rows ?? []) as RankingRow[]}

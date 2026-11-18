@@ -13,9 +13,9 @@ behind Traefik with Web Push notifications.
     `Authorization: Bearer` header. **Default-deny**: every route returns
     `401` unless a valid token resolves a user, except a small explicit
     allowlist in `app/api/middleware.py` (`/health`, `/docs`,
-    `/openapi.json`, `/redoc`, the `/meetups/plus-one/` guest-claim
-    preview, and `GET /meetups/<id>/matches/<id>/goals`, which carry their
-    own capability tokens).
+    `/openapi.json`, `/redoc`, and the `/meetups/plus-one/` guest-claim
+    preview). Some live event streams accept the access token as a query
+    parameter because the browser's EventSource cannot send headers.
   - JWT validation: `app/services/pocket_id_jwt.py` (RS256, JWKS caching).
   - Pocket ID admin client: `app/services/pocket_id_client.py` (static API
     key auth for signup tokens and SSO directory reads).
@@ -27,8 +27,8 @@ behind Traefik with Web Push notifications.
     PKCE verifier + OIDC state use `sessionStorage`. Trade-off:
     `localStorage` tokens are readable by any XSS — acceptable for this
     internal app, revisit if the threat model changes.
-  - All API requests include `Authorization: Bearer <accessToken>` via
-    `apiFetch()` / `useApiFetch()`.
+  - Most API requests include `Authorization: Bearer <accessToken>` via
+    `apiFetch()` / `useApiFetch()`; EventSource uses a query token instead.
 - **Infrastructure**: Dockerized setup with Traefik and Pocket ID
   (passkey-only OIDC). There is **no forward-auth proxy** — Pocket ID is the
   OIDC issuer and the API validates its own bearer tokens.
@@ -40,9 +40,6 @@ behind Traefik with Web Push notifications.
   - Notifications are **Web Push (VAPID) only** — this stack sends no email.
     `VAPID_SUBJECT` is the VAPID-spec contact URI (`mailto:`), not SMTP
     config.
-- **Showcase site**: `showcase/` is a **separate nested git repository**
-  (ignored by this one) — a Next/vinext marketing site with recorded demo
-  videos. See `showcase/AGENTS.md` for how to record, encode and deploy it.
 
 ## Developer Commands
 
@@ -51,9 +48,9 @@ behind Traefik with Web Push notifications.
 - **Install deps**: `uv sync`
 - **Run API**: `uv run uvicorn app.api.main:app --reload`
 - **Test**: `uv run pytest` (asyncio auto-mode enabled via `pyproject.toml`)
-- **Create admin (DB only)**: `uv run python -m app.cli --username <uid> --email <mail>`
-  (creates a DB user with `is_admin=True`). Create the admin in Pocket ID via
-  `/login/setup` and link by email.
+- **Create an admin**: create an account in Pocket ID via `/login/setup`, then
+  run `./scripts/bootstrap.sh --add-to-admins <username>` (add `--dev` for the
+  development stack).
 
 ### Frontend (TS/React)
 
@@ -71,18 +68,25 @@ behind Traefik with Web Push notifications.
 - **Database Initialization**: Tables are created automatically on startup in
   `app/api/main.py`.
 - **Auth State**: `PocketIdAuthMiddleware` sets `request.state.user`,
-  `request.state.is_admin` (from `"admins" in groups` claim OR `User.is_admin`)
-  and `request.state.auth_groups`.
-- **JIT Provisioning**: The first valid Pocket ID token for a new user
-  auto-creates a DB row (matched by `pocket_id_sub`, falling back to email).
+  `request.state.is_admin` (from cached Pocket ID `admins` group membership or
+  `User.is_admin`) and `request.state.auth_groups`.
+- **JIT Provisioning**: For a valid Pocket ID token, middleware looks up the
+  linked subject, then tries to link an existing user through an invite, then
+  creates a user if Pocket ID reports membership in at least one group.
 - **Local dev stack**: `./scripts/bootstrap.sh --dev` brings up Traefik
-  (:8880 http / :8443 https with mkcert), Pocket ID, API and frontend; add
+  (:8443 HTTPS with mkcert), Pocket ID, API and frontend; add
   `auth|api|app.miootz.local` → `127.0.0.1` in `/etc/hosts`.
 - **CORS / Host**: Optional `CORS_ORIGINS` and `TRUSTED_HOSTS`
   (comma-separated) in `.env` for browser clients and Host validation.
 - **Data Storage**: SQLite databases live in `data/` (gitignored). Avatars are
   proxied from Pocket ID — there are no local avatar uploads (the crop
   pipeline was removed).
+- **Public fixtures**: Use fictional accounts, venues, and schedules. Keep
+  real workbooks, fixture inputs, database copies, and CSV exports outside
+  version control.
+- **Release workflows**: `.github/workflows/ci.yml` runs tests and the frontend
+  build. The demo deploys from a stable GitHub release. Production is launched
+  manually for a release tag. Both deploy over SSH with Docker Compose.
 - **Settings**: `app/core/config.py` uses `extra='ignore'` to tolerate stale
   env vars in `.env`.
 - **Licenses**: MIT (see `LICENSE`); no per-file license headers.
@@ -95,6 +99,8 @@ behind Traefik with Web Push notifications.
 | `app/services/pocket_id_jwt.py` | RS256 JWT validation, JWKS fetch + caching |
 | `app/services/pocket_id_client.py` | Pocket ID admin API client (signup tokens, SSO directory) |
 | `app/api/invites.py` | Invite CRUD (proxies to Pocket ID signup token API) |
+| `app/api/data_export.py` | Admin-only raw data CSV archive |
+| `scripts/import_team_maker.py` | Rerunnable import using operator-supplied workbook and template |
 | `app/core/config.py` | Settings (Pocket ID OIDC + admin API config) |
 | `frontend/src/auth/pocketIdOidc.ts` | PKCE S256 OIDC client (authorize, token exchange, refresh, logout) |
 | `frontend/src/auth/AuthProvider.tsx` | Auth context, session restore, token management |
@@ -104,8 +110,8 @@ behind Traefik with Web Push notifications.
 ## Documentation
 
 - `INITIAL_SETUP.md` — single setup chain (bootstrap script recommended, manual steps appendix).
+- `docs/DEPLOYMENT.md` — release deployment and operations.
 - `docs/DEMO.md` — demo data and scenario walkthroughs.
-- `docs/SHOWCASE.md` — showcase site guide.
-- `docs/demo-deploy-hourly.md` — hourly-reset Cloudflare demo design (**not yet implemented**; kept until it ships).
+- `docs/SEASONS.md` — season and ranking calculation rules.
 - `CONTRIBUTING.md` — dev setup, style, PR flow, commit conventions.
 - `SECURITY.md` — reporting channel and scope.

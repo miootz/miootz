@@ -1,4 +1,4 @@
-"""Local showcase runner: python -m app.demo [--scenario full].
+"""Isolated demo runner: python -m app.demo [--scenario full].
 
 This entrypoint alone installs demo adapters. The production app never imports it.
 One server hosts every scenario: the /api/demo menu picks the scenario (which
@@ -32,7 +32,7 @@ def configure_environment(
     os.environ.update(
         {
             "DATABASE_URL": f"sqlite+aiosqlite:///{directory / 'demo.db'}",
-            "SECRET_KEY": secrets.token_urlsafe(32),
+            "AUDIT_DATABASE_URL": f"sqlite+aiosqlite:///{directory / 'demo-audit.db'}",
             "SCHEDULER_ENABLED": "false",
             "TRUSTED_HOSTS": os.environ.get(
                 "DEMO_TRUSTED_HOSTS", "127.0.0.1,localhost"
@@ -103,19 +103,16 @@ async def prepare(
         manifest = await seed_demo(db, anchor=anchor, scenario=scenario)
 
     tokens = {role: secrets.token_urlsafe(32) for role in ACTORS}
-    claims = {tokens[role]: {"sub": f"showcase-{uid}"} for role, uid in ACTORS.items()}
+    claims = {tokens[role]: {"sub": f"demo-{uid}"} for role, uid in ACTORS.items()}
 
     async def validate(token):
         return claims.get(token)
 
     async def get_user(sub):
-        if (
-            not sub.startswith("showcase-")
-            or not sub.removeprefix("showcase-").isdigit()
-        ):
+        if not sub.startswith("demo-") or not sub.removeprefix("demo-").isdigit():
             return None
         try:
-            uid = int(sub.removeprefix("showcase-"))
+            uid = int(sub.removeprefix("demo-"))
         except ValueError:
             return None
         if not 1 <= uid <= len(NAMES):
@@ -218,7 +215,7 @@ async def prepare(
             for role, uid in ACTORS.items()
         )
         push_control = (
-            '<form method="post" action="/api/demo/push"><button>Send test invite to Demo Player 19</button></form>'
+            '<form method="post" action="/api/demo/push"><button>Send test invite to the demo newcomer</button></form>'
             if enable_push
             else ""
         )
@@ -234,7 +231,7 @@ async def prepare(
         )
         return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
         <style>body{{font:16px system-ui;max-width:600px;margin:48px auto;padding:24px;color:#262033;background:#faf8ff}}button{{padding:14px;width:100%;margin:6px 0;background:#7c3aed;color:white;border:0;border-radius:12px;font:inherit;text-align:left}}a{{color:#6d28d9}}</style></head>
-        <body><h1>Miootz demo</h1><p>Sample accounts named after footballers; sample venue and weather. All changes stay in this temporary database.</p>
+        <body><h1>Miootz demo</h1><p>Try fictional accounts, meetups, and match results. All changes stay in a temporary database.</p>
         {scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>Signing in re-seeds the selected scenario at "now", so the demo is always fresh — an idle server never shows an expired state. The guest button opens the reservation; other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
 
@@ -290,7 +287,7 @@ def check_port(port: int) -> None:
 
 
 def ensure_dev_certs(root: Path) -> tuple[str, str]:
-    """mkcert pair (reused across runs) covering the WireGuard IP + loopback."""
+    """mkcert pair reused across loopback runs."""
     cert_dir = root / "data" / "demo-certs"
     cert_dir.mkdir(parents=True, exist_ok=True)
     key = cert_dir / "demo-key.pem"
@@ -301,7 +298,7 @@ def ensure_dev_certs(root: Path) -> tuple[str, str]:
                 "mkcert",
                 "-key-file", str(key),
                 "-cert-file", str(cert),
-                "127.0.0.1", "127.0.0.1", "localhost",
+                "127.0.0.1", "localhost",
             ],
             check=True,
         )
@@ -319,6 +316,11 @@ def main() -> None:
     parser.add_argument("--api-port", type=int, default=8010)
     parser.add_argument("--frontend-port", type=int, default=5180)
     parser.add_argument(
+        "--api-only",
+        action="store_true",
+        help="Serve only the API for a separately built demo frontend.",
+    )
+    parser.add_argument(
         "--enable-push",
         action="store_true",
         help="Build the app and enable real Web Push with disposable keys for recording.",
@@ -335,12 +337,13 @@ def main() -> None:
     )
     args = parser.parse_args()
     bind_host = os.environ.get("DEMO_BIND_HOST", "127.0.0.1")
-    if args.api_port == args.frontend_port:
-        parser.error("API and frontend ports must differ")
     check_port(args.api_port)
-    check_port(args.frontend_port)
+    if not args.api_only:
+        if args.api_port == args.frontend_port:
+            parser.error("API and frontend ports must differ")
+        check_port(args.frontend_port)
     root = Path(__file__).resolve().parents[1]
-    with tempfile.TemporaryDirectory(prefix="miootz-showcase-") as directory:
+    with tempfile.TemporaryDirectory(prefix="miootz-demo-") as directory:
         configure_environment(
             Path(directory),
             args.frontend_port,
@@ -356,19 +359,24 @@ def main() -> None:
             )
         )
         print(json.dumps(manifest, indent=2), flush=True)
+        import uvicorn
+
+        if args.api_only:
+            uvicorn.run(app, host=bind_host, port=args.api_port)
+            return
+
         scheme = "https" if args.https else "http"
-        print(
-            f"Open {scheme}://127.0.0.1:{args.frontend_port}/api/demo "
-            f"(or {scheme}://127.0.0.1:{args.frontend_port}/api/demo)",
-            flush=True,
+        public_url = os.environ.get(
+            "DEMO_PUBLIC_APP_URL", f"{scheme}://127.0.0.1:{args.frontend_port}"
         )
+        print(f"Open {public_url}/api/demo", flush=True)
         frontend_env = dict(
             os.environ,
             VITE_DOCKER_DEV="0",
             VITE_DEMO="1",
             MIOOTZ_API_PROXY_TARGET=f"http://127.0.0.1:{args.api_port}",
             VITE_API_BASE="/api",
-            VITE_ALLOWED_HOSTS=bind_host,
+            VITE_ALLOWED_HOSTS=os.environ["TRUSTED_HOSTS"],
             VITE_HTTPS_BOUNCE="0",
         )
         if args.https:
@@ -403,8 +411,6 @@ def main() -> None:
             env=frontend_env,
         )
         try:
-            import uvicorn
-
             uvicorn.run(app, host=bind_host, port=args.api_port)
         finally:
             frontend.terminate()

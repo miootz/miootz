@@ -1,8 +1,7 @@
-"""Repeatable, fictional showcase fixtures. Seed only an empty, disposable database."""
+"""Repeatable, fictional demo fixtures. Seed only an empty, disposable database."""
 from datetime import datetime, timedelta
 import json
 import random
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,12 +21,7 @@ from app.services.skill_service import update_user_calculated_skill
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
-NAMES = (
-    'Demo Player 01', 'Demo Player 02', 'Demo Player 03', 'Demo Player 04', 'Demo Player 05',
-    'Demo Player 06', 'Demo Player 07', 'Demo Player 08', 'Demo Player 09', 'Demo Player 10',
-    'Demo Player 11', 'Demo Player 12', 'Demo Player 13', 'Demo Player 14', 'Demo Player 15',
-    'Demo Player 16', 'Demo Player 17', 'Demo Player 18', 'Demo Player 19', 'Demo Player 20',
-)
+NAMES = tuple(f'Demo Player {number:02d}' for number in range(1, 21))
 POSITIONS = ('MID', 'MID', 'ATT', 'MID', 'DEF', 'DEF', 'ATT', 'GK', 'ATT', 'MID',
              'ATT', 'GK', 'DEF', 'MID', 'ATT', 'MID', 'ATT', 'ATT', 'ATT', 'ATT')
 TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
@@ -52,27 +46,25 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             raise ValueError('Demo fixtures require an empty database; existing data is never reset')
 
     members = [User(
-        id=i, pocket_id_sub=f'showcase-{i}', sso_display_name=name,
+        id=i, pocket_id_sub=f'demo-{i}', sso_display_name=name,
         sso_preferred_username=name.lower().replace(' ', '.'),
         sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
         calculated_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
     ) for i, name in enumerate(NAMES, 1)]
     members[19].calculated_skill = None
-    placeholder = User(id=21, pocket_id_sub='showcase-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], calculated_skill=3.0)
-    unlinked = User(id=22, sso_display_name='Demo Player 21')
+    placeholder = User(id=21, pocket_id_sub='demo-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], calculated_skill=3.0)
+    unlinked = User(id=22, sso_display_name='Demo Reserve')
     db.add_all([*members, placeholder, unlinked])
     await db.flush()
 
-    local_anchor = anchor.replace(tzinfo=ZoneInfo('UTC')).astimezone(ZoneInfo('UTC'))
-    days_until_friday = (4 - local_anchor.weekday()) % 7 or 7
-    local = (local_anchor + timedelta(days=days_until_friday)).replace(hour=18, minute=30, second=0, microsecond=0)
-    kickoff = local.astimezone(ZoneInfo('UTC')).replace(tzinfo=None)
+    days_until_friday = (4 - anchor.weekday()) % 7 or 7
+    kickoff = (anchor + timedelta(days=days_until_friday)).replace(hour=18, minute=30, second=0, microsecond=0)
     template = GameTemplate(
         id=1, name='Demo football', timezone='UTC', weekday=4,
         hour=18, minute=30, announce_timezone='UTC',
         announce_weekday=3, announce_hour=10, announce_minute=0,
-        location='Example Sports Centre', fee=25, fee_text='8 credits', min_players=10, max_players=15,
-        latitude=0.125, longitude=-0.25, waitlist_mode='auto_promote',
+        location='Example Sports Centre', fee=8, fee_text='8 credits', min_players=10, max_players=15,
+        waitlist_mode='auto_promote',
         team_assignment_mode='balanced', match_duration_minutes=10, is_active=True,
     )
     db.add(template)
@@ -81,7 +73,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     def meetup(sid: int, start: datetime, max_players: int = 15) -> Meetup:
         return Meetup(
             id=sid, game_template_id=1, start_time=start, location=template.location,
-            fee=25, fee_text=template.fee_text, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
+            fee=template.fee, fee_text=template.fee_text, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
             waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
             team_assignment_mode='random' if scenario == 'random' and sid == 1 else 'balanced',
             duration_minutes=120, match_duration_minutes=10, max_teams=3,
@@ -116,8 +108,8 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                           joined_at=anchor - timedelta(hours=24) + timedelta(minutes=index)))
     db.add(Attendance(meetup_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
     db.add(GuestPlusOne(
-        meetup_id=1, inviter_id=2, guest_user_id=21, first_name='Marco', last_name='van Basten',
-        skill=3, claim_token='showcase-guest-reservation', status='pending', created_at=anchor,
+        meetup_id=1, inviter_id=2, guest_user_id=21, first_name='Demo Player', last_name='20',
+        skill=3, claim_token='demo-guest-reservation', status='pending', created_at=anchor,
     ))
     db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))
     db.add(GameTemplateSubscription(user_id=19, game_template_id=1, notifications_enabled=False))
@@ -160,7 +152,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                         goalkeeper_id=keeper,
                         clock_secs=600 - elapsed, clock_minute=elapsed // 60 + 1, after_whistle=False,
                         is_own_goal=own,
-                        recorded_by=1, intent_id=f'showcase-{sid}-{index}-{team}-{goal_no}',
+                        recorded_by=1, intent_id=f'demo-{sid}-{index}-{team}-{goal_no}',
                         created_at=match.created_at + timedelta(seconds=elapsed),
                     ))
         for rater in range(1, 16):
@@ -226,5 +218,5 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     await db.commit()
     return {'scenario': scenario, 'anchor_utc': anchor.isoformat(), 'actors': ACTORS,
             'upcoming_meetup_id': 1, 'ratings_meetup_id': 2,
-            'guest_claim_path': '/plus-one/showcase-guest-reservation',
+            'guest_claim_path': '/plus-one/demo-guest-reservation',
             'confirmed': len(confirmed), 'waitlisted': len(waitlisted)}

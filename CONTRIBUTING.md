@@ -23,7 +23,7 @@ explains in full:
 | Tool | Version | Notes |
 | --- | --- | --- |
 | Python | 3.14+ | `.python-version` pins `3.14`; managed with [`uv`](https://docs.astral.sh/uv/) |
-| Node.js | 22+ | Frontend and showcase both run on Node 22; showcase `engines` requires `>=22.13.0` |
+| Node.js | 22+ | Used by the frontend and CI |
 | Docker + Compose | current stable | Runs Traefik + Pocket ID |
 
 ## Running the App
@@ -34,12 +34,8 @@ uv sync            # install deps from uv.lock
 uv run uvicorn app.api.main:app --reload
 
 # Frontend (from frontend/)
-npm install
+npm ci
 npm run dev      # Vite dev server, proxies /api to localhost:8000
-
-# Showcase/marketing site (from showcase/ — a separate nested git repo)
-npm install
-npm run dev
 ```
 
 ## Running Tests
@@ -52,8 +48,7 @@ uv run pytest
 cd frontend && npm run test
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly these: backend `uv run
-pytest`, plus frontend `npm run test` and `npm run build`.
+CI runs the backend tests, frontend tests, and a production frontend build.
 
 ## Code Style
 
@@ -62,8 +57,6 @@ pytest`, plus frontend `npm run test` and `npm run build`.
   Run `uv run ruff check .` (and `uv run ruff format .`) before pushing.
 - **Frontend**: ESLint (`cd frontend && npm run lint`), TypeScript
   with the project's tsconfig.
-- **Showcase**: `oxlint` + `oxfmt` (`cd showcase && npm run lint` /
-  `npm run format`), TypeScript `strict: true`.
 
 ## Branch & Pull Request Flow
 
@@ -83,7 +76,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 feat: add waitlist position to push notification
 fix: avoid duplicate signups when tapping a notification twice
 docs: clarify Pocket ID bootstrap steps in INITIAL_SETUP
-chore: bump wrangler in showcase
+chore: update the dependency lockfile
 ```
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore` (scopes are
@@ -96,8 +89,8 @@ optional, e.g. `fix(push): ...`).
   values (no live keys, no live hostnames).
 - **Never write a live hostname** in committed files. Use parameterized
   `${AUTH_DOMAIN}`-style placeholders, or documented local-dev examples
-  like `*.miootz.local`. The showcase site references its hosted URL only
-  as `<site>.chatgpt.site`-style placeholders.
+  like `*.miootz.local`. Keep real player data, venue settings, and workbook
+  exports outside version control. Use fictional fixtures in tests and demos.
 
 ## Lockfiles
 
@@ -106,7 +99,7 @@ Commit and keep lockfiles in sync when dependencies change:
 - **Python**: regenerate with `uv lock` (or `uv add <pkg>` /
   `uv remove <pkg>`, which update `uv.lock` automatically). CI installs
   with `uv sync --frozen`.
-- **Frontend / showcase**: `npm install` (updates `package-lock.json`);
+- **Frontend**: `npm install` (updates `package-lock.json`);
   CI installs with `npm ci`.
 
 Do **not** hand-edit lockfiles.

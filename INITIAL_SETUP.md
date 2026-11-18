@@ -2,6 +2,8 @@
 
 This guide walks you through bootstrapping Miootz from scratch. It is the single
 setup chain for this repo — start here.
+For version 1.0.0 release deployment and server operations, also see the
+[deployment guide](docs/DEPLOYMENT.md).
 
 You have two options: **Option A — automated bootstrap** (recommended) or
 **Option B — manual setup** (appendix, for configuring Pocket ID through its web UI
@@ -34,36 +36,85 @@ cp .env.example .env            # used by docker-compose.yml
 cp .env.dev.example .env.dev    # used by docker-compose.dev.yml
 ```
 
-Then replace the placeholder values inside (secrets, group UUIDs, etc.), or let
-`scripts/bootstrap.sh` generate and fill them for you (Option A).
+Set the hostnames and public URLs for your installation. The bootstrap can
+generate the Pocket ID encryption and static API keys and fill the group ID.
 
 ---
 
 ## Option A: Automated Bootstrap (Recommended)
 
-Two quick commands configure everything — Pocket ID groups, OIDC client, API key,
-and `.env`.
+The bootstrap starts the stack and configures Pocket ID groups and the OIDC
+client. You create the administrator account and passkey in a browser.
 
 ### 1. Prerequisites
 
 - **Docker** and **Docker Compose** installed
-- **Python 3.14+** and **uv** installed (for the bootstrap script)
+- **Python 3** installed on the host (for generating keys)
 - `.env` / `.env.dev` present (created from the `.example` files above)
 - Hostname resolution for `app` / `api` / `auth` (local: `/etc/hosts` entries shown
   above; public: DNS records for your domain)
 
+### Local development TLS
+
+Install [mkcert](https://github.com/FiloSottile/mkcert) on the machine running
+Docker. With the default hostnames from `.env.dev.example`, create and trust a
+local certificate:
+
+```bash
+mkcert -install
+mkdir -p docker/traefik/certs
+mkcert -cert-file docker/traefik/certs/cert.pem \
+  -key-file docker/traefik/certs/key.pem \
+  app.miootz.local api.miootz.local auth.miootz.local
+```
+
+If you change the hostnames, use those names in the certificate and host
+resolution too. Devices accessing the stack need to trust the mkcert local
+certificate authority. These certificates are for development only.
+
+### Production HTTPS (Let's Encrypt)
+
+Before running the production bootstrap:
+
+1. Set `APP_DOMAIN`, `API_DOMAIN`, and `AUTH_DOMAIN` in `.env` to public hostnames
+   you control. Point their DNS A records at your server's public IPv4 address.
+   Only add AAAA records if the server is also reachable over IPv6.
+2. Set `ACME_EMAIL` in `.env` to your contact email address. Existing installations
+   must add this variable before updating the production stack.
+3. Allow inbound TCP ports **80 and 443** through the server firewall and any
+   router/NAT. Keep both reachable for certificate issuance and renewal.
+4. If using Cloudflare DNS, start with these records set to **DNS only**. If you
+   later enable Cloudflare's proxy, use **Full (strict)** TLS and ensure edge
+   rules do not block or redirect `/.well-known/acme-challenge/` away from Traefik.
+
+Traefik requests and renews certificates automatically for all three hosts,
+including `/api` on the app host. Other HTTP traffic redirects to HTTPS. No
+mkcert files or manual `acme.json` creation are needed in production.
+
+The `traefik_acme` Docker volume holds the ACME account and certificate private
+keys. Keep it across deployments and protect its backups. `docker compose down`
+preserves it; **`docker compose down -v` deletes it** and forces reissuance, which
+can hit Let's Encrypt rate limits.
+
+After bootstrap, check `docker compose logs traefik` for issuance errors and open
+each HTTPS hostname without bypassing browser certificate checks. If issuance
+fails, check public DNS (including AAAA records), port 80 reachability, and any
+CAA records restricting certificate authorities. Local `.local` domains must
+use the development stack instead.
+
 ### 2. Run the bootstrap script
 
 ```bash
-# Development (self-signed TLS on port 8443)
+# Development (mkcert TLS on port 8443)
 ./scripts/bootstrap.sh --dev
 
 # Production (ACME TLS on port 443)
 ./scripts/bootstrap.sh
 ```
 
-This generates keys, starts Pocket ID, creates groups, OIDC client, and API key,
-updates `.env`, and starts the full stack.
+This generates the encryption and static API keys if needed, starts Pocket ID,
+creates groups and the OIDC client, updates the selected environment file, and
+starts the full stack.
 
 ### 3. Create your admin account
 
@@ -84,19 +135,18 @@ Re-run the bootstrap with your username:
 ./scripts/bootstrap.sh --dev --add-to-admins yourname
 ```
 
-This finds your Pocket ID account and adds it to the `admins` group. The `admins`
-group membership is what grants you admin privileges in the Miootz app (via JWT
-`groups` claim).
+This finds your Pocket ID account and adds it to the `admins` and `members`
+groups. Miootz uses Pocket ID group membership to grant admin privileges. For
+production, omit `--dev`.
 
 ### What the script does
 
 | Step | Endpoint | Idempotent? |
 |------|----------|-------------|
-| Generate keys | local | ✅ Skips if set |
+| Generate encryption and static API keys | local | ✅ Skips if set |
 | Create `members` group | `POST /api/user-groups` | ✅ Skips if exists |
 | Create `admins` group | `POST /api/user-groups` | ✅ Skips if exists |
 | Create `miootz-app` OIDC client | `POST /api/oidc/clients` | ✅ Skips if exists |
-| Create `miootz-backend` API key | `POST /api/api-keys` | ⚠️ Warns if exists (token not retrievable) |
 | Add user to admins group | `PUT /api/users/:id/user-groups` | ✅ Skips if already member |
 
 ### Why the admin account isn't created automatically
@@ -111,10 +161,9 @@ creates a phantom "Static API User" that can't log in (no passkey). The setup ch
 explicitly excludes this phantom user, so `/login/setup` remains available for you to
 create your real account.
 
-> **Note**: The `POCKET_ID_STATIC_API_KEY` is only needed for bootstrap. After
-> setup, Pocket ID uses the `miootz-backend` API key (`POCKET_ID_API_KEY`) for
-> invite creation. You can remove `POCKET_ID_STATIC_API_KEY` from `.env` after
-> initial setup if desired.
+Keep `POCKET_ID_STATIC_API_KEY` in the protected environment file. Both the
+bootstrap and backend use it for Pocket ID admin API operations. The backend
+falls back to `POCKET_ID_API_KEY` only when the static key is empty.
 
 ### Customize Pocket ID branding (optional)
 
@@ -139,15 +188,15 @@ cp .env.dev.example .env.dev    # if you also use the dev stack
 Fill in the required values in `.env`:
 
 ```env
-SECRET_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
 ENCRYPTION_KEY=<generate: python -c "import secrets; print(secrets.token_hex(32))">
 APP_DOMAIN=app.<your-domain>
 API_DOMAIN=api.<your-domain>
 AUTH_DOMAIN=auth.<your-domain>
+ACME_EMAIL=you@<your-domain>
 POCKET_ID_OIDC_ISSUER=https://${AUTH_DOMAIN}
 POCKET_ID_OIDC_CLIENT_ID=miootz-app
-POCKET_ID_API_KEY=<from step 5>
-POCKET_ID_MEMBERS_GROUP_ID=<from step 3>
+POCKET_ID_API_KEY=<from step 6>
+POCKET_ID_MEMBERS_GROUP_ID=<from step 4>
 ```
 
 Ensure the three hostnames resolve (local: `/etc/hosts` entry pointing
@@ -157,10 +206,10 @@ Ensure the three hostnames resolve (local: `/etc/hosts` entry pointing
 
 ```bash
 # Dev
-docker compose -f docker-compose.dev.yml up -d pocket-id
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d traefik pocket-id
 
 # Prod
-docker compose up -d pocket-id
+docker compose up -d traefik pocket-id
 ```
 
 Wait a few seconds, then visit `https://${AUTH_DOMAIN}` (dev: add `:8443`).
@@ -181,7 +230,7 @@ In Pocket ID admin UI → **Groups**:
 3. Set `POCKET_ID_MEMBERS_GROUP_ID` in `.env` to the `members` group UUID
 
 New signup tokens auto-assign users to the `members` group. Admin status is assigned
-manually (or via DB CLI).
+manually in Pocket ID.
 
 ### 5. Create OIDC Client
 
@@ -193,7 +242,8 @@ In Pocket ID admin UI → **OIDC Clients**:
 | Client ID | `miootz-app` |
 | Is Public | **true** (PKCE required) |
 | Redirect URIs | `http://localhost:5173/auth/callback` (Vite dev) |
-| | `https://${APP_DOMAIN}/auth/callback` (Docker) |
+| | `https://${APP_DOMAIN}:8443/auth/callback` (Docker dev) |
+| | `https://${APP_DOMAIN}/auth/callback` (production) |
 | Grant types | `authorization_code`, `refresh_token` |
 | PKCE | S256 (required for public clients) |
 | Scopes | `openid`, `email`, `profile`, `groups` |
@@ -210,17 +260,11 @@ In Pocket ID admin UI → **Settings** → **API Keys**:
 
 In Pocket ID admin UI → **Users** → your account → add to `admins` group.
 
-Alternatively, promote via DB CLI:
-
-```bash
-uv run python -m app.cli --username <your-username>
-```
-
 ### 8. Start Full Stack
 
 ```bash
 # Dev (requires .env.dev to exist)
-docker compose -f docker-compose.dev.yml up -d
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 
 # Prod (requires .env to exist)
 docker compose up -d
@@ -232,8 +276,8 @@ docker compose up -d
 
 After initial setup, new users join via **invites**:
 
-1. Visit `https://${APP_DOMAIN}/admin/invites`
-2. Create invite → copy the Pocket ID signup link
+1. Open **Admin → Players** and create or select the player to invite.
+2. Open the player's page and choose **Invite to Pocket ID**, then copy the signup link.
 3. Send the link to the invitee (out-of-band: messenger, email you send yourself, etc.)
 4. The invitee opens the link, creates a passkey, and is auto-assigned to `members`
 
@@ -241,7 +285,7 @@ The invite link is a Pocket ID signup URL: `https://${AUTH_DOMAIN}/st/<token>`.
 
 ## Demo data
 
-The showcase runner (`app/demo.py`) seeds a self-contained demo — 20 fictional
+The demo runner (`app/demo.py`) seeds a self-contained demo — 20 fictional
 members, an upcoming meetup, and past meetups with matches, goals and ratings —
 into a temporary database, with demo accounts to sign in as:
 
@@ -249,16 +293,15 @@ into a temporary database, with demo accounts to sign in as:
 uv run python -m app.demo --scenario full
 ```
 
-See `docs/DEMO.md` for the scenarios and `docs/SHOWCASE.md` for recording the
-demo site.
+See [the demo guide](docs/DEMO.md) for the scenarios and their limitations.
 
 ## Local Development Ports
 
 | Component | URL | Notes |
 |-----------|-----|-------|
-| API (uvicorn) | `http://localhost:8000` | No auth middleware — open; real requests use `Authorization: Bearer <JWT>` |
+| API (uvicorn) | `http://localhost:8000` | Protected routes require `Authorization: Bearer <JWT>` |
 | Frontend (Vite) | `http://localhost:5173` | Proxies `/api` → `localhost:8000`; OIDC needs Pocket ID running in Docker |
-| Docker dev stack | `https://${APP_DOMAIN}:8443` | Self-signed TLS; needs hosts → `127.0.0.1` and `.env.dev` |
+| Docker dev stack | `https://${APP_DOMAIN}:8443` | mkcert TLS; needs hosts → `127.0.0.1` and `.env.dev` |
 
 Notifications are **Web Push only** (VAPID). There is no mail delivery in this stack.
 
@@ -266,11 +309,11 @@ Notifications are **Web Push only** (VAPID). There is no mail delivery in this s
 
 | Variable | Purpose | Auto-generated? |
 |----------|---------|-----------------|
-| `SECRET_KEY` | Symmetric signing key for action tokens | ✅ by bootstrap |
 | `ENCRYPTION_KEY` | Pocket ID data encryption | ✅ by bootstrap |
 | `APP_DOMAIN` / `API_DOMAIN` / `AUTH_DOMAIN` | Hostnames used by Traefik and the frontend | Set in `.env` (from your domain) |
-| `POCKET_ID_STATIC_API_KEY` | Admin API key for bootstrap only | ✅ by bootstrap |
-| `POCKET_ID_API_KEY` | Backend API key for invite system | ✅ by bootstrap (first run) |
+| `ACME_EMAIL` | Let's Encrypt account contact email (production only) | Set in `.env` |
+| `POCKET_ID_STATIC_API_KEY` | Admin API key for bootstrap and backend | ✅ by bootstrap |
+| `POCKET_ID_API_KEY` | Backend fallback if the static key is empty | Optional |
 | `POCKET_ID_MEMBERS_GROUP_ID` | Group UUID for new signups | ✅ by bootstrap |
 | `POCKET_ID_OIDC_ISSUER` | Pocket ID OIDC issuer URL | ✅ by bootstrap |
 | `POCKET_ID_OIDC_CLIENT_ID` | OIDC client ID | Fixed: `miootz-app` |
@@ -278,7 +321,7 @@ Notifications are **Web Push only** (VAPID). There is no mail delivery in this s
 | `POCKET_ID_APP_URL` | Public Pocket ID URL | ✅ by bootstrap |
 | `CORS_ORIGINS` | Allowed browser origins (leave empty for same-origin demo) | Optional, set in `.env` |
 | `TRUSTED_HOSTS` | Hosts accepted by the API | Optional, set in `.env` |
-| `PUBLIC_APP_URL` | Public app URL used in links | Optional, set in `.env` |
+| `PUBLIC_APP_URL` | Public app URL used in links | Set to the app's public URL in `.env` |
 
 ## Troubleshooting
 
@@ -298,12 +341,6 @@ docker ps | grep pocket_id
 docker logs pocket_id
 ```
 
-### API key token not retrievable on re-run
-
-Pocket ID doesn't expose existing API key tokens via the API. If you re-run the
-bootstrap script and the `miootz-backend` key already exists, the script warns you to
-verify `POCKET_ID_API_KEY` in `.env` is correct.
-
 ### /login/setup is not available
 
 The setup endpoint is only available when no real users exist. If it's gone, another
@@ -319,11 +356,6 @@ The `Authorization` header must be `Bearer <jwt>`. Check the token format.
 Pocket ID's JWKS endpoint is unreachable. Check `POCKET_ID_OIDC_ISSUER` and network
 connectivity.
 
-### "UNIQUE constraint failed: users.username"
-
-JIT provisioning created a user from a JWT before your code could. Ensure
-email/username consistency.
-
 ### Frontend can't reach Pocket ID
 
 Check that `auth.<your-domain>` resolves and the Pocket ID container is running
@@ -331,4 +363,5 @@ Check that `auth.<your-domain>` resolves and the Pocket ID container is running
 
 ### Invite creation fails (502)
 
-`POCKET_ID_API_KEY` is missing or invalid. Check `.env` and the Pocket ID admin UI.
+Check the backend's Pocket ID API key and group ID in the environment file. The
+backend uses `POCKET_ID_STATIC_API_KEY` when set, otherwise `POCKET_ID_API_KEY`.

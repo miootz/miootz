@@ -1,0 +1,52 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag (for example v1.2.3)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - name: Check out deployment tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select release
+        id: release
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a stable tag such as v1.2.3' >&2; exit 1; }
+          echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the selected release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.ref }}
+          path: release
+          persist-credentials: false
+
+      - name: Transfer and deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
+        run: scripts/deploy-remote.sh production release

@@ -19,8 +19,13 @@ class UserStats(BaseModel):
     season_clean_sheets: int = 0
     season_goals_conceded: int = 0
     season_wins: int = 0
+    season_losses: int = 0
     season_matches: int = 0
     season_win_rate: float = 0.0
+    season_goal_assists_per_match: float = 0.0
+    season_penalties_taken: int = 0
+    season_penalties_scored: int = 0
+    season_penalty_conversion_rate: float = 0.0
     weather_hero_unused: int = 0
 
 

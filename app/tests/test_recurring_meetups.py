@@ -235,7 +235,7 @@ async def test_create_game_template_announce_defaults_to_next_day_noon():
 
         body = {
             "name": "Tuesday pitch",
-            "timezone": "UTC",
+            "timezone": "Europe/London",
             "weekday": 1,
             "hour": 19,
             "minute": 30,
@@ -251,7 +251,7 @@ async def test_create_game_template_announce_defaults_to_next_day_noon():
         )
         assert r.status_code == 201, r.text
         data = r.json()
-        assert data["announce_timezone"] == "UTC"
+        assert data["announce_timezone"] == "Europe/London"
         assert data["announce_weekday"] == (1 + 1) % 7
         assert data["announce_hour"] == 12
         assert data["announce_minute"] == 0

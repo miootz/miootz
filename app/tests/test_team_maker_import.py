@@ -1,16 +1,19 @@
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 import json
 import sqlite3
 from uuid import UUID
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.models.game_template import GameTemplate
 
 from scripts.import_team_maker import (
     AWARD_SOURCE,
     ROSTER_COLUMNS,
     STAT_COLUMNS,
     import_workbook,
-    night_date,
     parse_workbook,
 )
 
@@ -22,7 +25,7 @@ class Sheet(list):
 
 
 async def test_team_maker_import_is_idempotent(tmp_path):
-    day = datetime(2024, 4, 15)
+    day = datetime(2024, 3, 19)
     workbook = {
         "Roster": Sheet(
             [
@@ -84,12 +87,60 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             ]
         ),
     }
-    ratings, tokens, nights, expected, warnings = parse_workbook(workbook)
-    assert "matched 'Allex Example' to 'Alex Example'" in warnings[0]
-    assert tokens == {"Alex Example": 2, "Casey Sample": 1, "Jordan Fixture": 0, "Taylor Mock": 0}
-    assert night_date(datetime(2024, 3, 19)).day == 12
+    corrected = date(2024, 3, 18)
+    ratings, tokens, nights, expected, warnings = parse_workbook(
+        workbook, {day.date(): corrected}
+    )
+    assert list(nights) == [corrected]
+    assert any(
+        "matched 'Allex Example' to 'Alex Example'" in warning for warning in warnings
+    )
+    assert tokens == {
+        "Alex Example": 2,
+        "Casey Sample": 1,
+        "Jordan Fixture": 0,
+        "Taylor Mock": 0,
+    }
     database = tmp_path / "miootz.db"
     subject = str(UUID(int=1))
+    engine = create_engine(f"sqlite:///{database}")
+    try:
+        GameTemplate.__table__.create(engine)
+        with Session(engine) as db:
+            db.add(
+                GameTemplate(
+                    id=1,
+                    name="Example template",
+                    location="Example Sports Centre",
+                    latitude=0.125,
+                    longitude=-0.25,
+                    fee_text="5 credits",
+                    weekday=6,
+                    hour=9,
+                    minute=30,
+                    announce_weekday=5,
+                    announce_hour=15,
+                )
+            )
+            db.commit()
+    finally:
+        engine.dispose()
+
+    async def run_import(links, admins=()):
+        return await import_workbook(
+            database,
+            ratings,
+            tokens,
+            nights,
+            expected,
+            links,
+            template_id=1,
+            kickoff=time(18, 15),
+            timezone=UTC,
+            recorded_by="Alex Example",
+            admins=admins,
+        )
+
     with sqlite3.connect(database) as db:
         db.execute(
             "CREATE TABLE weather_hero_awards ("
@@ -98,9 +149,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             "used_meetup_id INTEGER REFERENCES meetups(id), used_at DATETIME)"
         )
     assert (
-        await import_workbook(
-            database, ratings, tokens, nights, expected, {"Alex Example": subject}
-        )
+        await run_import({"Alex Example": subject}, {"Alex Example", "Casey Sample"})
         == []
     )
 
@@ -113,6 +162,38 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             (AWARD_SOURCE,),
         ).fetchall() == [("Alex Example", 2), ("Casey Sample", 1)]
         assert db.execute(
+            "SELECT name, location, latitude, longitude, fee, fee_text, is_active, "
+            "weekday, hour, minute, timezone, announce_weekday, announce_hour, "
+            "announce_minute, announce_timezone FROM game_templates"
+        ).fetchall() == [
+            (
+                "Example template",
+                "Example Sports Centre",
+                0.125,
+                -0.25,
+                0.0,
+                "5 credits",
+                1,
+                6,
+                9,
+                30,
+                "UTC",
+                5,
+                15,
+                0,
+                "UTC",
+            )
+        ]
+        assert (
+            db.execute(
+                "SELECT m.location, m.latitude, m.longitude, m.fee_text "
+                "FROM meetups m JOIN game_templates t ON t.id = m.game_template_id "
+                "WHERE m.location = t.location AND m.latitude = t.latitude "
+                "AND m.longitude = t.longitude AND m.fee = t.fee AND m.fee_text = t.fee_text"
+            ).fetchone()
+            is not None
+        )
+        assert db.execute(
             "SELECT calculated_skill FROM users WHERE is_admin ORDER BY historical_roster_name"
         ).fetchall() == [(5.0,), (0.0,)]
         assert db.execute(
@@ -122,29 +203,32 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         old, new = db.execute(
             "SELECT old_team_a_users, new_team_a_users FROM match_substitutions"
         ).fetchone()
-        Taylor Mock = db.execute(
+        taylor = db.execute(
             "SELECT id FROM users WHERE historical_roster_name = 'Taylor Mock'"
         ).fetchone()[0]
-        assert set(json.loads(old)) - set(json.loads(new)) == {Taylor Mock}
+        assert set(json.loads(old)) - set(json.loads(new)) == {taylor}
         db.execute(
             "UPDATE users SET sso_preferred_username = 'updated', calculated_skill = 3 "
             "WHERE pocket_id_sub = ?",
             (subject,),
         )
         db.execute(
+            "UPDATE game_templates SET name = 'Renamed night', hour = 21, fee_text = '6 credits'"
+        )
+        db.execute(
             "INSERT INTO weather_hero_awards (user_id, granted_meetup_id, granted_at) "
-            "SELECT id, (SELECT id FROM meetups LIMIT 1), '2026-11-18' "
+            "SELECT id, (SELECT id FROM meetups LIMIT 1), '2024-03-20' "
             "FROM users WHERE historical_roster_name = 'Alex Example'"
         )
         db.execute(
             "UPDATE weather_hero_awards SET used_meetup_id = (SELECT id FROM meetups LIMIT 1), "
-            "used_at = '2026-11-19' WHERE id = ("
+            "used_at = '2024-03-21' WHERE id = ("
             "SELECT MIN(a.id) FROM weather_hero_awards a JOIN users u ON u.id = a.user_id "
             "WHERE u.historical_roster_name = 'Alex Example' AND a.import_source = ?)",
             (AWARD_SOURCE,),
         )
     tokens["Alex Example"] = 3
-    assert await import_workbook(database, ratings, tokens, nights, expected, {}) == []
+    assert await run_import({}) == []
     with sqlite3.connect(database) as db:
         assert db.execute(
             "SELECT import_source, COUNT(*), SUM(used_at IS NOT NULL), "
@@ -155,13 +239,11 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     with sqlite3.connect(database) as db:
         before = list(db.iterdump())
 
-    assert await import_workbook(database, ratings, tokens, nights, expected, {}) == []
+    assert await run_import({}) == []
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
     with pytest.raises(ValueError, match="existing Pocket ID link"):
-        await import_workbook(
-            database, ratings, tokens, nights, expected, {"Alex Example": str(UUID(int=2))}
-        )
+        await run_import({"Alex Example": str(UUID(int=2))})
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
 

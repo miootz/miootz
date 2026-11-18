@@ -1,10 +1,10 @@
 """Import Auto team maker history into an explicit local Miootz SQLite database.
 
 Run from the repository root:
-    uv run --with openpyxl -m scripts.import_team_maker WORKBOOK --database DATABASE
+    uv run --with openpyxl -m scripts.import_team_maker --help
 
-The workbook supplies historical records for its own inactive template. The
-ratings seed new players, and the Stats sheet is used only for reconciliation.
+The workbook supplies historical records for an existing meetup template.
+The ratings seed new players, and the Stats sheet is used for reconciliation.
 The command exits with status 1 if the committed import differs from Stats.
 """
 
@@ -12,7 +12,7 @@ import argparse
 import asyncio
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 import json
 import math
@@ -34,11 +34,8 @@ from app.models.user import User
 from app.services.rankings_service import _load_scope, rank_player_metrics
 
 TEAMS = ("A", "B", "C")
-ADMINS = {"Alex Example", "Casey Sample"}
-SOURCE = "Auto team maker"
+GOAL_PREFIX = "team-maker:"
 AWARD_SOURCE = "team-maker:roster"
-SHOOTOUT = (date(2024, 4, 15), 1)
-Example City = ZoneInfo("UTC")
 MATCH_MINUTES = 10
 WORKBOOK_METRICS = {
     "Nights": "attendances",
@@ -96,11 +93,11 @@ def sheet_rows(workbook, sheet, headers):
             yield f"{sheet} row {number}", values
 
 
-def night_date(value):
+def night_date(value, date_corrections):
     if not isinstance(value, datetime):
         raise ValueError(f"Expected an Excel date, got {value!r}")
     day = value.date()
-    return date(2024, 3, 18) if day == date(2024, 3, 19) else day
+    return date_corrections.get(day, day)
 
 
 def whole_number(value, label):
@@ -115,7 +112,7 @@ def whole_number(value, label):
     return int(value)
 
 
-def read_workbook(path):
+def read_workbook(path, date_corrections=None):
     from openpyxl import load_workbook
 
     with path.open("rb") as source:
@@ -123,12 +120,13 @@ def read_workbook(path):
             source, data_only=True, read_only=True, keep_links=False
         )
         try:
-            return parse_workbook(workbook)
+            return parse_workbook(workbook, date_corrections)
         finally:
             workbook.close()
 
 
-def parse_workbook(workbook):
+def parse_workbook(workbook, date_corrections=None):
+    date_corrections = date_corrections or {}
     ratings = {}
     tokens = {}
     names = {}
@@ -148,10 +146,8 @@ def parse_workbook(workbook):
         names[name.casefold()] = name
         ratings[name] = 5 * (5 - rating) / 4
         tokens[name] = 0 if token is None else whole_number(token, f"{label} Tokens")
-    if not ADMINS <= ratings.keys():
-        raise ValueError(
-            f"Missing administrators in Roster: {', '.join(sorted(ADMINS - ratings.keys()))}"
-        )
+    if not ratings:
+        raise ValueError("Roster: no players")
 
     def player(raw, label):
         if not isinstance(raw, str) or not raw.strip():
@@ -163,7 +159,7 @@ def parse_workbook(workbook):
                 for candidate, name in ratings_by_key.items()
             )
             score, name = scores[-1]
-            if score < 0.84 or score - scores[-2][0] < 0.08:
+            if score < 0.84 or (len(scores) > 1 and score - scores[-2][0] < 0.08):
                 raise ValueError(
                     f"{label}: cannot confidently match {raw!r}; closest is {name!r}"
                 )
@@ -178,7 +174,7 @@ def parse_workbook(workbook):
         workbook, "Lineups", ("Date", "Team A", "Team B", "Team C", "Notes")
     ):
         if value is not None:
-            day = night_date(value)
+            day = night_date(value, date_corrections)
             if day in nights:
                 raise ValueError(f"{label}: duplicate night {day}")
             night = nights[day] = Night()
@@ -210,7 +206,7 @@ def parse_workbook(workbook):
             "Winner",
         ),
     ):
-        day, number = night_date(value), whole_number(number, label)
+        day, number = night_date(value, date_corrections), whole_number(number, label)
         scores = whole_number(score_a, label), whole_number(score_b, label)
         if (
             day not in nights
@@ -239,7 +235,7 @@ def parse_workbook(workbook):
         "Swaps",
         ("Date", "From match #", "Player", "To team", "To match #"),
     ):
-        day = night_date(value)
+        day = night_date(value, date_corrections)
         if day not in match_rows:
             raise ValueError(f"{label}: no matches on {day}")
         name = player(raw, label)
@@ -288,7 +284,7 @@ def parse_workbook(workbook):
         "Goals",
         ("Date", "Match #", "Scorer", "Type", "Assist"),
     ):
-        day, number = night_date(value), whole_number(number, label)
+        day, number = night_date(value, date_corrections), whole_number(number, label)
         match = nights[day].matches.get(number) if day in nights else None
         if match is None:
             raise ValueError(f"{label}: no match {number} on {day}")
@@ -301,7 +297,7 @@ def parse_workbook(workbook):
         else:
             raise ValueError(f"{label}: scorer {scorer} is not on either playing team")
         if kind in ("shootout scored", "shootout missed"):
-            if (day, number) != SHOOTOUT or match.penalty_winner is None or assist:
+            if match.penalty_winner is None or assist:
                 raise ValueError(f"{label}: unexpected shootout kick")
             match.kicks.append((side, scorer, kind == "shootout scored"))
         elif kind == "penalty missed":
@@ -354,7 +350,7 @@ def parse_workbook(workbook):
     return ratings, tokens, nights, expected, warnings
 
 
-async def upsert_users(db, ratings, links):
+async def upsert_users(db, ratings, links, admins):
     users = {}
     for name, skill in ratings.items():
         user = await db.scalar(select(User).where(User.historical_roster_name == name))
@@ -394,7 +390,7 @@ async def upsert_users(db, ratings, links):
             user.historical_roster_name = name
         if user.calculated_skill is None:
             user.calculated_skill = skill
-        if name in ADMINS:
+        if name in admins:
             user.is_admin = True
         if name in links:
             subject = links[name]
@@ -429,7 +425,7 @@ async def import_awards(db, tokens, ids):
             db.add(WeatherHeroAward(user_id=user_id, import_source=AWARD_SOURCE))
 
 
-async def upsert_match(db, meetup, number, source, ids):
+async def upsert_match(db, meetup, number, source, ids, recorded_by):
     match = (
         await db.scalars(
             select(MeetupMatch).where(
@@ -467,7 +463,7 @@ async def upsert_match(db, meetup, number, source, ids):
     match.timer_seconds_remaining = 0
     await db.flush()
 
-    prefix = f"team-maker:{meetup.id}:{number}:"
+    prefix = f"{GOAL_PREFIX}{meetup.id}:{number}:"
     goals = await db.scalars(select(MatchGoal).where(MatchGoal.match_id == match.id))
     imported = {}
     counts = Counter(side for side, *_ in source.goals)
@@ -489,7 +485,7 @@ async def upsert_match(db, meetup, number, source, ids):
                 goalkeeper_id=None,
                 clock_secs=0,
                 clock_minute=0,
-                recorded_by=ids["Alex Example"],
+                recorded_by=recorded_by,
                 created_at=started,
             )
             db.add(goal)
@@ -519,7 +515,7 @@ async def upsert_match(db, meetup, number, source, ids):
             else MatchSubstitution(
                 meetup_id=meetup.id,
                 match_id=match.id,
-                recorded_by=ids["Alex Example"],
+                recorded_by=recorded_by,
                 created_at=started,
             )
         )
@@ -558,34 +554,12 @@ async def upsert_match(db, meetup, number, source, ids):
         await db.delete(kick)
 
 
-async def upsert_nights(db, nights, ids):
-    template = (
-        await db.scalars(select(GameTemplate).where(GameTemplate.name == SOURCE))
-    ).one_or_none()
-    if template is None:
-        template = GameTemplate(
-            name=SOURCE,
-            timezone=Example City.key,
-            weekday=0,
-            hour=20,
-            minute=0,
-            location=SOURCE,
-            is_active=False,
-            match_duration_minutes=MATCH_MINUTES,
-            allows_draws=True,
-        )
-        db.add(template)
-        await db.flush()
-    elif template.is_active:
-        raise ValueError(
-            f"The {SOURCE} template must be inactive before importing history"
-        )
-
+async def upsert_nights(db, nights, ids, template, kickoff, timezone, recorded_by):
     meetup_ids = []
     for day, night in sorted(nights.items()):
-        # The workbook has dates only. Anchor each evening at 20:00 local for the history view.
+        # Kickoff is part of the historical meetup's key and survives schedule edits.
         start = (
-            datetime.combine(day, time(20), Example City)
+            datetime.combine(day, kickoff, timezone)
             .astimezone(UTC)
             .replace(tzinfo=None)
         )
@@ -601,7 +575,11 @@ async def upsert_nights(db, nights, ids):
             meetup = Meetup(
                 game_template_id=template.id,
                 start_time=start,
-                location=SOURCE,
+                location=template.location,
+                latitude=template.latitude,
+                longitude=template.longitude,
+                fee=template.fee,
+                fee_text=template.fee_text,
                 match_duration_minutes=MATCH_MINUTES,
             )
             db.add(meetup)
@@ -634,7 +612,7 @@ async def upsert_nights(db, nights, ids):
             if row.joined_at == start:
                 await db.delete(row)
         for number, source in night.matches.items():
-            await upsert_match(db, meetup, number, source, ids)
+            await upsert_match(db, meetup, number, source, ids, recorded_by)
     return meetup_ids
 
 
@@ -657,7 +635,20 @@ async def compare_stats(db, meetup_ids, ids, expected):
     return differences
 
 
-async def import_workbook(database, ratings, tokens, nights, expected, links):
+async def import_workbook(
+    database,
+    ratings,
+    tokens,
+    nights,
+    expected,
+    links,
+    *,
+    template_id,
+    kickoff,
+    timezone,
+    recorded_by,
+    admins=(),
+):
     from app.core.migrations import run_sqlite_migrations
     from sqlalchemy.engine import URL
 
@@ -671,9 +662,14 @@ async def import_workbook(database, ratings, tokens, nights, expected, links):
             await conn.run_sync(Base.metadata.create_all)
             await run_sqlite_migrations(conn)
             async with AsyncSession(bind=conn) as db:
-                ids = await upsert_users(db, ratings, links)
+                template = await db.get(GameTemplate, template_id)
+                if template is None:
+                    raise ValueError(f"Meetup template {template_id} does not exist")
+                ids = await upsert_users(db, ratings, links, admins)
                 await import_awards(db, tokens, ids)
-                meetup_ids = await upsert_nights(db, nights, ids)
+                meetup_ids = await upsert_nights(
+                    db, nights, ids, template, kickoff, timezone, ids[recorded_by]
+                )
                 differences = await compare_stats(db, meetup_ids, ids, expected)
             await conn.commit()
             return differences
@@ -688,6 +684,38 @@ def main():
         "--database", type=Path, required=True, help="Target SQLite database file"
     )
     parser.add_argument(
+        "--template-id", type=int, required=True, help="Existing meetup template ID"
+    )
+    parser.add_argument(
+        "--kickoff", required=True, metavar="HH:MM", help="Historical local kickoff"
+    )
+    parser.add_argument(
+        "--timezone",
+        required=True,
+        metavar="IANA_ZONE",
+        help="Historical kickoff timezone",
+    )
+    parser.add_argument(
+        "--date-correction",
+        action="append",
+        default=[],
+        metavar="YYYY-MM-DD=YYYY-MM-DD",
+        help="Correct a workbook date in all sheets",
+    )
+    parser.add_argument(
+        "--admin",
+        action="append",
+        default=[],
+        metavar="PLAYER",
+        help="Grant admin access to an exact roster name",
+    )
+    parser.add_argument(
+        "--recorded-by",
+        required=True,
+        metavar="PLAYER",
+        help="Roster name for the account credited with recording the imported events",
+    )
+    parser.add_argument(
         "--link-pocket-id",
         action="append",
         default=[],
@@ -696,7 +724,26 @@ def main():
     )
     args = parser.parse_args()
     try:
-        ratings, tokens, nights, expected, warnings = read_workbook(args.workbook)
+        kickoff = datetime.strptime(args.kickoff, "%H:%M").time()
+        timezone = ZoneInfo(args.timezone)
+        date_corrections = {}
+        for correction in args.date_correction:
+            original, _, corrected = correction.partition("=")
+            original_day = date.fromisoformat(original)
+            if original_day in date_corrections:
+                raise ValueError(f"Repeated date correction for {original_day}")
+            date_corrections[original_day] = date.fromisoformat(corrected)
+        ratings, tokens, nights, expected, warnings = read_workbook(
+            args.workbook, date_corrections
+        )
+        if unknown_admins := set(args.admin) - ratings.keys():
+            raise ValueError(
+                f"Unknown roster names for --admin: {', '.join(sorted(unknown_admins))}"
+            )
+        if args.recorded_by not in ratings:
+            raise ValueError(
+                f"Unknown roster name for --recorded-by: {args.recorded_by!r}"
+            )
         links = {}
         for link in args.link_pocket_id:
             name, _, subject = link.partition("=")
@@ -706,7 +753,19 @@ def main():
                 )
             links[name] = str(UUID(subject))
         differences = asyncio.run(
-            import_workbook(args.database, ratings, tokens, nights, expected, links)
+            import_workbook(
+                args.database,
+                ratings,
+                tokens,
+                nights,
+                expected,
+                links,
+                template_id=args.template_id,
+                kickoff=kickoff,
+                timezone=timezone,
+                recorded_by=args.recorded_by,
+                admins=set(args.admin),
+            )
         )
     except (KeyError, OSError, ValueError) as exc:
         parser.exit(1, f"Import failed: {exc}\n")

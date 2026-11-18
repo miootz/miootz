@@ -299,7 +299,7 @@ async def _available_years(db: AsyncSession) -> list[int]:
 
 
 def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
-    """Top-3 per category over the full in-scope row set (display-ready)."""
+    """Top-3 per category over the full in-scope row set."""
 
     def top(key: str, fmt, min_matches: int = 0) -> list[dict]:
         eligible = [r for r in rows if r["matches"] >= min_matches]
@@ -317,6 +317,9 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
         "goals": top("goals", lambda r: r["goals"]),
         "assists": top("assists", lambda r: r["assists"]),
         "goal_assists": top("goal_assists", lambda r: r["goal_assists"]),
+        "goal_assists_per_match": top(
+            "goal_assists_per_match", lambda r: r["goal_assists_per_match"], min_matches=2
+        ),
         "wins": top("wins", lambda r: f'{r["wins"]} of {r["matches"]}'),
         "matches": top("matches", lambda r: r["matches"]),
         "win_rate": top(
@@ -485,11 +488,17 @@ async def get_user_metrics(
     *,
     year: int | None = None,
     include_own_goals: bool = False,
-) -> dict[str, int]:
+    include_ranked_metrics: bool = False,
+) -> dict[str, int | float]:
     """One user's scoped metrics (all zeros when they have no activity)."""
     bounds = _year_bounds(year) if year else None
     attendances, matches, goals, subs = await _load_scope(db, bounds)
-    stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
+    if include_ranked_metrics:
+        stats = await rank_player_metrics(
+            db, attendances, matches, goals, subs, include_own_goals=include_own_goals
+        )
+    else:
+        stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
     return stats.get(user_id, _zero())
 
 

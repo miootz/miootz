@@ -8,6 +8,8 @@ RUN npm ci
 COPY . .
 
 # Same-origin /api on app host (Traefik); default base in app code is /api
+ARG VITE_POCKET_ID_ISSUER
+ARG VITE_DEMO
 RUN npm run build
 
 FROM nginx:1.27-alpine

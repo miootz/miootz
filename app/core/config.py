@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     PUBLIC_APP_URL: str = "http://localhost:5173"
 
     # Web Push (VAPID) — optional; leave empty to disable browser push subscriptions
-    # Generate keys: `python -c "from py_vapid import Vapid; v=Vapid(); v.generate_keys(); print(v.public_key); print(v.private_key)"` (see py-vapid docs)
+    # See .env.example for setup.
     VAPID_PUBLIC_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""
     #: Contact for push (e.g. mailto:admin@example.com)

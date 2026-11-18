@@ -3,24 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, XCircle } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 
-/**
- * OIDC callback page. The AuthProvider handles the token exchange and, on
- * success, redirects the whole page (window.location.href) to the return
- * path — this page only needs to catch the failure case and leave.
- */
+/** AuthProvider navigates to the requested page after confirming the session. */
 export function AuthCallbackPage() {
   const { loading, error: authError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (loading) return;
-    if (!authError) {
-      // Success already redirected the page; this is just a safety net.
-      navigate('/');
-      return;
-    }
+    if (loading || !authError) return;
     // Show the provider's error briefly, then bail to home.
-    const t = setTimeout(() => navigate('/'), 5000);
+    const t = setTimeout(() => void navigate('/', { replace: true }), 5000);
     return () => clearTimeout(t);
   }, [loading, authError, navigate]);
 

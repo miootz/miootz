@@ -18,7 +18,7 @@
 #   5. Print next steps (create admin account, etc.)
 #
 # After first run:
-#   - Visit /setup to create your admin account + passkey
+#   - Visit /login/setup to create your admin account + passkey
 #   - Re-run with --setup-admin to add that account to admins + members groups
 
 set -euo pipefail
@@ -64,6 +64,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ENV_FILE.example" "$ENV_FILE" || cp .env.example "$ENV_FILE"
   echo "Created $ENV_FILE from its .example template"
 fi
+ENV_FILE="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$ENV_FILE")"
 
 # Read a value out of the env file (quotes stripped).
 env_get() {
@@ -83,18 +84,20 @@ _update_env_if_empty() {
   local key="$1"
   local generator="$2"
   local current
-  current=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  current=$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
   if [[ -z "$current" ]] || [[ "$current" == change-me* ]] || [[ "$current" == \<* ]]; then
     local val
     val=$(eval "$generator")
-    sed -i.bak "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
-    rm -f "${ENV_FILE}.bak"
+    if grep -q "^${key}=" "$ENV_FILE"; then
+      sed -i.bak "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+      rm -f "${ENV_FILE}.bak"
+    else
+      echo "${key}=${val}" >> "$ENV_FILE"
+    fi
     echo "Generated $key"
   fi
 }
 
-_update_env_if_empty "SECRET_KEY" \
-  "python3 -c \"import secrets; print(secrets.token_urlsafe(32))\""
 _update_env_if_empty "ENCRYPTION_KEY" \
   "python3 -c \"import secrets; print(secrets.token_hex(32))\""
 _update_env_if_empty "POCKET_ID_STATIC_API_KEY" \
@@ -127,11 +130,15 @@ fi
 if [[ -n "$ADD_TO_ADMINS" ]]; then
   DOCKER_ARGS+=("--add-to-admins" "$ADD_TO_ADMINS")
 fi
+BOOTSTRAP_DATA_DIR="$PROJECT_DIR/data"
+if ! $DEV; then
+  BOOTSTRAP_DATA_DIR="${MIOOTZ_DATA_DIR:-$BOOTSTRAP_DATA_DIR}"
+fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm \
-  -v "$PROJECT_DIR/$ENV_FILE:/app/.env:rw" \
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm --build \
+  -v "$ENV_FILE:/app/.env:rw" \
   -v "$PROJECT_DIR/scripts:/app/scripts:ro" \
-  -v "$PROJECT_DIR/data:/data" \
+  -v "$BOOTSTRAP_DATA_DIR:/data" \
   api \
   uv run python scripts/bootstrap_pocket_id.py "${DOCKER_ARGS[@]}"
 
@@ -157,7 +164,7 @@ echo "  (hostnames read from $ENV_FILE)"
 echo ""
 echo "Next steps:"
 if [[ -z "$ADD_TO_ADMINS" ]] && ! $SETUP_ADMIN; then
-  echo "  2. Visit /setup to create your admin account + passkey"
+  echo "  2. Visit /login/setup to create your admin account + passkey"
   echo "  3. Re-run with --setup-admin to add that account to the admins group"
 fi
 echo "═══════════════════════════════════════"

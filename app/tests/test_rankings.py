@@ -200,7 +200,8 @@ async def test_default_scope_is_current_year_and_sorting():
         assert names == ["P1", "P2", "P3"]
 
 
-async def test_losses_per_match_rates_and_penalties_are_scoped_and_sortable():
+async def test_losses_per_match_rates_and_penalties_are_scoped_and_sortable(monkeypatch):
+    monkeypatch.setattr("app.services.stats_service.utcnow", lambda: datetime(2026, 6, 1))
     async with await client() as ac:
         ids = await seed(ac)
         async with AsyncSession(engine) as db:
@@ -240,6 +241,33 @@ async def test_losses_per_match_rates_and_penalties_are_scoped_and_sortable():
         assert rows["P2"]["penalty_conversion_rate"] == pytest.approx(2 / 3)
         assert rows["P3"]["assists_per_match"] == rows["P3"]["goal_assists_per_match"] == 1
         assert rows["TP1"]["goals_per_match"] == rows["TP1"]["penalty_conversion_rate"] == 0
+
+        response = await ac.get("/users/me/stats", headers=hdr("p2"))
+        assert response.status_code == 200, response.text
+        profile = response.json()
+        assert profile["season_losses"] == 2
+        assert profile["season_goal_assists_per_match"] == 0.5
+        assert profile["season_penalties_taken"] == 3
+        assert profile["season_penalties_scored"] == 2
+        assert profile["season_penalty_conversion_rate"] == pytest.approx(2 / 3)
+        assert profile["goals"] == 1 and profile["matches"] == 3
+
+        response = await ac.get("/users/me/stats", headers=hdr("p3"))
+        assert response.status_code == 200, response.text
+        assert response.json()["season_assists"] == 1
+        assert response.json()["season_goal_assists_per_match"] == 1
+
+        response = await ac.get("/users/me/stats", headers=hdr("p1"))
+        assert response.status_code == 200, response.text
+        assert response.json()["season_penalties_taken"] == 0  # 2025 kick is out of scope.
+
+        response = await ac.get("/users/me/stats", headers=hdr("tp2"))
+        assert response.status_code == 200, response.text
+        profile = response.json()
+        assert all(profile[key] == 0 for key in (
+            "season_losses", "season_goal_assists_per_match", "season_penalties_taken",
+            "season_penalties_scored", "season_penalty_conversion_rate",
+        ))
 
         response = await ac.get("/rankings?year=all&sort=penalties_scored", headers=hdr("p1"))
         assert rows_by_name(response.json())["P1"]["penalties_scored"] == 1
@@ -386,7 +414,7 @@ async def test_wins_and_night_block():
 
 @pytest.mark.asyncio
 async def test_highlights():
-    """Top-3 lists over the full scope, win rate needs 2+ matches."""
+    """Top-3 lists over the full scope. Rates need at least two matches."""
     async with await client() as ac:
         await seed(ac)
         await seed_draw_meetups(ac)
@@ -408,6 +436,10 @@ async def test_highlights():
         }
         # P3 has 1 match — excluded from the win-rate highlight.
         assert all(e["name"] != "P3" for e in h["win_rate"])
+        assert h["goal_assists_per_match"] == [
+            {"user_id": rows[name]["user"]["id"], "name": name, "value": rate}
+            for name, rate in (("P1", 2 / 5), ("P2", 1 / 5))
+        ]
         assert h["attendances"][0] == {
             "user_id": rows["P1"]["user"]["id"], "name": "P1", "value": 5
         }

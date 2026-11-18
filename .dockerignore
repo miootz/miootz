@@ -28,3 +28,16 @@ __pycache__/
 # Re-include the frontend for the demo image (Dockerfile.demo) — its Vite dev
 # server runs inside the container. The API image simply gets extra source.
 !frontend/
+frontend/node_modules/
+frontend/dist/
+showcase/
+.pi/
+.impeccable/
+.handoff/
+plan/
+**/*.pem
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.xlsx
+**/*.xlsm

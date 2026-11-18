@@ -16,11 +16,11 @@ Miootz is the squad's own tool for running recurring meetups and the matches ins
 
 ## Positioning
 
-Self-hostable and passkey-only: the squad owns the instance (Docker + Traefik), accounts are Pocket ID passkeys with no email or password anywhere, and notifications are web push with no email at all. A neighboring SaaS cannot truthfully offer the squad "your instance, your players, no email" and still require email login.
+Self-hostable and passkey-only: the squad owns the instance (Docker + Traefik), members sign in with Pocket ID passkeys, and notifications use web push rather than email.
 
 ## Operating Context
 
-- Typical scene: weekly (often Example template) hall football; players confirm from a phone in the parking lot or on the bench; the referee logs goals from the pitch with gloves on.
+- Typical scene: weekly hall football; players confirm from a phone in the parking lot or on the bench; the referee logs goals from the pitch with gloves on.
 - Rhythm: weekly recurring meetups driven by a schedule template; kickoff countdown, venue + map + weather are pre-match context.
 - Flows that must work hands-busy: join/leave, team assignment (drag rows), goal entry (a leased sheet so two people don't log at once), ratings before the lock at next kickoff.
 - Onboarding: an invite link (web push notification or shared URL) → Pocket ID passkey → the user is in. No email confirmation step.
@@ -31,7 +31,6 @@ Self-hostable and passkey-only: the squad owns the instance (Docker + Traefik), 
 - Confirmed: signup/leave with capacity and waitlist, skill-based team balance, live match timer + goal entry with lease, peer ratings locked at next kickoff, chat, weather and map per meetup, history of past meetups and matches, admin console (meetups, sessions, attendance, teams, weekly game templates, user roster, invites), web-push notifications (VAPID), installable web app, offline banner.
 - Constraints: Pocket ID is the only identity (RS256 JWT, JWKS); web push is the only notification channel — nothing in this stack sends email; SQLite backend; self-hosted Docker deployment with parameterized hosts.
 - Terminology: a **meetup** is the scheduled gathering; a **match** is a game inside it. **Plus-one** is a reserved guest spot. **Lease** is the short lock that keeps one person logging goals.
-- Undecided: hourly-reset Cloudflare demo deployment (`docs/demo-deploy-hourly.md`) is designed but not shipped.
 
 ## Brand Commitments
 
@@ -41,9 +40,8 @@ Self-hostable and passkey-only: the squad owns the instance (Docker + Traefik), 
 
 ## Evidence on Hand
 
-- Runnable demo with five seeded scenarios and six accounts (`docs/DEMO.md`, `app.demo`), including a live-match rehearsal at 2–1.
-- Showcase site with recorded demo videos (separate nested repo `showcase/`).
-- No real customer data, testimonials, or usage analytics exist; future work must not invent them.
+- Runnable demo with six seeded scenarios and sample accounts (`docs/DEMO.md`, `app.demo`), including a live-match rehearsal at 2–1.
+- Demo data is fictional. Do not invent customer testimonials or usage claims.
 
 ## Product Principles
 

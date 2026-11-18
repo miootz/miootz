@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useMatch, useNavigate } from 'react-router-dom';
 import { type MeResponse } from '../api/meApi';
 import { cacheDelete, cacheGet, cachePut } from '../offline/db';
 import { CACHE_PROFILE_ME } from '../offline/cacheKeys';
@@ -14,6 +14,7 @@ import {
 } from './pocketIdOidc';
 
 const TOKENS_KEY = 'miootz_tokens';
+const SESSION_REJECTED = 'Miootz could not verify this sign-in. Please sign in again.';
 /** Refresh this long before expiry so a long live session never hits a 401. */
 const REFRESH_BUFFER_MS = 60_000;
 
@@ -51,7 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState<OidcTokens | null>(null);
-  const [searchParams] = useSearchParams();
+  const isCallback = useMatch('/auth/callback') !== null;
+  const navigate = useNavigate();
   const initialized = useRef(false);
   // One in-flight refresh at a time: concurrent callers share the same
   // promise, so a rotating refresh token cannot be consumed twice and the
@@ -173,6 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMe(null);
     setTokens(null);
     setError(null);
+    if (import.meta.env.VITE_DEMO === '1') {
+      window.location.replace('/api/demo');
+      return;
+    }
     try {
       await authorize();
     } catch (e) {
@@ -185,6 +191,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearTokens();
     setMe(null);
     setTokens(null);
+    if (import.meta.env.VITE_DEMO === '1') {
+      window.location.replace('/api/demo');
+      return;
+    }
     await oidcLogout();
   }, []);
 
@@ -194,15 +204,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initialized.current = true;
 
     const init = async () => {
-      // Check if we're on the callback URL
-      const code = searchParams.get('code');
-      if (code) {
+      if (isCallback) {
         try {
           const newTokens = await handleCallback();
+          // Finish the session before the protected route can start another sign-in.
+          const data = await fetchMeWithAuth(newTokens);
+          if (!data) throw new Error(SESSION_REJECTED);
           saveTokens(newTokens);
-          // Restore the requested page after exchanging the sign-in code.
-          window.location.href = consumeReturnPath();
-          return;
+          setTokens(newTokens);
+          setMe(data);
+          scheduleRefresh(newTokens);
+          void cachePut(CACHE_PROFILE_ME, data).catch(() => {});
+          void navigate(consumeReturnPath(), { replace: true });
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Authentication failed');
           setMe(null);
@@ -237,6 +250,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setMe(data);
           if (data) {
             await cachePut(CACHE_PROFILE_ME, data);
+          } else {
+            clearTokens();
+            setTokens(null);
+            if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+            setError(SESSION_REJECTED);
+            await cacheDelete(CACHE_PROFILE_ME).catch(() => {});
           }
         } catch {
           const offline = typeof navigator !== 'undefined' && !navigator.onLine;
@@ -262,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     void init();
-  }, [searchParams, fetchMeWithAuth, tryRefreshTokens, scheduleRefresh]);
+  }, [isCallback, navigate, fetchMeWithAuth, tryRefreshTokens, scheduleRefresh]);
 
   const value = useMemo(
     () => ({ me, loading, error, tokens, refresh, login, logout }),

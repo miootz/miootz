@@ -32,7 +32,7 @@ class RankingRow(BaseModel):
 class HighlightEntry(BaseModel):
     user_id: int
     name: str
-    value: str | int
+    value: str | int | float
 
 
 class TeamRosterUser(BaseModel):

@@ -19,7 +19,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -34,14 +33,20 @@ import httpx
 POCKET_ID_URL = os.environ.get(
     "POCKET_ID_INTERNAL_URL", "http://pocket-id:1411"
 ).rstrip("/")
-POCKET_ID_APP_URL = os.environ.get(
-    "POCKET_ID_APP_URL", "https://auth.miootz.local"
-)
 STATIC_API_KEY = os.environ.get("POCKET_ID_STATIC_API_KEY", "")
 
 DEV_REDIRECT = "http://localhost:5173/auth/callback"
-DEV_DOCKER_REDIRECT = "https://app.miootz.local:8443/auth/callback"
-PROD_REDIRECT = "https://app.miootz.local/auth/callback"
+
+
+def public_url(domain_variable: str, is_dev: bool) -> str:
+    domain = os.environ.get(domain_variable)
+    if not domain:
+        if not is_dev:
+            raise RuntimeError(f"{domain_variable} must be set for production bootstrap")
+        domain = {"APP_DOMAIN": "app.miootz.local", "AUTH_DOMAIN": "auth.miootz.local"}[
+            domain_variable
+        ]
+    return f"https://{domain}{':8443' if is_dev else ''}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -133,11 +138,9 @@ def ensure_oidc_client(client: httpx.Client, is_dev: bool) -> str:
     """Create 'miootz-app' OIDC client if it doesn't exist. Always ensures
     callback URLs are up to date. Returns client ID."""
     target_id = "miootz-app"
-    redirect_uris = (
-        [DEV_REDIRECT, DEV_DOCKER_REDIRECT]
-        if is_dev
-        else [PROD_REDIRECT, DEV_REDIRECT, DEV_DOCKER_REDIRECT]
-    )
+    redirect_uris = [f"{public_url('APP_DOMAIN', is_dev)}/auth/callback"]
+    if is_dev:
+        redirect_uris.insert(0, DEV_REDIRECT)
 
     existing_client = None
     try:
@@ -240,7 +243,7 @@ def _add_user_to_groups(
         f"/api/users/{user_id}/user-groups",
         {"userGroupIds": current_groups},
     )
-    print(f"    → done")
+    print("    → done")
 
 
 def add_user_to_admins(
@@ -254,7 +257,7 @@ def add_user_to_admins(
     user = _find_user(client, username)
     if not user:
         print(f"  User '{username}' not found in Pocket ID.")
-        print(f"  Create your account first via /setup, then re-run this script.")
+        print("  Create your account first via /login/setup, then re-run this script.")
         return False
 
     _add_user_to_groups(client, user, [admin_group_id, members_group_id])
@@ -262,7 +265,7 @@ def add_user_to_admins(
 
 
 def setup_admin(
-    client: httpx.Client, admin_group_id: str, members_group_id: str
+    client: httpx.Client, admin_group_id: str, members_group_id: str, pocket_id_url: str
 ) -> bool:
     """
     Find the user created via Pocket ID /setup (the initial admin) and
@@ -276,7 +279,7 @@ def setup_admin(
     if not user:
         print(f"  User '{username}' not found in Pocket ID.")
         print("  Create your account first by visiting /setup")
-        print(f"    → {POCKET_ID_APP_URL}/setup")
+        print(f"    → {pocket_id_url}/login/setup")
         return False
 
     _add_user_to_groups(client, user, [admin_group_id, members_group_id])
@@ -314,7 +317,7 @@ def update_env_file(
         example = Path(".env.example")
         if example.exists():
             env_path.write_text(example.read_text())
-            print(f"Created .env from .env.example")
+            print("Created .env from .env.example")
         else:
             print("No .env or .env.example found — skipping env update.")
             return
@@ -326,19 +329,9 @@ def update_env_file(
     replacements: dict[str, str] = {}
     replacements["POCKET_ID_MEMBERS_GROUP_ID"] = members_group_id
 
-    # Determine URLs based on dev/prod
-    if is_dev:
-        replacements.setdefault(
-            "POCKET_ID_OIDC_ISSUER", "https://auth.miootz.local:8443"
-        )
-        replacements.setdefault(
-            "POCKET_ID_APP_URL", "https://auth.miootz.local:8443"
-        )
-    else:
-        replacements.setdefault(
-            "POCKET_ID_OIDC_ISSUER", "https://auth.miootz.local"
-        )
-        replacements.setdefault("POCKET_ID_APP_URL", "https://auth.miootz.local")
+    auth_url = public_url("AUTH_DOMAIN", is_dev)
+    replacements["POCKET_ID_OIDC_ISSUER"] = auth_url
+    replacements["POCKET_ID_APP_URL"] = auth_url
 
     new_lines: list[str] = []
     for line in lines:
@@ -388,6 +381,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    pocket_id_url = os.environ.get("POCKET_ID_APP_URL") or public_url("AUTH_DOMAIN", args.dev)
+
     if not STATIC_API_KEY:
         print("Error: POCKET_ID_STATIC_API_KEY is not set.", file=sys.stderr)
         print(
@@ -414,6 +409,7 @@ def main() -> None:
                 client,
                 groups.get("admins", ""),
                 groups.get("members", ""),
+                pocket_id_url,
             )
 
         if args.add_to_admins:
@@ -430,15 +426,15 @@ def main() -> None:
     update_env_file(groups["members"], args.dev)
 
     # Summary
-    setup_url = POCKET_ID_APP_URL.replace("http://", "https://")
+    setup_url = pocket_id_url.replace("http://", "https://")
     print("\n═══════════════════════════════════════")
     print("Bootstrap complete!")
     print(f"  members group : {groups['members']}")
     print(f"  admins group  : {groups['admins']}")
     print()
     print("  Next steps:")
-    print(f"    1. Visit {setup_url}/setup to create your admin account + passkey")
-    print(f"    2. Re-run with --setup-admin to add that account to the admins group")
+    print(f"    1. Visit {setup_url}/login/setup to create your admin account + passkey")
+    print("    2. Re-run with --setup-admin to add that account to the admins group")
     print("═══════════════════════════════════════")
 
 

@@ -27,11 +27,11 @@ it("falls back to initials when the image fails to load (Pocket ID 404)", () => 
   expect(img).not.toBeNull();
   fireEvent.error(img as HTMLImageElement);
   expect(container.querySelector("img")).toBeNull();
-  expect(screen.getByText("AP")).toBeInTheDocument();
+  expect(screen.getByText("AS")).toBeInTheDocument();
 });
 
 it("renders initials directly when there is no url", () => {
   const { container } = render(<Avatar url={null} username="casey example" />);
   expect(container.querySelector("img")).toBeNull();
-  expect(screen.getByText("BI")).toBeInTheDocument();
+  expect(screen.getByText("CE")).toBeInTheDocument();
 });

@@ -1,0 +1,40 @@
+# Hosted demo: a disposable database and demo accounts, never production data.
+# The existing Traefik service supplies TLS on the isolated demo ingress network.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DEMO_BIND_HOST: "0.0.0.0"
+      DEMO_TRUSTED_HOSTS: "${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN:?Set APP_DOMAIN},127.0.0.1,localhost"
+      DEMO_PUBLIC_APP_URL: "https://${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}"
+    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--api-port", "8000", "--scenario", "${DEMO_SCENARIO:-full}"]
+    networks:
+      - demo_backend
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_DEMO: "1"
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - demo_ingress
+      - demo_backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${DEMO_INGRESS_NETWORK:-miootz_demo_web}"
+      - "traefik.http.routers.miootz-hosted-demo.rule=Host(`${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}`)"
+      - "traefik.http.routers.miootz-hosted-demo.entrypoints=websecure"
+      - "traefik.http.routers.miootz-hosted-demo.tls=true"
+      - "traefik.http.routers.miootz-hosted-demo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.miootz-hosted-demo.loadbalancer.server.port=80"
+
+networks:
+  demo_ingress:
+    external: true
+    name: ${DEMO_INGRESS_NETWORK:-miootz_demo_web}
+  demo_backend:
+    internal: true

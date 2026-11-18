@@ -37,8 +37,13 @@ export interface UserStats {
     season_clean_sheets: number;
     season_goals_conceded: number;
     season_wins: number;
+    season_losses: number;
     season_matches: number;
     season_win_rate: number;
+    season_goal_assists_per_match: number;
+    season_penalties_taken: number;
+    season_penalties_scored: number;
+    season_penalty_conversion_rate: number;
     weather_hero_unused: number;
 }
 

@@ -153,8 +153,13 @@ async def test_admin_player_history():
             "season_clean_sheets",
             "season_goals_conceded",
             "season_wins",
+            "season_losses",
             "season_matches",
             "season_win_rate",
+            "season_goal_assists_per_match",
+            "season_penalties_taken",
+            "season_penalties_scored",
+            "season_penalty_conversion_rate",
             "weather_hero_unused",
         }
         assert data["history"]["total"] == 2

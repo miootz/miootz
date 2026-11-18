@@ -7,6 +7,7 @@ services:
   traefik:
     # v3: v2.10's docker client predates modern engines' minimum API version.
     image: traefik:v3
+    restart: unless-stopped
     container_name: traefik
     command:
       # Dashboard disabled: `api.insecure` exposed an unauthenticated
@@ -15,32 +16,28 @@ services:
       # + websecure entrypoint only if a dashboard is actually needed.
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      # :80 keeps only a permanent redirect to HTTPS. Caveat: this breaks
-      # ACME HTTP-01 challenges on :80 — we use mkcert self-signed certs
-      # (tls.stores below), so that's fine; revert if real ACME is added.
+      # Traefik serves ACME HTTP-01 challenges before the HTTPS redirect.
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
-      # Flush proxied responses now (SSE must not buffer).
-      - "--entrypoints.websecure.http.responseforwarding.flushinterval=1ms"
-      - "--tls.stores.default.defaultCertificate=/certs/cert.pem,/certs/key.pem"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?Set ACME_EMAIL in .env}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./docker/traefik/acme.json:/acme.json"
-      - "./docker/traefik/certs:/certs:ro"
+      - "traefik_acme:/letsencrypt"
     networks:
       - web
-    labels:
-      - "traefik.http.routers.traefik.tls.certfile=/certs/cert.pem"
-      - "traefik.http.routers.traefik.tls.keyfile=/certs/key.pem"
+      - demo_ingress
 
   pocket-id:
-    image: ghcr.io/pocket-id/pocket-id:latest
+    image: ghcr.io/pocket-id/pocket-id:v2.19.3
+    restart: unless-stopped
     container_name: pocket_id
     environment:
       APP_URL: "https://${AUTH_DOMAIN}"
@@ -48,7 +45,7 @@ services:
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       STATIC_API_KEY: "${POCKET_ID_STATIC_API_KEY:-}"
     volumes:
-      - ./data/pocket_id:/app/data
+      - ${MIOOTZ_DATA_DIR:-./data}/pocket_id:/app/data
     networks:
       - web
     labels:
@@ -56,10 +53,12 @@ services:
       - "traefik.http.routers.pocketid.rule=Host(`${AUTH_DOMAIN}`)"
       - "traefik.http.routers.pocketid.entrypoints=websecure"
       - "traefik.http.routers.pocketid.tls=true"
+      - "traefik.http.routers.pocketid.tls.certresolver=letsencrypt"
       - "traefik.http.services.pocketid.loadbalancer.server.port=1411"
 
   api:
     build: .
+    restart: unless-stopped
     container_name: miootz_api
     env_file: .env
     environment:
@@ -71,7 +70,7 @@ services:
       POCKET_ID_OIDC_ISSUER: "https://${AUTH_DOMAIN}"
     volumes:
       - ./app:/app/app
-      - ./data:/data
+      - ${MIOOTZ_DATA_DIR:-./data}:/data
     networks:
       - web
     labels:
@@ -80,12 +79,15 @@ services:
       - "traefik.http.routers.api.rule=Host(`${API_DOMAIN}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
+      - "traefik.http.services.api.loadbalancer.responseforwarding.flushinterval=1ms"
       - >-
         traefik.http.routers.api-on-app.rule=Host(`${APP_DOMAIN}`) &&
         PathPrefix(`/api`)
       - "traefik.http.routers.api-on-app.entrypoints=websecure"
       - "traefik.http.routers.api-on-app.tls=true"
+      - "traefik.http.routers.api-on-app.tls.certresolver=letsencrypt"
       - "traefik.http.routers.api-on-app.middlewares=api-strip@docker"
       - "traefik.http.routers.api-on-app.service=api"
       - "traefik.http.routers.api-on-app.priority=100"
@@ -96,6 +98,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_POCKET_ID_ISSUER: "https://${AUTH_DOMAIN}"
+    restart: unless-stopped
     container_name: miootz_frontend
     networks:
       - web
@@ -106,9 +109,16 @@ services:
       - "traefik.http.routers.frontend.rule=Host(`${APP_DOMAIN}`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls=true"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
+volumes:
+  traefik_acme:
+
 networks:
   web:
+    driver: bridge
+  demo_ingress:
+    name: ${DEMO_INGRESS_NETWORK:-miootz_demo_web}
     driver: bridge

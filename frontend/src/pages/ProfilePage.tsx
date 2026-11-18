@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
+import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import {
   pushSupported,
   subscribeToWebPush,
@@ -392,69 +393,9 @@ export function ProfilePage() {
           </div>
         </section>
 
-        {/* ── Zone 2: Stats & Skill ─────────────────────────────── */}
-        {statsError && (
-          <p className="text-sm text-danger">
-            {statsError}
-          </p>
-        )}
+        <ProfileScoreboard stats={stats} skill={u.calculated_skill} error={statsError} />
 
         <section className="border border-line bg-panel p-5 space-y-5">
-          {/* Stats grid */}
-          {stats && (
-            <div>
-              <h2 className="text-lg font-bold text-ink mb-3">
-                Your stats
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
-                <StatCard
-                  label="Skill rating"
-                  value={
-                    u.calculated_skill != null
-                      ? u.calculated_skill.toFixed(1)
-                      : "—"
-                  }
-                />
-                <StatCard
-                  label="Meetups played"
-                  value={String(stats.games_played)}
-                />
-                <StatCard
-                  label="This season"
-                  value={String(stats.season_games)}
-                />
-                <StatCard
-                  label="Avg. rating"
-                  value={stats.average_rating.toFixed(1)}
-                />
-                <StatCard
-                  label="Season goals"
-                  value={String(stats.season_goals)}
-                />
-                <StatCard
-                  label="Season assists"
-                  value={String(stats.season_assists)}
-                />
-                <StatCard
-                  label="Season wins"
-                  value={String(stats.season_wins)}
-                />
-                <StatCard
-                  label="Season matches"
-                  value={String(stats.season_matches)}
-                />
-                <StatCard
-                  label="Season win %"
-                  value={`${Math.round(stats.season_win_rate * 100)}%`}
-                />
-                <StatCard
-                  label="Weather Hero unused"
-                  value={String(stats.weather_hero_unused)}
-                />
-              </div>
-            </div>
-          )}
-
           {/* Attendance history (paginated) */}
           <AttendanceHistory userId={u.id} />
 
@@ -794,19 +735,6 @@ export function ProfilePage() {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── Stat Card ─────────────────────────────────────────────────────── */
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-raised px-3 py-2.5 text-center">
-      <p className="text-2xl font-bold tabular-nums text-ink">
-        {value}
-      </p>
-      <p className="text-xs text-ink-dim">{label}</p>
     </div>
   );
 }

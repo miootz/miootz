@@ -46,6 +46,12 @@ ENV/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
+*.sqlite*
+
+# Local import workbooks and private settings
+*.xlsx
+*.xlsm
 
 # Python tooling & tests
 .pytest_cache/
@@ -110,5 +116,4 @@ plan/
 !.env.example
 !.env.dev.example
 
-# Separate git repo (own history, ~1.1G incl. node_modules) — showcase site
-showcase/
+/showcase/
