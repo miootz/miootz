@@ -22,7 +22,11 @@ else
 fi
 
 "${compose[@]}" config -q
-"${compose[@]}" up -d --build
+if [[ "$target" == demo ]]; then
+  "${compose[@]}" up -d --build --remove-orphans
+else
+  "${compose[@]}" up -d --build
+fi
 
 healthy=false
 for _ in {1..60}; do
@@ -31,8 +35,7 @@ for _ in {1..60}; do
        "${compose[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/; then
       healthy=true; break
     fi
-  elif "${compose[@]}" exec -T api python -c 'import urllib.request; assert b"Miootz demo" in urllib.request.urlopen("http://127.0.0.1:8000/demo", timeout=2).read()' >/dev/null 2>&1 && \
-       "${compose[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/; then
+  elif "${compose[@]}" exec -T frontend sh -c 'for path in /api/demo /squad/api/demo /matchday/api/demo /squad/api/health /matchday/api/health; do wget -q -T 2 -O /dev/null "http://127.0.0.1$path" || exit 1; done' >/dev/null 2>&1; then
     healthy=true; break
   fi
   sleep 2

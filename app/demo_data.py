@@ -42,7 +42,7 @@ def team_keeper(roster: list[int]) -> int:
 
 
 async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dict:
-    if scenario not in SCENARIOS:
+    if scenario not in (*SCENARIOS, 'squad'):
         raise ValueError(f'Unknown demo scenario: {scenario}')
     if anchor.tzinfo is not None:
         raise ValueError('Use a naive UTC anchor')
@@ -109,7 +109,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     upcoming.weather_forecast_fetched_at = anchor
     db.add(upcoming)
     full = scenario in ('full', 'broadcast')
-    confirmed = list(range(1, 16 if live_like else 15 if full else 12)) + [21]
+    confirmed = list(range(1, 16 if live_like else 15 if full else 14 if scenario == 'squad' else 12)) + [21]
     waitlisted = [16, 17, 18] if full else []
     for index, uid in enumerate(confirmed + waitlisted):
         db.add(Attendance(meetup_id=1, user_id=uid,

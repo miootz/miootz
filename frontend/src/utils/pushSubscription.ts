@@ -1,4 +1,5 @@
 import { apiFetch } from "../api/client";
+import { demoRoom } from "./demoRoom";
 
 export function urlBase64ToUint8Array(base64String: string): BufferSource {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -14,6 +15,7 @@ export function urlBase64ToUint8Array(base64String: string): BufferSource {
 export function pushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
+    !demoRoom() &&
     "serviceWorker" in navigator &&
     "PushManager" in window
   );
@@ -88,6 +90,7 @@ export interface PushSubscriptionRow {
 }
 
 export async function unsubscribeFromWebPush(): Promise<void> {
+  if (demoRoom()) return;
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
   if (sub) await sub.unsubscribe();

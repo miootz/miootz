@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { RefreshCw, LogIn } from 'lucide-react';
 import { useAuth } from './useAuth';
+import { roomStorageKey } from '../utils/demoRoom';
 
-const RETURN_PATH_KEY = 'miootz_return_path';
+const RETURN_PATH_KEY = roomStorageKey('miootz_return_path');
 
 export function RequireAuth() {
   const { me, loading, error, refresh, login } = useAuth();

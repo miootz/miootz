@@ -10,34 +10,46 @@ import { UpdateChecker } from './components/UpdateChecker';
 import { DemoModeBar } from './components/DemoModeBar';
 import { applyThemeClass, readStoredTheme } from './theme/themeStorage';
 import { processOutbox } from './offline/outbox';
+import { demoRoom, shouldOpenDemoLobby } from './utils/demoRoom';
 
-applyThemeClass(readStoredTheme());
+if (shouldOpenDemoLobby()) {
+  window.location.replace('/api/demo');
+} else {
+  applyThemeClass(readStoredTheme());
 
-window.addEventListener('online', () => {
-  void processOutbox();
-});
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <ThemeProvider>
-        <ToastProvider>
-          <UpdateChecker />
-          <DemoModeBar />
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
-    </BrowserRouter>
-  </StrictMode>
-);
-
-// Service workers require a trusted certificate; skip on Vite dev (e.g. Traefik + self-signed :8443).
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch((err) => {
-      console.warn('Service worker registration failed:', err);
-    });
+  window.addEventListener('online', () => {
+    void processOutbox();
   });
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <BrowserRouter basename={demoRoom() || undefined}>
+        <ThemeProvider>
+          <ToastProvider>
+            <UpdateChecker />
+            <DemoModeBar />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </StrictMode>
+  );
+
+  // Service workers require a trusted certificate; skip on Vite dev (e.g. Traefik + self-signed :8443).
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    const room = demoRoom();
+    if (room) {
+      // Retire the old root-scoped demo worker, which predates room isolation.
+      void navigator.serviceWorker.getRegistrations().then((registrations) =>
+        Promise.all(registrations.filter((r) => new URL(r.scope).pathname === '/').map((r) => r.unregister())),
+      ).catch(() => {});
+    }
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register(`${room}/sw.js`, { updateViaCache: 'none' }).catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
 }

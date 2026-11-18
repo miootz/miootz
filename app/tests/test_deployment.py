@@ -126,6 +126,65 @@ def test_host_deploy_promotes_only_healthy_release(tmp_path, target, healthy):
         assert (release / ".env").resolve() == base / ".env"
 
 
+@pytest.mark.parametrize(
+    "failed_path",
+    ["", "/api/demo", "/squad/api/demo", "/matchday/api/demo", "/squad/api/health", "/matchday/api/health"],
+)
+def test_host_demo_checks_every_gateway_route(tmp_path, failed_path):
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "scripts/deploy-host.sh").read_text().replace(
+        'base="$HOME/miootz/$target"', 'base="$TEST_DEPLOY_ROOT/miootz/$target"'
+    )
+    script_path = tmp_path / "deploy-host.sh"
+    script_path.write_text(script)
+    base = tmp_path / "miootz/demo"
+    revision = f"{'a' * 40}-42-1"
+    release = base / "releases" / revision
+    release.mkdir(parents=True)
+    (base / ".env").write_text("APP_DOMAIN=app.example.test\n")
+    (base / "current").symlink_to("previous")
+    requests = tmp_path / "requests"
+    up_call = tmp_path / "up"
+    env = dict(
+        os.environ,
+        TEST_DEPLOY_ROOT=str(tmp_path),
+        TEST_FAIL_PATH=failed_path,
+        TEST_REQUESTS=str(requests),
+        TEST_UP_CALL=str(up_call),
+    )
+    wrapper = '''
+        wget() {
+          printf '%s\\n' "${@: -1}" >> "$TEST_REQUESTS"
+          [[ "${@: -1}" != "http://127.0.0.1$TEST_FAIL_PATH" ]]
+        }
+        export -f wget
+        docker() {
+          case " $* " in
+            *" up "*) printf '%s\\n' "$*" > "$TEST_UP_CALL" ;;
+            *" exec -T frontend sh -c "*) bash -c "${@: -1}" ;;
+          esac
+        }
+        flock() { :; }
+        sleep() { return 1; }
+        source "$1" demo "$2"
+    '''
+    result = subprocess.run(
+        ["bash", "-c", wrapper, "test", str(script_path), revision],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (result.returncode == 0) is (not failed_path)
+    assert (base / "current").readlink() == (release if not failed_path else Path("previous"))
+    assert "--remove-orphans" in up_call.read_text()
+    if not failed_path:
+        assert requests.read_text().splitlines() == [
+            f"http://127.0.0.1{path}"
+            for path in ("/api/demo", "/squad/api/demo", "/matchday/api/demo", "/squad/api/health", "/matchday/api/health")
+        ]
+
+
 def test_host_deploy_refuses_an_existing_lock(tmp_path):
     root = Path(__file__).resolve().parents[2]
     script = (root / "scripts/deploy-host.sh").read_text().replace(

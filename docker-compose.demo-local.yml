@@ -1,0 +1,20 @@
+# Overlay for testing the hosted demo locally without Traefik or a shared network.
+services:
+  api-squad:
+    environment:
+      DEMO_PUBLIC_APP_URL: "http://127.0.0.1:${DEMO_LOCAL_PORT:-5180}/squad"
+
+  api-matchday:
+    environment:
+      DEMO_PUBLIC_APP_URL: "http://127.0.0.1:${DEMO_LOCAL_PORT:-5180}/matchday"
+
+  frontend:
+    ports:
+      - "127.0.0.1:${DEMO_LOCAL_PORT:-5180}:80"
+    labels:
+      traefik.enable: "false"
+
+networks:
+  demo_ingress:
+    external: false
+    name: miootz-demo-local-ingress

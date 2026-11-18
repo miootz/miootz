@@ -34,6 +34,7 @@ import { shareLink } from "../utils/share";
 import { UserPlus, X } from "lucide-react";
 import { StarRating } from "../components/StarRating";
 import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
+import { roomPath } from "../utils/demoRoom";
 
 interface MeetupDetailsProps {
 	meetup: Meetup;
@@ -74,7 +75,7 @@ function PlusOneModal({
 
 	const handleSharePlusOne = async () => {
 		if (!result) return;
-		const url = `${window.location.origin}${result.claim_url}`;
+		const url = `${window.location.origin}${roomPath(result.claim_url)}`;
 		const success = await shareLink(
 			url,
 			"Miootz Plus-One",
@@ -164,7 +165,7 @@ function PlusOneModal({
 						</h3>
 						<div className="break-all bg-raised p-3 text-xs text-ink-dim font-mono select-all">
 							{window.location.origin}
-							{result.claim_url}
+							{roomPath(result.claim_url)}
 						</div>
 						<div className="flex gap-2">
 							<button

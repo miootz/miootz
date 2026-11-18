@@ -1,4 +1,6 @@
-const MEETUP_VIEWS_KEY = 'miootz:meetup-views';
+import { roomStorageKey } from '../utils/demoRoom';
+
+const MEETUP_VIEWS_KEY = roomStorageKey('miootz:meetup-views');
 
 const ENGAGEMENT_EVENT = 'miootz-engagement';
 
@@ -27,7 +29,7 @@ export function getMeetupViewCount(): number {
 
 export const engagementChangedEventName = ENGAGEMENT_EVENT;
 
-const INSTALL_DISMISSED_KEY = 'miootz:install-prompt-dismissed';
+const INSTALL_DISMISSED_KEY = roomStorageKey('miootz:install-prompt-dismissed');
 
 export function isInstallPromptDismissed(): boolean {
   try {

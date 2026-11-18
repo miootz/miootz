@@ -1,4 +1,6 @@
-const KEY = 'miootz_prefer_member_home';
+import { roomStorageKey } from '../utils/demoRoom';
+
+const KEY = roomStorageKey('miootz_prefer_member_home');
 
 /** When true, admins stay on the member (player) UI at `/` instead of defaulting to `/admin`. */
 export function setPreferMemberView(prefer: boolean): void {

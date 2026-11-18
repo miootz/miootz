@@ -1,4 +1,5 @@
 import { apiFetch } from '../api/client';
+import { demoRoom } from '../utils/demoRoom';
 import {
   getOfflineDb,
   type OutboxItem,
@@ -76,7 +77,7 @@ export async function processOutbox(): Promise<{ sent: number; failed: number }>
 }
 
 export async function requestBackgroundSync(): Promise<void> {
-  if (!('serviceWorker' in navigator)) return;
+  if (demoRoom() || !('serviceWorker' in navigator)) return;
   try {
     const reg = await navigator.serviceWorker.ready;
     const sync = (

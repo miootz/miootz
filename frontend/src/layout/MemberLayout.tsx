@@ -21,6 +21,7 @@ import { OfflineBanner } from "../components/OfflineBanner";
 import { InstallAppBanner } from "../components/InstallAppBanner";
 import { MemberNotificationPrompt } from "../components/MemberNotificationPrompt";
 import { MeetupWeatherBadge } from "../components/MeetupWeatherBadge";
+import { demoRoom } from "../utils/demoRoom";
 
 const BOTTOM_NAV_H = "4.5rem";
 
@@ -89,7 +90,7 @@ function MemberChrome() {
         Skip to main content
       </a>
       <OfflineBanner />
-      <InstallAppBanner enabled={online} />
+      {!demoRoom() && <InstallAppBanner enabled={online} />}
       <MemberNotificationPrompt enabled={online} />
       <header className="sticky top-0 z-40 border-b border-line bg-board/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">

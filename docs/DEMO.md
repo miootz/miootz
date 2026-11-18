@@ -2,20 +2,40 @@
 
 ## Hosted demo
 
-Visitors share one temporary SQLite database. Sign in from separate devices
-or browser profiles to test together. Tabs in one browser profile share the
-same sign-in state.
+Open the demo home page, choose a scenario, then choose a sample account.
+Both rooms run at the same time and keep separate game data.
 
-Signing in preserves shared progress. The API resets the game data every
-hour from startup, and restarting the API starts a fresh database. The
-scenario picker labels the current scenario **active** and a change **queued**.
-For Live or Kickoff, wait until the menu shows it as active before signing in.
-The menu shows roughly how long until the next reset. If you have a page open
-during a reset, reload it to see the new fixtures.
+| Room | Starting point | Try this together |
+| --- | --- | --- |
+| **Squad setup** | One spot left at a future meetup | Join as Newcomer to fill the meetup, then join as Second newcomer to enter the waitlist. Use Admin to manage teams or change the waitlist policy. |
+| **Matchday** | The first match is ready for kickoff | As Admin, open **Start matches** and start the timer. As Member, keep the meetup open to follow the score and clock live. |
+
+Share the room's account chooser link with someone who wants to test alongside
+you. Use separate browser profiles or devices to sign in as two roles in the
+same room. Use **All scenarios** to switch rooms. You can keep different rooms
+open in the same browser.
+
+Each room resets after 60 minutes without activity. Sign-ins and interactions
+keep that room active. Opening another room preserves the first room's
+progress. If a tab was idle during a reset, reload it to see the fresh fixtures.
+Restarting a room also starts it with fresh data.
 
 See the [deployment guide](DEPLOYMENT.md) to host this demo.
 
-## Local demo
+## Run both rooms locally
+
+Use the hosted images with the loopback-only Compose override.
+
+```sh
+APP_DOMAIN=example.test docker compose -p miootz-demo-local \
+  -f docker-compose.demo-hosted.yml -f docker-compose.demo-local.yml up -d --build
+```
+
+Open [the room picker](http://127.0.0.1:5180/). Set `DEMO_LOCAL_PORT` if
+port 5180 is in use. Stop the demo with the same environment and Compose
+flags, replacing `up -d --build` with `down`.
+
+## Local fixture preview
 
 Install Python and frontend dependencies, then run from the repository root:
 
@@ -41,7 +61,7 @@ DEMO_SCENARIO=live docker compose --env-file .env.dev -f docker-compose.demo.yml
 
 App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — account menu at `/api/demo`. `DEMO_BIND_HOST`, `DEMO_TRUSTED_HOSTS` and `DEMO_PUBLIC_APP_URL` let the entrypoint bind beyond loopback and trust the proxy `Host` header (defaults keep the loopback behavior). It is mutually exclusive with the dev stack: both own `:8443`. `docker compose down` (same flags) stops it; restarting the container resets the scenario.
 
-## Scenarios
+## Local scenarios
 
 | Argument | Initial member screen | Suggested demonstration |
 |---|---|---|
@@ -58,9 +78,11 @@ All scenarios include sample accounts named after famous footballers, a fictiona
 
 ## Accounts and useful routes
 
-Return to `/api/demo` to switch accounts. In the local demo, signing in resets
-the selected scenario for all users. In the hosted demo, switching accounts
-keeps the current game data. Demo sign-ins last 12 hours.
+The local fixture preview's account menu is at `/api/demo`. Signing in there
+resets its selected scenario. In the hosted demo, use `/squad/api/demo` or
+`/matchday/api/demo` to switch accounts and keep the room's game data. The
+routes below are relative to the room or standalone preview. Demo sign-ins
+last 12 hours.
 
 | Account | Purpose |
 |---|---|
@@ -99,7 +121,7 @@ Use a 390 × 844 viewport. Select the light theme consistently. Dismiss onboardi
 
 - Authentication is adapted only in the demo server, using random, short-lived local tokens. Real Pocket ID/passkey login and new-account onboarding still require the real stack. New guests in the real app need a member account invitation before claiming a reservation.
 - Account invitation generation and Pocket ID account deletion are unavailable by default. `--simulate-invites` enables the real admin UI with a simulated token response and a reserved `.example` URL; the demo menu states this clearly. These links do not create real Pocket ID accounts. Do not present that response as a verified Pocket ID integration.
-- By default VAPID keys are cleared and push delivery is disabled. Pass `--enable-push` to build a production-mode demo with temporary VAPID keys. Register a test device as the Newcomer, then send the test invite from the demo menu. This sends only to that sample account. Installed web apps start at the demo account chooser because their browser storage is separate. Notification delivery and tap-through still require device verification; a successful send alone is not proof of display.
+- Hosted rooms replay queued actions in the foreground and keep browser storage separate by room. To test real push delivery, run the standalone preview with `--enable-push` and temporary VAPID keys. Register a test device as the Newcomer, then send the test invite from the demo menu. This sends only to that sample account. Installed preview apps open their account chooser. Verify delivery and tap-through on the test device.
 - The scheduler is disabled, so weekly jobs do not run on their own. The weekly template form and its saved settings are real.
 - Weather is a fixed sample, not a forecast. The venue is fictional; map tiles are still fetched from the normal map provider.
 - The data is fictional and must not be presented as evidence of real users or endorsements.

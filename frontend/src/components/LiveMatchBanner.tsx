@@ -7,6 +7,7 @@ import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useAuth } from "../auth/useAuth";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { Timer, Zap } from "lucide-react";
+import { roomPath } from "../utils/demoRoom";
 
 /**
  * Read-only match board for the member home route: the current match
@@ -258,7 +259,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         </div>
         {canControl && (
           <a
-            href={`/meetup-matches/${sid}`}
+            href={roomPath(`/meetup-matches/${sid}`)}
             className="text-xs font-medium text-ink-dim hover:text-ink"
           >
             Manage match →

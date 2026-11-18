@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { roomStorageKey } from '../utils/demoRoom';
 
-export const OFFLINE_DB_NAME = 'miootz-offline';
+export const OFFLINE_DB_NAME = roomStorageKey('miootz-offline');
 export const OFFLINE_DB_VERSION = 1;
 
 export interface CacheEnvelope<T = unknown> {

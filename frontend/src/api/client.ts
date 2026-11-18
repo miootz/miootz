@@ -1,15 +1,16 @@
 import { authorize } from "../auth/pocketIdOidc";
+import { demoRoom, roomPath, roomStorageKey } from "../utils/demoRoom";
 
 /** Base path for API (same-origin /api in production / Traefik). */
 export function apiBase(): string {
-  return (import.meta.env.VITE_API_BASE as string | undefined) || "/api";
+  return demoRoom() ? roomPath("/api") : (import.meta.env.VITE_API_BASE as string | undefined) || "/api";
 }
 
 /** Clear persisted OIDC tokens after a hard 401 (meetup no longer valid). */
 function clearStoredTokens(): void {
   try {
-    localStorage.removeItem("miootz_tokens");
-    localStorage.removeItem("miootz_id_token");
+    localStorage.removeItem(roomStorageKey("miootz_tokens"));
+    localStorage.removeItem(roomStorageKey("miootz_id_token"));
   } catch {
     /* ignore */
   }
@@ -25,11 +26,15 @@ function redirectToLogin(): void {
   _authRedirectInFlight = true;
   try {
     sessionStorage.setItem(
-      "miootz_return_path",
+      roomStorageKey("miootz_return_path"),
       window.location.pathname + window.location.search,
     );
   } catch {
     /* ignore */
+  }
+  if (import.meta.env.VITE_DEMO === '1') {
+    window.location.replace(roomPath('/api/demo'));
+    return;
   }
   // authorize() resolves once the redirect is issued (or rejects on failure)
   // — the flag resets on the real outcome, not a guessed timeout.
@@ -74,7 +79,7 @@ export async function apiFetch(
   // Try to get token from local storage (fallback for non-hook usage)
   if (!skipAuth) {
     try {
-      const raw = localStorage.getItem("miootz_tokens");
+      const raw = localStorage.getItem(roomStorageKey("miootz_tokens"));
       if (raw) {
         const t = JSON.parse(raw) as { accessToken: string };
         if (t.accessToken) {

@@ -1,3 +1,5 @@
+import { demoRoom } from '../utils/demoRoom';
+
 /**
  * Thin top bar marking demo deploys (VITE_DEMO=1, set by `python -m app.demo`).
  * Tapping it returns to the /api/demo account/scenario picker. Plain anchor
@@ -11,7 +13,7 @@ export function DemoModeBar() {
       href="/api/demo"
       className="block border-b border-line bg-board py-1 text-center text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim hover:text-ink"
     >
-      Demo mode — tap to return
+      {demoRoom() ? 'All scenarios' : 'Demo mode — tap to return'}
     </a>
   );
 }

@@ -51,7 +51,11 @@ beforeEach(() => {
   vi.mocked(handleCallback).mockResolvedValue(tokens);
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  window.history.replaceState({}, '', '/');
+});
 
 it('confirms the new session before opening the requested protected route', async () => {
   sessionStorage.setItem('miootz_return_path', '/rankings?year=all');
@@ -90,3 +94,19 @@ it.each(['/auth/callback?code=test', '/rankings'])(
     expect(authorize).not.toHaveBeenCalled();
   },
 );
+
+it('restores the selected room session without reading the other room token', async () => {
+  vi.stubEnv('VITE_DEMO', '1');
+  window.history.replaceState({}, '', '/squad/rankings');
+  localStorage.setItem('miootz_tokens:/squad', JSON.stringify(tokens));
+  localStorage.setItem('miootz_tokens:/matchday', JSON.stringify({ ...tokens, accessToken: 'other-room' }));
+  const fetch = vi.fn().mockResolvedValue(Response.json({ user: { id: 1 }, is_admin: true }));
+  vi.stubGlobal('fetch', fetch);
+  openApp('/rankings');
+
+  expect(await screen.findByRole('heading', { name: 'Rankings' })).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith('/squad/api/me', expect.objectContaining({
+    headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+  }));
+  expect(JSON.parse(localStorage.getItem('miootz_tokens:/matchday')!).accessToken).toBe('other-room');
+});

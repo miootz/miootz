@@ -29,4 +29,40 @@ describe('service worker API requests', () => {
       expect(fetch).toHaveBeenCalledWith(request);
     },
   );
+
+  it.each(['/', '/squad/', '/matchday/'])('never caches room API requests in worker scope %s', (scope) => {
+    const listeners: Record<string, (event: unknown) => void> = {};
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+      URL,
+      self: {
+        location: { origin: 'https://miootz.test' },
+        registration: { scope: `https://miootz.test${scope}` },
+        addEventListener: (name: string, listener: (event: unknown) => void) => { listeners[name] = listener; },
+      },
+    });
+    const respondWith = vi.fn();
+    listeners.fetch({ request: { method: 'GET', url: 'https://miootz.test/squad/api/users/me' }, respondWith });
+    expect(respondWith).not.toHaveBeenCalled();
+    if (scope !== '/') {
+      const waitUntil = vi.fn();
+      listeners.sync({ tag: 'miootz-outbox', waitUntil });
+      expect(waitUntil).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not handle push events in a hosted room', () => {
+    const listeners: Record<string, (event: unknown) => void> = {};
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+      URL,
+      self: {
+        location: { origin: 'https://miootz.test' },
+        registration: { scope: 'https://miootz.test/matchday/' },
+        addEventListener: (name: string, listener: (event: unknown) => void) => { listeners[name] = listener; },
+      },
+    });
+    const waitUntil = vi.fn();
+    listeners.push({ waitUntil });
+    listeners.notificationclick({ waitUntil });
+    expect(waitUntil).not.toHaveBeenCalled();
+  });
 });

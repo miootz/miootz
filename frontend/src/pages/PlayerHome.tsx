@@ -3,8 +3,9 @@ import { useEffect } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { getPreferMemberView } from '../auth/memberViewStorage';
 import { PlayerApp } from './PlayerApp';
+import { roomStorageKey } from '../utils/demoRoom';
 
-const PENDING_ACTION_KEY = 'miootz_pending_action';
+const PENDING_ACTION_KEY = roomStorageKey('miootz_pending_action');
 
 /**
  * `/` — admins default to `/admin` unless they chose the member (player) home.

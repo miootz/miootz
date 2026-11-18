@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { type MeResponse } from '../api/meApi';
+import { apiBase } from '../api/client';
+import { roomPath, roomStorageKey } from '../utils/demoRoom';
+import { startDemoActivity } from '../utils/demoActivity';
 import { cacheDelete, cacheGet, cachePut } from '../offline/db';
 import { CACHE_PROFILE_ME } from '../offline/cacheKeys';
 import { consumeReturnPath } from './returnPath';
@@ -13,14 +16,13 @@ import {
   refreshTokens as oidcRefreshTokens,
 } from './pocketIdOidc';
 
-const TOKENS_KEY = 'miootz_tokens';
 const SESSION_REJECTED = 'Miootz could not verify this sign-in. Please sign in again.';
 /** Refresh this long before expiry so a long live session never hits a 401. */
 const REFRESH_BUFFER_MS = 60_000;
 
 function loadTokens(): OidcTokens | null {
   try {
-    const raw = localStorage.getItem(TOKENS_KEY);
+    const raw = localStorage.getItem(roomStorageKey('miootz_tokens'));
     if (!raw) return null;
     const t = JSON.parse(raw) as OidcTokens;
     return t;
@@ -30,13 +32,13 @@ function loadTokens(): OidcTokens | null {
 }
 
 function saveTokens(t: OidcTokens): void {
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(t));
-  if (t.idToken) localStorage.setItem('miootz_id_token', t.idToken);
+  localStorage.setItem(roomStorageKey('miootz_tokens'), JSON.stringify(t));
+  if (t.idToken) localStorage.setItem(roomStorageKey('miootz_id_token'), t.idToken);
 }
 
 function clearTokens(): void {
-  localStorage.removeItem(TOKENS_KEY);
-  localStorage.removeItem('miootz_id_token');
+  localStorage.removeItem(roomStorageKey('miootz_tokens'));
+  localStorage.removeItem(roomStorageKey('miootz_id_token'));
 }
 
 /** Build fetch headers with Bearer token. */
@@ -71,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8_000);
       const r = await fetch(
-        `${(import.meta.env.VITE_API_BASE as string | undefined) || '/api'}/me`,
+        `${apiBase()}/me`,
         { headers, signal: controller.signal },
       ).finally(() => clearTimeout(timer));
       if (r.status === 401) return null;
@@ -129,6 +131,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  useEffect(() => {
+    if (!me || !tokens?.accessToken) return;
+    return startDemoActivity(tokens.accessToken);
+  }, [me, tokens?.accessToken]);
+
   const refresh = useCallback(async () => {
     if (!tokens) return;
     setError(null);
@@ -176,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokens(null);
     setError(null);
     if (import.meta.env.VITE_DEMO === '1') {
-      window.location.replace('/api/demo');
+      window.location.replace(roomPath('/api/demo'));
       return;
     }
     try {
@@ -192,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMe(null);
     setTokens(null);
     if (import.meta.env.VITE_DEMO === '1') {
-      window.location.replace('/api/demo');
+      window.location.replace(roomPath('/api/demo'));
       return;
     }
     await oidcLogout();

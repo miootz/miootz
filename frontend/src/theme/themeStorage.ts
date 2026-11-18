@@ -1,6 +1,8 @@
+import { roomStorageKey } from '../utils/demoRoom';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'miootz-theme';
+const STORAGE_KEY = roomStorageKey('miootz-theme');
 
 export function readStoredTheme(): ThemePreference {
   try {

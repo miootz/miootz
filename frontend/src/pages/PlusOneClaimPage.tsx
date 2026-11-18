@@ -10,6 +10,7 @@ import { useAuth } from "../auth/useAuth";
 import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 import { useToast } from "../context/ToastContext";
 import { hapticError, hapticSuccess } from "../utils/haptics";
+import { roomStorageKey } from "../utils/demoRoom";
 
 export function PlusOneClaimPage() {
   const { token } = useParams<{ token: string }>();
@@ -50,7 +51,7 @@ export function PlusOneClaimPage() {
   }, [token]);
 
   async function signIn() {
-    sessionStorage.setItem("miootz_return_path", window.location.pathname);
+    sessionStorage.setItem(roomStorageKey("miootz_return_path"), window.location.pathname);
     await login();
   }
 

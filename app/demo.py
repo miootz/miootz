@@ -1,8 +1,8 @@
-"""Isolated demo runner: python -m app.demo [--scenario full].
+"""Isolated demo runner: python -m app.demo [--scenario full | --room squad].
 
 This entrypoint alone installs demo adapters. The production app never imports it.
 The /api/demo menu selects a scenario and account for the shared database.
-Hosted demos reset hourly; local demos reset on sign-in.
+Rooms reset after an hour without activity; local scenarios reset on sign-in.
 Every run owns a fresh temporary database and binds both servers to loopback,
 unless the DEMO_BIND_HOST / DEMO_TRUSTED_HOSTS / DEMO_PUBLIC_APP_URL env vars
 override it (e.g. when served from a container behind a reverse proxy).
@@ -23,6 +23,7 @@ import secrets
 import socket
 import subprocess
 import tempfile
+from time import monotonic
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,7 @@ async def prepare(
     enable_push: bool = False,
     simulate_invites: bool = False,
     hourly_reset: bool = False,
+    room: str | None = None,
 ):
     from app.api.main import app
     from app.api import middleware, users
@@ -104,7 +106,10 @@ async def prepare(
     from app.demo_data import ACTORS, NAMES, SCENARIOS, seed_demo
     from app.services import pocket_id_jwt, weather_service
     from fastapi import HTTPException
-    from fastapi.responses import HTMLResponse, RedirectResponse
+    from fastapi.responses import HTMLResponse, RedirectResponse, Response
+
+    if room:
+        scenario = {"squad": "squad", "matchday": "kickoff"}[room]
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -149,9 +154,11 @@ async def prepare(
     # The menu and its buttons are plain browser navigations without an
     # Authorization header; the demo owns these routes, so mark them public.
     middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {"/demo"}
-    middleware._PUBLIC_PATH_PREFIXES = (
-        middleware._PUBLIC_PATH_PREFIXES + ("/demo/login/", "/demo/scenario/")
-    )
+    middleware._PUBLIC_PATH_PREFIXES += ("/demo/login/",)
+    if room:
+        middleware._PUBLIC_EXACT_PATHS |= {"/demo/rooms"}
+    else:
+        middleware._PUBLIC_PATH_PREFIXES += ("/demo/scenario/",)
     if enable_push:
         middleware._PUBLIC_EXACT_PATHS = middleware._PUBLIC_EXACT_PATHS | {
             "/demo/push"
@@ -159,6 +166,7 @@ async def prepare(
 
     middleware.validate_pocket_id_token = validate
     middleware.get_user_by_id = get_user
+    middleware._background_sync_sso = lambda *_: None
     users.get_user_by_id = get_user
     users.create_signup_token = unavailable
     users.delete_user = unavailable
@@ -169,6 +177,7 @@ async def prepare(
     next_scenario = scenario
     next_reset_at: datetime | None = None
     reseed_lock = asyncio.Lock()
+    last_activity = monotonic()
 
     async def reseed() -> None:
         nonlocal manifest
@@ -186,7 +195,57 @@ async def prepare(
                 )
         manifest = new_manifest
 
-    if hourly_reset:
+    if room:
+
+        class RoomActivityMiddleware:
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                nonlocal last_activity
+                if scope["type"] != "http" or scope["method"] not in (
+                    "POST", "PUT", "PATCH", "DELETE"
+                ):
+                    await self.app(scope, receive, send)
+                    return
+
+                async with reseed_lock:
+                    status = 500
+
+                    async def capture_status(message):
+                        nonlocal status
+                        if message["type"] == "http.response.start":
+                            status = message["status"]
+                        await send(message)
+
+                    await self.app(scope, receive, capture_status)
+                    path = scope["path"]
+                    automatic = "/matches/lease/" in path or path.endswith("/push/subscription")
+                    signed_in = scope.get("state", {}).get("user") is not None
+                    if 200 <= status < 400 and not automatic and (
+                        signed_in or path.startswith("/demo/login/")
+                    ):
+                        last_activity = monotonic()
+
+        app.add_middleware(RoomActivityMiddleware)
+
+        async def reset_when_idle() -> None:
+            nonlocal last_activity
+            while True:
+                await sleep(max(0, last_activity + RESET_INTERVAL_SECONDS - monotonic()))
+                async with reseed_lock:
+                    if monotonic() - last_activity < RESET_INTERVAL_SECONDS:
+                        continue
+                    try:
+                        await reseed()
+                    except Exception:
+                        logger.exception("Could not reset the idle demo room")
+                    else:
+                        last_activity = monotonic()
+                        continue
+                await sleep(60)
+
+    if hourly_reset and not room:
 
         async def reset_hourly() -> None:
             nonlocal next_reset_at
@@ -198,12 +257,13 @@ async def prepare(
                 except Exception:
                     logger.exception("Could not reset the hosted demo database")
 
+    if room or hourly_reset:
         app_lifespan = app.router.lifespan_context
 
         @asynccontextmanager
         async def demo_lifespan(app):
             async with app_lifespan(app) as state:
-                task = asyncio.create_task(reset_hourly())
+                task = asyncio.create_task(reset_when_idle() if room else reset_hourly())
                 try:
                     yield state
                 finally:
@@ -243,6 +303,12 @@ async def prepare(
 
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_menu():
+        if room:
+            from app.demo_pages import render_room
+
+            accounts = [(role, NAMES[uid - 1]) for role, uid in ACTORS.items()]
+            minutes = max(1, ceil((last_activity + RESET_INTERVAL_SECONDS - monotonic()) / 60))
+            return render_room(room, accounts, minutes)
         active_scenario = manifest["scenario"]
         scenario_labels = {next_scenario: " — selected"}
         reset_note = "Signing in resets the shared game data to the selected scenario."
@@ -289,19 +355,30 @@ async def prepare(
         <p>{reset_note}</p>{scenario_buttons}{refresh_link}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
 
-    @app.post("/demo/scenario/{name}", response_class=HTMLResponse)
-    async def demo_switch_scenario(name: str):
-        nonlocal next_scenario
-        if name not in SCENARIOS:
-            raise HTTPException(status_code=404, detail="Unknown demo scenario")
-        next_scenario = name
-        return await demo_menu()
+    if room:
+        @app.get("/demo/rooms", response_class=HTMLResponse)
+        async def demo_rooms():
+            from app.demo_pages import render_lobby
+
+            return render_lobby()
+
+        @app.post("/demo/activity", status_code=204)
+        async def demo_activity():
+            return Response(status_code=204)
+    else:
+        @app.post("/demo/scenario/{name}", response_class=HTMLResponse)
+        async def demo_switch_scenario(name: str):
+            nonlocal next_scenario
+            if name not in SCENARIOS:
+                raise HTTPException(status_code=404, detail="Unknown demo scenario")
+            next_scenario = name
+            return await demo_menu()
 
     @app.post("/demo/login/{role}", response_class=HTMLResponse)
     async def demo_login(role: str):
         if role not in ACTORS:
             raise HTTPException(status_code=404, detail="Unknown demo account")
-        if not hourly_reset:
+        if not room and not hourly_reset:
             async with reseed_lock:
                 await reseed()
         try:
@@ -317,6 +394,24 @@ async def prepare(
             "expiresAt": expires_at_ms,
         }
         destination = manifest["guest_claim_path"] if role == "guest" else "/"
+        if room:
+            destination = f"/{room}{destination}"
+            redirect = json.dumps(destination)
+            if role == "guest":
+                redirect = (
+                    f"returnPath && /^\\/{room}\\/plus-one\\/[A-Za-z0-9_-]+$/.test(returnPath) "
+                    "&& returnPath.trim() === returnPath "
+                    f"? returnPath : {redirect}"
+                )
+            return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>Opening demo…
+        <script>
+        localStorage.setItem('miootz_tokens:/{room}', {json.dumps(json.dumps(token_data))});
+        const returnPath = sessionStorage.getItem('miootz_return_path:/{room}');
+        sessionStorage.removeItem('miootz_return_path:/{room}');
+        sessionStorage.removeItem('miootz_pending_action:/{room}');
+        sessionStorage.removeItem('miootz_prefer_member_home:/{room}');
+        location.replace({redirect});
+        </script></body></html>"""
         # This response is served through Vite's same-origin /api proxy.
         return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>Opening demo…
         <script>
@@ -367,6 +462,11 @@ def main() -> None:
         default="full",
         help="Scenario loaded at startup; the demo menu can switch any of them.",
     )
+    parser.add_argument(
+        "--room",
+        choices=["squad", "matchday"],
+        help="Serve one shared room with its own idle reset.",
+    )
     parser.add_argument("--api-port", type=int, default=8010)
     parser.add_argument("--frontend-port", type=int, default=5180)
     parser.add_argument(
@@ -416,6 +516,7 @@ def main() -> None:
                 enable_push=args.enable_push,
                 simulate_invites=args.simulate_invites,
                 hourly_reset=args.hourly_reset,
+                room=args.room,
             )
         )
         print(json.dumps(manifest, indent=2), flush=True)

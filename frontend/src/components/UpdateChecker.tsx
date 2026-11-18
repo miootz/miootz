@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext';
+import { demoRoom } from '../utils/demoRoom';
 
 const POLL_MS = 60_000;
 
@@ -29,7 +30,8 @@ export function UpdateChecker() {
     const current = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src;
     if (!current) return;
     const currentVersion = document.querySelector<HTMLMetaElement>('meta[name="app-version"]')?.content;
-    const url = new URL(import.meta.env.BASE_URL, window.location.href);
+    const room = demoRoom();
+    const url = new URL(room ? `${room}/` : import.meta.env.BASE_URL, window.location.href);
     let stopped = false;
 
     const check = async () => {

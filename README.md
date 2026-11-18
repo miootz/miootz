@@ -56,8 +56,8 @@ uv run python -m app.demo --scenario full
 
 Open
 [the local demo menu](http://127.0.0.1:5180/api/demo). This uses fictional data in
-a temporary database and requires no passkey. See [the demo guide](docs/DEMO.md)
-for scenarios, account switching, screenshot routes, and integration limits.
+a temporary database and requires no passkey. See the [demo guide](docs/DEMO.md)
+to run both hosted-style rooms locally and try them with multiple accounts.
 
 ## Development Setup (Local)
 

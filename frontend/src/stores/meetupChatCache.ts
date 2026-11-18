@@ -1,8 +1,9 @@
 import type { ChatMessage } from '../types';
 import { cacheGet, cachePut, getOfflineDb } from '../offline/db';
 import { CACHE_MEETUP_ACTIVE, cacheKeyChat } from '../offline/cacheKeys';
+import { roomStorageKey } from '../utils/demoRoom';
 
-const LEGACY_MEETUP_STORAGE_KEY = 'miootz:meetupChatCache';
+const LEGACY_MEETUP_STORAGE_KEY = roomStorageKey('miootz:meetupChatCache');
 const LEGACY_VERSION = 3;
 
 /** One-time migration from sessionStorage (Phase 1) to IndexedDB. */

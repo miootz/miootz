@@ -36,9 +36,19 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  window.history.replaceState({}, '', '/');
 });
 
 describe('UpdateChecker', () => {
+  it('checks the room shell instead of the root lobby', async () => {
+    vi.stubEnv('VITE_DEMO', '1');
+    window.history.replaceState({}, '', '/squad/rankings');
+    const fetch = vi.fn().mockResolvedValue(response(html('/assets/index-current.js', '1.0.0')));
+    vi.stubGlobal('fetch', fetch);
+    await act(async () => { render(<UpdateChecker />); });
+    expect(fetch.mock.calls[0][0].href).toBe(`${window.location.origin}/squad/`);
+  });
+
   it('does not announce the current build when its script URL is relative', async () => {
     const fetch = vi.fn().mockResolvedValue(response(html('/assets/index-current.js', '1.0.0')));
     vi.stubGlobal('fetch', fetch);

@@ -76,13 +76,12 @@ Alternatively, provide the production `DEPLOY_ENV` secret before the first manua
 
 ## First demo setup
 
-The public demo uses fictional accounts and a shared, temporary SQLite
-database. Visitors can sign in and test live features together between resets.
-The API resets the shared game data every hour from startup. Any scenario
-selected in the demo menu takes effect at the next reset. An API restart
-starts a fresh database using `DEMO_SCENARIO`. Production data and Pocket ID
-are separate from the demo. Only Traefik and the demo frontend share the
-demo ingress network.
+The public demo runs **Squad setup** and **Matchday** concurrently. Each room
+has a separate API process and temporary SQLite database. The rooms reset
+independently after an hour without activity or when their API restarts.
+The demo uses sample accounts. Production data and Pocket ID are separate
+from the demo. Only Traefik and the demo frontend share the demo ingress
+network.
 
 Create `~/miootz/demo/.env` on the demo server, or set the demo environment's `DEPLOY_ENV` secret before its first deployment, with values for your domain:
 
@@ -91,7 +90,11 @@ APP_DOMAIN=app.example.com
 DEMO_SUBDOMAIN=demo
 ```
 
-The demo address is `https://${DEMO_SUBDOMAIN}.${APP_DOMAIN}`; the default subdomain is `demo`, so this example uses `https://demo.app.example.com`. Create the corresponding DNS record. Open the demo at `/api/demo` to choose a sample account. `DEMO_SCENARIO` may be set to `open`, `full`, `broadcast`, `random`, `live`, or `kickoff`; the default is `full`.
+The demo address is `https://${DEMO_SUBDOMAIN}.${APP_DOMAIN}`. The default
+subdomain is `demo`, so this example uses `https://demo.app.example.com`.
+Create the corresponding DNS record. The room picker is at `/api/demo`, and
+the rooms use `/squad/` and `/matchday/` on that host. See the
+[demo guide](DEMO.md) for the scenarios and account options.
 
 The demo expects Traefik with the Docker provider, a `websecure` entrypoint, a Let's Encrypt resolver named `letsencrypt`, and a Docker network named `miootz_demo_web`. The production Compose stack creates that network and attaches its Traefik service to it, so a demo on the same host needs no second proxy or port bindings. If you use a different network name, set the same `DEMO_INGRESS_NETWORK` in both environments.
 
@@ -108,6 +111,11 @@ This creates the ingress network and ACME volume without starting production ser
 
 Publish a stable release to deploy the demo, or run the appropriate workflow manually and select a stable tag. GitHub uses separate concurrency groups for demo and production: a running deployment is not canceled, while a newer pending run can replace an older pending run. A host-side lock also rejects overlapping deployments to the same target. Each job has a 60-minute limit. The selected commit is archived from Git, so local untracked files, `.env`, and databases are not included.
 
-Each target stores source under `~/miootz/<target>/releases/`; `current` points to the last release that passed the internal health checks. The checks cover the API and frontend and, for production, Pocket ID. They do not check public DNS, certificates, or a full browser sign-in. After deployment, open the HTTPS site and verify the account flow; for the demo also verify `/api/demo`. Inspect Traefik logs if TLS fails.
+Each target stores source under `~/miootz/<target>/releases/`. The `current`
+link points to the last release that passed the internal health checks. The
+checks cover the API and frontend, both rooms in demo, and Pocket ID in
+production. After deployment, open the HTTPS site and verify the account
+flow. For the demo, choose a scenario and sign in to both rooms. Inspect
+Traefik logs if TLS fails.
 
 A failed health check can leave the new containers running while `current` still points to the last healthy release. Inspect the containers and logs before retrying. To roll back, run the workflow with an earlier stable tag after checking that it supports the current database schema; application migrations and user data are not automatically reversed. Old release directories are kept for inspection and can consume disk space; remove only releases that are no longer needed after verifying they are not in use.

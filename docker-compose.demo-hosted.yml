@@ -1,25 +1,40 @@
-# Hosted demo: a disposable database and demo accounts, never production data.
+# Hosted demo: disposable databases and demo accounts, never production data.
 # The existing Traefik service supplies TLS on the isolated demo ingress network.
+x-demo-api: &demo-api
+  build: .
+  restart: unless-stopped
+  environment: &demo-environment
+    DEMO_BIND_HOST: "0.0.0.0"
+    DEMO_TRUSTED_HOSTS: "${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN:?Set APP_DOMAIN},127.0.0.1,localhost"
+  networks:
+    - demo_backend
+
 services:
-  api:
-    build: .
-    restart: unless-stopped
+  api-squad:
+    <<: *demo-api
     environment:
-      DEMO_BIND_HOST: "0.0.0.0"
-      DEMO_TRUSTED_HOSTS: "${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN:?Set APP_DOMAIN},127.0.0.1,localhost"
-      DEMO_PUBLIC_APP_URL: "https://${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}"
-    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--hourly-reset", "--api-port", "8000", "--scenario", "${DEMO_SCENARIO:-full}"]
-    networks:
-      - demo_backend
+      <<: *demo-environment
+      DEMO_PUBLIC_APP_URL: "https://${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}/squad"
+    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--api-port", "8000", "--room", "squad"]
+
+  api-matchday:
+    <<: *demo-api
+    environment:
+      <<: *demo-environment
+      DEMO_PUBLIC_APP_URL: "https://${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}/matchday"
+    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--api-port", "8000", "--room", "matchday"]
 
   frontend:
     build:
       context: ./frontend
       args:
         VITE_DEMO: "1"
+        VITE_DEMO_ROOMS: "1"
+        NGINX_CONF: nginx.demo.conf
     restart: unless-stopped
     depends_on:
-      - api
+      - api-squad
+      - api-matchday
     networks:
       - demo_ingress
       - demo_backend

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
+import { roomStorageKey } from "../utils/demoRoom";
 
 export const SKILL_SCALE_BLURB = "1 = brand new · 5 = very experienced";
 
@@ -19,7 +20,7 @@ const STEPS = [
 ];
 
 function storageKey(userId: string) {
-  return `miootz:onboarding:v1:${userId}`;
+  return roomStorageKey(`miootz:onboarding:v1:${userId}`);
 }
 
 /**

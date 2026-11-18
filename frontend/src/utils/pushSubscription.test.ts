@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { apiFetch } from '../api/client';
-import { subscribeToWebPush } from './pushSubscription';
+import { subscribeToWebPush, unsubscribeFromWebPush } from './pushSubscription';
 
 vi.mock('../api/client', () => ({ apiFetch: vi.fn() }));
 
@@ -9,7 +9,17 @@ beforeEach(() => vi.clearAllMocks());
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  window.history.replaceState({}, '', '/');
+});
+
+it('does not use a root push subscription from a hosted room', async () => {
+  vi.stubEnv('VITE_DEMO', '1');
+  window.history.replaceState({}, '', '/squad/');
+  await expect(subscribeToWebPush()).resolves.toEqual({ ok: false, reason: 'Not supported in this browser' });
+  await unsubscribeFromWebPush();
+  expect(apiFetch).not.toHaveBeenCalled();
 });
 
 it('reports granted permission before waiting for push subscription', async () => {

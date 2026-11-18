@@ -6,6 +6,8 @@
  * Tokens persisted in localStorage for cross-session survival.
  */
 
+import { roomStorageKey } from "../utils/demoRoom";
+
 // ── Env ────────────────────────────────────────────────────────────────────
 
 // Plain HTTP (non-localhost) is not a secure context: crypto.subtle /
@@ -168,8 +170,8 @@ export interface OidcTokens {
 }
 
 // ── Authorize (redirect to Pocket ID) ──────────────────────────────────────
-const _CODE_VERIFIER_KEY = "miootz_pkce_verifier";
-const _OIDC_STATE_KEY = "miootz_oidc_state";
+const _CODE_VERIFIER_KEY = roomStorageKey("miootz_pkce_verifier");
+const _OIDC_STATE_KEY = roomStorageKey("miootz_oidc_state");
 
 export async function authorize(): Promise<void> {
   const endpoints = await discoverEndpoints();
@@ -314,7 +316,7 @@ export async function logout(): Promise<void> {
       client_id: OIDC_CLIENT_ID,
       post_logout_redirect_uri: `${window.location.origin}/`,
     });
-    const idToken = localStorage.getItem("miootz_id_token");
+    const idToken = localStorage.getItem(roomStorageKey("miootz_id_token"));
     if (idToken) {
       params.set("id_token_hint", idToken);
     }

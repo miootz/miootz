@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Bell, X } from 'lucide-react';
 import { useNotificationPermission } from '../../utils/useNotificationPermission';
+import { demoRoom, roomStorageKey } from '../../utils/demoRoom';
 
-const DISMISS_KEY = 'miootz-admin-notify-prompt-dismissed';
+const DISMISS_KEY = roomStorageKey('miootz-admin-notify-prompt-dismissed');
 
 /**
  * One-time style banner to request Web Notification permission (admin / power users).
@@ -18,7 +19,7 @@ export function AdminNotificationPrompt() {
     }
   });
 
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || demoRoom()) return null;
   if (permission !== 'default') {
     return null;
   }

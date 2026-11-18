@@ -40,9 +40,10 @@ import {
   X,
 } from "lucide-react";
 import { hapticLight } from "../utils/haptics";
+import { roomStorageKey } from "../utils/demoRoom";
 
 const chatLastReadKey = (meetupId: string) =>
-  `miootz:chat:lastRead:${meetupId}`;
+  roomStorageKey(`miootz:chat:lastRead:${meetupId}`);
 const CHAT_PREVIEW_LIMIT = 4;
 const CHAT_PREVIEW_FADE =
   "linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)";

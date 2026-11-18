@@ -1,10 +1,12 @@
+import { roomStorageKey } from './demoRoom';
+
 const PREFIX = 'miootz-admin';
 
-export const ADMIN_MEETUP_DRAFT_KEY = `${PREFIX}-meetup-draft-v1`;
-export const ADMIN_LAST_LOCATION_KEY = `${PREFIX}-last-meetup-location`;
-export const ADMIN_LAST_MIN_PLAYERS_KEY = `${PREFIX}-last-min-players`;
-export const ADMIN_LAST_MAX_PLAYERS_KEY = `${PREFIX}-last-max-players`;
-export const ADMIN_TOOLS_JOB_HISTORY_KEY = `${PREFIX}-tools-job-history-v1`;
+export const ADMIN_MEETUP_DRAFT_KEY = roomStorageKey(`${PREFIX}-meetup-draft-v1`);
+export const ADMIN_LAST_LOCATION_KEY = roomStorageKey(`${PREFIX}-last-meetup-location`);
+export const ADMIN_LAST_MIN_PLAYERS_KEY = roomStorageKey(`${PREFIX}-last-min-players`);
+export const ADMIN_LAST_MAX_PLAYERS_KEY = roomStorageKey(`${PREFIX}-last-max-players`);
+export const ADMIN_TOOLS_JOB_HISTORY_KEY = roomStorageKey(`${PREFIX}-tools-job-history-v1`);
 
 export type MeetupDraftPayload = Record<string, unknown>;
 

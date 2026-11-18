@@ -1,4 +1,5 @@
 import { apiFetch, parseApiError } from "./client";
+import { roomPath } from "../utils/demoRoom";
 
 export type Specialty = "ATT" | "MID" | "DEF" | "GK";
 
@@ -168,5 +169,6 @@ export async function patchNotificationPreference(
 export function mediaUrl(path: string | null | undefined): string | undefined {
     if (!path) return undefined;
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
+    if (path.startsWith("/api/")) return roomPath(path);
     return path;
 }

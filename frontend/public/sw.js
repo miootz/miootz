@@ -4,6 +4,8 @@
  */
 
 const API_CACHE = 'miootz-api-swr-v1';
+const scopePath = new URL(self.registration?.scope || self.location.origin).pathname.replace(/\/$/, '');
+const room = /^\/(squad|matchday)$/.test(scopePath) ? scopePath : '';
 const API_MAX_AGE_MS = {
   sessionsList: 5 * 60 * 1000,
   sessionDetail: 2 * 60 * 1000,
@@ -64,6 +66,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Demo rooms use their own IndexedDB; never reuse the legacy root API cache.
+  if (room) return;
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
@@ -75,6 +79,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
+  if (room) return;
   let data = {};
   try {
     data = event.data ? event.data.json() : {};
@@ -108,6 +113,7 @@ self.addEventListener('push', (event) => {
 });
 
 self.addEventListener('notificationclick', (event) => {
+  if (room) return;
   event.notification.close();
 
   let urlPath = '/';
@@ -222,7 +228,7 @@ async function processOutboxFromSw() {
 }
 
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'miootz-outbox') {
+  if (!room && event.tag === 'miootz-outbox') {
     event.waitUntil(processOutboxFromSw());
   }
 });
