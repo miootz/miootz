@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { InstallAppBanner } from './InstallAppBanner';
 import { OverlayLockProvider } from '../context/OverlayLock';
 
@@ -14,12 +14,14 @@ vi.mock('../utils/pwaDetect', () => ({
 }));
 
 beforeEach(() => {
-  vi.spyOn(window, 'matchMedia').mockReturnValue({
+  vi.stubGlobal('matchMedia', () => ({
     matches: false,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
-  } as unknown as MediaQueryList);
+  }));
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 function renderBanner() {
   return render(
