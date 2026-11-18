@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, UTC
 import html
 import json
 import logging
+from math import ceil
 import os
 from pathlib import Path
 import secrets
@@ -166,6 +167,7 @@ async def prepare(
     weather_service.fetch_current = sample_weather
 
     next_scenario = scenario
+    next_reset_at: datetime | None = None
     reseed_lock = asyncio.Lock()
 
     async def reseed() -> None:
@@ -187,7 +189,9 @@ async def prepare(
     if hourly_reset:
 
         async def reset_hourly() -> None:
+            nonlocal next_reset_at
             while True:
+                next_reset_at = datetime.now(UTC) + timedelta(seconds=RESET_INTERVAL_SECONDS)
                 await sleep(RESET_INTERVAL_SECONDS)
                 try:
                     await reseed()
@@ -239,15 +243,26 @@ async def prepare(
 
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_menu():
+        active_scenario = manifest["scenario"]
+        scenario_labels = {next_scenario: " — selected"}
+        reset_note = "Signing in resets the shared game data to the selected scenario."
+        refresh_link = ""
+        if hourly_reset:
+            scenario_labels = {active_scenario: " — active"}
+            reset_note = (
+                f"The shared game data resets every hour. Current scenario: {active_scenario.title()}. "
+                "Signing in preserves shared progress."
+            )
+            if next_scenario != active_scenario:
+                scenario_labels[next_scenario] = " — queued"
+                reset_note += f" {next_scenario.title()} starts at the next reset."
+                refresh_link = '<p><a href="/api/demo">Refresh scenario status</a></p>'
+            if next_reset_at is not None:
+                minutes = max(1, ceil((next_reset_at - datetime.now(UTC)).total_seconds() / 60))
+                reset_note += f" Next reset in about {minutes} min."
         scenario_buttons = "".join(
-            f'<form method="post" action="/api/demo/scenario/{name}"><button>{html.escape(name.title())}{" — selected" if name == next_scenario else ""}</button></form>'
+            f'<form method="post" action="/api/demo/scenario/{name}"><button>{html.escape(name.title())}{scenario_labels.get(name, "")}</button></form>'
             for name in SCENARIOS
-        )
-        reset_note = (
-            f"The shared game data resets every hour. Current scenario: {manifest['scenario'].title()}. "
-            "Scenario selections take effect at the next reset. Signing in preserves shared progress."
-            if hourly_reset
-            else "Signing in resets the shared game data to the selected scenario."
         )
         buttons = "".join(
             f'<form method="post" action="/api/demo/login/{role}"><button>{html.escape(role.title())} · {html.escape(NAMES[uid - 1])}</button></form>'
@@ -268,10 +283,10 @@ async def prepare(
             if simulate_invites
             else "Account invitations are disabled."
         )
-        return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
+        return f"""<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
         <style>body{{font:16px system-ui;max-width:600px;margin:48px auto;padding:24px;color:#262033;background:#faf8ff}}button{{padding:14px;width:100%;margin:6px 0;background:#7c3aed;color:white;border:0;border-radius:12px;font:inherit;text-align:left}}a{{color:#6d28d9}}</style></head>
         <body><h1>Miootz demo</h1><p>Try sample accounts named after famous footballers. All meetups and match results are fictional.</p>
-        <p>{reset_note}</p>{scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
+        <p>{reset_note}</p>{scenario_buttons}{refresh_link}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
 
     @app.post("/demo/scenario/{name}", response_class=HTMLResponse)

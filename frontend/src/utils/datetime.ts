@@ -14,6 +14,15 @@ export function parseMeetupStart(iso: string): Date {
   return new Date(`${t}Z`);
 }
 
+/** Match controls open 15 minutes before kickoff and lock 15 minutes after the meetup. */
+export function matchControlWindow(startTime: string, durationMinutes?: number | null) {
+  const start = parseMeetupStart(startTime).getTime();
+  return {
+    opensAt: start - 15 * 60_000,
+    closesAt: start + ((durationMinutes ?? 120) + 15) * 60_000,
+  };
+}
+
 /** Value for `<input type="datetime-local" />` in the user's local timezone. */
 export function meetupStartToDatetimeLocalValue(iso: string): string {
   const d = parseMeetupStart(iso);

@@ -59,6 +59,9 @@ async def exercise_hosted_demo(directory):
         selection = await client.post("/demo/scenario/live")
         selection.raise_for_status()
         assert "Current scenario: Full" in selection.text
+        assert "Full — active" in selection.text
+        assert "Live — queued" in selection.text
+        assert "Next reset in about 60 min." in selection.text
         chat = await client.get(chat_path, headers=member)
         chat.raise_for_status()
         assert message in {row["message"] for row in chat.json()}
@@ -67,11 +70,28 @@ async def exercise_hosted_demo(directory):
         await asyncio.wait_for(timer_waiting.get(), timeout=5)
         menu = await client.get("/demo")
         assert "Current scenario: Live" in menu.text
+        assert "Live — active" in menu.text
+        matches_path = "/meetups/1/matches"
+        matches = await client.get(matches_path, headers=member)
+        matches.raise_for_status()
+        assert [match["status"] for match in matches.json()["matches"]] == ["active"]
         for account in (admin, member):
             chat = await client.get(chat_path, headers=account)
             chat.raise_for_status()
             assert chat.json()
             assert message not in {row["message"] for row in chat.json()}
+
+        selection = await client.post("/demo/scenario/kickoff")
+        selection.raise_for_status()
+        assert "Live — active" in selection.text
+        assert "Kickoff — queued" in selection.text
+        hourly_tick.put_nowait(None)
+        await asyncio.wait_for(timer_waiting.get(), timeout=5)
+        menu = await client.get("/demo")
+        assert "Kickoff — active" in menu.text
+        matches = await client.get(matches_path, headers=member)
+        matches.raise_for_status()
+        assert [match["status"] for match in matches.json()["matches"]] == ["pending"]
 
 
 if __name__ == "__main__":

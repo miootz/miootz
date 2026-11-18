@@ -24,7 +24,7 @@ import {
 } from "../../api/adminApi";
 import { useAuth } from "../../auth/useAuth";
 import { subscribeMeetupData } from "../../utils/meetupDataBus";
-import { parseMeetupStart } from "../../utils/datetime";
+import { matchControlWindow, parseMeetupStart } from "../../utils/datetime";
 import { MeetupChat } from "../../components/MeetupChat";
 import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
 import { MeetupTeamsPanel } from "../../components/MeetupTeamsPanel";
@@ -100,7 +100,7 @@ export function AdminDashboard() {
   const [detail, setDetail] = useState<MeetupDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [live, setLive] = useState(false);
-  const [detailFetchedAt, setDetailFetchedAt] = useState(0);
+  const [now, setNow] = useState(Date.now);
   const [confirmingSkip, setConfirmingSkip] = useState(false);
   const skipResetTimer = useRef<number | null>(null);
 
@@ -112,25 +112,41 @@ export function AdminDashboard() {
   );
 
   const nextId = detail?.id ?? null;
+  const { opensAt, closesAt } = detail
+    ? matchControlWindow(detail.start_time, detail.duration_minutes)
+    : { opensAt: NaN, closesAt: NaN };
+
+  useEffect(() => {
+    const boundary = now < opensAt ? opensAt : closesAt + 1;
+    if (!(boundary > now)) return;
+    // A meetup can be farther away than the browser's largest timeout.
+    const delay = Math.min(Math.max(0, boundary - Date.now()), 2_147_483_647);
+    const timer = window.setTimeout(() => setNow(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [now, opensAt, closesAt]);
 
   const loadDetail = useCallback(async (id: number) => {
     const d = await fetchMeetupDetail(id);
     setDetail(d);
-    setDetailFetchedAt(Date.now());
+    setNow(Date.now());
   }, []);
 
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const [up, tpls] = await Promise.all([
-        fetchMeetups({ status: "all", order: "asc", limit: 20 }),
+      const [up, past, tpls] = await Promise.all([
+        fetchMeetups({ status: "upcoming", order: "asc", limit: 20 }),
+        fetchMeetups({ status: "past", order: "desc", limit: 1 }),
         adminListGameTemplates(),
       ]);
       setUpcoming(up.items);
       setTemplates(tpls.items);
-      // "Current" = first meetup whose local day (location timezone) has begun —
-      // midnight ending the last meetup day through the night of the next one.
-      const next = up.items.find((m) => m.is_current) ?? null;
+      const recent = past.items[0];
+      const showRecent = recent && (
+        matchControlWindow(recent.start_time, recent.duration_minutes).closesAt >= Date.now() ||
+        (!up.items.length && recent.is_current)
+      );
+      const next = showRecent ? recent : up.items[0];
       if (next) {
         await loadDetail(next.id);
       } else {
@@ -190,22 +206,11 @@ export function AdminDashboard() {
     templates?.find((t) => t.is_active) ?? templates?.[0] ?? null;
   const nextAnnounceAt = activeTemplate?.next_announce_at ?? null;
 
-  // SAFETY: the meetups API may include an undeclared `current_match` object
-  // ({ status, match_number }) in the detail payload; the TS type lags behind.
-  const currentMatch = (detail as unknown as Record<string, unknown> | null)
-    ? ((detail as unknown as Record<string, unknown>).current_match as
-        | { status: string; match_number: number }
-        | null
-        | undefined)
-    : undefined;
+  const currentMatch = detail?.current_match;
   const matchActive =
     currentMatch?.status === "active" || currentMatch?.status === "time_up";
-  // Same T-15 min window as the player overview's results mode — derived
-  // purely from the fetch timestamp (no impure Date.now in render).
-  const startWindowOpen =
-    detail != null &&
-    parseMeetupStart(detail.start_time).getTime() - 15 * 60_000 <=
-      detailFetchedAt;
+  const startWindowOpen = opensAt <= now && now <= closesAt;
+  const futureMeetups = upcoming?.filter((meetup) => meetup.id !== nextId) ?? [];
 
   /* ── Render ───────────────────────────────────────────── */
 
@@ -253,7 +258,7 @@ export function AdminDashboard() {
                     max={detail.max_players}
                     min={detail.min_players}
                   />
-                  {startWindowOpen && (matchActive || !currentMatch) && (
+                  {startWindowOpen && detail.my_attendance === "confirmed" && (
                     <Link
                       to={`/meetup-matches/${detail.id}`}
                       className={`mt-3 inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-sm font-bold transition-colors active:scale-[0.98] ${
@@ -354,7 +359,7 @@ export function AdminDashboard() {
       )}
 
       {/* ── Auto-scheduled list ──────────────────────────── */}
-      {upcoming && upcoming.length > 1 && (
+      {futureMeetups.length > 0 && (
         <section className="mt-4">
           <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-1.5">
             <Repeat className="w-4 h-4 text-ink-faint" aria-hidden />
@@ -366,7 +371,7 @@ export function AdminDashboard() {
             )}
           </h2>
           <ul className="border border-line bg-panel divide-y divide-line overflow-hidden">
-            {upcoming.slice(1).map((m) => (
+            {futureMeetups.map((m) => (
               <li key={m.id}>
                 <Link
                   to={`/admin/meetups/${m.id}`}

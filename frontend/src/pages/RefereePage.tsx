@@ -1,8 +1,8 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
-import { parseMeetupStart } from "../utils/datetime";
+import { matchControlWindow } from "../utils/datetime";
 import {
   fetchMeetupMatches,
   startMatches,
@@ -433,10 +433,7 @@ export function RefereePage() {
   // Deadline: 15 min after scheduled meetup end (computed from detail).
   const deadline = (() => {
     if (!meetupDetail?.start_time) return null;
-    const start = parseMeetupStart(meetupDetail.start_time).getTime();
-    const durationMin = meetupDetail.duration_minutes ?? 120;
-    const end = start + durationMin * 60_000;
-    return end + 15 * 60_000; // 15 min grace
+    return matchControlWindow(meetupDetail.start_time, meetupDetail.duration_minutes).closesAt;
   })();
   const isPastDeadline = deadline != null && nowMs > deadline;
 
@@ -885,11 +882,20 @@ export function RefereePage() {
           ? "Scoring is closed — you're outside the meetup window."
           : "Scoring controls unavailable.";
     return (
-      <div className="flex items-center justify-center gap-2 p-6 text-center">
-        {loading && (
-          <Loader2 className="h-4 w-4 animate-spin text-live" aria-hidden />
-        )}
-        <p className={loading ? "text-ink-dim" : "text-danger"}>{line}</p>
+      <div className="flex flex-col items-center gap-2 p-6 text-center">
+        <div className="flex items-center gap-2">
+          {loading && (
+            <Loader2 className="h-4 w-4 animate-spin text-live" aria-hidden />
+          )}
+          <p className={loading ? "text-ink-dim" : "text-danger"}>{line}</p>
+        </div>
+        <Link
+          to={isAdmin ? "/admin" : "/"}
+          className="inline-flex min-h-[44px] items-center gap-2 px-3 text-sm font-semibold text-ink underline"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {isAdmin ? "Back to admin overview" : "Back to meetup"}
+        </Link>
       </div>
     );
   }

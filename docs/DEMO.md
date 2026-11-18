@@ -8,8 +8,10 @@ same sign-in state.
 
 Signing in preserves shared progress. The API resets the game data every
 hour from startup, and restarting the API starts a fresh database. The
-scenario picker selects the fixtures for the next reset. If you have a page
-open during a reset, reload it to see the new fixtures.
+scenario picker labels the current scenario **active** and a change **queued**.
+For Live or Kickoff, wait until the menu shows it as active before signing in.
+The menu shows roughly how long until the next reset. If you have a page open
+during a reset, reload it to see the new fixtures.
 
 See the [deployment guide](DEPLOYMENT.md) to host this demo.
 

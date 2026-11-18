@@ -87,6 +87,7 @@ export type AttendanceStatus = "confirmed" | "waitlisted" | "cancelled";
 export interface MeetupDetail extends MeetupListItem {
   team_assignment_mode?: string;
   game_template?: GameTemplateInfo | null;
+  current_match?: { status: "pending" | "active" | "time_up"; match_number: number } | null;
   /** Meetup duration in minutes (null defaults to 120). */
   duration_minutes?: number | null;
   /** Upper bound on team count. Null = algorithmic. */
