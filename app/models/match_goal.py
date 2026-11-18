@@ -59,6 +59,8 @@ class MatchGoal(Base):
     #: Own goal: the scorer is a member of the *conceding* team. The goal
     #: still counts toward ``team``'s score (the team that benefited).
     is_own_goal: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: A scored penalty during regulation, separate from shootout kicks.
+    is_penalty: Mapped[bool] = mapped_column(Boolean, default=False)
     #: Account that entered the goal (may be a proxy device, plan §2.7).
     recorded_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     #: Client-minted idempotency key (UUID hex).

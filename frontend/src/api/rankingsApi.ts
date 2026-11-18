@@ -11,13 +11,21 @@ export interface RankingRow {
   user: RankingUser;
   attendances: number;
   goals: number;
+  own_goals: number;
   assists: number;
   clean_sheets: number;
   goals_conceded: number;
   wins: number;
+  losses: number;
   matches: number;
   win_rate: number;
   goal_assists: number;
+  goals_per_match: number;
+  assists_per_match: number;
+  goal_assists_per_match: number;
+  penalties_taken: number;
+  penalties_scored: number;
+  penalty_conversion_rate: number;
 }
 
 export interface HighlightEntry {
@@ -77,25 +85,19 @@ export interface RankingsResponse {
   rows: RankingRow[];
 }
 
-export type RankingSort =
-  | "attendances"
-  | "goals"
-  | "assists"
-  | "clean_sheets"
-  | "goals_conceded"
-  | "wins"
-  | "matches"
-  | "win_rate"
-  | "goal_assists";
+export type RankingSort = keyof Omit<RankingRow, "rank" | "user">;
 
-export async function fetchRankings(params: {
-  year?: number | "all";
-  includeOwnGoals?: boolean;
-  sort?: RankingSort;
-  order?: "asc" | "desc";
-  page?: number;
-  perPage?: number;
-}): Promise<RankingsResponse> {
+export async function fetchRankings(
+  params: {
+    year?: number | "all";
+    includeOwnGoals?: boolean;
+    sort?: RankingSort;
+    order?: "asc" | "desc";
+    page?: number;
+    perPage?: number;
+  },
+  signal?: AbortSignal,
+): Promise<RankingsResponse> {
   const q = new URLSearchParams();
   if (params.year !== undefined) q.set("year", String(params.year));
   if (params.includeOwnGoals) q.set("include_own_goals", "1");
@@ -103,7 +105,7 @@ export async function fetchRankings(params: {
   if (params.order) q.set("order", params.order);
   q.set("page", String(params.page ?? 1));
   q.set("per_page", String(params.perPage ?? 25));
-  const r = await apiFetch(`/rankings?${q.toString()}`);
+  const r = await apiFetch(`/rankings?${q.toString()}`, { signal });
   if (!r.ok) throw new Error(await parseApiError(r));
   return (await r.json()) as RankingsResponse;
 }

@@ -443,6 +443,15 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 )
             )
 
+    if not await has_column("users", "historical_roster_name"):
+        await conn.exec_driver_sql(
+            "ALTER TABLE users ADD COLUMN historical_roster_name VARCHAR"
+        )
+    await conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_historical_roster_name "
+        "ON users (historical_roster_name)"
+    )
+
     # ── Add pocket_id_user_id to invite_tokens ──
     if await has_table("invite_tokens") and not await has_column(
         "invite_tokens", "pocket_id_user_id"
@@ -690,6 +699,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    if await has_table("match_goals") and not await has_column("match_goals", "is_penalty"):
+        await conn.exec_driver_sql("ALTER TABLE match_goals ADD COLUMN is_penalty BOOLEAN NOT NULL DEFAULT 0")
+
     # ── Manual score offsets: score = live goal COUNT + offset ──
     if not await has_column("meetup_matches", "score_offset_a"):
         await conn.execute(
@@ -782,6 +794,10 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(
             text("ALTER TABLE meetup_matches ADD COLUMN penalty_winner VARCHAR")
         )
+    if not await has_column("meetup_matches", "penalty_score_a"):
+        await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_a INTEGER")
+    if not await has_column("meetup_matches", "penalty_score_b"):
+        await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_b INTEGER")
     if not await has_table("match_penalties"):
         await conn.execute(
             text(

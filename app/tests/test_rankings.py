@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
-from app.models.match import MeetupMatch
+from app.models.match import MatchPenalty, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
@@ -198,6 +198,53 @@ async def test_default_scope_is_current_year_and_sorting():
         names = [r["user"]["display_name"] for r in j["rows"]]
         # P1 conceded 0; P2/P3 tie at 1 and order by name.
         assert names == ["P1", "P2", "P3"]
+
+
+async def test_losses_per_match_rates_and_penalties_are_scoped_and_sortable():
+    async with await client() as ac:
+        ids = await seed(ac)
+        async with AsyncSession(engine) as db:
+            first_2026 = await db.scalar(
+                select(MeetupMatch).where(
+                    MeetupMatch.meetup_id == 2, MeetupMatch.match_number == 1
+                )
+            )
+            first_2026.score_a = first_2026.score_b
+            first_2026.penalty_winner = "a"
+            first_2026.was_draw = True
+            penalty_goal = await db.scalar(
+                select(MatchGoal).where(MatchGoal.intent_id == "rk-2")
+            )
+            penalty_goal.is_penalty = True
+            penalty_goal.assist_id = ids["p3"]
+            old_match = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == 1))
+            db.add_all([
+                Attendance(meetup_id=2, user_id=ids["p3"], status="confirmed"),
+                Attendance(meetup_id=3, user_id=ids["tp1"], status="confirmed"),
+                MatchPenalty(match_id=first_2026.id, team="b", scorer_id=ids["p2"], scored=False),
+                MatchPenalty(match_id=first_2026.id, team="b", scorer_id=ids["p2"], scored=True),
+                MatchPenalty(match_id=old_match.id, team="a", scorer_id=ids["p1"], scored=True),
+            ])
+            first_2026.team_b_users = json.dumps([ids["p2"], ids["p3"]])
+            await db.commit()
+
+        response = await ac.get("/rankings?year=2026&sort=penalties_taken", headers=hdr("p1"))
+        assert response.status_code == 200, response.text
+        rows = rows_by_name(response.json())
+        assert next(iter(rows)) == "P2"
+        assert rows["P1"]["wins"] == 2 and rows["P1"]["losses"] == 0
+        assert rows["P1"]["penalties_taken"] == 0
+        assert rows["P2"]["losses"] == 2
+        assert rows["P2"]["own_goals"] == 1 and rows["P2"]["goals_per_match"] == 0.5
+        assert rows["P2"]["penalties_taken"] == 3 and rows["P2"]["penalties_scored"] == 2
+        assert rows["P2"]["penalty_conversion_rate"] == pytest.approx(2 / 3)
+        assert rows["P3"]["assists_per_match"] == rows["P3"]["goal_assists_per_match"] == 1
+        assert rows["TP1"]["goals_per_match"] == rows["TP1"]["penalty_conversion_rate"] == 0
+
+        response = await ac.get("/rankings?year=all&sort=penalties_scored", headers=hdr("p1"))
+        assert rows_by_name(response.json())["P1"]["penalties_scored"] == 1
+        response = await ac.get("/meetups/2/rankings", headers=hdr("p1"))
+        assert rows_by_name(response.json())["P2"]["penalty_conversion_rate"] == pytest.approx(2 / 3)
 
 
 @pytest.mark.asyncio

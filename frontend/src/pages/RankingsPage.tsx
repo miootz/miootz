@@ -82,30 +82,31 @@ export function RankingsPage() {
   // order (year/page changes intentionally scroll to the top).
   const restoreScroll = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchRankings({
-        year: yearSel ?? undefined,
-        sort,
-        order,
-        page,
-        perPage: PER_PAGE,
-      });
+      const res = await fetchRankings(
+        { year: yearSel ?? undefined, sort, order, page, perPage: PER_PAGE },
+        signal,
+      );
+      if (signal.aborted) return;
       setData(res);
       setYearSel((cur) => cur ?? (res.year === null ? "all" : res.year));
       setSeasonYear((cur) => cur ?? (res.year === null ? null : res.year));
     } catch (e) {
+      if (signal.aborted) return;
       setError(e instanceof Error ? e.message : "Failed to load rankings");
       setData(null);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [yearSel, sort, order, page]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   useEffect(() => {
@@ -128,10 +129,14 @@ export function RankingsPage() {
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
 
   return (
-    <div className="p-3 sm:p-4 max-w-3xl mx-auto space-y-4">
-      <header>
+    <div className="p-3 sm:p-4 max-w-6xl mx-auto space-y-4">
+      <header className="flex items-center gap-2">
         <h1 className="text-2xl font-bold text-ink">Rankings</h1>
+        {loading && data && (
+          <Loader2 className="h-4 w-4 animate-spin text-live motion-reduce:animate-none" aria-hidden />
+        )}
       </header>
+      <p role="status" className="sr-only">{loading ? "Loading rankings…" : ""}</p>
 
       {/* Season navigation */}
       <div className="flex flex-wrap items-center gap-2">
@@ -176,16 +181,16 @@ export function RankingsPage() {
         </button>
       </div>
 
-      {loading ? (
+      {loading && !data ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-live" />
+          <Loader2 className="h-6 w-6 animate-spin text-live motion-reduce:animate-none" aria-hidden />
         </div>
       ) : error ? (
         <p className="text-center text-sm text-danger py-8" role="alert">
           {error}
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3" aria-busy={loading}>
           {data?.highlights && (
             <SeasonHighlights highlights={data.highlights} meId={me?.user?.id} />
           )}

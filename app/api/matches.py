@@ -253,6 +253,8 @@ def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
         "score_b": match.score_b,
         "was_draw": match.was_draw,
         "penalty_winner": match.penalty_winner,
+        "penalty_score_a": match.penalty_score_a,
+        "penalty_score_b": match.penalty_score_b,
         "status": match.status,
         "timer_total_seconds": match.timer_total_seconds,
         "timer_seconds_remaining": _compute_timer_remaining(match),

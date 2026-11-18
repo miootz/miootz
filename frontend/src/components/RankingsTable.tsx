@@ -1,23 +1,40 @@
-import { useEffect, useState } from "react";
+import { useId, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { RankingRow, RankingSort } from "../api/rankingsApi";
 import { Avatar } from "./Avatar";
 
-const COLUMNS: { key: RankingSort; label: string; short: string; pct?: boolean }[] = [
+type Column = {
+  key: RankingSort;
+  label: string;
+  short: string;
+  format?: "percent" | "rate" | "conversion";
+};
+
+const COLUMNS: Column[] = [
   { key: "attendances", label: "Attendances", short: "Att." },
   { key: "goals", label: "Goals scored", short: "Goals" },
   { key: "assists", label: "Assists", short: "Assists" },
   { key: "wins", label: "Wins", short: "Wins" },
+  { key: "losses", label: "Losses", short: "Losses" },
   { key: "matches", label: "Matches played", short: "Matches" },
-  { key: "win_rate", label: "Win %", short: "Win %", pct: true },
+  { key: "win_rate", label: "Win rate", short: "Win %", format: "percent" },
   { key: "clean_sheets", label: "Clean sheets", short: "Clean" },
   { key: "goals_conceded", label: "Goals conceded", short: "Conceded" },
+  { key: "own_goals", label: "Own goals", short: "Own goals" },
+  { key: "goals_per_match", label: "Goals per match", short: "G / match", format: "rate" },
+  { key: "assists_per_match", label: "Assists per match", short: "A / match", format: "rate" },
+  { key: "goal_assists_per_match", label: "Goals + assists per match", short: "G+A / match", format: "rate" },
+  { key: "penalties_taken", label: "Penalties taken", short: "Pens taken" },
+  { key: "penalties_scored", label: "Penalties scored", short: "Pens scored" },
+  { key: "penalty_conversion_rate", label: "Penalty conversion rate", short: "Pen %", format: "conversion" },
 ];
 
-function cellValue(row: RankingRow, key: RankingSort, pct?: boolean): string {
-  const v = row[key];
-  if (pct) return `${Math.round(v * 100)}%`;
-  return String(v);
+function cellValue(row: RankingRow, column: Column): string {
+  const value = row[column.key];
+  if (column.format === "percent") return `${Math.round(value * 100)}%`;
+  if (column.format === "conversion") return `${Math.round(value * 1000) / 10}%`;
+  if (column.format === "rate") return value.toFixed(2);
+  return String(value);
 }
 
 interface RankingsTableProps {
@@ -43,17 +60,9 @@ export function RankingsTable({
   excludeColumns = [],
 }: RankingsTableProps) {
   const columns = COLUMNS.filter((c) => !excludeColumns.includes(c.key));
-  const mobileTabs = columns.filter((c) => c.key !== "clean_sheets");
-
-  // Mobile tab (below sm); clean sheets lives in the wide table only.
-  const [mobileTab, setMobileTab] = useState<RankingSort>(
-    mobileTabs.find((c) => c.key === sort)?.key ?? mobileTabs[0]?.key ?? "goals",
-  );
-  // Follow external sort changes (desktop headers) so the tab reflects the sort.
-  useEffect(() => {
-    if (sort && mobileTabs.some((c) => c.key === sort)) setMobileTab(sort);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sort]);
+  const captionId = useId();
+  const [mobileKey, setMobileKey] = useState<RankingSort>();
+  const mobileColumn = columns.find((c) => c.key === (sort ?? mobileKey)) ?? columns[0];
 
   if (rows.length === 0) {
     return <p className="text-center text-ink-dim py-8">{emptyLabel}</p>;
@@ -61,34 +70,24 @@ export function RankingsTable({
 
   return (
     <div>
-      {/* ── Mobile: tabs + single-metric list (below sm) ── */}
+      {/* ── Mobile: metric selector and single-metric list (below sm) ── */}
       <div className="sm:hidden">
-        <div
-          className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
-          aria-label="Ranking category"
-        >
-          {mobileTabs.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              role="tab"
-              aria-selected={mobileTab === c.key}
-              onClick={() => {
-                setMobileTab(c.key);
-                // Switching category re-sorts by that metric (descending).
-                if (sort !== c.key) onSortChange?.(c.key, "desc");
+        {mobileColumn && (
+          <label className="flex items-center gap-2 text-sm text-ink-dim">
+            {onSortChange ? "Rank by" : "Show"}
+            <select
+              value={mobileColumn.key}
+              onChange={(event) => {
+                const key = event.currentTarget.value as RankingSort;
+                setMobileKey(key);
+                onSortChange?.(key, "desc");
               }}
-              className={`shrink-0 border px-3 py-1.5 text-xs font-medium transition-colors active:scale-[0.97] ${
-                mobileTab === c.key
-                  ? "border-live bg-live/15 text-live"
-                  : "border-line text-ink-dim hover:bg-raised hover:text-ink"
-              }`}
+              className="min-h-11 min-w-0 flex-1 border border-line bg-panel px-3 font-medium text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-live"
             >
-              {c.label}
-            </button>
-          ))}
-        </div>
+              {columns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </label>
+        )}
         <ul className="mt-2 divide-y divide-line border border-line bg-panel">
           {rows.map((r) => (
             <li
@@ -102,7 +101,7 @@ export function RankingsTable({
               </span>
               <PlayerBadge row={r} isMe={r.user.id === highlightUserId} />
               <span className="ml-auto text-base font-bold text-ink tabular-nums">
-                {cellValue(r, mobileTab, mobileTabs.find((c) => c.key === mobileTab)?.pct)}
+                {mobileColumn && cellValue(r, mobileColumn)}
               </span>
             </li>
           ))}
@@ -110,14 +109,20 @@ export function RankingsTable({
       </div>
 
       {/* ── Tablet / desktop: one sortable table (sm and up) ── */}
-      <div className="hidden sm:block overflow-x-auto border border-line bg-panel">
-        <table className="w-full text-sm">
+      <div
+        className="hidden sm:block overflow-x-auto border border-line bg-panel focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-live"
+        role="region"
+        aria-labelledby={captionId}
+        tabIndex={0}
+      >
+        <table className="w-full whitespace-nowrap text-sm">
+          <caption id={captionId} className="sr-only">Player rankings</caption>
           <thead>
             <tr className="border-b border-line text-left">
-              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim w-10">
+              <th scope="col" className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim w-10">
                 #
               </th>
-              <th className="px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+              <th scope="col" className="sticky start-0 z-10 bg-panel px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                 Player
               </th>
               {columns.map((c) => (
@@ -127,7 +132,7 @@ export function RankingsTable({
                   full={c.label}
                   active={sort === c.key}
                   order={order}
-                  onSort={onSortChange ? () => onSortChange(c.key, order === "desc" ? "asc" : "desc") : undefined}
+                  onSort={onSortChange ? () => onSortChange(c.key, sort === c.key && order === "desc" ? "asc" : "desc") : undefined}
                   className="text-right"
                 />
               ))}
@@ -144,12 +149,16 @@ export function RankingsTable({
                 <td className="px-3 py-2 text-2xs font-bold text-ink-faint tabular-nums">
                   {r.rank}
                 </td>
-                <td className="px-3 py-2">
-                  <PlayerBadge row={r} isMe={r.user.id === highlightUserId} />
-                </td>
+                <th scope="row" className={`sticky start-0 z-10 min-w-36 px-3 py-2 text-left ${
+                  r.user.id === highlightUserId ? "bg-raised" : "bg-panel"
+                }`}>
+                  <div className="max-w-48">
+                    <PlayerBadge row={r} isMe={r.user.id === highlightUserId} />
+                  </div>
+                </th>
                 {columns.map((c) => (
                   <td key={c.key} className="px-3 py-2 text-right tabular-nums text-ink">
-                    {cellValue(r, c.key, c.pct)}
+                    {cellValue(r, c)}
                   </td>
                 ))}
               </tr>
@@ -190,19 +199,23 @@ function SortableHeader({
 }) {
   if (!onSort) {
     return (
-      <th className={`px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim ${className}`}>
+      <th scope="col" title={full} className={`px-3 py-2.5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim ${className}`}>
         {label}
       </th>
     );
   }
   return (
-    <th className={`px-3 py-1.5 text-2xs font-bold uppercase tracking-wide ${className}`}>
+    <th
+      scope="col"
+      aria-sort={active ? (order === "desc" ? "descending" : "ascending") : undefined}
+      className={`text-2xs font-bold uppercase tracking-wide ${className}`}
+    >
       <button
         type="button"
         onClick={onSort}
         title={`Sort by ${full}`}
         aria-label={`Sort by ${full}`}
-        className={`inline-flex items-center gap-0.5 min-h-[32px] transition-colors ${
+        className={`inline-flex min-h-11 w-full items-center justify-end gap-0.5 px-3 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-live ${
           active ? "text-live" : "text-ink-dim hover:text-ink"
         }`}
       >

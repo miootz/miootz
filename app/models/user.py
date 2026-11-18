@@ -30,6 +30,10 @@ class User(Base):
     sso_groups: Mapped[list | None] = mapped_column(JSON, nullable=True)
     #: When SSO data was last refreshed from Pocket ID (throttles background sync)
     sso_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: Stable identity for workbook imports, even when Pocket ID changes the username.
+    historical_roster_name: Mapped[str | None] = mapped_column(
+        String, unique=True, nullable=True, index=True
+    )
 
     # ── App-specific fields (game data only) ──────────────────────────
     #: Computed skill (1–5 scale). Seeded by admins at player creation /

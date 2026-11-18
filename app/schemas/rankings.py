@@ -12,13 +12,21 @@ class RankingRow(BaseModel):
     user: RankingUser
     attendances: int
     goals: int
+    own_goals: int
     assists: int
     clean_sheets: int
     goals_conceded: int
     wins: int
+    losses: int
     matches: int
     win_rate: float
     goal_assists: int
+    goals_per_match: float
+    assists_per_match: float
+    goal_assists_per_match: float
+    penalties_taken: int
+    penalties_scored: int
+    penalty_conversion_rate: float
 
 
 class HighlightEntry(BaseModel):

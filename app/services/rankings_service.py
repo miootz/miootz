@@ -9,29 +9,17 @@ selected scope are excluded from rankings.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.match import MeetupMatch, MatchSubstitution
+from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 
-SORTABLE_COLUMNS = (
-    "attendances",
-    "goals",
-    "assists",
-    "clean_sheets",
-    "goals_conceded",
-    "wins",
-    "matches",
-    "win_rate",
-    "goal_assists",
-)
-
-#: Every per-user counter. win_rate / goal_assists are derived row-level.
 METRIC_KEYS = (
     "attendances",
     "goals",
@@ -40,6 +28,20 @@ METRIC_KEYS = (
     "goals_conceded",
     "wins",
     "matches",
+)
+
+SORTABLE_COLUMNS = (
+    *METRIC_KEYS,
+    "losses",
+    "own_goals",
+    "win_rate",
+    "goal_assists",
+    "goals_per_match",
+    "assists_per_match",
+    "goal_assists_per_match",
+    "penalties_taken",
+    "penalties_scored",
+    "penalty_conversion_rate",
 )
 
 
@@ -201,8 +203,54 @@ def _aggregate(
     return stats
 
 
+async def rank_player_metrics(
+    db: AsyncSession,
+    attendances: dict[int, int],
+    matches: list[MeetupMatch],
+    goals: list[MatchGoal],
+    subs: list[MatchSubstitution],
+    *,
+    include_own_goals: bool = False,
+) -> dict[int, dict[str, int | float]]:
+    """Complete ranking metrics, also used to reconcile historical imports."""
+    stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
+    own_goals = Counter(goal.scorer_id for goal in goals if goal.is_own_goal)
+    penalties_scored = Counter(
+        goal.scorer_id for goal in goals if goal.is_penalty and not goal.is_own_goal
+    )
+    penalties_taken = penalties_scored.copy()
+    if matches:
+        kicks = await db.execute(
+            select(MatchPenalty.scorer_id, MatchPenalty.scored)
+            .where(MatchPenalty.match_id.in_([match.id for match in matches]))
+        )
+        for scorer_id, scored in kicks:
+            penalties_taken[scorer_id] += 1
+            penalties_scored[scorer_id] += int(scored)
+
+    result = {}
+    for uid, metrics in stats.items():
+        played = metrics["matches"]
+        goals_and_assists = metrics["goals"] + metrics["assists"]
+        taken = penalties_taken[uid]
+        result[uid] = {
+            **metrics,
+            "losses": played - metrics["wins"],
+            "own_goals": own_goals[uid],
+            "win_rate": metrics["wins"] / played if played else 0.0,
+            "goal_assists": goals_and_assists,
+            "goals_per_match": metrics["goals"] / played if played else 0.0,
+            "assists_per_match": metrics["assists"] / played if played else 0.0,
+            "goal_assists_per_match": goals_and_assists / played if played else 0.0,
+            "penalties_taken": taken,
+            "penalties_scored": penalties_scored[uid],
+            "penalty_conversion_rate": penalties_scored[uid] / taken if taken else 0.0,
+        }
+    return result
+
+
 async def _rows_for_users(
-    db: AsyncSession, stats: dict[int, dict[str, int]]
+    db: AsyncSession, stats: dict[int, dict[str, int | float]]
 ) -> list[dict]:
     if not stats:
         return []
@@ -222,10 +270,7 @@ async def _rows_for_users(
                     "avatar_url": user.avatar_url,
                 },
                 **metrics,
-                "win_rate": round(metrics["wins"] / metrics["matches"], 3)
-                if metrics["matches"]
-                else 0.0,
-                "goal_assists": metrics["goals"] + metrics["assists"],
+                "win_rate": round(metrics["win_rate"], 3),
             }
         )
     return rows
@@ -404,7 +449,9 @@ async def get_rankings(
     order = order if order in ("asc", "desc") else "desc"
     bounds = _year_bounds(year) if year else None
     attendances, matches, goals, subs = await _load_scope(db, bounds)
-    stats = _aggregate(attendances, matches, goals, include_own_goals, subs)
+    stats = await rank_player_metrics(
+        db, attendances, matches, goals, subs, include_own_goals=include_own_goals
+    )
     # Players with 0 attendance in scope never appear in the tables.
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), sort, order)
@@ -423,7 +470,9 @@ async def get_meetup_rankings(db: AsyncSession, meetup_id: int) -> dict | None:
     attendances, matches, goals, subs = await _load_scope(db, None, meetup_id=meetup_id)
     if not matches:
         return None
-    stats = _aggregate(attendances, matches, goals, include_own_goals=True, subs=subs)
+    stats = await rank_player_metrics(
+        db, attendances, matches, goals, subs, include_own_goals=True
+    )
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), "goals", "desc")
     night = await _night_block(db, matches, goals)
