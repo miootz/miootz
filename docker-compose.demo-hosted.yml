@@ -8,7 +8,7 @@ services:
       DEMO_BIND_HOST: "0.0.0.0"
       DEMO_TRUSTED_HOSTS: "${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN:?Set APP_DOMAIN},127.0.0.1,localhost"
       DEMO_PUBLIC_APP_URL: "https://${DEMO_SUBDOMAIN:-demo}.${APP_DOMAIN}"
-    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--api-port", "8000", "--scenario", "${DEMO_SCENARIO:-full}"]
+    command: ["uv", "run", "python", "-m", "app.demo", "--api-only", "--hourly-reset", "--api-port", "8000", "--scenario", "${DEMO_SCENARIO:-full}"]
     networks:
       - demo_backend
 

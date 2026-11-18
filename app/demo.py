@@ -1,8 +1,8 @@
 """Isolated demo runner: python -m app.demo [--scenario full].
 
 This entrypoint alone installs demo adapters. The production app never imports it.
-One server hosts every scenario: the /api/demo menu picks the scenario (which
-wipes and re-seeds the temporary database) and then the demo account.
+The /api/demo menu selects a scenario and account for the shared database.
+Hosted demos reset hourly; local demos reset on sign-in.
 Every run owns a fresh temporary database and binds both servers to loopback,
 unless the DEMO_BIND_HOST / DEMO_TRUSTED_HOSTS / DEMO_PUBLIC_APP_URL env vars
 override it (e.g. when served from a container behind a reverse proxy).
@@ -10,15 +10,22 @@ override it (e.g. when served from a container behind a reverse proxy).
 
 import argparse
 import asyncio
+from asyncio import sleep
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, UTC
 import html
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
 import socket
 import subprocess
 import tempfile
+
+
+logger = logging.getLogger(__name__)
+RESET_INTERVAL_SECONDS = 60 * 60
 
 
 def configure_environment(
@@ -88,6 +95,7 @@ async def prepare(
     *,
     enable_push: bool = False,
     simulate_invites: bool = False,
+    hourly_reset: bool = False,
 ):
     from app.api.main import app
     from app.api import middleware, users
@@ -157,24 +165,49 @@ async def prepare(
     weather_service.fetch_forecast = sample_weather
     weather_service.fetch_current = sample_weather
 
-    # Scenarios differ only in the seeded data, so switching one on the
-    # menu wipes the temporary database and re-seeds it at "now".
-    current = {"scenario": scenario, "manifest": manifest}
+    next_scenario = scenario
     reseed_lock = asyncio.Lock()
 
-    async def reseed(name: str) -> None:
-        if name not in SCENARIOS:
-            raise HTTPException(status_code=404, detail="Unknown demo scenario")
+    async def reseed() -> None:
+        nonlocal manifest
+        selected = next_scenario
+        # A single transaction keeps the old fixtures visible until the new ones are ready.
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
-        async with async_session() as db:
-            new_manifest = await seed_demo(
-                db,
-                anchor=datetime.now(UTC).replace(tzinfo=None, microsecond=0),
-                scenario=name,
-            )
-        current.update(scenario=name, manifest=new_manifest)
+            await conn.exec_driver_sql("BEGIN IMMEDIATE")
+            for table in reversed(Base.metadata.sorted_tables):
+                await conn.execute(table.delete())
+            async with async_session(bind=conn) as db:
+                new_manifest = await seed_demo(
+                    db,
+                    anchor=datetime.now(UTC).replace(tzinfo=None, microsecond=0),
+                    scenario=selected,
+                )
+        manifest = new_manifest
+
+    if hourly_reset:
+
+        async def reset_hourly() -> None:
+            while True:
+                await sleep(RESET_INTERVAL_SECONDS)
+                try:
+                    await reseed()
+                except Exception:
+                    logger.exception("Could not reset the hosted demo database")
+
+        app_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def demo_lifespan(app):
+            async with app_lifespan(app) as state:
+                task = asyncio.create_task(reset_hourly())
+                try:
+                    yield state
+                finally:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+
+        app.router.lifespan_context = demo_lifespan
 
     if simulate_invites:
 
@@ -207,8 +240,14 @@ async def prepare(
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_menu():
         scenario_buttons = "".join(
-            f'<form method="post" action="/api/demo/scenario/{name}"><button>{html.escape(name.title())}{" — current" if name == current["scenario"] else ""}</button></form>'
+            f'<form method="post" action="/api/demo/scenario/{name}"><button>{html.escape(name.title())}{" — selected" if name == next_scenario else ""}</button></form>'
             for name in SCENARIOS
+        )
+        reset_note = (
+            f"The shared game data resets every hour. Current scenario: {manifest['scenario'].title()}. "
+            "Scenario selections take effect at the next reset. Signing in preserves shared progress."
+            if hourly_reset
+            else "Signing in resets the shared game data to the selected scenario."
         )
         buttons = "".join(
             f'<form method="post" action="/api/demo/login/{role}"><button>{html.escape(role.title())} · {html.escape(NAMES[uid - 1])}</button></form>'
@@ -232,24 +271,24 @@ async def prepare(
         return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
         <style>body{{font:16px system-ui;max-width:600px;margin:48px auto;padding:24px;color:#262033;background:#faf8ff}}button{{padding:14px;width:100%;margin:6px 0;background:#7c3aed;color:white;border:0;border-radius:12px;font:inherit;text-align:left}}a{{color:#6d28d9}}</style></head>
         <body><h1>Miootz demo</h1><p>Try fictional accounts, meetups, and match results. All changes stay in a temporary database.</p>
-        {scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>Signing in re-seeds the selected scenario at "now", so the demo is always fresh — an idle server never shows an expired state. The guest button opens the reservation; other accounts open their home screen.</p>
+        <p>{reset_note}</p>{scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
 
     @app.post("/demo/scenario/{name}", response_class=HTMLResponse)
     async def demo_switch_scenario(name: str):
+        nonlocal next_scenario
         if name not in SCENARIOS:
             raise HTTPException(status_code=404, detail="Unknown demo scenario")
-        current["scenario"] = name
+        next_scenario = name
         return await demo_menu()
 
     @app.post("/demo/login/{role}", response_class=HTMLResponse)
     async def demo_login(role: str):
         if role not in ACTORS:
             raise HTTPException(status_code=404, detail="Unknown demo account")
-        # A fresh seed on every sign-in: the chosen scenario is anchored to
-        # "now", so a server that has sat idle never shows an expired demo.
-        async with reseed_lock:
-            await reseed(current["scenario"])
+        if not hourly_reset:
+            async with reseed_lock:
+                await reseed()
         try:
             expires_at_ms = int(
                 (datetime.now(UTC) + timedelta(hours=12)).timestamp() * 1000
@@ -321,6 +360,11 @@ def main() -> None:
         help="Serve only the API for a separately built demo frontend.",
     )
     parser.add_argument(
+        "--hourly-reset",
+        action="store_true",
+        help="Keep shared progress across sign-ins and reset the demo hourly.",
+    )
+    parser.add_argument(
         "--enable-push",
         action="store_true",
         help="Build the app and enable real Web Push with disposable keys for recording.",
@@ -356,6 +400,7 @@ def main() -> None:
                 datetime.now(UTC).replace(tzinfo=None, microsecond=0),
                 enable_push=args.enable_push,
                 simulate_invites=args.simulate_invites,
+                hourly_reset=args.hourly_reset,
             )
         )
         print(json.dumps(manifest, indent=2), flush=True)

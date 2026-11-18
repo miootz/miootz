@@ -1,4 +1,19 @@
-# Local demo
+# Miootz demo
+
+## Hosted demo
+
+Visitors share one temporary SQLite database. Sign in from separate devices
+or browser profiles to test together. Tabs in one browser profile share the
+same sign-in state.
+
+Signing in preserves shared progress. The API resets the game data every
+hour from startup, and restarting the API starts a fresh database. The
+scenario picker selects the fixtures for the next reset. If you have a page
+open during a reset, reload it to see the new fixtures.
+
+See the [deployment guide](DEPLOYMENT.md) to host this demo.
+
+## Local demo
 
 Install Python and frontend dependencies, then run from the repository root:
 
@@ -41,7 +56,9 @@ All scenarios include the same fictional roster, venue, chat, weekly template, a
 
 ## Accounts and useful routes
 
-Return to `/api/demo` to switch accounts in the same tab. Selecting an account resets the scenario for all demo users, so changes do not carry over between accounts. Demo tokens expire after 12 hours; use the menu again or restart. Avoid simultaneous different accounts in tabs sharing this origin, because app tokens use localStorage.
+Return to `/api/demo` to switch accounts. In the local demo, signing in resets
+the selected scenario for all users. In the hosted demo, switching accounts
+keeps the current game data. Demo sign-ins last 12 hours.
 
 | Account | Purpose |
 |---|---|

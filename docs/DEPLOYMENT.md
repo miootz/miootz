@@ -76,7 +76,13 @@ Alternatively, provide the production `DEPLOY_ENV` secret before the first manua
 
 ## First demo setup
 
-The demo is public and disposable. It uses fictional users, does not connect to production data or Pocket ID, and resets its sample data on sign-in. Changes by one visitor can affect other visitors. Production and demo have separate backend networks; only Traefik and the demo frontend share the demo ingress network.
+The public demo uses fictional accounts and a shared, temporary SQLite
+database. Visitors can sign in and test live features together between resets.
+The API resets the shared game data every hour from startup. Any scenario
+selected in the demo menu takes effect at the next reset. An API restart
+starts a fresh database using `DEMO_SCENARIO`. Production data and Pocket ID
+are separate from the demo. Only Traefik and the demo frontend share the
+demo ingress network.
 
 Create `~/miootz/demo/.env` on the demo server, or set the demo environment's `DEPLOY_ENV` secret before its first deployment, with values for your domain:
 
