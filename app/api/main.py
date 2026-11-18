@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api import (
     audit,
+    data_export,
     game_templates,
     invites,
     matches,
@@ -98,6 +99,7 @@ app.add_middleware(PocketIdAuthMiddleware)
 
 app.include_router(invites.router)
 app.include_router(audit.router)
+app.include_router(data_export.router)
 app.include_router(game_templates.router)
 app.include_router(meetups.router)
 app.include_router(matches.router)

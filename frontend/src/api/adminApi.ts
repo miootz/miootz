@@ -210,6 +210,12 @@ export async function adminRunRecurringNow(): Promise<{
   return jsonOrThrow(r);
 }
 
+export async function adminExportData(): Promise<Blob> {
+  const response = await apiFetch('/admin/export');
+  if (!response.ok) throw new Error(await parseApiError(response));
+  return response.blob();
+}
+
 export async function adminCreateUser(body: {
   first_name: string;
   last_name: string;

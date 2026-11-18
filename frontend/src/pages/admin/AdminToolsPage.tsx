@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
-import { adminRunRecurringNow } from "../../api/adminApi";
-import { fetchMeetups } from "../../api/meetupsApi";
-import { parseMeetupStart } from "../../utils/datetime";
+import { adminExportData, adminRunRecurringNow } from "../../api/adminApi";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import { useToast } from "../../context/ToastContext";
@@ -19,7 +17,11 @@ export function AdminToolsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<JobHistoryEntry[]>([]);
-  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<
+    "idle" | "preparing" | "downloaded"
+  >("idle");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exporting = exportStatus === "preparing";
 
   useEffect(() => {
     setHistory(readJobHistory());
@@ -46,52 +48,21 @@ export function AdminToolsPage() {
     }
   }
 
-  async function exportMeetupsCsv() {
-    setExporting(true);
-    setError(null);
+  async function exportData() {
+    if (exporting) return;
+    setExportStatus("preparing");
+    setExportError(null);
     try {
-      const { items: meetups } = await fetchMeetups({ limit: 500 });
-      const headers = [
-        "id",
-        "start_time",
-        "location",
-        "fee",
-        "fee_text",
-        "min_players",
-        "max_players",
-        "confirmed_count",
-        "waitlist_mode",
-      ];
-      const lines = [
-        headers.join(","),
-        ...meetups.map((s) =>
-          [
-            s.id,
-            JSON.stringify(parseMeetupStart(s.start_time).toISOString()),
-            JSON.stringify(s.location),
-            s.fee,
-            JSON.stringify(s.fee_text ?? ''),
-            s.min_players,
-            s.max_players,
-            s.confirmed_count ?? 0,
-            JSON.stringify(s.waitlist_mode),
-          ].join(","),
-        ),
-      ];
-      const blob = new Blob([lines.join("\n")], {
-        type: "text/csv;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `miootz-meetups-${format(new Date(), "yyyy-MM-dd-HHmm")}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("CSV downloaded.", "success");
+      const url = URL.createObjectURL(await adminExportData());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `miootz-export-${format(new Date(), "yyyy-MM-dd")}.zip`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportStatus("downloaded");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setExporting(false);
+      setExportError(e instanceof Error ? e.message : "Export failed");
+      setExportStatus("idle");
     }
   }
 
@@ -152,19 +123,31 @@ export function AdminToolsPage() {
         <h2 className="text-base font-semibold text-ink mb-1">
           Export data
         </h2>
+        <p className="text-sm text-ink-dim mb-4">
+          Download one CSV per table, with IDs and a foreign key guide. Chats,
+          audit logs, calculated rankings, and access credentials are excluded.
+        </p>
+        {exportError && (
+          <p className="mb-4 text-sm text-danger" role="alert">
+            {exportError}
+          </p>
+        )}
         <button
           type="button"
-          onClick={() => void exportMeetupsCsv()}
-          disabled={exporting}
-          className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 border border-line text-ink-dim font-medium hover:bg-raised hover:text-ink disabled:opacity-50 transition-colors"
+          onClick={() => void exportData()}
+          aria-disabled={exporting}
+          className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 border border-line text-ink-dim font-medium hover:bg-raised hover:text-ink aria-disabled:opacity-50 transition-colors"
         >
           {exporting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden />
           ) : (
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" aria-hidden />
           )}
-          Export meetups (CSV)
+          {exporting ? "Preparing CSV archive…" : "Download CSV archive"}
         </button>
+        <p className="mt-3 text-sm text-ink-dim empty:sr-only" role="status">
+          {exportStatus === "downloaded" ? "CSV archive download started." : ""}
+        </p>
       </div>
 
       <section>
