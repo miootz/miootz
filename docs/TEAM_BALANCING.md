@@ -23,18 +23,40 @@ such as goalkeeper are display information. The meetup's minimum attendance
 setting has no effect on the draft. See the
 [assignment code](../app/services/team_assignment.py).
 
-## Which skill counts
+## How peer ratings affect skill
 
-- **Stored skill.** Peer ratings from 1 to 5 count. Ratings from the four most
-  recently joined confirmed meetups get full weight. Other ratings get half
-  weight. Each consecutive missed closed meetup after the first subtracts
-  0.1, up to 1.0, using up to 20 closed meetups. The result is rounded to one
-  decimal place and floored at zero. With no valid ratings, the stored skill
-  stays in place. [Skill calculation](../app/services/skill_service.py)
-- **Missing skill.** The Teams endpoint substitutes 50 for a missing value and
-  keeps zero. Match endpoints substitute 3 for either case, so an automatic
-  lineup can differ between these views.
-  [Teams endpoint](../app/api/meetups.py) · [Match endpoints](../app/api/matches.py)
+The balanced draft uses the player's stored skill. An admin can set the
+initial value. When Miootz recalculates with at least one valid peer rating,
+it replaces that value with the weighted peer average minus attendance decay.
+
+| Rating's meetup | Weight per rating |
+| --- | --- |
+| One of the player's four most recently joined confirmed meetups, ordered by signup time | 1.0 |
+| Any other meetup | 0.5 |
+
+Scores from **1 to 5** count. Multiply each score by its weight, add the
+results, and divide by the sum of the weights. A skipped or cleared rating
+contributes nothing. Older ratings retain half weight.
+
+**Attendance decay.** Miootz counts consecutive meetups without confirmed
+attendance, looking at up to 20 past meetups the skill calculation treats as
+closed. It stops at the first confirmed attendance. The first miss is free.
+Each further consecutive miss subtracts **0.1**, up to **1.0** in total.
+Miootz floors the result at zero and rounds it to one decimal place.
+
+**Example.** A recent 5 and an older 3 give a weighted average of
+`(5 × 1 + 3 × 0.5) ÷ 1.5 = 4.33…`. Three consecutive misses subtract 0.2,
+leaving a stored skill of **4.1**.
+
+Adding, editing, or clearing a peer rating recalculates skill, as can changes
+to attendance. If there are no valid ratings left, Miootz keeps the current
+stored value. [Skill calculation](../app/services/skill_service.py) ·
+[Rating updates](../app/api/ratings.py)
+
+**Missing skill.** The Teams endpoint substitutes 50 for a missing value and
+keeps zero. Match endpoints substitute 3 for either case, so an automatic
+lineup can differ between these views.
+[Teams endpoint](../app/api/meetups.py) · [Match endpoints](../app/api/matches.py)
 
 ## How admins adjust teams
 
