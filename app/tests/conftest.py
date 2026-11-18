@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -292,3 +293,12 @@ def _reset_rate_limits():
     limiter.reset()
     yield
     limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+async def _finish_sso_syncs():
+    """Finish background database writes before another test resets the tables."""
+    yield
+    from app.api.middleware import _pending_sso_syncs
+
+    await asyncio.gather(*_pending_sso_syncs)
