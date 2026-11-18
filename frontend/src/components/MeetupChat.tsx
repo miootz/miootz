@@ -35,16 +35,17 @@ import {
 import {
   ArrowDown,
   ChevronDown,
-  ChevronUp,
   Send,
   Smile,
-  Users,
   X,
 } from "lucide-react";
 import { hapticLight } from "../utils/haptics";
 
 const chatLastReadKey = (meetupId: string) =>
   `miootz:chat:lastRead:${meetupId}`;
+const CHAT_PREVIEW_LIMIT = 4;
+const CHAT_PREVIEW_FADE =
+  "linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)";
 
 const QUICK_EMOJIS = [
   "⚽",
@@ -264,7 +265,10 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [previewClipped, setPreviewClipped] = useState(false);
 
+  const previewRef = useRef<HTMLDivElement>(null);
+  const previewContentRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -275,6 +279,18 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
     Map<number, ReturnType<typeof setTimeout>>
   >(new Map());
   const [typingByUser, setTypingByUser] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    const content = previewContentRef.current;
+    if (!preview || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      setPreviewClipped(preview.scrollHeight > preview.clientHeight);
+    });
+    observer.observe(preview);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   const typingLabel = useMemo(() => {
     const names = Object.values(typingByUser);
@@ -641,6 +657,8 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   }
 
   const messageCount = messages.length;
+  const fadePreview =
+    !isLoading && (messageCount > CHAT_PREVIEW_LIMIT || previewClipped);
   const charCount = newMessage.trim().length;
   const isOverLimit = charCount > MAX_MESSAGE_LENGTH;
 
@@ -650,58 +668,48 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   return (
     <>
       <section
+        aria-label="Chat preview"
         className={`max-w-2xl mx-auto w-full md:hidden ${isExpanded ? "hidden" : ""}`}
       >
-        <div className="bg-panel border border-line overflow-hidden">
-          {/* Header */}
-          <button
-            type="button"
-            onClick={() => setIsExpanded(true)}
-            className="w-full flex items-center justify-between px-4 py-3 font-semibold text-ink hover:bg-raised transition-colors"
-            aria-expanded="false"
+        <div className="bg-panel border border-line">
+          <div
+            ref={previewRef}
+            className="max-h-[190px] overflow-hidden"
+            style={fadePreview ? {
+              maskImage: CHAT_PREVIEW_FADE,
+              WebkitMaskImage: CHAT_PREVIEW_FADE,
+            } : undefined}
           >
-            <span className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-ink-dim" />
-              Chat
-            </span>
-            <ChevronUp className="w-4 h-4 text-ink-faint" />
-          </button>
-
-          {/* Preview (last 4 messages) */}
-          <div className="px-4 pb-3 space-y-3 max-h-[190px] overflow-hidden relative">
-            {isLoading ? (
-              <div className="text-center text-sm text-ink-faint">Loading…</div>
-            ) : flatMessages.length === 0 ? (
-              <div className="text-center text-sm text-ink-faint">
-                No messages yet
-              </div>
-            ) : (
-              <>
-                {flatMessages.slice(-4).map((m) => (
+            <div ref={previewContentRef} className="space-y-3 px-4 py-3">
+              {isLoading ? (
+                <p className="text-center text-sm text-ink-faint">Loading…</p>
+              ) : flatMessages.length === 0 ? (
+                <p className="text-center text-sm text-ink-faint">No messages yet</p>
+              ) : (
+                flatMessages.slice(-CHAT_PREVIEW_LIMIT).map((m) => (
                   <div key={m.id} className="flex gap-2">
                     <Avatar url={m.avatarUrl} username={m.username} />
-                    <div className="border border-line bg-panel px-3 py-1.5 text-sm text-ink max-w-[85%]">
+                    <div className="min-w-0 max-w-[85%] border border-line bg-panel px-3 py-1.5 text-sm text-ink wrap-anywhere">
                       {m.text}
                     </div>
                   </div>
-                ))}
-              </>
-            )}
-            {/* Open: the preview is collapsed, not interactive */}
-            <button
-              type="button"
-              onClick={() => setIsExpanded(true)}
-              className="absolute bottom-2.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 border border-line bg-panel px-3 py-1.5 text-xs font-medium text-ink shadow-lg hover:bg-raised active:scale-[0.97] transition-colors"
-            >
-              <ChevronUp className="w-3.5 h-3.5" aria-hidden />
-              Open
-            </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(true)}
+          className="mt-2 min-h-11 w-full border border-line bg-panel px-4 text-sm font-medium text-ink transition-colors hover:bg-raised"
+        >
+          Open chat
+        </button>
       </section>
 
       {/* Expanded view: inline on md+, full-screen overlay on mobile. */}
       <section
+        aria-label="Chat"
         className={`max-w-2xl mx-auto w-full ${
           fillHeight ? "h-full" : ""
         } ${isExpanded ? "max-md:block" : "hidden"} md:block ${
@@ -715,22 +723,17 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           fillHeight ? "md:h-full" : "h-[min(75vh,600px)]"
         } ${isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""}`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 font-semibold text-ink border-b border-line bg-panel flex-shrink-0">
-          <span className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-ink-dim" />
-            Chat
-          </span>
+        <div className="flex shrink-0 justify-end border-b border-line px-2 md:hidden">
           <button
             type="button"
             onClick={() => {
               setIsExpanded(false);
               scrollToBottom(true);
             }}
-            className="w-8 h-8 flex items-center justify-center hover:bg-raised transition-colors text-ink-dim"
+            className="flex h-11 w-11 items-center justify-center text-ink-dim transition-colors hover:bg-raised"
             aria-label="Collapse chat"
           >
-            <ChevronDown className="w-4 h-4" />
+            <ChevronDown className="h-4 w-4" aria-hidden />
           </button>
         </div>
 
@@ -742,12 +745,9 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           {isLoading ? (
             <ChatSkeleton />
           ) : flatMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-ink-faint space-y-2">
-              <Users className="w-8 h-8 opacity-50" />
-              <p className="text-sm">
-                No messages yet
-              </p>
-            </div>
+            <p className="grid h-full place-items-center text-center text-sm text-ink-faint">
+              No messages yet
+            </p>
           ) : (
             rendered
           )}

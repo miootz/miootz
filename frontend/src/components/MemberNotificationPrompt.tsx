@@ -3,6 +3,7 @@ import { Bell, X } from "lucide-react";
 import { subscribeToWebPush, pushSupported } from "../utils/pushSubscription";
 import { useToast } from "../context/ToastContext";
 import { useOverlayLock } from "../context/OverlayLock";
+import { useNotificationPermission } from "../utils/useNotificationPermission";
 
 const SHOW_DELAY_MS = 8000; // Show after 8 seconds (after install prompt has time to appear)
 
@@ -20,6 +21,7 @@ export function MemberNotificationPrompt({
   const { showToast } = useToast();
   const { tryAcquire, release } = useOverlayLock();
   const lockAcquiredRef = useRef(false);
+  const [permission] = useNotificationPermission();
   const [visible, setVisible] = useState(false);
   const [dismissedThisSession, setDismissedThisMeetup] = useState(false);
 
@@ -28,31 +30,39 @@ export function MemberNotificationPrompt({
     if (dismissedThisSession) return;
     if (typeof window === "undefined") return;
     if (!pushSupported()) return;
-    if (!("Notification" in window) || Notification.permission !== "default")
-      return;
+    if (permission !== "default") return;
 
     const timer = setTimeout(() => {
       // Try to acquire the lock when timer fires
-      if (!lockAcquiredRef.current && tryAcquire("notifications")) {
+      if (
+        Notification.permission === "default" &&
+        !lockAcquiredRef.current &&
+        tryAcquire("notifications")
+      ) {
         lockAcquiredRef.current = true;
         setVisible(true);
       }
     }, SHOW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [dismissedThisSession, tryAcquire, enabled]);
+  }, [dismissedThisSession, tryAcquire, enabled, permission]);
 
-  // If disabled while holding the lock, release it so other overlays can show
+  // Release the lock when the overlay is disabled or permission changes.
   useEffect(() => {
-    if (!enabled && lockAcquiredRef.current) {
+    if ((!enabled || permission !== "default") && lockAcquiredRef.current) {
       release("notifications");
       lockAcquiredRef.current = false;
       // One-shot release on disable; guarded by lockAcquiredRef so no cascade.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisible(false);
     }
-  }, [enabled, release]);
+  }, [enabled, permission, release]);
 
-  if (!enabled || !visible) return null;
+  useEffect(() => () => {
+    release("notifications");
+    lockAcquiredRef.current = false;
+  }, [release]);
+
+  if (!enabled || permission !== "default" || !visible) return null;
 
   const dismiss = () => {
     release("notifications");
@@ -99,7 +109,7 @@ export function MemberNotificationPrompt({
             type="button"
             className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors"
             onClick={async () => {
-              const result = await subscribeToWebPush();
+              const result = await subscribeToWebPush(dismiss);
               dismiss();
               if (result.ok) {
                 showToast("Notifications enabled", "success");

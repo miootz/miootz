@@ -86,7 +86,8 @@ function PlayerRow({
                         value={currentRating ?? 0}
                         onChange={onRatingChange}
                         size={14}
-                        label="Skill rating"
+                        label={`Your rating of ${player.name}`}
+                        clearable
                     />
                 </div>
             )}

@@ -649,7 +649,11 @@ async def admin_get_player_history(
         }
         ratings = await db.execute(
             select(Rating.meetup_id, func.avg(Rating.score))
-            .where(Rating.meetup_id.in_(meetup_ids), Rating.ratee_id == user_id)
+            .where(
+                Rating.meetup_id.in_(meetup_ids),
+                Rating.ratee_id == user_id,
+                Rating.score.between(1, 5),
+            )
             .group_by(Rating.meetup_id)
         )
         rating_map = {

@@ -270,7 +270,7 @@ async def prepare(
         )
         return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Miootz demo scenarios</title>
         <style>body{{font:16px system-ui;max-width:600px;margin:48px auto;padding:24px;color:#262033;background:#faf8ff}}button{{padding:14px;width:100%;margin:6px 0;background:#7c3aed;color:white;border:0;border-radius:12px;font:inherit;text-align:left}}a{{color:#6d28d9}}</style></head>
-        <body><h1>Miootz demo</h1><p>Try fictional accounts, meetups, and match results. All changes stay in a temporary database.</p>
+        <body><h1>Miootz demo</h1><p>Try sample accounts named after famous footballers. All meetups and match results are fictional.</p>
         <p>{reset_note}</p>{scenario_buttons}<hr><p><strong>Sign in as:</strong></p>{buttons}{push_control}<p>The guest button opens the reservation. Other accounts open their home screen.</p>
         <p>{push_note} {invite_note} Real passkeys and automatic scheduling are disabled.</p></body></html>"""
 

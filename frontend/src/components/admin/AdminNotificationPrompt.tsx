@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Bell, X } from 'lucide-react';
+import { useNotificationPermission } from '../../utils/useNotificationPermission';
 
 const DISMISS_KEY = 'miootz-admin-notify-prompt-dismissed';
 
@@ -7,6 +8,7 @@ const DISMISS_KEY = 'miootz-admin-notify-prompt-dismissed';
  * One-time style banner to request Web Notification permission (admin / power users).
  */
 export function AdminNotificationPrompt() {
+  const [permission, setPermission] = useNotificationPermission();
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -17,7 +19,7 @@ export function AdminNotificationPrompt() {
   });
 
   if (typeof window === 'undefined') return null;
-  if (!('Notification' in window) || Notification.permission !== 'default') {
+  if (permission !== 'default') {
     return null;
   }
   if (dismissed) return null;
@@ -40,7 +42,7 @@ export function AdminNotificationPrompt() {
             type="button"
             className="bg-ink text-board px-3 py-1.5 text-xs font-bold hover:bg-white/90 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live transition-colors"
             onClick={() => {
-              void Notification.requestPermission();
+              void Notification.requestPermission().then(setPermission).catch(() => {});
             }}
           >
             Enable

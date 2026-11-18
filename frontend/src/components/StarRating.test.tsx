@@ -47,3 +47,28 @@ it('readonly renders a half star without calling onChange', () => {
   const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
   expect(buttons.every((b) => b.disabled)).toBe(true);
 });
+
+it('lets an unrated player be rated and a rating be cleared', () => {
+  const onChange = vi.fn();
+  const { rerender } = render(
+    <StarRating value={0} onChange={onChange} label="Your rating of Alex" clearable />,
+  );
+  const clear = screen.getByRole('button', { name: 'Clear Your rating of Alex' });
+  const first = screen.getByRole('button', { name: '1 star, Your rating of Alex' });
+  expect(clear).toBeDisabled();
+  expect(first).toBeEnabled();
+  expect(first).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(first);
+  expect(onChange).toHaveBeenLastCalledWith(1);
+
+  rerender(<StarRating value={3} onChange={onChange} label="Your rating of Alex" clearable />);
+  expect(clear).toBeEnabled();
+  expect(screen.getByRole('button', { name: '3 stars, Your rating of Alex' }))
+    .toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(clear);
+  expect(onChange).toHaveBeenLastCalledWith(0);
+
+  rerender(<StarRating value={0} readonly label="Your rating of Alex" clearable />);
+  expect(screen.getAllByRole('button').every((button) => button.hasAttribute('disabled')))
+    .toBe(true);
+});

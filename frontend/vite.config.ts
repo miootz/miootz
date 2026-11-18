@@ -15,9 +15,28 @@ const extraAllowedHosts = (process.env.VITE_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((h) => h.trim())
   .filter(Boolean);
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+) as { version: string };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: "app-version",
+      transformIndexHtml: () => [
+        { tag: "meta", attrs: { name: "app-version", content: appVersion }, injectTo: "head" },
+      ],
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "sw.js",
+          source: `/* Miootz v${appVersion} */\n${readFileSync(new URL("./public/sw.js", import.meta.url), "utf8")}`,
+        });
+      },
+    },
+  ],
   server: {
     host: "0.0.0.0",
     port: 5173,

@@ -283,7 +283,7 @@ export function MeetupDetailPanel({
         await submitRating(meetupId, rateeId, score);
         setRatees((prev) =>
           prev.map((r) =>
-            r.user_id === rateeId ? { ...r, my_score: score } : r,
+            r.user_id === rateeId ? { ...r, my_score: score || null } : r,
           ),
         );
       } catch (e) {

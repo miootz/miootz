@@ -612,8 +612,9 @@ async def get_meetup_history_summary(
             select(Rating.score)
             .where(Rating.meetup_id == meetup_id)
             .where(Rating.rater_id == user.id)
+            .where(Rating.score.between(1, 5))
         )
-        scores = [row[0] for row in r.all() if row[0] and row[0] > 0]
+        scores = [row[0] for row in r.all()]
         if scores:
             my_rating_avg = sum(scores) / len(scores)
     return {

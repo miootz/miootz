@@ -36,7 +36,7 @@ def get_current_user(request: Request) -> User:
     return user
 
 
-@router.post("/", response_model=RatingResponse)
+@router.post("/", response_model=RatingResponse | None)
 async def upsert_rating(
     rating_data: RatingCreate,
     request: Request,
@@ -96,6 +96,23 @@ async def upsert_rating(
     existing = result.scalar_one_or_none()
     ratee = await db.get(User, rating_data.ratee_id)
     ratee_name = ratee.display_name if ratee else str(rating_data.ratee_id)
+    if rating_data.score == 0:
+        if existing:
+            await db.delete(existing)
+            await db.flush()
+            await update_user_calculated_skill(
+                db, user_id=rating_data.ratee_id, commit=False
+            )
+            await db.commit()
+            log_action(
+                request,
+                "rating",
+                "rating.cleared",
+                f"Cleared rating of {ratee_name} for '{meetup.location}'",
+                meetup_id=rating_data.meetup_id,
+            )
+        return None
+
     if existing:
         existing.score = rating_data.score
         existing.updated_at = utcnow()
@@ -182,6 +199,7 @@ async def get_rating_context(
                 Rating.meetup_id == meetup_id,
                 Rating.rater_id == current_user.id,
                 Rating.ratee_id.in_(ratee_ids),
+                Rating.score.between(1, 5),
             )
         )
         for r in r2.scalars().all():
@@ -218,7 +236,9 @@ async def get_player_ratings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Rating).where(Rating.ratee_id == player_id))
+    result = await db.execute(
+        select(Rating).where(Rating.ratee_id == player_id, Rating.score.between(1, 5))
+    )
     ratings = result.scalars().all()
 
     if not ratings:

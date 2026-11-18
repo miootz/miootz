@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
 import { Download, Smartphone, X } from "lucide-react";
-import {
-  engagementChangedEventName,
-  getMeetupViewCount,
-} from "../offline/engagement";
-import { isDisplayModeStandalone, isIosSafari } from "../utils/pwaDetect";
+import { isDisplayModeStandalone, isIosSafari, isMobileDevice } from "../utils/pwaDetect";
 import { useOverlayLock } from "../context/OverlayLock";
 
 /** Chromium `beforeinstallprompt` (not in all TS lib targets). */
 interface PwaInstallEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
 /**
@@ -24,12 +19,16 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   const { tryAcquire, release } = useOverlayLock();
   const [lockAcquired, setLockAcquired] = useState(false);
   const [deferred, setDeferred] = useState<PwaInstallEvent | null>(null);
-  const [_meetupViews, setMeetupViews] = useState(getMeetupViewCount);
   const [standalone, setStandalone] = useState(isDisplayModeStandalone);
   const [dismissedThisSession, setDismissedThisMeetup] = useState(false);
+  const showChromium = deferred !== null;
+  const showSafariHint = isIosSafari();
+  const shouldShow = enabled && !standalone && !dismissedThisSession &&
+    isMobileDevice() && (showChromium || showSafariHint);
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
+      if (!isMobileDevice() || isDisplayModeStandalone()) return;
       e.preventDefault();
       setDeferred(e as PwaInstallEvent);
     };
@@ -37,16 +36,10 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
-  useEffect(() => {
-    const sync = () => setMeetupViews(getMeetupViewCount());
-    window.addEventListener(engagementChangedEventName, sync);
-    return () => window.removeEventListener(engagementChangedEventName, sync);
-  }, []);
-
   // Watch for display-mode changes (user installs while overlay is open)
   useEffect(() => {
     const mq = window.matchMedia("(display-mode: standalone)");
-    const handler = () => setStandalone(mq.matches);
+    const handler = () => setStandalone(isDisplayModeStandalone());
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
@@ -55,36 +48,25 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
   // "Cannot update a component while rendering a different component".
   useEffect(() => {
     // One-shot lock acquire; guarded by lockAcquired so it never cascades.
-    if (!lockAcquired && enabled) {
+    if (!lockAcquired && shouldShow) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLockAcquired(tryAcquire("install"));
     }
-  }, [tryAcquire, lockAcquired, enabled]);
+  }, [tryAcquire, lockAcquired, shouldShow]);
 
-  // If disabled while holding the lock, release it so queued overlays can show
+  // Release the lock whenever the overlay can no longer be shown.
   useEffect(() => {
-    if (!enabled && lockAcquired) {
+    if (!shouldShow && lockAcquired) {
       release("install");
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLockAcquired(false);
     }
-  }, [enabled, lockAcquired, release]);
+  }, [shouldShow, lockAcquired, release]);
+
+  useEffect(() => () => release("install"), [release]);
 
   // Don't show when suppressed (e.g. offline — a lower-priority banner is up)
-  if (!enabled) return null;
-
-  // Don't show if already installed (standalone mode)
-  if (standalone) return null;
-
-  // Don't show if user dismissed for this meetup
-  if (dismissedThisSession) return null;
-
-  // Show if we have a Chromium install prompt
-  const showChromium = deferred !== null;
-  // Show Safari hint after any engagement
-  const showSafariHint = isIosSafari();
-
-  if (!showChromium && !showSafariHint) return null;
+  if (!shouldShow) return null;
 
   if (!lockAcquired) return null;
 
@@ -127,7 +109,7 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
         {showSafariHint && (
           <div className="mt-4 border border-line p-3">
             <p className="text-sm font-medium text-ink-dim">
-              On iPhone, use the Share button to install:
+              On iPhone or iPad, use the Share button to install:
             </p>
             <ol className="mt-2 space-y-1.5 text-sm text-ink-faint">
               <li className="flex items-center gap-2">
@@ -154,15 +136,9 @@ export function InstallAppBanner({ enabled = true }: { enabled?: boolean }) {
               type="button"
               className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors"
               onClick={() => {
-                void (async () => {
-                  await deferred.prompt();
-                  const choice = await deferred.userChoice;
-                  if (choice.outcome === "accepted") {
-                    setDeferred(null);
-                  } else {
-                    setDismissedThisMeetup(true);
-                  }
-                })();
+                setDeferred(null);
+                setDismissedThisMeetup(true);
+                void deferred?.prompt().catch(() => {});
               }}
             >
               <Download className="h-4 w-4" aria-hidden />

@@ -21,7 +21,12 @@ from app.services.skill_service import update_user_calculated_skill
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
-NAMES = tuple(f'Demo Player {number:02d}' for number in range(1, 21))
+NAMES = (
+    'Andrea Pirlo', 'Zinedine Zidane', 'Pelé', 'Diego Maradona', 'Paolo Maldini',
+    'Franz Beckenbauer', 'Johan Cruyff', 'Gianluigi Buffon', 'Roberto Baggio', 'Xavi Hernández',
+    'Ronaldo Nazário', 'Lev Yashin', 'Franco Baresi', 'Michel Platini', 'George Best',
+    'Bobby Charlton', 'Garrincha', 'Eusébio', 'Thierry Henry', 'Marco van Basten',
+)
 POSITIONS = ('MID', 'MID', 'ATT', 'MID', 'DEF', 'DEF', 'ATT', 'GK', 'ATT', 'MID',
              'ATT', 'GK', 'DEF', 'MID', 'ATT', 'MID', 'ATT', 'ATT', 'ATT', 'ATT')
 TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
@@ -51,9 +56,13 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
         calculated_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
     ) for i, name in enumerate(NAMES, 1)]
-    members[19].calculated_skill = None
-    placeholder = User(id=21, pocket_id_sub='demo-placeholder', sso_display_name=NAMES[ACTORS['guest'] - 1], calculated_skill=3.0)
-    unlinked = User(id=22, sso_display_name='Demo Reserve')
+    guest_index = ACTORS['guest'] - 1
+    members[guest_index].calculated_skill = None
+    placeholder = User(
+        id=21, pocket_id_sub='demo-placeholder', sso_display_name=NAMES[guest_index],
+        calculated_skill=3.0, primary_specialty=POSITIONS[guest_index],
+    )
+    unlinked = User(id=22, sso_display_name='Alfredo Di Stéfano', primary_specialty='ATT')
     db.add_all([*members, placeholder, unlinked])
     await db.flush()
 
@@ -107,8 +116,9 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                           status='confirmed' if uid in confirmed else 'waitlisted',
                           joined_at=anchor - timedelta(hours=24) + timedelta(minutes=index)))
     db.add(Attendance(meetup_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
+    guest_first_name, guest_last_name = NAMES[guest_index].split(' ', 1)
     db.add(GuestPlusOne(
-        meetup_id=1, inviter_id=2, guest_user_id=21, first_name='Demo Player', last_name='20',
+        meetup_id=1, inviter_id=2, guest_user_id=21, first_name=guest_first_name, last_name=guest_last_name,
         skill=3, claim_token='demo-guest-reservation', status='pending', created_at=anchor,
     ))
     db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))

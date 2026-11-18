@@ -3,7 +3,6 @@ import {
 	CheckCircle2,
 	Hourglass,
 	MapPin,
-	MessageSquare,
 	PartyPopper,
 	Share,
 	Trophy,
@@ -30,6 +29,7 @@ import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
 import { Link } from "react-router-dom";
 import { hapticError, hapticSuccess } from "../utils/haptics";
+import { parseMeetupStart } from "../utils/datetime";
 import { shareLink } from "../utils/share";
 import { UserPlus, X } from "lucide-react";
 import { StarRating } from "../components/StarRating";
@@ -514,7 +514,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	// From 15 minutes before kickoff the overview is about the match:
 	// results take the attendance card's place and teams go away.
 	// (PlayerApp keeps this meetup home until the next signup opens.)
-	const startMs = meetup.startTime ? Date.parse(meetup.startTime) : NaN;
+	const startMs = meetup.startTime ? parseMeetupStart(meetup.startTime).getTime() : NaN;
 	const resultsMode =
 		Number.isFinite(startMs) && now >= startMs - 15 * 60_000;
 
@@ -568,13 +568,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 			)}
 
 			{/* 4. Chat */}
-			<>
-				<hr className="border-line" />
-				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-					<MessageSquare className="h-5 w-5 text-ink-dim" aria-hidden />
-					Chat
-				</h2>
-			</>
+			<hr className="border-line" />
 			<MeetupChat meetupId={meetup.id} />
 
 			{/* 5. Location */}

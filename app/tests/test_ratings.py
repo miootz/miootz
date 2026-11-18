@@ -1,10 +1,12 @@
 import pytest
 from datetime import datetime, timedelta, UTC
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
 from app.models.meetup import Attendance, Meetup
+from app.models.rating import Rating
 from app.models.user import User
 
 
@@ -217,3 +219,86 @@ async def test_rating_context_allows_non_attendee_read_only():
     assert len(data["ratees"]) == 1
     assert data["ratees"][0]["user_id"] == pid
     assert data["ratees"][0]["my_score"] is None
+
+
+@pytest.mark.asyncio
+async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
+    async with async_session() as db:
+        tester = User(pocket_id_sub="tester-uuid", sso_display_name="Tester")
+        other = User(pocket_id_sub="p1-uuid", sso_display_name="Other")
+        legacy = User(pocket_id_sub="p2-uuid", sso_display_name="Legacy")
+        player = User(
+            pocket_id_sub="user-uuid", sso_display_name="Player", calculated_skill=3.5
+        )
+        meetup = Meetup(
+            start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
+            location="Pitch A",
+            max_players=10,
+        )
+        db.add_all([tester, other, legacy, player, meetup])
+        await db.flush()
+        for user in (tester, other, legacy, player):
+            db.add(Attendance(meetup_id=meetup.id, user_id=user.id))
+        db.add(
+            Rating(meetup_id=meetup.id, rater_id=legacy.id, ratee_id=player.id, score=0)
+        )
+        await db.commit()
+        meetup_id, player_id = meetup.id, player.id
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async def rate(token: str, score: int):
+            return await ac.post(
+                "/ratings/",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"meetup_id": meetup_id, "ratee_id": player_id, "score": score},
+            )
+
+        # Skipping an unrated player creates no vote and leaves their seed alone.
+        assert (await rate("tester", 0)).json() is None
+        async with async_session() as db:
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
+            assert len((await db.scalars(select(Rating))).all()) == 1
+
+        context = await ac.get(
+            f"/ratings/meetups/{meetup_id}/context",
+            headers={"Authorization": "Bearer p2"},
+        )
+        player_context = next(
+            r for r in context.json()["ratees"] if r["user_id"] == player_id
+        )
+        assert player_context["my_score"] is None
+        summary = await ac.get(
+            f"/meetups/{meetup_id}/history-summary",
+            headers={"Authorization": "Bearer p2"},
+        )
+        assert summary.json()["my_rating_avg"] is None
+
+        assert (await rate("tester", 5)).status_code == 200
+        assert (await rate("p1", 1)).status_code == 200
+        assert (await rate("tester", -1)).status_code == 422
+        assert (await rate("tester", 6)).status_code == 422
+
+        history = await ac.get(
+            f"/users/{player_id}/history", headers={"Authorization": "Bearer user"}
+        )
+        assert history.json()["stats"]["average_rating"] == 3
+        assert history.json()["stats"]["total_ratings"] == 2
+        assert history.json()["history"]["items"][0]["rating_avg"] == 3
+        async with async_session() as db:
+            assert (await db.get(User, player_id)).calculated_skill == 3
+
+        assert (await rate("tester", 0)).json() is None
+        assert (await rate("tester", 0)).json() is None
+        stats = await ac.get(
+            f"/ratings/players/{player_id}", headers={"Authorization": "Bearer tester"}
+        )
+        assert stats.json() == {"average_score": 1, "total_ratings": 1}
+        async with async_session() as db:
+            assert (await db.get(User, player_id)).calculated_skill == 1
+
+        # No remaining valid votes: keep the current skill instead of applying zero.
+        assert (await rate("p1", 0)).json() is None
+        async with async_session() as db:
+            assert (await db.get(User, player_id)).calculated_skill == 1
+            assert [r.score for r in (await db.scalars(select(Rating))).all()] == [0]

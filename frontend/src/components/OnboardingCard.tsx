@@ -10,7 +10,7 @@ const STEPS = [
   },
   {
     title: "Get balanced into teams",
-    body: `Before each meetup we balance teams using your skill rating (${SKILL_SCALE_BLURB.toLowerCase()}).`,
+    body: "Before each meetup we balance teams using your skill rating.",
   },
   {
     title: "Rate your teammates",

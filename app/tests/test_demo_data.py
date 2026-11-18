@@ -121,6 +121,8 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         u21 = await db.get(User, 21)
         assert u20 is not None and u21 is not None
         assert u20.pocket_id_sub != u21.pocket_id_sub
+        assert u20.sso_display_name == u21.sso_display_name == "Marco van Basten"
+        assert u20.primary_specialty == u21.primary_specialty == "ATT"
         assert current.waitlist_mode == (
             "broadcast" if scenario == "broadcast" else "auto_promote"
         )

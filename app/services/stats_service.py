@@ -37,12 +37,16 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
     season_games = result.scalar() or 0
 
     result = await db.execute(
-        select(func.avg(Rating.score)).where(Rating.ratee_id == user_id)
+        select(func.avg(Rating.score)).where(
+            Rating.ratee_id == user_id, Rating.score.between(1, 5)
+        )
     )
     avg_rating = result.scalar() or 0.0
 
     result = await db.execute(
-        select(func.count(Rating.id)).where(Rating.ratee_id == user_id)
+        select(func.count(Rating.id)).where(
+            Rating.ratee_id == user_id, Rating.score.between(1, 5)
+        )
     )
     total_ratings = result.scalar() or 0
 

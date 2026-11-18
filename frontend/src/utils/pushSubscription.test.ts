@@ -1,0 +1,42 @@
+import { waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { apiFetch } from '../api/client';
+import { subscribeToWebPush } from './pushSubscription';
+
+vi.mock('../api/client', () => ({ apiFetch: vi.fn() }));
+
+beforeEach(() => vi.clearAllMocks());
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it('reports granted permission before waiting for push subscription', async () => {
+  const subscribe = vi.fn(() => new Promise(() => {}));
+  vi.stubGlobal('navigator', Object.create(navigator, {
+    serviceWorker: { value: { getRegistration: vi.fn().mockResolvedValue({ active: {}, pushManager: { subscribe } }) } },
+  }));
+  vi.stubGlobal('PushManager', class {});
+  vi.stubGlobal('Notification', { requestPermission: vi.fn().mockResolvedValue('granted') });
+  vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({ publicKey: 'AA' }), { status: 200 }));
+  const onGranted = vi.fn();
+
+  void subscribeToWebPush(onGranted);
+  await waitFor(() => expect(onGranted).toHaveBeenCalledOnce());
+  expect(subscribe).toHaveBeenCalledOnce();
+  expect(onGranted.mock.invocationCallOrder[0]).toBeLessThan(subscribe.mock.invocationCallOrder[0]);
+});
+
+it('does not report a grant when permission is denied', async () => {
+  vi.stubGlobal('navigator', Object.create(navigator, {
+    serviceWorker: { value: { getRegistration: vi.fn().mockResolvedValue({ active: {} }) } },
+  }));
+  vi.stubGlobal('PushManager', class {});
+  vi.stubGlobal('Notification', { requestPermission: vi.fn().mockResolvedValue('denied') });
+  vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({ publicKey: 'AA' }), { status: 200 }));
+  const onGranted = vi.fn();
+
+  await expect(subscribeToWebPush(onGranted)).resolves.toEqual({ ok: false, reason: 'Notification permission denied' });
+  expect(onGranted).not.toHaveBeenCalled();
+});

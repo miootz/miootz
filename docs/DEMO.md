@@ -52,7 +52,7 @@ App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — account 
 
 The live scenario seeds the meetup as having started 20 minutes before the run began, so the presence window (T-15 min head) and the overview's results mode are open and the Referee view accepts scoring.
 
-All scenarios include the same fictional roster, venue, chat, weekly template, a pending guest reservation, three past meetups and 18 completed matches. The `live` scenario adds an active match and `kickoff` adds a pending match. Ratings for the latest past meetup are editable until the next kickoff. Dates are relative to launch. The `seed_demo` function accepts an explicit UTC anchor for automated tests and refuses nonempty databases.
+All scenarios include sample accounts named after famous footballers, a fictional venue and chat, a weekly template, a pending guest reservation, three past meetups and 18 completed matches. The `live` scenario adds an active match and `kickoff` adds a pending match. Ratings for the latest past meetup are editable until the next kickoff. Dates are relative to launch. The `seed_demo` function accepts an explicit UTC anchor for automated tests and refuses nonempty databases.
 
 ## Accounts and useful routes
 

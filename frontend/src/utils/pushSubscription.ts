@@ -20,7 +20,7 @@ export function pushSupported(): boolean {
 }
 
 /** Subscribe this browser to Web Push (requires HTTPS or localhost, and server VAPID keys). */
-export async function subscribeToWebPush(): Promise<{
+export async function subscribeToWebPush(onPermissionGranted?: () => void): Promise<{
   ok: boolean;
   reason?: string;
 }> {
@@ -47,6 +47,7 @@ export async function subscribeToWebPush(): Promise<{
   if (perm !== "granted") {
     return { ok: false, reason: "Notification permission denied" };
   }
+  onPermissionGranted?.();
   let sub: PushSubscription;
   try {
     sub = await reg.pushManager.subscribe({

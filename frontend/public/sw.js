@@ -12,9 +12,9 @@ const API_MAX_AGE_MS = {
 
 function apiCacheMaxAge(url) {
   const p = url.pathname.replace(/\/$/, '') || '/';
-  if (p === '/api/users/me') return API_MAX_AGE.me;
-  if (p === '/api/sessions') return API_MAX_AGE.sessionsList;
-  if (/^\/api\/sessions\/\d+$/.test(p)) return API_MAX_AGE.sessionDetail;
+  if (p === '/api/users/me') return API_MAX_AGE_MS.me;
+  if (p === '/api/sessions') return API_MAX_AGE_MS.sessionsList;
+  if (/^\/api\/sessions\/\d+$/.test(p)) return API_MAX_AGE_MS.sessionDetail;
   return 0;
 }
 
@@ -55,8 +55,8 @@ async function staleWhileRevalidate(request) {
   }
 }
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {

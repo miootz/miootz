@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RatingCreate(BaseModel):
     meetup_id: int
     ratee_id: int
-    score: int = Field(..., ge=1, le=5)
+    score: int = Field(..., ge=0, le=5, description="Use 0 to clear or skip a rating.")
 
 
 class RatingResponse(BaseModel):

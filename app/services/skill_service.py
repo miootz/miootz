@@ -107,7 +107,9 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
 
     # Fetch all ratings for this user
     result = await db.execute(
-        select(Rating.meetup_id, Rating.score).where(Rating.ratee_id == user_id)
+        select(Rating.meetup_id, Rating.score).where(
+            Rating.ratee_id == user_id, Rating.score.between(1, 5)
+        )
     )
     ratings = result.fetchall()
     if not ratings:

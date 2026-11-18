@@ -130,12 +130,12 @@ export function PlayerApp() {
         });
         const now = Date.now();
         const current = anyRes.items.find((m) => {
-          const start = Date.parse(m.start_time);
+          const start = parseMeetupStart(m.start_time).getTime();
           if (Number.isNaN(start)) return false;
           const close =
             start + ((m.duration_minutes ?? 120) + 30) * 60_000;
           const nextSignup = m.game_template?.next_announce_at
-            ? Date.parse(m.game_template.next_announce_at)
+            ? parseMeetupStart(m.game_template.next_announce_at).getTime()
             : NaN;
           const until = Number.isFinite(nextSignup)
             ? Math.max(close, nextSignup)
@@ -262,7 +262,7 @@ export function PlayerApp() {
         <p className="mx-auto max-w-lg p-8 text-center text-ink-dim">
           {nextAnnounceAt
             ? `Next meetup coming soon — signups open ${format(
-                new Date(nextAnnounceAt),
+                parseMeetupStart(nextAnnounceAt),
                 "EEEE, HH:mm",
               )}`
             : "No upcoming meetup. Past meetups are in History."}
@@ -271,7 +271,12 @@ export function PlayerApp() {
       {!loading && meetup && (
         <>
           <div className="mx-auto max-w-6xl px-4 pt-4">
-            <OnboardingCard userId={me?.user.pocket_id_sub ?? "anon"} />
+            {me && (
+              <OnboardingCard
+                key={me.user.pocket_id_sub}
+                userId={me.user.pocket_id_sub}
+              />
+            )}
           </div>
           <MeetupDetails
             meetup={meetup}

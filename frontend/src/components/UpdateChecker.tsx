@@ -3,48 +3,66 @@ import { useToast } from '../context/ToastContext';
 
 const POLL_MS = 60_000;
 
-/**
- * Offers a one-tap reload when a new build is deployed: compares the entry
- * script in the server's index.html (hashed in prod builds) against the one
- * currently loaded. Dev builds have no hash — Vite HMR handles reloads there,
- * so the check is skipped.
- */
+async function updateAndReload() {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if ('serviceWorker' in navigator) {
+      await Promise.race([
+        navigator.serviceWorker.getRegistration().then((registration) => registration?.update()),
+        new Promise<void>((resolve) => { timeout = setTimeout(resolve, 3_000); }),
+      ]);
+    }
+  } catch {
+    // Registration retries after reload if the worker update fails.
+  } finally {
+    clearTimeout(timeout);
+    window.location.reload();
+  }
+}
+
 export function UpdateChecker() {
   const { showToast } = useToast();
   const announced = useRef(false);
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
-    const current = document.querySelector<HTMLScriptElement>('script[src]')
-      ?.src;
+    const current = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src;
     if (!current) return;
+    const currentVersion = document.querySelector<HTMLMetaElement>('meta[name="app-version"]')?.content;
+    const url = new URL(import.meta.env.BASE_URL, window.location.href);
+    let stopped = false;
 
     const check = async () => {
       if (announced.current) return;
       try {
-        const res = await fetch(import.meta.env.BASE_URL, { cache: 'no-store' });
+        const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) return;
         const html = await res.text();
-        const next = html.match(/<script[^>]+src="([^"]+)"/)?.[1];
-        if (next && next !== current) {
+        if (stopped || announced.current) return;
+        const nextDocument = new DOMParser().parseFromString(html, 'text/html');
+        const next = nextDocument.querySelector('script[type="module"][src]')?.getAttribute('src');
+        const version = nextDocument.querySelector('meta[name="app-version"]')?.getAttribute('content');
+        if (next && (new URL(next, res.url || url).href !== current ||
+            (currentVersion && version && currentVersion !== version))) {
           announced.current = true;
-          // Version = build hash from the entry script name (unique per build).
-          const v = next.match(/[-.]([A-Za-z0-9_-]{6,})\.(?:js|css)$/)?.[1];
           showToast(
-            `An app update is available${v ? ` (v${v.slice(0, 8)})` : ''}.`,
+            `An app update is available${version ? ` (v${version})` : ''}.`,
             'default',
             0,
-            { label: 'Update now', onClick: () => window.location.reload() },
+            { label: 'Update now', onClick: () => { void updateAndReload(); } },
           );
         }
       } catch {
-        // offline — the next poll retries
+        // Offline or invalid response: the next poll retries.
       }
     };
 
     void check();
-    const iv = setInterval(check, POLL_MS);
-    return () => clearInterval(iv);
+    const interval = setInterval(check, POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
   }, [showToast]);
 
   return null;
