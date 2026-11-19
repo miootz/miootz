@@ -35,7 +35,7 @@ permanent seed set by an admin or import, and five attributes:
 | Shooting (SHO) | 6% |
 | Passing (PAS) | 5% |
 | Defense (DEF) | 5% |
-| Pace (PAC), set by an admin | 2% |
+| Pace (PAC), set by an admin or seeded by the roster import | 2% |
 | Dribbling (DRI), set by an admin | 2% |
 
 Peer ratings and the seed form a baseline. When both exist, they are averaged
@@ -109,8 +109,9 @@ Miootz converts each rate to a 1–5 attribute by interpolating between its
 anchors, caps the result at 1–5, and rounds it to one decimal place. Rankings'
 **Attributes** view shows SHO, PAS, and DEF for the selected period and can
 sort by each. History shows goals, assists, and clean sheets for the meetup.
-The profile shows current attributes and overall skill;
-admins can set PAC and DRI.
+The profile shows current attributes and overall skill. Admins can set PAC
+and DRI. The roster import seeds PAC at 4.0 for players marked `Y` in
+`Runs` who have no PAC value.
 
 Fresh databases work without migrating the former additive match bonus.
 Attributes use eligible recorded or imported match history.

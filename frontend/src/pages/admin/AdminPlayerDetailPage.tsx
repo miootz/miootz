@@ -326,7 +326,7 @@ export function AdminPlayerDetailPage() {
 						value={editDisplayName}
 						onChange={(e) => setEditDisplayName(e.target.value)}
 						placeholder="e.g. John Smith"
-						className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+						className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 					/>
 				</div>
 
@@ -343,7 +343,7 @@ export function AdminPlayerDetailPage() {
 						value={editSeedSkill}
 						onChange={(event) => setEditSeedSkill(event.target.value)}
 						placeholder="Unset"
-						className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+						className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 					/>
 					<p className="mt-1 text-xs text-ink-dim">This is separate from the current overall rating.</p>
 				</div>
@@ -364,7 +364,7 @@ export function AdminPlayerDetailPage() {
 								value={field.value}
 								onChange={(event) => field.set(event.target.value)}
 								placeholder="Unrated"
-								className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+								className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 							/>
 						</div>
 					))}

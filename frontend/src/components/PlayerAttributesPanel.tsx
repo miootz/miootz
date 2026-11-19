@@ -17,7 +17,7 @@ export function PlayerAttributesPanel({ attributes, error }: {
       code: "DEF", name: "Defending", score: attributes.def.score,
       evidence: `${attributes.def.count} clean sheets · ${attributes.def.sample} eligible matches · ${attributes.def.meetups} meetups`,
     },
-    { code: "PAC", name: "Pace", score: attributes.pac, evidence: attributes.pac == null ? "Unrated" : "Admin set" },
+    { code: "PAC", name: "Pace", score: attributes.pac, evidence: attributes.pac == null ? "Unrated" : "Roster or admin rating" },
     { code: "DRI", name: "Dribbling", score: attributes.dri, evidence: attributes.dri == null ? "Unrated" : "Admin set" },
   ];
 
@@ -55,7 +55,7 @@ export function PlayerAttributesPanel({ attributes, error }: {
       <details className="text-sm text-ink-dim">
         <summary className="cursor-pointer font-medium text-ink">How attributes are calculated</summary>
         <p className="mt-2">Shooting reflects open-play goals per match, passing reflects assists among open-play team goals with a credited assist, and defending reflects clean sheets per match. Recent meetups count more. Matches with clocked substitutions are excluded, as are incomplete scorecards for shooting and passing.</p>
-        <p className="mt-2">Shooting and defending need eight eligible matches across three meetups. Passing needs eight credited goals across three meetups and at least half of open-play team goals to have an assist. An admin sets pace and dribbling.</p>
+        <p className="mt-2">Shooting and defending need eight eligible matches across three meetups. Passing needs eight credited goals across three meetups and at least half of open-play team goals to have an assist. Admins can set pace and dribbling. The roster import can supply a starting pace rating.</p>
       </details>
     </section>
   );

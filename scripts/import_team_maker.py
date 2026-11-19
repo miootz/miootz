@@ -129,10 +129,11 @@ def read_workbook(path, date_corrections=None):
 def parse_workbook(workbook, date_corrections=None):
     date_corrections = date_corrections or {}
     ratings = {}
+    runners: set[str] = set()
     tokens = {}
     names = {}
     warnings = []
-    for label, (name, rating, *_, token) in sheet_rows(
+    for label, (name, rating, runs, *_, token) in sheet_rows(
         workbook, "Roster", ROSTER_COLUMNS
     ):
         if (
@@ -146,6 +147,8 @@ def parse_workbook(workbook, date_corrections=None):
         name = name.strip()
         names[name.casefold()] = name
         ratings[name] = 5 * (5 - rating) / 4
+        if isinstance(runs, str) and runs.strip().upper() == "Y":
+            runners.add(name)
         tokens[name] = 0 if token is None else whole_number(token, f"{label} Tokens")
     if not ratings:
         raise ValueError("Roster: no players")
@@ -348,10 +351,10 @@ def parse_workbook(workbook, date_corrections=None):
         expected[name] = values
     if missing := ratings.keys() - expected.keys():
         warnings.append(f"Stats has no results for {', '.join(sorted(missing))}")
-    return ratings, tokens, nights, expected, warnings
+    return ratings, runners, tokens, nights, expected, warnings
 
 
-async def upsert_users(db, ratings, links, admins):
+async def upsert_users(db, ratings, runners, links, admins):
     users = {}
     for name, skill in ratings.items():
         user = await db.scalar(select(User).where(User.historical_roster_name == name))
@@ -391,6 +394,8 @@ async def upsert_users(db, ratings, links, admins):
             user.historical_roster_name = name
         if user.seed_skill is None:
             user.seed_skill = skill
+        if user.pac is None and name in runners:
+            user.pac = 4.0
         if name in admins:
             user.is_admin = True
         if name in links:
@@ -639,6 +644,7 @@ async def compare_stats(db, meetup_ids, ids, expected):
 async def import_workbook(
     database,
     ratings,
+    runners,
     tokens,
     nights,
     expected,
@@ -666,7 +672,7 @@ async def import_workbook(
                 template = await db.get(GameTemplate, template_id)
                 if template is None:
                     raise ValueError(f"Meetup template {template_id} does not exist")
-                ids = await upsert_users(db, ratings, links, admins)
+                ids = await upsert_users(db, ratings, runners, links, admins)
                 await import_awards(db, tokens, ids)
                 meetup_ids = await upsert_nights(
                     db, nights, ids, template, kickoff, timezone, ids[recorded_by]
@@ -736,7 +742,7 @@ def main():
             if original_day in date_corrections:
                 raise ValueError(f"Repeated date correction for {original_day}")
             date_corrections[original_day] = date.fromisoformat(corrected)
-        ratings, tokens, nights, expected, warnings = read_workbook(
+        ratings, runners, tokens, nights, expected, warnings = read_workbook(
             args.workbook, date_corrections
         )
         if unknown_admins := set(args.admin) - ratings.keys():
@@ -759,6 +765,7 @@ def main():
             import_workbook(
                 args.database,
                 ratings,
+                runners,
                 tokens,
                 nights,
                 expected,

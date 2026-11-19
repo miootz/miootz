@@ -204,7 +204,8 @@ configuration lives in the `docker/` directory.
 Run the importer from the repository root on the host, with Python 3.14+ and
 `uv` installed. It reads the workbook's cached values and imports its roster,
 meetups, matches, goals and shootout kicks. The `Stats` sheet is for comparison
-and supplies no stored player stats. The Roster sheet's `Tokens` column supplies
+and supplies no stored player stats. A `Y` in the Roster sheet's `Runs` column
+sets Pace (PAC) to 4.0 if the player has no PAC value. The `Tokens` column supplies
 each player's starting balance of Weather Hero awards. A blank cell means zero.
 Reruns add any increase in the recorded balance and preserve redeemed awards
 and awards granted in Miootz.
