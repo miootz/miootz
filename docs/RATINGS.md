@@ -25,7 +25,10 @@ uses their underlying **1–5** scores before display rounding.
 
 An eligible vote is one to five stars in half-star increments. At least three different eligible
 people must rate the same player in the same meetup before those votes can
-affect Adjusted Rating. Clearing a vote can bring the count below three.
+affect Adjusted Rating. Miootz averages qualifying votes within each meetup,
+then gives older meetup averages half the weight for every two finished,
+non-skipped meetups back. Clearing a vote can bring a meetup below the
+three-reviewer minimum.
 Changing the peer setting applies the new eligibility rules to existing
 votes when calculating Adjusted Rating.
 

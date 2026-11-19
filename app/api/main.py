@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
             if await db.get(RatingSettings, 1) is None:
                 db.add(RatingSettings(id=1))
                 await db.flush()
-                await refresh_player_skills(db)
-                await db.flush()
+            await refresh_player_skills(db)
+            await db.flush()
 
     # Fail fast on a Pocket ID config that would silently skip iss/aud checks.
     from app.services.pocket_id_jwt import assert_oidc_config

@@ -141,6 +141,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             assert all((vote.rater_id - 1) // 5 == (vote.ratee_id - 1) // 5 for vote in past_votes)
             assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 5}) < 3
             assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 2}) == 4
+            assert users[1].calculated_skill == 3.8
             assert users[2].calculated_skill != users[2].seed_skill
         assert current.waitlist_mode == (
             "broadcast" if scenario == "broadcast" else "auto_promote"

@@ -207,7 +207,10 @@ configuration lives in the `docker/` directory.
 Run the importer from the repository root on the host, with Python 3.14+ and
 `uv` installed. It reads the workbook's cached values and imports its roster,
 meetups, matches, goals and shootout kicks. The `Stats` sheet is for comparison
-and supplies no stored player stats. A `Y` in the Roster sheet's `Runs` column
+and supplies no stored player stats. Roster ratings run from 1 (best) to 5
+(worst). The importer reverses them onto the 0–5 Base Rating scale, so
+workbook values 1, 2, 3, 4, and 5 become 5, 3.75, 2.5, 1.25, and 0 stars.
+A `Y` in the Roster sheet's `Runs` column
 sets Pace (PAC) to 90 on the displayed scale if the player has no PAC value.
 The `Tokens` column supplies each player's starting balance of Weather Hero
 awards. A blank cell means zero.

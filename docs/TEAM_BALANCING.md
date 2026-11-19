@@ -68,18 +68,16 @@ before attendance decay and rounding.
 
 ### Peer ratings and attendance
 
-| Rating's meetup | Weight per rating |
-| --- | --- |
-| One of the player's four most recently joined confirmed meetups, ordered by signup time | 1.0 |
-| Any other meetup | 0.5 |
+Miootz first averages the **1–5** votes within each meetup that has at least
+three distinct eligible reviewers. Teammates only covers players who shared a
+side in a completed match, including substitutes. Everyone lets confirmed
+attendees rate one another. Off disables peer voting.
 
-Scores from **1 to 5** count in Adjusted Rating once at least three distinct
-eligible peers rate the same player for the same meetup. Off disables peer
-voting. Teammates only covers everyone who played on the same side of a
-completed match, including players who came on or went off as substitutes.
-Everyone lets confirmed attendees rate one another. Multiply each qualifying score by its weight, add the
-results, and divide by the sum of the weights. A skipped or cleared rating
-contributes nothing. Older ratings retain half weight.
+The latest qualifying meetup has weight **1.0**. Each step back through
+finished, non-skipped meetups multiplies the weight by **√0.5**. A meetup two
+steps back has **half** the weight. An intervening meetup counts as a step
+even if it has too few votes to supply an average. Miootz divides the sum of
+the weighted meetup averages by the sum of their weights.
 
 **Attendance decay.** Miootz counts consecutive meetups without confirmed
 attendance, looking at up to 20 past meetups the skill calculation treats as
@@ -88,8 +86,8 @@ Each further consecutive miss subtracts **0.1**, up to **1.0** in total. The
 deduction is applied once when valid peer ratings exist. The final overall
 skill is limited to **0–5** and rounded to one decimal place.
 
-**Example.** Three recent scores of 5 and three older scores of 3 give a
-weighted average of `(15 × 1 + 9 × 0.5) ÷ (3 × 1 + 3 × 0.5) = 4.33…`.
+**Example.** A recent meetup averaging 5 and a meetup two steps back
+averaging 3 give a peer average of `(5 × 1 + 3 × 0.5) ÷ (1 + 0.5) = 4.33…`.
 Three consecutive misses cause a deduction of 0.2 from Adjusted Rating.
 
 Adding, editing, or clearing a peer rating recalculates skill, as can changes
