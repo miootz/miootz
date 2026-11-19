@@ -24,6 +24,7 @@ import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import { SkillRating } from "../components/SkillRating";
 import {
+  PUSH_REGISTRATION_CHANGED,
   pushSupported,
   subscribeToWebPush,
   fetchPushSubscriptions,
@@ -221,6 +222,13 @@ export function ProfilePage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD || !pushSupported()) return;
+    const refresh = () => setPushRefresh((value) => value + 1);
+    window.addEventListener(PUSH_REGISTRATION_CHANGED, refresh);
+    return () => window.removeEventListener(PUSH_REGISTRATION_CHANGED, refresh);
   }, []);
 
   useEffect(() => {
@@ -568,7 +576,6 @@ export function ProfilePage() {
                       try {
                         const r = await subscribeToWebPush();
                         if (r.ok) {
-                          setPushRefresh((value) => value + 1);
                           showToast("Device registered.", "success");
                         } else {
                           setPushRegistrationError(r.reason ?? "Could not register device");

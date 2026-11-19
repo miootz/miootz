@@ -31,7 +31,12 @@ function renderMember() {
   );
 }
 
+function renderAdmin() {
+  return render(<ToastProvider><AdminNotificationPrompt /></ToastProvider>);
+}
+
 beforeEach(() => {
+  vi.mocked(subscribeToWebPush).mockReset();
   vi.useFakeTimers();
   localStorage.clear();
   notification = { permission: 'default', requestPermission: vi.fn() };
@@ -112,19 +117,40 @@ describe('notification prompts', () => {
     expect(screen.getByTestId('lock')).toHaveTextContent('unlocked');
   });
 
-  it('updates the admin banner after an enable request', async () => {
-    notification.requestPermission.mockResolvedValue('granted');
-    render(<AdminNotificationPrompt />);
+  it('registers from the admin banner and confirms only after the server save', async () => {
+    let complete: (result: { ok: boolean }) => void = () => {};
+    vi.mocked(subscribeToWebPush).mockImplementation((onGranted) => {
+      notification.permission = 'granted';
+      onGranted?.();
+      return new Promise((resolve) => { complete = resolve; });
+    });
+    renderAdmin();
     expect(screen.getByRole('region', { name: 'Notifications' })).toBeInTheDocument();
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Enable' })));
+    expect(subscribeToWebPush).toHaveBeenCalledOnce();
     expect(screen.queryByRole('region', { name: 'Notifications' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Notifications enabled')).not.toBeInTheDocument();
+    await act(async () => complete({ ok: true }));
+    expect(screen.getByText('Notifications enabled')).toBeInTheDocument();
+  });
+
+  it('reports an admin registration failure after the browser grants permission', async () => {
+    vi.mocked(subscribeToWebPush).mockImplementation(async (onGranted) => {
+      notification.permission = 'granted';
+      onGranted?.();
+      return { ok: false, reason: 'Could not save subscription on server' };
+    });
+    renderAdmin();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Enable' })));
+    expect(screen.getByText('Could not save subscription on server')).toBeInTheDocument();
+    expect(screen.queryByText('Notifications enabled')).not.toBeInTheDocument();
   });
 
   it('rechecks permission on focus when querying notifications is unsupported', async () => {
     vi.stubGlobal('navigator', Object.create(navigator, {
       permissions: { value: { query: vi.fn().mockRejectedValue(new Error('unsupported')) } },
     }));
-    render(<AdminNotificationPrompt />);
+    renderAdmin();
     await act(async () => {});
     notification.permission = 'granted';
     fireEvent.focus(window);

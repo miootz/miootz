@@ -1,6 +1,8 @@
 import { apiFetch, parseApiError } from "../api/client";
 import { demoRoom } from "./demoRoom";
 
+export const PUSH_REGISTRATION_CHANGED = "miootz-push-registration-changed";
+
 export function urlBase64ToUint8Array(base64String: string): BufferSource {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -16,6 +18,7 @@ export function pushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
     !demoRoom() &&
+    "Notification" in window &&
     "serviceWorker" in navigator &&
     "PushManager" in window
   );
@@ -29,33 +32,49 @@ export async function subscribeToWebPush(onPermissionGranted?: () => void): Prom
   if (!pushSupported()) {
     return { ok: false, reason: "Not supported in this browser" };
   }
-  const r = await apiFetch("/users/me/push/config");
-  if (!r.ok) {
-    return { ok: false, reason: "Could not load push config" };
-  }
-  const { publicKey } = (await r.json()) as { publicKey: string | null };
-  if (!publicKey) {
-    return { ok: false, reason: "Server has not configured Web Push" };
-  }
-  const reg = await navigator.serviceWorker.getRegistration();
-  if (!reg?.active) {
-    return {
-      ok: false,
-      reason:
-        "Notifications are unavailable in this session. Open the installed app or try again later.",
-    };
-  }
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") {
-    return { ok: false, reason: "Notification permission denied" };
-  }
-  onPermissionGranted?.();
-  let sub: PushSubscription;
   try {
-    sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({
+    // Safari requires the permission request to start during the button tap.
+    const permission = Notification.permission === "default"
+      ? await Notification.requestPermission()
+      : Notification.permission;
+    if (permission !== "granted") {
+      return { ok: false, reason: "Notification permission denied" };
+    }
+    onPermissionGranted?.();
+
+    const r = await apiFetch("/users/me/push/config");
+    if (!r.ok) {
+      return { ok: false, reason: "Could not load push config" };
+    }
+    const { publicKey } = (await r.json()) as { publicKey: string | null };
+    if (!publicKey) {
+      return { ok: false, reason: "Server has not configured Web Push" };
+    }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg?.active) {
+      return {
+        ok: false,
+        reason: "Notifications are unavailable in this session. Open the installed app or try again later.",
+      };
+    }
+    const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
+    const { endpoint, keys } = sub.toJSON();
+    if (!endpoint || !keys?.p256dh || !keys.auth) {
+      return { ok: false, reason: "Invalid subscription" };
+    }
+    const save = await apiFetch("/users/me/push/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }),
+    });
+    if (!save.ok) {
+      return { ok: false, reason: await parseApiError(save) };
+    }
+    window.dispatchEvent(new Event(PUSH_REGISTRATION_CHANGED));
+    return { ok: true };
   } catch (error) {
     return {
       ok: false,
@@ -65,22 +84,6 @@ export async function subscribeToWebPush(onPermissionGranted?: () => void): Prom
           : "Could not register this device for notifications",
     };
   }
-  const j = sub.toJSON();
-  if (!j.endpoint || !j.keys?.p256dh || !j.keys?.auth) {
-    return { ok: false, reason: "Invalid subscription" };
-  }
-  const save = await apiFetch("/users/me/push/subscription", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      endpoint: j.endpoint,
-      keys: { p256dh: j.keys.p256dh, auth: j.keys.auth },
-    }),
-  });
-  if (!save.ok) {
-    return { ok: false, reason: await parseApiError(save) };
-  }
-  return { ok: true };
 }
 
 export interface PushSubscriptionRow {
