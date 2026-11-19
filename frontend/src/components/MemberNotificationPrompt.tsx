@@ -23,6 +23,7 @@ export function MemberNotificationPrompt({
   const lockAcquiredRef = useRef(false);
   const [permission] = useNotificationPermission();
   const [visible, setVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [dismissedThisSession, setDismissedThisMeetup] = useState(false);
 
   useEffect(() => {
@@ -107,8 +108,10 @@ export function MemberNotificationPrompt({
         <div className="mt-5 flex gap-2">
           <button
             type="button"
-            className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors"
+            disabled={busy}
+            className="inline-flex flex-1 items-center justify-center gap-2 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98] transition-colors disabled:opacity-50"
             onClick={async () => {
+              setBusy(true);
               const result = await subscribeToWebPush(dismiss);
               dismiss();
               if (result.ok) {

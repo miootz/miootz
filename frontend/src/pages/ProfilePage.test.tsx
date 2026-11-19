@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProfilePage } from "./ProfilePage";
+import { PUSH_REGISTRATION_CHANGED } from "../utils/pushSubscription";
 
 const { fetchPushSubscriptions, subscribeToWebPush, deletePushSubscription, getRegistration, showToast } = vi.hoisted(() => ({
   fetchPushSubscriptions: vi.fn(),
@@ -28,7 +29,8 @@ vi.mock("../api/meApi", () => ({
   patchGameTemplateSubscription: vi.fn(),
   patchNotificationPreference: vi.fn(),
 }));
-vi.mock("../utils/pushSubscription", () => ({
+vi.mock("../utils/pushSubscription", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../utils/pushSubscription")>(),
   pushSupported: () => true,
   fetchPushSubscriptions,
   subscribeToWebPush,
@@ -66,7 +68,10 @@ it("finishes a local-only registration even when another device shares its push 
   fetchPushSubscriptions
     .mockResolvedValueOnce([otherDevice])
     .mockResolvedValueOnce([otherDevice, currentDevice]);
-  subscribeToWebPush.mockResolvedValue({ ok: true });
+  subscribeToWebPush.mockImplementation(async () => {
+    window.dispatchEvent(new Event(PUSH_REGISTRATION_CHANGED));
+    return { ok: true };
+  });
   openProfile();
 
   const finish = await screen.findByRole("button", { name: "Finish registering this device" });
@@ -81,6 +86,19 @@ it("offers registration for a browser without a local subscription", async () =>
   fetchPushSubscriptions.mockResolvedValue([otherDevice]);
   openProfile();
   expect(await screen.findByRole("button", { name: "Register this device" })).toBeInTheDocument();
+});
+
+it("refreshes an open profile after registration from another part of the app", async () => {
+  const getSubscription = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ endpoint: localEndpoint });
+  getRegistration.mockResolvedValue({ pushManager: { getSubscription } });
+  fetchPushSubscriptions.mockResolvedValueOnce([]).mockResolvedValueOnce([currentDevice]);
+  openProfile();
+  expect(await screen.findByRole("button", { name: "Register this device" })).toBeInTheDocument();
+
+  act(() => window.dispatchEvent(new Event(PUSH_REGISTRATION_CHANGED)));
+
+  expect(await screen.findByText("· This device")).toBeInTheDocument();
+  expect(subscribeToWebPush).not.toHaveBeenCalled();
 });
 
 it("shows the current registered device and offers registration after its removal", async () => {

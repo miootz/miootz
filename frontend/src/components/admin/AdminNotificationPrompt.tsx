@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Bell, X } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import { pushSupported, subscribeToWebPush } from '../../utils/pushSubscription';
 import { useNotificationPermission } from '../../utils/useNotificationPermission';
-import { demoRoom, roomStorageKey } from '../../utils/demoRoom';
+import { roomStorageKey } from '../../utils/demoRoom';
 
 const DISMISS_KEY = roomStorageKey('miootz-admin-notify-prompt-dismissed');
 
@@ -10,6 +12,8 @@ const DISMISS_KEY = roomStorageKey('miootz-admin-notify-prompt-dismissed');
  */
 export function AdminNotificationPrompt() {
   const [permission, setPermission] = useNotificationPermission();
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -19,7 +23,7 @@ export function AdminNotificationPrompt() {
     }
   });
 
-  if (typeof window === 'undefined' || demoRoom()) return null;
+  if (!pushSupported()) return null;
   if (permission !== 'default') {
     return null;
   }
@@ -41,9 +45,18 @@ export function AdminNotificationPrompt() {
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
-            className="bg-ink text-board px-3 py-1.5 text-xs font-bold hover:bg-white/90 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live transition-colors"
-            onClick={() => {
-              void Notification.requestPermission().then(setPermission).catch(() => {});
+            disabled={busy}
+            className="bg-ink text-board px-3 py-1.5 text-xs font-bold hover:bg-white/90 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-live transition-colors disabled:opacity-50"
+            onClick={async () => {
+              setBusy(true);
+              const result = await subscribeToWebPush(() => setPermission('granted'));
+              setPermission(Notification.permission);
+              setBusy(false);
+              if (result.ok) {
+                showToast('Notifications enabled', 'success');
+              } else if (result.reason !== 'Notification permission denied') {
+                showToast(result.reason ?? 'Could not enable notifications', 'error');
+              }
             }}
           >
             Enable
