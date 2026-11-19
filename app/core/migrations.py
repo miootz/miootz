@@ -64,6 +64,8 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
 
     if await has_table("ratings"):
+        if not await has_column("ratings", "review"):
+            await conn.execute(text("ALTER TABLE ratings ADD COLUMN review VARCHAR"))
         if not await has_column("ratings", "updated_at"):
             await conn.execute(
                 text("ALTER TABLE ratings ADD COLUMN updated_at TIMESTAMP")

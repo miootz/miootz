@@ -1,10 +1,12 @@
 import { apiFetch, parseApiError } from './client';
 
+export type PeerReview = 'poorly' | 'expected' | 'well' | 'excellent';
+
 export interface RateeContext {
   user_id: number;
   display_name: string;
   avatar_url: string | null;
-  my_score: number | null;
+  my_review: PeerReview | null;
 }
 
 export interface RatingContextResponse {
@@ -31,14 +33,14 @@ export async function fetchRatingContext(
 export async function submitRating(
   meetupId: number,
   rateeId: number,
-  score: number
+  review: PeerReview | null
 ): Promise<void> {
   const r = await apiFetch('/ratings/', {
     method: 'POST',
     body: JSON.stringify({
       meetup_id: meetupId,
       ratee_id: rateeId,
-      score,
+      review,
     }),
   });
   if (!r.ok) throw new Error(await parseApiError(r));

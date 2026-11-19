@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
+from app.core.migrations import run_sqlite_migrations
 from app.models.meetup import Attendance, Meetup
 from app.models.rating import Rating
 from app.models.user import User
@@ -122,6 +123,7 @@ async def test_score_update_verification():
                 UNIQUE (meetup_id, rater_id, ratee_id)
             )
         """)
+        await run_sqlite_migrations(conn)
     async with async_session() as db:
         auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
         player1 = User(pocket_id_sub="test-p1", sso_display_name="p1")
@@ -196,6 +198,48 @@ async def test_score_update_verification():
         )
     assert resp.status_code == 200
     assert resp.json()["average_score"] == 4.25
+
+
+async def test_emoji_reviews_count_explicit_neutral_and_apply_fixed_adjustment():
+    async with async_session() as db:
+        player = User(pocket_id_sub="peer-recipient", seed_skill=4.2, calculated_skill=4.2)
+        reviewers = [User(pocket_id_sub=f"{name}-uuid") for name in ("tester", "p1", "p2")]
+        meetup = Meetup(
+            start_time=datetime.now(UTC) - timedelta(hours=4),
+            location="Test pitch",
+            max_players=10,
+        )
+        db.add_all([player, meetup, *reviewers])
+        await db.flush()
+        meetup_id, ratee_id = meetup.id, player.id
+        db.add_all(Attendance(meetup_id=meetup_id, user_id=u.id) for u in [player, *reviewers])
+        await db.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        request = {"meetup_id": meetup_id, "ratee_id": ratee_id}
+        for token, review, score, adjusted in (
+            ("tester", "expected", 3, 4.2),
+            ("p1", "well", 3.5, 4.2),
+            ("p2", "excellent", 4, 4.3),
+            ("p2", "poorly", 2, 4.1),
+        ):
+            headers = {"Authorization": f"Bearer {token}"}
+            response = await ac.post("/ratings/", headers=headers, json={**request, "review": review})
+            assert response.status_code == 200, response.text
+            assert response.json()["review"] == review and response.json()["score"] == score
+            async with async_session() as db:
+                assert (await db.get(User, ratee_id)).calculated_skill == adjusted
+
+        headers = {"Authorization": "Bearer tester"}
+        url = f"/ratings/meetups/{meetup_id}/context"
+        response = await ac.get(url, headers=headers)
+        assert next(r for r in response.json()["ratees"] if r["user_id"] == ratee_id)["my_review"] == "expected"
+        response = await ac.post("/ratings/", headers=headers, json={**request, "review": None})
+        assert response.json() is None
+        response = await ac.get(url, headers=headers)
+        assert next(r for r in response.json()["ratees"] if r["user_id"] == ratee_id)["my_review"] is None
+        async with async_session() as db:
+            assert (await db.get(User, ratee_id)).calculated_skill == 4.2
 
 
 @pytest.mark.asyncio

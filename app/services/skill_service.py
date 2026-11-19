@@ -4,7 +4,7 @@ from collections import defaultdict
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.rating import Rating
+from app.models.rating import PEER_REVIEW_ADJUSTMENTS, Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.player_attributes import (
@@ -114,10 +114,11 @@ async def _get_weighted_peer_average(
     user_id: int,
     pairs: dict[int, set[tuple[int, int]]] | None,
     positions: dict[int, int],
-) -> float | None:
-    """Weight meetup averages by their position in the meetup history."""
+    anchor: float = 3.0,
+) -> tuple[float | None, float | None]:
+    """Return a legacy star average or a relative adjustment across meetups."""
     if not positions:
-        return None
+        return None, None
 
     votes = await db.scalars(
         select(Rating)
@@ -127,28 +128,37 @@ async def _get_weighted_peer_average(
             Rating.score.between(1, 5),
         )
     )
-    by_meetup: dict[int, dict[int, float]] = defaultdict(dict)
+    by_meetup: dict[int, dict[int, Rating]] = defaultdict(dict)
     for vote in votes:
         if vote.meetup_id not in positions:
             continue
         pair = (min(vote.rater_id, user_id), max(vote.rater_id, user_id))
         if pairs is not None and pair not in pairs.get(vote.meetup_id, ()):
             continue
-        by_meetup[vote.meetup_id][vote.rater_id] = vote.score
+        by_meetup[vote.meetup_id][vote.rater_id] = vote
     qualified = {mid: scores for mid, scores in by_meetup.items() if len(scores) >= 3}
     if not qualified:
-        return None
+        return None, None
 
     latest_position = min(positions[mid] for mid in qualified)
     weighted_sum = 0.0
     total_weight = 0.0
-    for meetup_id, scores in qualified.items():
+    has_reviews = False
+    for meetup_id, ratings in qualified.items():
         distance = positions[meetup_id] - latest_position
         weight = 0.5 ** (distance / _PEER_HALF_LIFE_MEETUPS)
-        weighted_sum += (sum(scores.values()) / len(scores)) * weight
+        scores = []
+        for vote in ratings.values():
+            if vote.review is None:
+                scores.append(vote.score)
+            else:
+                has_reviews = True
+                scores.append(anchor + PEER_REVIEW_ADJUSTMENTS[vote.review])
+        weighted_sum += (sum(scores) / len(scores)) * weight
         total_weight += weight
 
-    return weighted_sum / total_weight
+    average = weighted_sum / total_weight
+    return (None, average - anchor) if has_reviews else (average, None)
 
 
 def blend_skill(
@@ -156,6 +166,8 @@ def blend_skill(
     peer: float | None,
     attributes: dict[str, float | None],
     miss_streak: int = 0,
+    *,
+    peer_adjustment: float | None = None,
 ) -> float | None:
     """Blend the ratings that exist, with missing attribute weight left on the baseline."""
     baseline = seed if peer is None else peer
@@ -169,7 +181,9 @@ def blend_skill(
         score = attributes.get(key)
         if score is not None:
             skill += weight * (score - baseline)
-    if peer is not None:
+    if peer_adjustment is not None:
+        skill += 0.25 * peer_adjustment
+    if peer is not None or peer_adjustment is not None:
         skill -= min(_MAX_MISS_DECAY, max(0, miss_streak - 1) * 0.1)
     return round(max(0, min(5, skill)), 1)
 
@@ -182,10 +196,11 @@ async def _update_skill(
     positions: dict[int, int],
     locked_ids: list[int] | None = None,
 ) -> None:
-    peer = await _get_weighted_peer_average(db, user.id, pairs, positions)
+    anchor = user.seed_skill if user.seed_skill is not None else 3.0
+    peer, adjustment = await _get_weighted_peer_average(db, user.id, pairs, positions, anchor)
     streak = (
         await get_consecutive_miss_streak(db, user.id, locked_ids=locked_ids)
-        if peer is not None
+        if peer is not None or adjustment is not None
         else 0
     )
     scores = {
@@ -193,7 +208,10 @@ async def _update_skill(
         for key, evidence in effective_player_attributes(user, attributes).items()
     }
     scores.update(pace_and_dribbling(user))
-    user.calculated_skill = blend_skill(user.seed_skill, peer, scores, streak)
+    user.calculated_skill = blend_skill(
+        anchor if adjustment is not None else user.seed_skill,
+        peer, scores, streak, peer_adjustment=adjustment,
+    )
 
 
 async def _load_peer_pairs(

@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timedelta, UTC
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
@@ -151,8 +152,18 @@ async def test_peer_decay_counts_meetups_and_weights_averages_not_vote_counts():
         await db.flush()
         positions = await skill_service._peer_meetup_positions(db)
         assert positions == {4: 0, 2: 1, 1: 2}
-        peer = await skill_service._get_weighted_peer_average(db, 1, None, positions)
+        peer, adjustment = await skill_service._get_weighted_peer_average(db, 1, None, positions)
+        assert adjustment is None
         assert peer == pytest.approx((2 + 0.5 * 5) / 1.5)
+
+        vote = await db.scalar(select(Rating).where(Rating.meetup_id == 4, Rating.rater_id == 2))
+        vote.score, vote.review = 3, "expected"
+        await db.flush()
+        peer, adjustment = await skill_service._get_weighted_peer_average(
+            db, 1, None, positions, anchor=4.5,
+        )
+        assert peer is None
+        assert adjustment == pytest.approx(((4.5 + 2 + 3) / 3 + 0.5 * 5) / 1.5 - 4.5)
 
 
 def test_blend_keeps_missing_attribute_weight_on_baseline():

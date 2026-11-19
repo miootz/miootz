@@ -23,16 +23,27 @@ uses their underlying **1–5** scores before display rounding.
 | Teammates only | Confirmed attendees can rate teammates they shared a side with in a completed match. A side includes its live substitutes. |
 | Everyone | Confirmed attendees can rate any other confirmed attendee in that meetup. |
 
-History starts the voting control at the player's current Base or Adjusted
-Rating, following the computed scores setting. A change casts a vote.
-Clearing a vote restores the starting value. Leaving it alone adds no vote.
+In Meetup History, tap a hand emoji to review a player.
 
-An eligible vote is one to five stars in half-star increments. At least three different eligible
-people must rate the same player in the same meetup before those votes can
-affect Adjusted Rating. Miootz averages qualifying votes within each meetup,
-then gives older meetup averages half the weight for every two finished,
-non-skipped meetups back. Clearing a vote can bring a meetup below the
-three-reviewer minimum.
+| Review | Peer adjustment |
+| --- | ---: |
+| 👎 Poorly | −1.0 star |
+| 👌 As expected | 0.0 stars |
+| 👍 Well | +0.5 stars |
+| 👏 Excellent | +1.0 star |
+
+The OK sign starts selected. Leaving it alone adds no vote. Tapping it
+records a neutral vote. Tap your saved choice again to clear it.
+
+At least three distinct eligible reviewers must vote for the same player
+in a meetup before their votes count. An explicitly submitted neutral vote
+counts toward those three. Miootz averages the votes within each meetup,
+then halves their weight for every two finished, non-skipped meetups back.
+Adjusted Rating adds 25% of the weighted peer adjustment to the rating
+from Base and attributes.
+
+History and profile averages show new emoji votes on a common star scale
+of 2, 3, 3.5, and 4. Previously saved star votes keep their original values.
 Changing the peer setting applies the new eligibility rules to existing
 votes when calculating Adjusted Rating.
 

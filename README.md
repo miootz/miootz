@@ -23,9 +23,10 @@ with Traefik + Pocket ID.
 
 Miootz can draft confirmed players by skill or assign them in random order.
 Admins can review and adjust the lineups. The balanced draft uses overall skill.
-With every input available, skill combines an admin or imported seed (55%),
-peer ratings (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
-dribbling (2%). Miootz calculates shooting, passing, and defending from match
+With every attribute available, skill combines an admin or imported seed (80%),
+shooting (6%), passing (5%), defending (5%), pace (2%), and dribbling (2%).
+Peer emoji reviews add 25% of their weighted adjustment.
+Miootz calculates shooting, passing, and defending from match
 data, and admins can override any attribute. Balanced drafts spread players with
 PAC or DRI above 75 in either rating mode. Rankings and profiles display
 attributes on a 50–100 scale. PAC and DRI default to 75. Overall ratings use stars.

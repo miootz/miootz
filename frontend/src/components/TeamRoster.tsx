@@ -1,6 +1,7 @@
 import type { User } from "../types";
+import type { PeerReview } from "../api/ratingsApi";
 import { PlayerAvatarFace } from "./PlayerAvatar";
-import { StarRating } from "./StarRating";
+import { PeerReviewControl } from "./PeerReview";
 import { Lock } from "lucide-react";
 import { PlayerEditLink } from "./PlayerEditLink";
 import { SkillRating } from "./SkillRating";
@@ -25,14 +26,14 @@ function formatPositions(player: User): string {
 function PlayerRow({
     player,
     ratingMode,
-    currentRating,
-    onRatingChange,
+    currentReview,
+    onReviewChange,
     isMe,
 }: {
     player: User;
     ratingMode: "none" | "popover" | "inline";
-    currentRating: number | null;
-    onRatingChange?: (score: number) => void;
+    currentReview: PeerReview | null;
+    onReviewChange?: (review: PeerReview | null) => void;
     isMe?: boolean;
 }) {
     const positions = formatPositions(player);
@@ -70,13 +71,10 @@ function PlayerRow({
                 </div>
                 {ratingMode === "inline" && (
                     <div className="relative z-10 mt-1">
-                        <StarRating
-                            value={currentRating}
-                            defaultValue={player.calculatedSkill}
-                            onChange={onRatingChange}
-                            size={20}
-                            min={1}
-                            label={`Your rating of ${player.name}`}
+                        <PeerReviewControl
+                            value={currentReview}
+                            onChange={onReviewChange}
+                            playerName={player.name}
                         />
                     </div>
                 )}
@@ -91,8 +89,8 @@ export function TeamRoster({
     players,
     onPlayerTap: _onPlayerTap,
     ratingMode = "none",
-    ratingScores,
-    onRatingChange,
+    ratingReviews,
+    onReviewChange,
     droppable,
     currentUserId,
 }: {
@@ -102,12 +100,12 @@ export function TeamRoster({
         player: User,
         event: React.MouseEvent | React.TouchEvent,
     ) => void;
-    /** How to display star ratings. */
+    /** How to display peer reviews. */
     ratingMode?: "none" | "popover" | "inline";
-    /** Player id → current star rating from the viewer. */
-    ratingScores?: Record<string, number | null>;
-    /** Called when an inline star rating changes. */
-    onRatingChange?: (playerId: string, score: number) => void;
+    /** Player id → current peer review from the viewer. */
+    ratingReviews?: Record<string, PeerReview | null>;
+    /** Called when an inline peer review changes. */
+    onReviewChange?: (playerId: string, review: PeerReview | null) => void;
     /** Signed-in player's id; their row gets a highlight + "You" chip. */
     currentUserId?: number;
     /** Droppable container props from dnd-kit (optional). */
@@ -143,14 +141,14 @@ export function TeamRoster({
                         isMe={currentUserId != null && player.id === String(currentUserId)}
                         ratingMode={
                             ratingMode === "inline" &&
-                            !Object.hasOwn(ratingScores ?? {}, player.id)
+                            !Object.hasOwn(ratingReviews ?? {}, player.id)
                                 ? "none"
                                 : ratingMode
                         }
-                        currentRating={ratingScores?.[player.id] ?? null}
-                        onRatingChange={
-                            onRatingChange
-                                ? (score) => onRatingChange(player.id, score)
+                        currentReview={ratingReviews?.[player.id] ?? null}
+                        onReviewChange={
+                            onReviewChange
+                                ? (review) => onReviewChange(player.id, review)
                                 : undefined
                         }
                     />
