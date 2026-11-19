@@ -670,6 +670,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE meetups ADD COLUMN max_teams INTEGER")
         )
 
+    if not await has_column("meetups", "team_size"):
+        await conn.execute(text("ALTER TABLE meetups ADD COLUMN team_size INTEGER"))
+
     # ── match_goals.goalkeeper_id: the keeper who conceded (optional) ──
     # A fresh DB gets this column (and its index) from create_all; this block
     # only fires for a DB that already has match_goals from an earlier deploy.

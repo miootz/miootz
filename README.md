@@ -28,7 +28,7 @@ peer ratings (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
 dribbling (2%). Miootz calculates shooting, passing, and defending from match
 data, and admins can override any attribute. Balanced drafts spread players with
 PAC or DRI above 75 in either rating mode. Rankings and profiles display
-attributes on a 50–100 scale. Overall ratings use stars.
+attributes on a 50–100 scale. PAC and DRI default to 75. Overall ratings use stars.
 See the [team balancing guide](docs/TEAM_BALANCING.md) for the
 formulas and how missing data affects the result. Admins can choose Base or
 Adjusted Rating and set [peer rating eligibility](docs/RATINGS.md) under
@@ -208,7 +208,7 @@ Run the importer from the repository root on the host, with Python 3.14+ and
 `uv` installed. It reads the workbook's cached values and imports its roster,
 meetups, matches, goals and shootout kicks. The `Stats` sheet is for comparison
 and supplies no stored player stats. A `Y` in the Roster sheet's `Runs` column
-sets Pace (PAC) to 88 on the displayed scale if the player has no PAC value.
+sets Pace (PAC) to 90 on the displayed scale if the player has no PAC value.
 The `Tokens` column supplies each player's starting balance of Weather Hero
 awards. A blank cell means zero.
 Reruns add any increase in the recorded balance and preserve redeemed awards

@@ -39,11 +39,9 @@ export function ProfileScoreboard({ stats, error }: ProfileScoreboardProps) {
             <StatRow label="Clean sheets" value={stats.season_clean_sheets} />
             <StatRow
               label="Penalties scored / taken"
-              value={`${stats.season_penalties_scored} / ${stats.season_penalties_taken}`}
-            />
-            <StatRow
-              label="Penalty conversion"
-              value={stats.season_penalties_taken ? percent.format(stats.season_penalty_conversion_rate) : "—"}
+              value={`${stats.season_penalties_scored} / ${stats.season_penalties_taken}${stats.season_penalties_taken
+                ? ` (${percent.format(stats.season_penalty_conversion_rate)})`
+                : ""}`}
             />
           </dl>
 

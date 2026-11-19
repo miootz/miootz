@@ -60,7 +60,7 @@ def _synthetic_email(first_name: str, last_name: str) -> str:
 class AdminUserCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=80)
     last_name: str = Field(..., min_length=1, max_length=80)
-    calculated_skill: int = Field(..., ge=1, le=5)
+    calculated_skill: float | None = Field(None, ge=0.5, le=5, multiple_of=0.5)
 
 
 @router.post("")
@@ -80,8 +80,8 @@ async def admin_create_user(
 
     user = User(
         sso_display_name=f"{first_name} {last_name}",
-        seed_skill=float(body.calculated_skill),
-        calculated_skill=float(body.calculated_skill),
+        seed_skill=body.calculated_skill,
+        calculated_skill=body.calculated_skill,
     )
     db.add(user)
     await db.commit()

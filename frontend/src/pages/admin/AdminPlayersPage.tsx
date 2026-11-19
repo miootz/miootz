@@ -44,7 +44,7 @@ export function AdminPlayersPage() {
 	// --- Create player ---
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
-	const [skill, setSkill] = useState(3);
+	const [skill, setSkill] = useState<number | null>(3);
 	const [userLoading, setUserLoading] = useState(false);
 	const [userError, setUserError] = useState("");
 
@@ -193,11 +193,13 @@ export function AdminPlayersPage() {
 
 				<div>
 					<label className="block text-xs font-medium text-ink-dim mb-1">
-						Skill (1–5)
+						Base Rating (optional)
 					</label>
 					<StarRating
 						value={skill}
 						onChange={setSkill}
+						onClear={() => setSkill(null)}
+						disabled={userLoading}
 						size={28}
 						label="Base Rating"
 					/>

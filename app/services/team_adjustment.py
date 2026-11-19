@@ -9,10 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.meetup import Attendance, Meetup
+from app.models.match import MeetupMatch
 from app.models.user import User
+from app.core.json_column import loads_int_list
 from app.services.manual_teams import (
     ensure_team_names,
     format_teams_api_payload,
+    get_team_names,
     resolve_meetup_teams_nested,
 )
 from app.services.meetup_revision import (
@@ -71,6 +74,35 @@ async def _load_meetup_players(
     return confirmed, waitlisted
 
 
+async def fill_empty_pending_matches(db: AsyncSession, meetup: Meetup) -> None:
+    """Fill pending sides left empty by a reshape as players sign up."""
+    if meetup.team_size is None:
+        return
+    matches = (await db.execute(
+        select(MeetupMatch).where(
+            MeetupMatch.meetup_id == meetup.id, MeetupMatch.status == "pending"
+        )
+    )).scalars().all()
+    empty = [m for m in matches if not loads_int_list(m.team_a_users) or not loads_int_list(m.team_b_users)]
+    if not empty:
+        return
+    players, _ = await _load_meetup_players(db, meetup.id)
+    teams = resolve_meetup_teams_nested(
+        meetup.manual_teams_json, meetup.team_assignment_mode, players,
+        max_teams=meetup.max_teams, team_size=meetup.team_size,
+    )
+    nonempty = [(i, team) for i, team in enumerate(teams) if team]
+    if len(nonempty) < 2:
+        return
+    names = get_team_names(meetup) or []
+    (a_idx, a), (b_idx, b) = nonempty[:2]
+    for match in empty:
+        match.team_a_users = json.dumps([p["user_id"] for p in a])
+        match.team_b_users = json.dumps([p["user_id"] for p in b])
+        match.team_a_name = names[a_idx] if a_idx < len(names) else f"Team {a_idx + 1}"
+        match.team_b_name = names[b_idx] if b_idx < len(names) else f"Team {b_idx + 1}"
+
+
 async def expand_teams(
     db: AsyncSession,
     meetup: Meetup,
@@ -109,6 +141,7 @@ async def expand_teams(
 
     # Update meetup
     meetup.max_teams = new_max_teams
+    meetup.team_size = None
     meetup.manual_teams_json = None  # force algorithmic re-assignment
 
     # Ensure enough team names
@@ -210,6 +243,7 @@ async def contract_teams(
 
     # Update meetup
     meetup.max_teams = new_max_teams
+    meetup.team_size = None
     meetup.manual_teams_json = None  # force algorithmic re-assignment
 
     # Ensure enough team names (may have fewer now, which is fine)

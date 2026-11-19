@@ -9,6 +9,7 @@ export interface RankingUser {
 export interface RankingRow {
   rank: number;
   user: RankingUser;
+  rating?: number | null;
   attendances: number;
   goals: number;
   own_goals: number;
@@ -102,7 +103,7 @@ export interface RankingsResponse {
   rows: RankingRow[];
 }
 
-export type RankingSort = keyof Omit<RankingRow, "rank" | "user">;
+export type RankingSort = keyof Omit<RankingRow, "rank" | "user" | "rating">;
 
 export async function fetchRankings(
   params: {

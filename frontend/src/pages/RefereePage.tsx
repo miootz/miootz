@@ -536,6 +536,11 @@ export function RefereePage() {
             setIsPaused(false);
             prevRatioRef.current = null;
             setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
+            void loadMatches();
+            break;
+          case "meetup_updated":
+            void loadMatches();
+            void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             break;
           case "match_timer_paused":
             setTimerSeconds(secs ?? 0);
@@ -1683,15 +1688,21 @@ export function RefereePage() {
           key={sid}
           meetupId={sid}
           totalPlayers={reshapeTotalPlayers}
+          waitlistedPlayers={meetupDetail.attendees.filter((a) => a.status === "waitlisted").length}
           teams={teamsData}
           maxTeams={meetupDetail.max_teams}
+          currentTeamSize={meetupDetail.team_size}
+          minPlayers={meetupDetail.min_players}
+          maxPlayers={meetupDetail.max_players}
+          hasStarted={Boolean(meetupDetail.has_started) || matches.some((m) => m.status !== "pending")}
           liveMatchNumber={
             matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
           }
           onClose={() => setShowReshape(false)}
-          onSaved={(result, teamCount) => {
+          onSaved={(result, teamCount, signupCapacity, teamSize) => {
             setTeamsData(result.teams);
-            setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount });
+            setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount, max_players: signupCapacity, team_size: teamSize });
+            void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             void loadMatches();
           }}
         />

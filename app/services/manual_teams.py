@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.services.team_assignment import assign_teams_random, assign_teams_snake, team_counts
+from app.services.team_assignment import (
+    assign_teams_random,
+    assign_teams_snake,
+    rebalance_around_locked,
+    team_counts,
+)
 from app.services.team_names import generate_team_names
 
 
@@ -52,7 +57,7 @@ def validate_team_partition(
         return False
     if max_teams is not None:
         # N playing teams + optional single bench team (any size, even one).
-        return max_teams <= len(teams) <= max_teams + 1
+        return min(n, max_teams) <= len(teams) <= max_teams + 1
     expected = team_counts(n, max_teams=max_teams)
     if len(teams) != len(expected):
         return False
@@ -74,6 +79,7 @@ def resolve_meetup_teams_nested(
     team_assignment_mode: str,
     players: list[dict[str, Any]],
     max_teams: int | None = None,
+    team_size: int | None = None,
 ) -> list[list[dict[str, Any]]]:
     """Algorithm or stored manual lineup (when valid for current confirmed roster)."""
     confirmed_ids = {int(p["id"]) for p in players}
@@ -81,6 +87,47 @@ def resolve_meetup_teams_nested(
     if manual is not None and validate_team_partition(manual, confirmed_ids, max_teams=max_teams):
         return build_teams_from_manual(players, manual)
     mode = (team_assignment_mode or "balanced").lower()
+    if max_teams and team_size and players:
+        if manual is not None:
+            by_id = {int(p["id"]): p for p in players}
+            placed: set[int] = set()
+            teams = []
+            for row in manual[: max_teams + 1]:
+                team = []
+                for uid in row:
+                    if uid in by_id and uid not in placed:
+                        team.append(by_id[uid])
+                        placed.add(uid)
+                teams.append(team)
+            while len(teams) < max_teams:
+                teams.append([])
+            for player in players:
+                if int(player["id"]) in placed:
+                    continue
+                available = [i for i in range(max_teams) if len(teams[i]) < team_size]
+                if available:
+                    teams[min(available, key=lambda i: len(teams[i]))].append(player)
+                else:
+                    if len(teams) == max_teams:
+                        teams.append([])
+                    teams[max_teams].append(player)
+            while teams and len(teams) <= max_teams and not teams[-1]:
+                teams.pop()
+            return teams
+        playing = min(len(players), max_teams * team_size)
+        per_team, extra = divmod(playing, max_teams)
+        counts = [per_team + (i < extra) for i in range(max_teams)]
+        counts = [count for count in counts if count]
+        if len(players) > playing:
+            counts.append(len(players) - playing)
+        lineup = []
+        offset = 0
+        for count in counts:
+            lineup.append([p["user_id"] for p in players[offset : offset + count]])
+            offset += count
+        return rebalance_around_locked(
+            players, lineup, locked=set(), max_teams=max_teams, randomize=mode == "random"
+        )
     if mode == "random":
         return assign_teams_random(players, max_teams=max_teams)
     return assign_teams_snake(players, max_teams=max_teams)
@@ -95,6 +142,7 @@ def apply_roster_swap(
     new_a: list[int],
     new_b: list[int],
     max_teams: int | None = None,
+    team_size: int | None = None,
 ) -> str:
     """Return the manual partition after a pre-start roster swap.
 
@@ -104,7 +152,7 @@ def apply_roster_swap(
     the admin's standing intent for future rounds.
     """
     teams = resolve_meetup_teams_nested(
-        manual_teams_json, team_assignment_mode, players, max_teams=max_teams
+        manual_teams_json, team_assignment_mode, players, max_teams=max_teams, team_size=team_size
     )
     out: list[list[int]] = [[p["user_id"] for p in t] for t in teams]
     set_a, set_b = set(old_a), set(old_b)

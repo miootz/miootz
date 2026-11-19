@@ -9,7 +9,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.meetups import claim_plus_one as _claim_plus_one_route
+from app.api.meetups import PlusOneCreate, claim_plus_one as _claim_plus_one_route
+from pydantic import ValidationError
 
 # Direct-call unit tests bypass the slowapi wrapper, which insists on a real
 # starlette Request; HTTP-level rate limiting is covered end-to-end in
@@ -100,6 +101,22 @@ async def claim_data():
 async def claim(data, member=None):
     req = SimpleNamespace(state=SimpleNamespace(user=member or data.member))
     return await claim_plus_one("test-claim", req, data.db)  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.asyncio
+async def test_half_star_guest_skill_survives_claim(claim_data):
+    body = PlusOneCreate(first_name="Demo", last_name="Guest", skill=3.5)
+    with pytest.raises(ValidationError):
+        PlusOneCreate(first_name="Demo", last_name="Guest", skill=3.25)
+    with pytest.raises(ValidationError):
+        PlusOneCreate(first_name="Demo", last_name="Guest", skill=0.5)
+    d = claim_data
+    d.reservation.skill = body.skill
+    await d.db.commit()
+    await d.db.refresh(d.reservation)
+    assert d.reservation.skill == 3.5
+    await claim(d)
+    assert d.member.seed_skill == 3.5
 
 
 @pytest.mark.asyncio

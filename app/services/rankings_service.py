@@ -19,6 +19,7 @@ from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 METRIC_KEYS = (
     "attendances",
@@ -259,6 +260,7 @@ async def _rows_for_users(
             await db.execute(select(User).where(User.id.in_(list(stats))))
         ).scalars().all()
     )
+    computed_scores = (await get_rating_settings(db)).computed_scores
     rows = []
     for user in users:
         metrics = stats[user.id]
@@ -270,21 +272,25 @@ async def _rows_for_users(
                     "avatar_url": user.avatar_url,
                 },
                 **metrics,
+                "rating": selected_rating(user, computed_scores),
                 "win_rate": round(metrics["win_rate"], 3),
             }
         )
     return rows
 
 
+def descending_score(value: int | float | None) -> float:
+    return -value if value is not None else float("inf")
+
+
 def _sort_rows(rows: list[dict], sort: str, order: str) -> list[dict]:
-    reverse = order == "desc"
-    rows.sort(key=lambda r: r["user"]["display_name"])
-    # Deterministic tie-break chain under the selected primary column.
-    rows.sort(key=lambda r: r["clean_sheets"], reverse=True)
-    rows.sort(key=lambda r: r["assists"], reverse=True)
-    rows.sort(key=lambda r: r["goals"], reverse=True)
-    rows.sort(key=lambda r: r["wins"], reverse=True)
-    rows.sort(key=lambda r: r[sort], reverse=reverse)
+    direction = -1 if order == "desc" else 1
+    rows.sort(key=lambda r: (
+        direction * r[sort],
+        descending_score(r["rating"]),
+        r["user"]["display_name"].casefold(),
+        r["user"]["id"],
+    ))
     return rows
 
 
@@ -303,7 +309,7 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
 
     def top(key: str, fmt, min_matches: int = 0) -> list[dict]:
         eligible = [r for r in rows if r["matches"] >= min_matches]
-        ordered = sorted(eligible, key=lambda r: (-r[key], r["user"]["display_name"]))
+        ordered = _sort_rows(eligible, key, "desc")
         return [
             {
                 "user_id": r["user"]["id"],

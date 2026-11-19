@@ -61,10 +61,10 @@ number is converted back with `1 + (override − 50) ÷ 12.5`, so an override
 of 90 contributes as 4.2 on the internal scale.
 
 For example, a peer average of 4.0 and a seed of 3.0 give a baseline of
-`(55 × 3.0 + 25 × 4.0) ÷ 80 = 3.3125`. If SHO is the only available
-attribute and its internal score is 4.0 (displayed as 88), the other attribute
-shares return to the baseline, giving
-`3.3125 × 0.94 + 4.0 × 0.06 = 3.35375` before attendance decay and rounding.
+`(55 × 3.0 + 25 × 4.0) ÷ 80 = 3.3125`. Suppose SHO is 4.0 internally
+(displayed as 88), PAS and DEF are unavailable, and PAC and DRI use their
+defaults. The blend is `3.3125 × 0.90 + 4.0 × 0.06 + 3.0 × 0.04 = 3.34125`
+before attendance decay and rounding.
 
 ### Peer ratings and attendance
 
@@ -139,7 +139,8 @@ and automatic scores' supporting counts.
 On a player's admin edit page, admins can override all five attributes on the
 50–100 scale. An override replaces the automatic score across periods and in
 Adjusted Rating. Clear SHO, PAS, or DEF to use the automatic score again. Clear
-PAC or DRI to leave it unrated. The roster import seeds PAC at 88 for players
+PAC or DRI to restore the default of 75, which contributes as 3.0 to Adjusted
+Rating. The roster import seeds PAC at 90 for players
 marked `Y` in `Runs` who have no PAC value.
 
 Fresh databases work without migrating the former additive match bonus.
@@ -152,12 +153,12 @@ Attributes use eligible recorded or imported match history.
 | **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
 | **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
 | **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-rated players before dealing and then spread PAC and DRI among playing teams. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
-| **Team capacity** | Choose the number of teams and players per team from Admin Overview or the Referee page. The draft includes a bench team for excess confirmed players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
-| **Adjust waitlist capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
+| **Team capacity** | Use the cog in Admin Overview or on the Referee page to choose the number of teams and players per team. Before kickoff, increasing capacity confirms the earliest waitlisted players and shrinking it returns the latest excess signups to the waitlist. After a match starts, excess confirmed players stay on the bench. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
 
-If attendance changes, an invalid saved lineup is ignored. It can take effect
-again if the same confirmed roster returns. A pre-start substitution updates
-the lineup for future rounds. A substitution during play updates that match.
+When an admin has set team capacity, later attendance changes keep that team
+shape and retain existing player placements where possible. A pre-start
+substitution updates the lineup for future rounds. A substitution during play
+updates that match.
 
 The Teams panel labels a spread of 2 or less between the highest and lowest
 team totals **Balanced** and a larger spread **Uneven**. A reshuffle that

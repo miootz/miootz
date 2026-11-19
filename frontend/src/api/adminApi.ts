@@ -161,6 +161,19 @@ export async function adminMoveAttendance(
   return jsonOrThrow(r);
 }
 
+export async function adminAddAttendance(
+  meetupId: number,
+  userId: number
+): Promise<{ status: string }> {
+  const q = new URLSearchParams({
+    user_id: String(userId),
+  });
+  const r = await apiFetch(`/meetups/${meetupId}/admin/attendance?${q}`, {
+    method: 'POST',
+  });
+  return jsonOrThrow(r);
+}
+
 export async function adminListGameTemplates(): Promise<{
   items: GameTemplateRow[];
 }> {
@@ -219,7 +232,7 @@ export async function adminExportData(): Promise<Blob> {
 export async function adminCreateUser(body: {
   first_name: string;
   last_name: string;
-  calculated_skill: number;
+  calculated_skill: number | null;
 }): Promise<AdminUserRow> {
   const r = await apiFetch('/users', {
     method: 'POST',

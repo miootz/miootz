@@ -14,6 +14,13 @@ from app.models.user import User
 from app.services.rating_windows import meetup_end_time, utc_now
 
 
+def pace_and_dribbling(user: User) -> dict[str, float]:
+    return {
+        "pac": user.pac if user.pac is not None else 3.0,
+        "dri": user.dri if user.dri is not None else 3.0,
+    }
+
+
 def empty_player_attributes() -> dict:
     return {
         "sho": {"score": None, "count": 0, "sample": 0, "meetups": 0},

@@ -20,6 +20,7 @@ from app.models.match import MatchPenalty, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rating_settings import RatingSettings
 
 TOKENS = ["p1", "p2", "p3", "tp1"]
 
@@ -148,6 +149,50 @@ async def seed(ac: AsyncClient) -> dict[str, int]:
 
 def rows_by_name(j: dict) -> dict[str, dict]:
     return {r["user"]["display_name"]: r for r in j["rows"]}
+
+
+async def test_metric_ties_follow_active_rating():
+    async with await client() as ac:
+        ids = await seed(ac)
+        async with AsyncSession(engine) as db:
+            p1 = await db.get(User, ids["p1"])
+            p2 = await db.get(User, ids["p2"])
+            p1.calculated_skill, p2.calculated_skill = 3, 4
+            p1.seed_skill, p2.seed_skill = 4, 3
+            await db.commit()
+
+        url = "/rankings?year=2026&sort=goals&order=asc"
+        result = (await ac.get(url, headers=hdr("p1"))).json()
+        assert [row["user"]["id"] for row in result["rows"]] == [ids["p2"], ids["p1"]]
+        assert result["highlights"]["goals"][0]["user_id"] == ids["p2"]
+
+        async with AsyncSession(engine) as db:
+            db.add(RatingSettings(id=1, computed_scores=False))
+            await db.commit()
+        result = (await ac.get(url, headers=hdr("p1"))).json()
+        assert [row["user"]["id"] for row in result["rows"]] == [ids["p1"], ids["p2"]]
+
+
+async def test_rating_ties_use_shooting_then_passing_then_defending():
+    async with await client() as ac:
+        ids = await seed(ac)
+        async with AsyncSession(engine) as db:
+            overrides = {
+                "p1": (4, 4, 4),
+                "p2": (4, 4, 3),
+                "p3": (5, 1, 1),
+                "tp1": (4, 3, 5),
+            }
+            for token, scores in overrides.items():
+                user = await db.get(User, ids[token])
+                user.calculated_skill = 3
+                user.sho_override, user.pas_override, user.def_override = scores
+            await db.commit()
+
+        result = (await ac.get("/rankings/attributes?year=all&sort=rating&order=asc", headers=hdr("p1"))).json()
+        assert [row["user"]["id"] for row in result["rows"]] == [
+            ids[token] for token in ("p3", "p1", "p2", "tp1")
+        ]
 
 
 @pytest.mark.asyncio

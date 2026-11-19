@@ -34,9 +34,10 @@ describe("AdminPlayerDetailPage", () => {
         <Routes><Route path="/admin/players/:userId" element={<AdminPlayerDetailPage />} /></Routes>
       </MemoryRouter>,
     );
-    const seed = await screen.findByLabelText("Base Rating (0–5, optional)");
-    expect(seed).toHaveValue(0);
+    const seed = await screen.findByRole("slider", { name: "Base Rating (0–5, optional)" });
+    expect(seed).toHaveAttribute("aria-valuetext", "0 out of 5 stars");
     expect(screen.getByLabelText("Pace (PAC)")).toHaveValue(78);
+    expect(screen.getByLabelText("Dribbling (DRI)")).toHaveAttribute("placeholder", "75 (default)");
     expect(screen.getByLabelText("Passing (PAS)")).toHaveValue(88);
     fireEvent.change(screen.getByLabelText("Passing (PAS)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Shooting (SHO)"), { target: { value: "50" } });
@@ -51,5 +52,32 @@ describe("AdminPlayerDetailPage", () => {
       sho_override: 1, pas_override: null, def_override: 5,
       primary_specialty: "DEF", secondary_specialty: null, is_admin: false,
     }));
+  });
+
+  it("clears a legacy zero base rating to unset", async () => {
+    render(
+      <MemoryRouter initialEntries={["/admin/players/1"]}>
+        <Routes><Route path="/admin/players/:userId" element={<AdminPlayerDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear Base Rating (0–5, optional)" }));
+    expect(screen.getByRole("slider", { name: "Base Rating (0–5, optional)" }))
+      .toHaveAttribute("aria-valuetext", "Not rated");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(adminUpdateUser).toHaveBeenCalledWith(1, expect.objectContaining({ seed_skill: null })));
+  });
+
+  it("preserves an existing non-half-star base rating until it is edited", async () => {
+    const data = await adminGetPlayerHistory();
+    data.user.seed_skill = 3.3;
+    render(
+      <MemoryRouter initialEntries={["/admin/players/1"]}>
+        <Routes><Route path="/admin/players/:userId" element={<AdminPlayerDetailPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("slider", { name: "Base Rating (0–5, optional)" }))
+      .toHaveAttribute("aria-valuetext", "3.3 out of 5 stars");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(adminUpdateUser).toHaveBeenCalledWith(1, expect.objectContaining({ seed_skill: 3.3 })));
   });
 });

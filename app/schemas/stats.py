@@ -17,8 +17,8 @@ class PlayerAttributes(BaseModel):
     sho: AttributeEvidence
     pas: PassingEvidence
     def_: AttributeEvidence = Field(alias="def")
-    pac: float | None
-    dri: float | None
+    pac: float
+    dri: float
 
 
 class UserStats(BaseModel):

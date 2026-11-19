@@ -38,7 +38,7 @@ function PlayerRow({
     const positions = formatPositions(player);
 
     return (
-        <div className={`relative flex items-center gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
+        <div className={`relative flex items-start gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
             {/* Profile picture */}
             <div className="relative shrink-0">
                 <PlayerAvatarFace
@@ -55,40 +55,31 @@ function PlayerRow({
                 )}
             </div>
 
-            {/* Name + position */}
-            <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                <PlayerEditLink playerId={player.id} className="text-sm font-medium text-ink truncate" stretch>
-                    {player.name}
-                </PlayerEditLink>
-                {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-pac shrink-0">PAC</span>}
-                {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-dri shrink-0">DRI</span>}
-                {isMe && (
-                    <span className="text-2xs font-bold text-live shrink-0">
-                        You
-                    </span>
-                )}
-                {positions && (
-                    <span className="text-2xs text-ink-faint shrink-0">
-                        {positions}
-                    </span>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5">
+                        <PlayerEditLink playerId={player.id} className="break-words text-sm font-medium text-ink [overflow-wrap:anywhere]" stretch>
+                            {player.name}
+                        </PlayerEditLink>
+                        {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-pac shrink-0">PAC</span>}
+                        {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-dri shrink-0">DRI</span>}
+                        {isMe && <span className="text-2xs font-bold text-live shrink-0">You</span>}
+                        {positions && <span className="text-2xs text-ink-faint shrink-0">{positions}</span>}
+                    </div>
+                    <SkillRating score={player.calculatedSkill ?? player.skillScore} className="text-sm text-ink" />
+                </div>
+                {ratingMode === "inline" && (
+                    <div className="relative z-10 mt-1">
+                        <StarRating
+                            value={currentRating}
+                            onChange={onRatingChange}
+                            size={20}
+                            min={1}
+                            label={`Your rating of ${player.name}`}
+                        />
+                    </div>
                 )}
             </div>
-
-            {/* Inline star rating (when allowed) */}
-            {ratingMode === "inline" && (
-                <div className="relative z-10 shrink-0">
-                    <StarRating
-                        value={currentRating ?? 0}
-                        onChange={onRatingChange}
-                        size={14}
-                        label={`Your rating of ${player.name}`}
-                        clearable
-                    />
-                </div>
-            )}
-
-            {/* Computed rating in bold */}
-            <SkillRating score={player.calculatedSkill ?? player.skillScore} className="text-sm text-ink" />
         </div>
     );
 }

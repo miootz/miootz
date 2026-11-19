@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LayoutGrid, Loader2, Minus, Plus, Settings } from "lucide-react";
+import { LayoutGrid, Loader2, Settings } from "lucide-react";
 import type { Meetup, Team, User } from "../types";
 import {
   fetchMeetupTeams,
@@ -7,7 +7,7 @@ import {
   type MeetupDetail,
   type TeamsResponse,
 } from "../api/meetupsApi";
-import { adminAdjustTeams, adminReshuffleTeams } from "../api/adminApi";
+import { adminReshuffleTeams } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { DraggableTeams } from "./DraggableTeams";
@@ -101,9 +101,6 @@ export function MeetupTeamsPanel({
   const [teams, setTeams] = useState<TeamsResponse | null>(null);
   const [teamMeetup, setTeamMeetup] = useState<Meetup | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
-  const [adjustingTeam, setAdjustingTeam] = useState<
-    "expand" | "contract" | null
-  >(null);
   const [reshuffling, setReshuffling] = useState(false);
   const [showReshape, setShowReshape] = useState(false);
   // Locks are client-side only (no server field); keep them across refetches
@@ -116,7 +113,7 @@ export function MeetupTeamsPanel({
   const confirmedCount = detail.attendees.filter(
     (a) => a.status === "confirmed",
   ).length;
-  const teamCount = Math.min(teams?.teams.length ?? 0, detail.max_teams ?? Infinity);
+  const teamCount = detail.max_teams ?? teams?.teams.length ?? 0;
 
   // Re-apply client-side locks onto a freshly built lineup (server payload
   // never carries them), so refetches never cancel an existing lock.
@@ -153,36 +150,6 @@ export function MeetupTeamsPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetupId, detail.content_revision]);
-
-  async function adjustTeams(op: "expand" | "contract") {
-    setAdjustingTeam(op);
-    try {
-      const result = await adminAdjustTeams(meetupId, op, 1);
-      await onChanged();
-      if (op === "expand") {
-        const count = result.promoted_user_ids?.length ?? 0;
-        showToast(
-          count > 0
-            ? `Added team — ${count} player(s) promoted from waitlist.`
-            : "Team capacity increased.",
-          "success",
-        );
-      } else {
-        const count = result.returned_user_ids?.length ?? 0;
-        showToast(
-          count > 0
-            ? `Removed team — ${count} player(s) returned to waitlist.`
-            : "Team removed.",
-          "success",
-        );
-      }
-      hapticLight();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Adjustment failed", "error");
-    } finally {
-      setAdjustingTeam(null);
-    }
-  }
 
   async function reshuffleTeams() {
     setReshuffling(true);
@@ -295,7 +262,7 @@ export function MeetupTeamsPanel({
             type="button"
             onClick={() => setShowReshape(true)}
             aria-haspopup="dialog"
-            disabled={!teams || teamsLoading || adjustingTeam !== null}
+            disabled={!teams || teamsLoading}
             className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-raised disabled:opacity-50"
           >
             <span className="min-w-0">
@@ -311,58 +278,6 @@ export function MeetupTeamsPanel({
             </span>
             <Settings className="h-5 w-5 shrink-0 text-ink-dim" aria-hidden />
           </button>
-          <details open={waitlistedCount >= 5} className="border-t border-line">
-            <summary className="min-h-11 cursor-pointer px-4 py-3 text-xs font-semibold leading-5 text-ink-dim hover:bg-raised">
-              Adjust waitlist capacity
-            </summary>
-            <div className="px-4 pb-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={
-                    !detail.max_teams ||
-                    detail.max_teams <= 2 ||
-                    adjustingTeam !== null
-                  }
-                  onClick={() => void adjustTeams("contract")}
-                  className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium bg-danger/15 hover:bg-danger/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
-                  title="Remove a team (returns players to waitlist)"
-                >
-                  {adjustingTeam === "contract" ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Minus className="w-3.5 h-3.5" />
-                  )}
-                  Remove team
-                </button>
-                <button
-                  type="button"
-                  disabled={waitlistedCount === 0 || adjustingTeam !== null}
-                  onClick={() => void adjustTeams("expand")}
-                  className="inline-flex min-h-[44px] items-center gap-1 px-3 py-1.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-colors"
-                  title="Add a team (promotes players from waitlist)"
-                >
-                  {adjustingTeam === "expand" ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="w-3.5 h-3.5" />
-                  )}
-                  Add team
-                </button>
-              </div>
-              {waitlistedCount > 0 && waitlistedCount < 5 && (
-                <p className="text-2xs text-ink-faint">
-                  Only {waitlistedCount} waitlisted player(s) — adding a team
-                  will create a partial team.
-                </p>
-              )}
-              {!detail.max_teams && (
-                <p className="text-2xs text-ink-faint">
-                  Team count is automatic. Adding a team sets an explicit cap.
-                </p>
-              )}
-            </div>
-          </details>
         </div>
 
         {teamsLoading ? (
@@ -396,8 +311,13 @@ export function MeetupTeamsPanel({
           key={meetupId}
           meetupId={meetupId}
           totalPlayers={confirmedCount}
+          waitlistedPlayers={waitlistedCount}
           teams={teams.teams}
           maxTeams={detail.max_teams}
+          currentTeamSize={detail.team_size}
+          minPlayers={detail.min_players}
+          maxPlayers={detail.max_players}
+          hasStarted={Boolean(detail.has_started)}
           liveMatchNumber={
             detail.current_match && detail.current_match.status !== "pending"
               ? detail.current_match.match_number

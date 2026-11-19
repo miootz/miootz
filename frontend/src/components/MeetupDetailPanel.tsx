@@ -1,5 +1,5 @@
 import { parseMeetupStart } from "../utils/datetime";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Loader2, MapPin, MessageSquare, Trophy } from "lucide-react";
 import type { User } from "../types";
 import { fetchMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
@@ -274,8 +274,9 @@ export function MeetupDetailPanel({
     return m;
   }, [ratees]);
 
+  const ratingSaves = useRef<Record<string, Promise<void>>>({});
   const handleRatingChange = useCallback(
-    async (playerId: string, score: number) => {
+    (playerId: string, score: number) => {
       if (!canRate) return;
       const rateeId = rateeIdMap[playerId];
       if (!rateeId) {
@@ -283,18 +284,19 @@ export function MeetupDetailPanel({
         return;
       }
 
-      try {
-        await submitRating(meetupId, rateeId, score);
-        setRatees((prev) =>
-          prev.map((r) =>
-            r.user_id === rateeId ? { ...r, my_score: score || null } : r,
-          ),
-        );
-      } catch (e) {
+      setRatees((prev) => prev.map((r) =>
+        r.user_id === rateeId ? { ...r, my_score: score || null } : r,
+      ));
+      const previous = ratingSaves.current[playerId] ?? Promise.resolve();
+      const save = previous.catch(() => {}).then(() => submitRating(meetupId, rateeId, score));
+      ratingSaves.current[playerId] = save;
+      void save.catch((e) => {
+        if (ratingSaves.current[playerId] !== save) return;
         showToast(e instanceof Error ? e.message : "Rating failed", "error");
-      }
+        void loadRatings();
+      });
     },
-    [canRate, rateeIdMap, meetupId, showToast],
+    [canRate, rateeIdMap, meetupId, showToast, loadRatings],
   );
 
   /* ── Render ─────────────────────────────────────────── */

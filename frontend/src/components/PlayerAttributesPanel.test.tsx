@@ -9,7 +9,7 @@ describe("PlayerAttributesPanel", () => {
       pas: { score: null, count: 0, sample: 4, total_goals: 9, meetups: 2 },
       def: { score: 5, overridden: true, count: 7, sample: 19, meetups: 4 },
       pac: 3.5,
-      dri: null,
+      dri: 3,
     }} />);
     expect(screen.getByText("8 goals - 19 matches - 4 meetups")).toBeTruthy();
     const passing = screen.getByRole("heading", { name: "Passing (PAS)" }).closest("li")!;
@@ -21,6 +21,6 @@ describe("PlayerAttributesPanel", () => {
     expect(screen.queryByText(/7 clean sheets/)).toBeNull();
     expect(screen.queryByText("How attributes are calculated")).toBeNull();
     const dribbling = screen.getByRole("heading", { name: "Dribbling (DRI)" }).closest("li")!;
-    expect(within(dribbling).getByLabelText("Unrated")).toBeTruthy();
+    expect(within(dribbling).getByText("75")).toHaveClass("text-attribute-dri");
   });
 });

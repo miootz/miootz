@@ -90,7 +90,7 @@ function PlusOneModal({
 
 	const [firstName, setFirstName] = useState("");
 	const [lastName, setLastName] = useState("");
-	const [skill, setSkill] = useState(5);
+	const [skill, setSkill] = useState<number | null>(5);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [result, setResult] = useState<{ claim_url: string } | null>(null);
@@ -101,6 +101,10 @@ function PlusOneModal({
 		setError(null);
 		if (!firstName.trim() || !lastName.trim()) {
 			setError("Please fill in both names.");
+			return;
+		}
+		if (skill == null) {
+			setError("Choose a skill level.");
 			return;
 		}
 		setBusy(true);
@@ -231,7 +235,7 @@ function PlusOneModal({
 								<label className="block text-xs font-medium text-ink-dim mb-1">
 									Skill level
 								</label>
-								<StarRating value={skill} onChange={setSkill} size={28} label="Skill level" />
+								<StarRating value={skill} onChange={setSkill} onClear={() => setSkill(null)} min={1} size={28} label="Skill level" />
 								<p className="mt-1 text-2xs text-ink-faint">
 									{SKILL_SCALE_BLURB}
 								</p>
@@ -563,6 +567,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					<DraggableTeams
 						meetup={meetup}
 						canDragTeams={false}
+						linkToPlayers={me?.is_admin === true}
 						currentUserId={me ? String(me.user.id) : undefined}
 					/>
 				</section>

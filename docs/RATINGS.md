@@ -23,7 +23,7 @@ uses their underlying **1–5** scores before display rounding.
 | Teammates only | Confirmed attendees can rate teammates they shared a side with in a completed match. A side includes its live substitutes. |
 | Everyone | Confirmed attendees can rate any other confirmed attendee in that meetup. |
 
-An eligible vote is one to five stars. At least three different eligible
+An eligible vote is one to five stars in half-star increments. At least three different eligible
 people must rate the same player in the same meetup before those votes can
 affect Adjusted Rating. Clearing a vote can bring the count below three.
 Changing the peer setting applies the new eligibility rules to existing

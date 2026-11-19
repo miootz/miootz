@@ -24,7 +24,8 @@ import {
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { PaginationControls } from "../../components/PaginationControls";
 import { PlayerAvatarFace } from "../../components/PlayerAvatar";
-import { RatingStar, SkillRating } from "../../components/SkillRating";
+import { SkillRating } from "../../components/SkillRating";
+import { StarRating } from "../../components/StarRating";
 import { useToast } from "../../context/ToastContext";
 import { shareLink } from "../../utils/share";
 import { ATTRIBUTE_COLOR, ATTRIBUTE_MAX, ATTRIBUTE_MIN, fromAttributeScale, toAttributeScale } from "../../utils/attributeScale";
@@ -37,8 +38,8 @@ const ATTRIBUTE_FIELDS = [
 	{ key: "sho_override", code: "sho", label: "Shooting (SHO)", placeholder: "Automatic" },
 	{ key: "pas_override", code: "pas", label: "Passing (PAS)", placeholder: "Automatic" },
 	{ key: "def_override", code: "def", label: "Defending (DEF)", placeholder: "Automatic" },
-	{ key: "pac", code: "pac", label: "Pace (PAC)", placeholder: "Unrated" },
-	{ key: "dri", code: "dri", label: "Dribbling (DRI)", placeholder: "Unrated" },
+	{ key: "pac", code: "pac", label: "Pace (PAC)", placeholder: "75 (default)" },
+	{ key: "dri", code: "dri", label: "Dribbling (DRI)", placeholder: "75 (default)" },
 ] as const;
 type AttributeField = (typeof ATTRIBUTE_FIELDS)[number]["key"];
 
@@ -337,30 +338,23 @@ export function AdminPlayerDetailPage() {
 				</div>
 
 				<div>
-					<label htmlFor="player-seed-skill" className="mb-1 block text-xs font-medium text-ink-dim">
+					<div className="mb-1 block text-xs font-medium text-ink-dim">
 						Base Rating (0–5, optional)
-					</label>
-					<div className="relative">
-						<RatingStar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" />
-						<input
-							id="player-seed-skill"
-							type="number"
-							min="0"
-							max="5"
-							step="any"
-							value={editSeedSkill}
-							onChange={(event) => setEditSeedSkill(event.target.value)}
-							placeholder="Unset"
-							className="min-h-11 w-full border border-line bg-raised py-2 pl-9 pr-3 text-sm text-ink tabular-nums placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
-						/>
 					</div>
+					<StarRating
+						value={editSeedSkill === "" ? null : Number(editSeedSkill)}
+						onChange={(value) => setEditSeedSkill(String(value))}
+						onClear={() => setEditSeedSkill("")}
+						disabled={saving}
+						label="Base Rating (0–5, optional)"
+					/>
 					<p className="mt-1 text-xs text-ink-dim">This is separate from the current overall rating.</p>
 				</div>
 
 				<fieldset aria-describedby="player-attribute-help" className="min-w-0">
 					<legend className="text-sm font-semibold text-ink">Player attributes ({ATTRIBUTE_MIN}–{ATTRIBUTE_MAX})</legend>
 					<p id="player-attribute-help" className="mb-3 mt-1 text-xs text-ink-dim">
-						Enter whole numbers. Leave a field blank to use automatic shooting, passing or defending, or to leave pace or dribbling unrated.
+						Enter whole numbers. Leave shooting, passing or defending blank for automatic values. Leave pace or dribbling blank to use 75.
 					</p>
 					<div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
 						{ATTRIBUTE_FIELDS.map(({ key, code, label, placeholder }) => {

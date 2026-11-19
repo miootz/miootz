@@ -395,7 +395,7 @@ async def upsert_users(db, ratings, runners, links, admins):
         if user.seed_skill is None:
             user.seed_skill = skill
         if user.pac is None and name in runners:
-            user.pac = 4.0
+            user.pac = 4.2  # 90 on the displayed attribute scale.
         if name in admins:
             user.is_admin = True
         if name in links:

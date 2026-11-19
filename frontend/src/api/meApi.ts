@@ -56,8 +56,8 @@ export interface PlayerAttributes {
     sho: AttributeEvidence;
     pas: AttributeEvidence & { total_goals: number };
     def: AttributeEvidence;
-    pac: number | null;
-    dri: number | null;
+    pac: number;
+    dri: number;
 }
 
 export interface AttributeEvidence {

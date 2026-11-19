@@ -56,7 +56,11 @@ from app.services.manual_teams import (
     validate_team_partition,
     build_teams_from_manual,
 )
-from app.services.team_adjustment import expand_teams, contract_teams
+from app.services.team_adjustment import (
+    expand_teams,
+    contract_teams,
+    fill_empty_pending_matches,
+)
 from app.services.team_assignment import draft_skill, rebalance_around_locked
 from app.services.rating_settings import get_rating_settings, selected_rating
 from app.services.team_names import generate_team_names
@@ -163,8 +167,7 @@ class TeamsAdjustBody(BaseModel):
 
 
 class TeamsReshapeBody(BaseModel):
-    """Mid-meetup reshape: N teams of M players. Leftover players form ONE
-    (possibly incomplete) bench team — there is no "not on a team" category."""
+    """Set the team shape and signup capacity."""
 
     team_count: int = Field(ge=2, le=5)
     team_size: int = Field(ge=2, le=15)
@@ -182,7 +185,7 @@ class PlusOneCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=80)
     last_name: str = Field(..., min_length=1, max_length=80)
     #: Seeded skill for the guest's computed rating (1–5).
-    skill: int = Field(..., ge=1, le=5)
+    skill: float = Field(..., ge=1, le=5, multiple_of=0.5)
 
 
 class PlusOneClaim(BaseModel):
@@ -226,6 +229,34 @@ async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
         .where(Attendance.meetup_id == meetup_id, Attendance.status == "confirmed")
     )
     return count or 0
+
+
+async def _insert_attendance_if_missing(
+    db: AsyncSession, meetup_id: int, user_id: int
+) -> Attendance | None:
+    # SQLite serializes writes, so the capacity check and signup use one snapshot.
+    result = await db.execute(
+        text(
+            """
+            INSERT INTO attendance (meetup_id, user_id, status, joined_at)
+            SELECT m.id, :user_id, CASE WHEN (
+                SELECT COUNT(*) FROM attendance
+                WHERE meetup_id = m.id AND status = 'confirmed'
+            ) < m.max_players THEN 'confirmed' ELSE 'waitlisted' END, :joined_at
+            FROM meetups m
+            WHERE m.id = :meetup_id AND NOT EXISTS (
+                SELECT 1 FROM attendance
+                WHERE meetup_id = :meetup_id AND user_id = :user_id
+            )
+            """
+        ),
+        {
+            "meetup_id": meetup_id,
+            "user_id": user_id,
+            "joined_at": utcnow(),
+        },
+    )
+    return await db.get(Attendance, result.lastrowid) if result.rowcount == 1 else None
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
@@ -511,6 +542,16 @@ async def get_meetup(
         .limit(1)
     )
     active_match = result.scalar_one_or_none()
+    has_started = (
+        await db.execute(
+            select(MeetupMatch.id)
+            .where(
+                MeetupMatch.meetup_id == meetup_id,
+                MeetupMatch.status.in_(["active", "time_up", "completed"]),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none() is not None
     if active_match:
         team_a_users = loads_int_list(active_match.team_a_users)
         team_b_users = loads_int_list(active_match.team_b_users)
@@ -575,6 +616,8 @@ async def get_meetup(
         "game_template": _game_template_json(meetup.game_template),
         "duration_minutes": meetup.duration_minutes,
         "max_teams": meetup.max_teams,
+        "team_size": meetup.team_size,
+        "has_started": has_started,
         "attendees": attendees,
         "my_attendance": my_attendance,
         "my_waitlist_position": my_waitlist_position,
@@ -663,6 +706,7 @@ async def get_meetup_teams(meetup_id: int, db: AsyncSession = Depends(get_db)):
         mode,
         players,
         max_teams=getattr(meetup, "max_teams", None),
+        team_size=meetup.team_size,
     )
     team_names = get_team_names(meetup)
     out = format_teams_api_payload(teams_nested, team_names)
@@ -935,27 +979,52 @@ async def reshape_meetup_teams(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Mid-meetup reshape: N teams of M players; leftovers form a bench team.
-
-    Re-partitions the confirmed roster and rewrites the rosters of PENDING
-    matches — completed and live matches keep their own snapshots, so history
-    and stats stay correct by construction. Teams get FRESH names: the old
-    names belong to the old lineups.
-    """
+    """Set signup capacity and reshape teams while preserving match history."""
     result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
     meetup = result.scalar_one_or_none()
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+
+    started = (
+        await db.execute(
+            select(MeetupMatch.id)
+            .where(
+                MeetupMatch.meetup_id == meetup_id,
+                MeetupMatch.status.in_(["active", "time_up", "completed"]),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none() is not None
+    capacity = body.team_count * body.team_size
+    if not started and not meetup.min_players <= capacity <= 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Signup capacity must be between {meetup.min_players} and 50 players",
+        )
+    signup_capacity = max(meetup.min_players, min(capacity, 50))
 
     result = await db.execute(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(
             Attendance.meetup_id == meetup_id,
-            Attendance.status == "confirmed",
+            Attendance.status.in_(["confirmed", "waitlisted"]),
         )
+        .order_by(Attendance.joined_at, Attendance.id)
     )
     rows = result.all()
+    confirmed = [(att, user) for att, user in rows if att.status == "confirmed"]
+    waitlisted = [(att, user) for att, user in rows if att.status == "waitlisted"]
+    if not started and len(confirmed) > signup_capacity:
+        for att, _ in confirmed[signup_capacity:]:
+            att.status = "waitlisted"
+        confirmed = confirmed[:signup_capacity]
+    else:
+        promoted = waitlisted[:max(0, signup_capacity - len(confirmed))]
+        for att, _ in promoted:
+            att.status = "confirmed"
+        confirmed.extend(promoted)
+
     computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
@@ -970,13 +1039,8 @@ async def reshape_meetup_teams(
             "pac": user.pac,
             "dri": user.dri,
         }
-        for _, user in rows
+        for _, user in confirmed
     ]
-    if body.team_count * body.team_size > len(players):
-        raise HTTPException(
-            status_code=400,
-            detail="Teams × size cannot exceed the number of confirmed players",
-        )
 
     mode = getattr(meetup, "team_assignment_mode", None) or "balanced"
     # N×M playing slots + ONE bench team with everyone else (possibly
@@ -987,24 +1051,31 @@ async def reshape_meetup_teams(
         import random as _random
 
         _random.shuffle(ordered)
-    chunks: list[list[int]] = [
-        [p["user_id"] for p in ordered[i * body.team_size : (i + 1) * body.team_size]]
-        for i in range(body.team_count)
-    ]
-    leftover = [p["user_id"] for p in ordered[body.team_count * body.team_size :]]
+    playing = min(len(ordered), capacity)
+    per_team, extra = divmod(playing, body.team_count)
+    chunks: list[list[int]] = []
+    offset = 0
+    for i in range(body.team_count):
+        count = per_team + (i < extra)
+        if count:
+            chunks.append([p["user_id"] for p in ordered[offset : offset + count]])
+        offset += count
+    leftover = [p["user_id"] for p in ordered[capacity:]]
     if leftover:
         chunks.append(leftover)
     rebalanced = rebalance_around_locked(
         players, chunks, locked=set(), max_teams=body.team_count, randomize=(mode == "random")
     )
-    partition = [[p["user_id"] for p in team] for team in rebalanced]
+    partition = [[p["user_id"] for p in team] for team in rebalanced] if players else []
 
     # Fresh names: a reshaped team is a NEW team. Old names belong to the old
     # lineups (which live on in completed matches), so stats read correctly.
-    team_names = generate_team_names(len(partition))
+    team_names = generate_team_names(max(body.team_count, len(partition)))
     meetup.team_names_json = json.dumps(team_names)
     meetup.manual_teams_json = json.dumps(partition)
     meetup.max_teams = body.team_count
+    meetup.team_size = body.team_size
+    meetup.max_players = signup_capacity
 
     # Pending matches take the new partition's first two teams; a live or
     # completed match is untouched.
@@ -1017,8 +1088,8 @@ async def reshape_meetup_teams(
         )
     ).scalars().all()
     for m in matches:
-        m.team_a_users = json.dumps(partition[0])
-        m.team_b_users = json.dumps(partition[1])
+        m.team_a_users = json.dumps(partition[0] if partition else [])
+        m.team_b_users = json.dumps(partition[1] if len(partition) > 1 else [])
         m.team_a_name = team_names[0]
         m.team_b_name = team_names[1]
 
@@ -1213,6 +1284,8 @@ async def join_meetup(
                     "now": utcnow(),
                 },
             )
+            await db.refresh(attendance)
+            await fill_empty_pending_matches(db, meetup)
             rev = await bump_meetup_revision(db, meetup_id)
             await db.commit()
             if rev is not None:
@@ -1229,36 +1302,12 @@ async def join_meetup(
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined meetup")
 
-    confirmed_count = await _confirmed_count(db, meetup_id)
-
-    status_new = "confirmed" if confirmed_count < meetup.max_players else "waitlisted"
-
-    new_attendance = Attendance(
-        meetup_id=meetup_id, user_id=user_id, status=status_new
-    )
-    db.add(new_attendance)
+    new_attendance = await _insert_attendance_if_missing(db, meetup_id, user_id)
+    if new_attendance is None:
+        raise HTTPException(status_code=400, detail="Already joined meetup")
+    await db.refresh(meetup)
+    await fill_empty_pending_matches(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
-    await db.flush()
-    if status_new == "confirmed":
-        # Close the TOCTOU window between the COUNT above and this INSERT:
-        # a concurrent join may have committed in between. This single UPDATE
-        # sees the latest committed data and demotes *our* row if the meetup
-        # is now over capacity (SQLite serializes writers, so exactly one
-        # join loses and self-demotes).
-        await db.execute(
-            text(
-                """
-                UPDATE attendance
-                   SET status = 'waitlisted'
-                 WHERE id = :aid
-                   AND status = 'confirmed'
-                   AND (SELECT COUNT(*) FROM attendance a2
-                         WHERE a2.meetup_id = :sid
-                           AND a2.status = 'confirmed') > :maxp
-                """
-            ),
-            {"aid": new_attendance.id, "sid": meetup_id, "maxp": meetup.max_players},
-        )
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
@@ -1505,6 +1554,45 @@ async def redeem_weather_hero(
     }
 
 
+@router.post("/{meetup_id}/admin/attendance")
+async def add_attendance(
+    meetup_id: int,
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup or meetup.skipped:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    attendance = await _insert_attendance_if_missing(db, meetup_id, user_id)
+    if attendance is None:
+        raise HTTPException(
+            status_code=409, detail="Player already has attendance for this meetup"
+        )
+
+    await db.refresh(meetup)
+    if attendance.status == "confirmed":
+        await fill_empty_pending_matches(db, meetup)
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+    await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
+    log_action(
+        request,
+        "attendance",
+        "attendance.joined",
+        f"Added {target.display_name} to '{meetup.location}' as {attendance.status}",
+        meetup_id=meetup_id,
+    )
+    return {"status": attendance.status}
+
+
 @router.post("/{meetup_id}/admin/move")
 async def move_attendance(
     meetup_id: int,
@@ -1534,6 +1622,10 @@ async def move_attendance(
         # join time — otherwise the promotion below would promote them right
         # back into the spot the admin just freed.
         attendance.joined_at = utcnow()
+    if new_status == "confirmed":
+        meetup = await db.get(Meetup, meetup_id)
+        if meetup:
+            await fill_empty_pending_matches(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -1925,6 +2017,7 @@ async def add_plus_one(
         )
         await db.refresh(attendance)
 
+    await fill_empty_pending_matches(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:

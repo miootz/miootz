@@ -10,6 +10,7 @@ from app.models.user import User
 from app.services.player_attributes import (
     effective_player_attributes,
     load_player_attributes,
+    pace_and_dribbling,
 )
 from app.services.peer_rating_policy import teammate_pairs
 from app.services.rating_settings import PeerRatingMode, get_rating_settings
@@ -123,7 +124,7 @@ async def _get_weighted_peer_average(
             Meetup.skipped.is_(False),
         )
     )
-    by_meetup: dict[int, dict[int, int]] = defaultdict(dict)
+    by_meetup: dict[int, dict[int, float]] = defaultdict(dict)
     for vote in votes:
         pair = (min(vote.rater_id, user_id), max(vote.rater_id, user_id))
         if pairs is not None and pair not in pairs.get(vote.meetup_id, ()):
@@ -196,7 +197,7 @@ async def _update_skill(
         key: evidence["score"]
         for key, evidence in effective_player_attributes(user, attributes).items()
     }
-    scores.update(pac=user.pac, dri=user.dri)
+    scores.update(pace_and_dribbling(user))
     user.calculated_skill = blend_skill(user.seed_skill, peer, scores, streak)
 
 

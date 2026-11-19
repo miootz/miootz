@@ -110,6 +110,18 @@ async def test_anonymity_check():
 @pytest.mark.asyncio
 async def test_score_update_verification():
     """Two ratings in different meetups; no earlier meetup locks the first."""
+    # Existing SQLite databases retain the original INTEGER-affinity column.
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql("DROP TABLE ratings")
+        await conn.exec_driver_sql("""
+            CREATE TABLE ratings (
+                id INTEGER PRIMARY KEY, meetup_id INTEGER NOT NULL,
+                rater_id INTEGER NOT NULL, ratee_id INTEGER NOT NULL,
+                score INTEGER NOT NULL, created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                UNIQUE (meetup_id, rater_id, ratee_id)
+            )
+        """)
     async with async_session() as db:
         auth_user = User(pocket_id_sub="tester-uuid", sso_display_name="tester")
         player1 = User(pocket_id_sub="test-p1", sso_display_name="p1")
@@ -167,17 +179,23 @@ async def test_score_update_verification():
             json={
                 "meetup_id": sid2,
                 "ratee_id": p1id,
-                "score": 3,
+                "score": 3.5,
             },
         )
         assert r2.status_code == 200
+        assert r2.json()["score"] == 3.5
+        context = await ac.get(
+            f"/ratings/meetups/{sid2}/context",
+            headers={"Authorization": "Bearer tester"},
+        )
+        assert context.json()["ratees"][0]["my_score"] == 3.5
 
         resp = await ac.get(
             f"/ratings/players/{p1id}",
             headers={"Authorization": "Bearer tester"},
         )
     assert resp.status_code == 200
-    assert resp.json()["average_score"] == 4.0
+    assert resp.json()["average_score"] == 4.25
 
 
 @pytest.mark.asyncio
@@ -252,7 +270,7 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        async def rate(token: str, score: int):
+        async def rate(token: str, score: float):
             return await ac.post(
                 "/ratings/",
                 headers={"Authorization": f"Bearer {token}"},
@@ -279,17 +297,19 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         )
         assert summary.json()["my_rating_avg"] is None
 
-        assert (await rate("tester", 5)).status_code == 200
+        assert (await rate("tester", 1.5)).status_code == 200
         assert (await rate("p1", 1)).status_code == 200
         assert (await rate("tester", -1)).status_code == 422
         assert (await rate("tester", 6)).status_code == 422
+        assert (await rate("tester", 0.5)).status_code == 422
+        assert (await rate("tester", 2.75)).status_code == 422
 
         history = await ac.get(
             f"/users/{player_id}/history", headers={"Authorization": "Bearer user"}
         )
-        assert history.json()["stats"]["average_rating"] == 3
+        assert history.json()["stats"]["average_rating"] == 1.25
         assert history.json()["stats"]["total_ratings"] == 2
-        assert history.json()["history"]["items"][0]["rating_avg"] == 3
+        assert history.json()["history"]["items"][0]["rating_avg"] == 1.25
         async with async_session() as db:
             assert (await db.get(User, player_id)).calculated_skill == 3.5
 

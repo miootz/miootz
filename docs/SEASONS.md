@@ -1,5 +1,10 @@
 # Seasons and rankings
 
+When players tie on a rankings statistic or attribute, the higher active
+rating comes first. The admin rating setting selects Base or Adjusted Rating.
+Ties in the Rating column use Shooting, then Passing, then Defending, each
+in descending order when those scores are available.
+
 A season is a UTC calendar year. Miootz calculates season statistics from the
 stored history; starting a new year does not delete or rewrite past data.
 The rankings page also offers an all-time view.

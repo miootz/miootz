@@ -220,7 +220,7 @@ async def get_rating_context(
         ]
 
     ratee_ids = [u.id for _, u in rows]
-    my_scores: dict[int, int] = {}
+    my_scores: dict[int, float] = {}
     if viewer_attended and ratee_ids:
         r2 = await db.execute(
             select(Rating).where(

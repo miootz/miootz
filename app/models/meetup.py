@@ -72,6 +72,8 @@ class Meetup(Base):
     #: Upper bound on number of teams. When None, team count is purely algorithmic (≤10→2, 11–15→3).
     #: When set, the admin can expand/contract teams and waitlisted players are auto-promoted/returned.
     max_teams: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Selected players per team when an admin has set a team shape.
+    team_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Admin skip: hidden from all listings and history (no trace). Undo = one-off
     #: meetup created at the same date via the standard create form.
     skipped: Mapped[bool] = mapped_column(Boolean, default=False)

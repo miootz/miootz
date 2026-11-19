@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,7 +45,7 @@ class GuestPlusOne(Base):
     last_name: Mapped[str] = mapped_column(String)
 
     #: Guest's skill (1–5, provided by inviter) — seeds the computed rating.
-    skill: Mapped[int] = mapped_column(Integer)
+    skill: Mapped[float] = mapped_column(Float)
 
     #: Unique claim token (shared via link/SMS).
     claim_token: Mapped[str] = mapped_column(String, unique=True, index=True)
