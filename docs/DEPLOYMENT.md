@@ -74,6 +74,20 @@ See [initial setup](../INITIAL_SETUP.md) for the account setup. The production c
 
 Alternatively, provide the production `DEPLOY_ENV` secret before the first manual production deployment and create `~/miootz/production/data` on the host. The workflow creates `.env` if absent. After the deployment succeeds, run the same bootstrap commands from `~/miootz/production/current` to configure Pocket ID and the first admin. Bootstrap updates the host `.env` with the discovered group ID; retain that updated file.
 
+### Enable Web Push
+
+Generate a VAPID key pair using the commands in [.env.example](../.env.example).
+Keep the private PEM in the persistent data directory with mode `0600`. In the
+production host's `.env`, set `VAPID_PUBLIC_KEY` to the corresponding application
+server key, `VAPID_PRIVATE_KEY` to the PEM's path inside `/data`, and
+`VAPID_SUBJECT` to a contact email URI (such as `mailto:owner@example.com`)
+or an HTTPS origin without a trailing slash.
+
+From the current release as the deploy account, apply the new settings with
+`docker compose --project-name miootz --env-file .env up -d --no-deps --force-recreate api`.
+Sign in over HTTPS and register a device. Preserve and back up the VAPID key
+pair across releases so registered devices can continue receiving notifications.
+
 ## First demo setup
 
 The public demo runs **Squad setup** and **Matchday** concurrently. Each room

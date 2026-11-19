@@ -1,6 +1,6 @@
 """Unit tests for manual team partition validation."""
 
-from app.services.manual_teams import validate_team_partition
+from app.services.manual_teams import resolve_meetup_teams_nested, validate_team_partition
 from app.services.team_assignment import (
     assign_teams_random,
     assign_teams_snake,
@@ -150,3 +150,33 @@ def test_random_draft_does_not_rebalance_attributes(monkeypatch):
     ]
     teams = assign_teams_random(players)
     assert [[p["id"] for p in team] for team in teams] == [["1", "4", "5"], ["2", "3", "6"]]
+
+
+def test_auto_balanced_improves_snake_totals_and_is_stable():
+    players = [
+        {"id": str(i), "user_id": i, "skill": skill}
+        for i, skill in enumerate((2.5, 1.5, 1.5, 1.5, 1, 1), 1)
+    ]
+    snake = resolve_meetup_teams_nested(None, "balanced", players)
+    auto = resolve_meetup_teams_nested(None, "auto-balanced", players)
+    assert [sum(p["skill"] for p in team) for team in snake] == [5.0, 4.0]
+    assert [sum(p["skill"] for p in team) for team in auto] == [4.5, 4.5]
+    assert auto == resolve_meetup_teams_nested(None, "auto-balanced", list(reversed(players)))
+
+
+def test_auto_balanced_respects_locked_players_and_attribute_distribution():
+    players = [
+        {"id": str(i), "skill": skill, "pac": pace, "dri": dribbling}
+        for i, (skill, pace, dribbling) in enumerate(
+            ((4.5, 4, 3), (4, 3, 4), (3.5, 4, 3),
+             (3, 3, 4), (2, 4, 3), (1, 3, 4)), 1
+        )
+    ]
+    teams = rebalance_around_locked(
+        players, [[1, 2, 3], [4, 5, 6]], locked={1, 4},
+        optimize=True, shuffle_equal=False,
+    )
+    assert "1" in {p["id"] for p in teams[0]}
+    assert "4" in {p["id"] for p in teams[1]}
+    for attribute in ("pac", "dri"):
+        assert sorted(sum(p[attribute] > 3 for p in team) for team in teams) == [1, 2]

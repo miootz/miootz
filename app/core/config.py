@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     #: to them). Comma-separated; a leading `.` matches subdomains. Override to
     #: add self-hosted push services (e.g. Red Push).
     PUSH_ENDPOINT_HOSTS: str = (
-        "fcm.googleapis.com,fcm.x.io,api.push.apple.com,.moeapp.net,.up.pushin.ca"
+        "fcm.googleapis.com,fcm.x.io,.push.apple.com,"
+        "updates.push.services.mozilla.com,push.services.mozilla.com,.moeapp.net,.up.pushin.ca"
     )
 
     # APScheduler default timezone (per-rule recurrence jobs use their own announce_timezone)

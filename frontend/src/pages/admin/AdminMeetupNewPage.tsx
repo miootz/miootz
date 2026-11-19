@@ -40,7 +40,7 @@ export function AdminMeetupNewPage() {
   const [minPlayers, setMinPlayers] = useState('10');
   const [maxPlayers, setMaxPlayers] = useState('15');
   const [waitlistMode, setWaitlistMode] = useState<WaitlistMode>('auto_promote');
-  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('balanced');
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>('auto-balanced');
   const [sendPushNotifs, setSendPushNotifs] = useState(true);
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export function AdminMeetupNewPage() {
       if (typeof draft.maxPlayers === 'string') setMaxPlayers(draft.maxPlayers);
       if (draft.waitlistMode === 'broadcast' || draft.waitlistMode === 'auto_promote')
         setWaitlistMode(draft.waitlistMode);
-      if (draft.teamMode === 'random' || draft.teamMode === 'balanced')
+      if (draft.teamMode === 'random' || draft.teamMode === 'balanced' || draft.teamMode === 'auto-balanced')
         setTeamMode(draft.teamMode);
       if (typeof draft.step === 'number' && draft.step >= 1 && draft.step <= 2)
         setStep(draft.step as Step);
@@ -373,6 +373,7 @@ export function AdminMeetupNewPage() {
                 }
                 className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live transition-colors"
               >
+                <option value="auto-balanced">Auto-balanced</option>
                 <option value="balanced">Balanced (skill snake)</option>
                 <option value="random">Random order (snake)</option>
               </select>

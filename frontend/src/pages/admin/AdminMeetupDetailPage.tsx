@@ -49,7 +49,7 @@ export function AdminMeetupDetailPage() {
   const [maxPlayers, setMaxPlayers] = useState("15");
   const [waitlistMode, setWaitlistMode] =
     useState<WaitlistMode>("auto_promote");
-  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("balanced");
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("auto-balanced");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   const [savingMeta, setSavingMeta] = useState(false);
@@ -71,7 +71,11 @@ export function AdminMeetupDetailPage() {
       setWaitlistMode(
         d.waitlist_mode === "broadcast" ? "broadcast" : "auto_promote",
       );
-      setTeamMode(d.team_assignment_mode === "random" ? "random" : "balanced");
+      setTeamMode(
+        d.team_assignment_mode === "random" || d.team_assignment_mode === "auto-balanced"
+          ? d.team_assignment_mode
+          : "balanced",
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setDetail(null);
@@ -362,10 +366,12 @@ export function AdminMeetupDetailPage() {
                     <span className="text-xs font-medium text-ink-dim">
                       Team mode
                     </span>
-                    <p className="text-ink mt-0.5 capitalize">
+                    <p className="text-ink mt-0.5">
                       {teamMode === "random"
                         ? "Random"
-                        : "Balanced (skill snake)"}
+                        : teamMode === "auto-balanced"
+                          ? "Auto-balanced"
+                          : "Balanced (skill snake)"}
                     </p>
                   </div>
                   <div>
@@ -502,16 +508,18 @@ export function AdminMeetupDetailPage() {
                     </select>
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-ink-dim mb-1">
+                    <label htmlFor="meetup-team-assignment" className="block text-xs font-medium text-ink-dim mb-1">
                       Team assignment
                     </label>
                     <select
+                      id="meetup-team-assignment"
                       value={teamMode}
                       onChange={(e) =>
                         setTeamMode(e.target.value as TeamAssignmentMode)
                       }
                       className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                     >
+                      <option value="auto-balanced">Auto-balanced</option>
                       <option value="balanced">Balanced (skill snake)</option>
                       <option value="random">Random order (snake)</option>
                     </select>

@@ -221,6 +221,7 @@ async def test_create_game_template_admin():
         assert data["id"] is not None
         assert data["is_active"] is True
         assert data["announce_weekday"] == 3
+        assert data["team_assignment_mode"] == "auto-balanced"
 
 
 @pytest.mark.asyncio
@@ -294,6 +295,9 @@ async def test_materialize_and_notify_are_separate():
     ) as invites:
         created = await materialize_next_meetup(rule_id)
         assert created is True
+        async with AsyncSession(engine) as db:
+            meetups = (await db.scalars(select(Meetup).where(Meetup.game_template_id == rule_id))).all()
+            assert meetups and all(m.team_assignment_mode == "auto-balanced" for m in meetups)
         invites.assert_not_awaited()  # materialize never pushes
 
         sent = await notify_new_meetup(rule_id)

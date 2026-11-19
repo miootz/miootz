@@ -1,4 +1,4 @@
-import { apiFetch } from "../api/client";
+import { apiFetch, parseApiError } from "../api/client";
 import { demoRoom } from "./demoRoom";
 
 export function urlBase64ToUint8Array(base64String: string): BufferSource {
@@ -78,7 +78,7 @@ export async function subscribeToWebPush(onPermissionGranted?: () => void): Prom
     }),
   });
   if (!save.ok) {
-    return { ok: false, reason: "Could not save subscription on server" };
+    return { ok: false, reason: await parseApiError(save) };
   }
   return { ok: true };
 }

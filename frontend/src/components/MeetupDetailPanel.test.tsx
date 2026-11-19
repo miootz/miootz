@@ -44,12 +44,16 @@ it('shows the default without voting, saves an explicit neutral review and clear
 
   render(<MeetupDetailPanel meetupId={7} />);
   const group = await screen.findByRole('group', { name: 'Your review of Alex' });
-  const neutral = within(group).getByRole('button', { name: 'As expected' });
-  const well = within(group).getByRole('button', { name: 'Well' });
+  const neutral = within(group).getByRole('button', { name: 'okay' });
+  const well = within(group).getByRole('button', { name: 'good' });
 
   expect(neutral).toHaveAttribute('aria-pressed', 'true');
-  expect(group).toHaveAccessibleDescription('As expected is selected by default. Select a review to save it.');
+  expect(group).toHaveAccessibleDescription('Okay is selected by default. Select a review to save it.');
   expect(within(group).getAllByRole('button')).toHaveLength(4);
+  expect(within(group).getByRole('button', { name: 'poor' })).toHaveTextContent('😥');
+  expect(neutral).toHaveTextContent('😐');
+  expect(well).toHaveTextContent('😏');
+  expect(within(group).getByRole('button', { name: 'great' })).toHaveTextContent('🤩');
   expect(submitRating).not.toHaveBeenCalled();
 
   fireEvent.click(neutral);
@@ -59,7 +63,7 @@ it('shows the default without voting, saves an explicit neutral review and clear
   fireEvent.click(neutral);
   await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, null));
   expect(neutral).toHaveAttribute('aria-pressed', 'true');
-  expect(group).toHaveAccessibleDescription('As expected is selected by default. Select a review to save it.');
+  expect(group).toHaveAccessibleDescription('Okay is selected by default. Select a review to save it.');
 
   fireEvent.click(well);
   await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, 'well'));
@@ -73,12 +77,12 @@ it('shows a saved review and clears it when activated again', async () => {
 
   render(<MeetupDetailPanel meetupId={7} />);
   const group = await screen.findByRole('group', { name: 'Your review of Alex' });
-  const excellent = within(group).getByRole('button', { name: 'Excellent' });
+  const excellent = within(group).getByRole('button', { name: 'great' });
   expect(excellent).toHaveAttribute('aria-pressed', 'true');
 
   fireEvent.click(excellent);
   await waitFor(() => expect(submitRating).toHaveBeenCalledWith(7, 2, null));
-  expect(within(group).getByRole('button', { name: 'As expected' })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(group).getByRole('button', { name: 'okay' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 it('does not offer review controls when peer ratings are off', async () => {
@@ -102,11 +106,11 @@ it('saves rapid changes in order so an older request cannot overwrite the latest
 
   render(<MeetupDetailPanel meetupId={7} />);
   const group = await screen.findByRole('group', { name: 'Your review of Alex' });
-  fireEvent.click(within(group).getByRole('button', { name: 'Poorly' }));
-  fireEvent.click(within(group).getByRole('button', { name: 'Well' }));
+  fireEvent.click(within(group).getByRole('button', { name: 'poor' }));
+  fireEvent.click(within(group).getByRole('button', { name: 'good' }));
   await waitFor(() => expect(submitRating).toHaveBeenCalledTimes(1));
   expect(submitRating).toHaveBeenCalledWith(7, 2, 'poorly');
-  expect(within(group).getByRole('button', { name: 'Well' })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(group).getByRole('button', { name: 'good' })).toHaveAttribute('aria-pressed', 'true');
   finishFirst();
   await waitFor(() => expect(submitRating).toHaveBeenCalledTimes(2));
   expect(submitRating).toHaveBeenLastCalledWith(7, 2, 'well');

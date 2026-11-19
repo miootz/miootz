@@ -49,8 +49,8 @@ class Meetup(Base):
     # broadcast: notify all waitlisted when a spot opens; first magic-link confirm wins
     # auto_promote: promote first in waitlist immediately when a confirmed spot opens
     waitlist_mode: Mapped[str] = mapped_column(String, default="auto_promote")
-    #: balanced = skill snake draft; random = shuffled snake (same team sizes)
-    team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
+    #: auto-balanced = optimized skill draft; balanced = snake; random = shuffled snake.
+    team_assignment_mode: Mapped[str] = mapped_column(String, default="auto-balanced")
     #: JSON list of lists of user ids per team (admin lineups); None = use algorithm on read.
     manual_teams_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Incremented when attendance, meetup fields, or other player-visible data changes.

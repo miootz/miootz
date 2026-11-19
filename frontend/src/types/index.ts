@@ -43,7 +43,7 @@ export interface Team {
 
 export type MyAttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 
-export type TeamAssignmentMode = 'balanced' | 'random';
+export type TeamAssignmentMode = 'auto-balanced' | 'balanced' | 'random';
 
 export interface Meetup {
   id: string;

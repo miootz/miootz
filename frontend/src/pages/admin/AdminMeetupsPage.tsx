@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import {
@@ -19,8 +19,6 @@ import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import { useToast } from "../../context/ToastContext";
 import { hapticLight } from "../../utils/haptics";
-
-const PAGE_SIZE = 50;
 
 type MeetupFilter = "all" | "upcoming" | "past" | "weekly" | "next7";
 
@@ -89,64 +87,68 @@ export function AdminMeetupsPage() {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounced(query, 300);
   const [filter, setFilter] = useState<MeetupFilter>("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortAnnouncement, setSortAnnouncement] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(25);
+  const requestVersion = useRef(0);
+  const announceSort = useRef(false);
 
   const reloadFirstPage = useCallback(async () => {
+    const requestId = ++requestVersion.current;
     setError(null);
     try {
       const res = await fetchMeetups({
-        limit: PAGE_SIZE,
+        limit: pageSize,
         offset: 0,
+        order: sortOrder,
         q: debouncedQuery.trim() || undefined,
       });
-      const list = res.items;
-      setMeetups(
-        [...list].sort(
-          (a, b) =>
-            parseMeetupStart(a.start_time).getTime() -
-            parseMeetupStart(b.start_time).getTime(),
-        ),
-      );
+      if (requestId !== requestVersion.current) return;
+      setMeetups(res.items);
       setHasMore(res.offset + res.items.length < res.total);
+      if (announceSort.current) {
+        setSortAnnouncement(`Sorted by date, ${sortOrder === "desc" ? "newest" : "oldest"} first.`);
+        announceSort.current = false;
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load meetups");
+      if (requestId === requestVersion.current) {
+        setError(e instanceof Error ? e.message : "Failed to load meetups");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestVersion.current) setLoading(false);
     }
-  }, [debouncedQuery]);
+  }, [debouncedQuery, pageSize, sortOrder]);
 
   useEffect(() => {
     setLoading(true);
     void reloadFirstPage();
+    return () => { requestVersion.current += 1; };
   }, [reloadFirstPage]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
+    const requestId = requestVersion.current;
     setLoadingMore(true);
     setError(null);
     try {
       const next = await fetchMeetups({
-        limit: PAGE_SIZE,
+        limit: pageSize,
         offset: meetups.length,
+        order: sortOrder,
         q: debouncedQuery.trim() || undefined,
       });
-      setMeetups((prev) => {
-        const merged = [...prev, ...next.items];
-        merged.sort(
-          (a, b) =>
-            parseMeetupStart(a.start_time).getTime() -
-            parseMeetupStart(b.start_time).getTime(),
-        );
-        return merged;
-      });
+      if (requestId !== requestVersion.current) return;
+      setMeetups((prev) => [...prev, ...next.items]);
       setHasMore(next.offset + next.items.length < next.total);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load more");
+      if (requestId === requestVersion.current) {
+        setError(e instanceof Error ? e.message : "Failed to load more");
+      }
     } finally {
       setLoadingMore(false);
     }
-  }, [debouncedQuery, meetups.length, hasMore, loadingMore]);
+  }, [debouncedQuery, meetups.length, hasMore, loadingMore, pageSize, sortOrder]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
@@ -163,10 +165,6 @@ export function AdminMeetupsPage() {
       return true;
     });
   }, [meetups, filter]);
-
-  const visibleRows = useMemo(() => {
-    return filtered.slice(0, pageSize);
-  }, [filtered, pageSize]);
 
   async function performDelete(id: number) {
     setDeletingId(id);
@@ -255,21 +253,35 @@ export function AdminMeetupsPage() {
 
       {/* ── Search + Filters ──────────────────────────── */}
 
-      {!loading && meetups.length > 0 && (
+      {(meetups.length > 0 || query.length > 0) && (
         <div className="flex flex-col gap-3 mb-4">
-          {/* Search */}
-          <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
-            <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-            <input
-              id="admin-meetups-search"
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by location…"
-              className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden focus:ring-0"
-              aria-label="Filter meetups by location"
-            />
-          </label>
+          <div className="flex gap-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2 border border-line bg-raised px-3 py-2">
+              <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+              <input
+                id="admin-meetups-search"
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Location…"
+                className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden focus:ring-0"
+                aria-label="Filter meetups by location"
+              />
+            </label>
+            <select
+              aria-label="Sort meetups by date"
+              value={sortOrder}
+              onChange={(event) => {
+                announceSort.current = true;
+                setSortOrder(event.target.value as "asc" | "desc");
+              }}
+              className="min-h-11 shrink-0 border border-line bg-raised px-2 text-xs text-ink focus-visible:outline-2 focus-visible:outline-live"
+            >
+              <option value="desc">Newest first</option>
+              <option value="asc">Oldest first</option>
+            </select>
+          </div>
+          <p role="status" className="sr-only">{sortAnnouncement}</p>
 
           {/* Filter chips — horizontal scroll on mobile */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -317,7 +329,7 @@ export function AdminMeetupsPage() {
 
       {/* ── Meetup list ──────────────────────────────── */}
 
-      {loading ? (
+      {loading && meetups.length === 0 ? (
         <ul
           className="space-y-2"
           aria-busy="true"
@@ -327,7 +339,7 @@ export function AdminMeetupsPage() {
           <MeetupRowSkeleton />
           <MeetupRowSkeleton />
         </ul>
-      ) : meetups.length === 0 ? (
+      ) : meetups.length === 0 && !debouncedQuery.trim() ? (
         <div className="border border-line bg-panel p-12 text-center">
           <Calendar className="w-12 h-12 mx-auto text-ink-faint mb-4" />
           <p className="text-ink-dim mb-6">
@@ -356,8 +368,8 @@ export function AdminMeetupsPage() {
         </p>
       ) : (
         <>
-          <ul className="space-y-2">
-            {visibleRows.map((s) => {
+          <ul className="space-y-2" aria-busy={loading}>
+            {filtered.map((s) => {
               const start = parseMeetupStart(s.start_time);
               const upcoming = start.getTime() >= Date.now();
               const confirmed = s.confirmed_count ?? 0;
@@ -464,29 +476,21 @@ export function AdminMeetupsPage() {
             })}
           </ul>
 
-          {filtered.length > pageSize ? (
-            <p className="text-center text-xs text-ink-faint mt-3">
-              Showing {Math.min(pageSize, filtered.length)} of {filtered.length}{" "}
-              matching (adjust &quot;rows&quot;).
-            </p>
-          ) : null}
-
-          {hasMore && (
-            <div className="flex justify-center mt-4">
-              <button
-                type="button"
-                onClick={() => void loadMore()}
-                disabled={loadingMore}
-                className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-50 transition-colors"
-              >
-                {loadingMore ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : null}
-                Load more
-              </button>
-            </div>
-          )}
         </>
+      )}
+
+      {!loading && hasMore && (
+        <div className="flex justify-center mt-4">
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-50 transition-colors"
+          >
+            {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+            Load more
+          </button>
+        </div>
       )}
 
       <ConfirmDialog

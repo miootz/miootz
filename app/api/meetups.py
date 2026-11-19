@@ -82,13 +82,13 @@ from app.services.audit import log_action
 
 router = APIRouter(prefix="/meetups", tags=["meetups"])
 
-TEAM_ASSIGNMENT_MODES = frozenset({"balanced", "random"})
+TEAM_ASSIGNMENT_MODES = frozenset({"auto-balanced", "balanced", "random"})
 
 
 def _normalize_team_mode(v: str) -> str:
     x = (v or "balanced").lower().strip()
     if x not in TEAM_ASSIGNMENT_MODES:
-        raise ValueError("team_assignment_mode must be 'balanced' or 'random'")
+        raise ValueError("team_assignment_mode must be 'auto-balanced', 'balanced', or 'random'")
     return x
 
 
@@ -102,7 +102,7 @@ class MeetupCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str = Field(default="auto_promote")
-    team_assignment_mode: str = Field(default="balanced")
+    team_assignment_mode: str = Field(default="auto-balanced")
     #: When True (default), push all users a join notification for this instance.
     send_push_notifications: bool = True
     #: Upper bound on team count. When None, team count is purely algorithmic.
@@ -355,8 +355,8 @@ async def list_meetups(
 
     # Order direction via explicit allowlist (no dynamic identifiers).
     order_exprs = {
-        "asc": Meetup.start_time.asc(),
-        "desc": Meetup.start_time.desc(),
+        "asc": (Meetup.start_time.asc(), Meetup.id.asc()),
+        "desc": (Meetup.start_time.desc(), Meetup.id.desc()),
     }
     o = order.lower()
     if o not in order_exprs:
@@ -384,7 +384,7 @@ async def list_meetups(
 
     total = (await db.execute(count_stmt)).scalar_one()
 
-    stmt = stmt.order_by(order_exprs[o]).offset(offset)
+    stmt = stmt.order_by(*order_exprs[o]).offset(offset)
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await db.execute(stmt)
@@ -884,6 +884,7 @@ async def reshuffle_meetup_teams(
             locked,
             max_teams=meetup.max_teams,
             randomize=(mode == "random"),
+            optimize=mode == "auto-balanced",
         )
         new_lineup = [[p["user_id"] for p in team] for team in rebalanced]
         if new_lineup == int_teams:
@@ -1054,7 +1055,8 @@ async def reshape_meetup_teams(
     if leftover:
         chunks.append(leftover)
     rebalanced = rebalance_around_locked(
-        players, chunks, locked=set(), max_teams=body.team_count, randomize=(mode == "random")
+        players, chunks, locked=set(), max_teams=body.team_count, randomize=(mode == "random"),
+        optimize=mode == "auto-balanced", shuffle_equal=mode != "auto-balanced",
     )
     partition = [[p["user_id"] for p in team] for team in rebalanced] if players else []
 
@@ -1077,6 +1079,9 @@ async def reshape_meetup_teams(
             )
         )
     ).scalars().all()
+    if mode == "auto-balanced" and not started and not matches:
+        # The shape is saved separately so later signups can be redrafted.
+        meetup.manual_teams_json = None
     for m in matches:
         m.team_a_users = json.dumps(partition[0] if partition else [])
         m.team_b_users = json.dumps(partition[1] if len(partition) > 1 else [])

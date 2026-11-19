@@ -30,6 +30,25 @@ async def create_test_user(
 
 
 @pytest.mark.asyncio
+async def test_paginated_meetups_sort_tied_dates_by_id():
+    async with AsyncSession(engine) as db:
+        start = datetime.now(UTC) - timedelta(days=1)
+        db.add_all(Meetup(id=i, start_time=start, location="Pitch") for i in range(1, 5))
+        await db.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        for order, expected in (("asc", [1, 2, 3, 4]), ("desc", [4, 3, 2, 1])):
+            pages = [
+                (await ac.get(
+                    "/meetups/", params={"order": order, "limit": 2, "offset": offset},
+                    headers={"Authorization": "Bearer admin"},
+                )).json()["items"]
+                for offset in (0, 2)
+            ]
+            assert [item["id"] for page in pages for item in page] == expected
+
+
+@pytest.mark.asyncio
 async def test_meetup_lifecycle():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

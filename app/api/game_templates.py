@@ -27,13 +27,13 @@ from app.services.audit import log_action
 
 router = APIRouter(prefix="/game-templates", tags=["game-templates"])
 
-TEAM_ASSIGNMENT_MODES = frozenset({"balanced", "random"})
+TEAM_ASSIGNMENT_MODES = frozenset({"auto-balanced", "balanced", "random"})
 
 
 def _normalize_team_mode(v: str) -> str:
     x = (v or "balanced").lower().strip()
     if x not in TEAM_ASSIGNMENT_MODES:
-        raise ValueError("team_assignment_mode must be 'balanced' or 'random'")
+        raise ValueError("team_assignment_mode must be 'auto-balanced', 'balanced', or 'random'")
     return x
 
 
@@ -99,7 +99,7 @@ class GameTemplateCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     waitlist_mode: str = Field(default="auto_promote")
-    team_assignment_mode: str = Field(default="balanced")
+    team_assignment_mode: str = Field(default="auto-balanced")
     is_active: bool = True
     match_duration_minutes: int = Field(default=10, ge=1, le=60)
     allows_draws: bool = False

@@ -422,10 +422,16 @@ async def start_matches(
         max_teams=getattr(meetup, "max_teams", None),
         team_size=meetup.team_size,
     )
-    if len(teams_nested) < 2:
+    nonempty_team_count = sum(bool(team) for team in teams_nested)
+    if nonempty_team_count < 2:
         raise HTTPException(
             status_code=400,
-            detail=f"Need at least 2 teams to start matches. Found {len(teams_nested)}.",
+            detail=f"Need at least 2 teams to start matches. Found {nonempty_team_count}.",
+        )
+
+    if mode == "auto-balanced":
+        meetup.manual_teams_json = json.dumps(
+            [[int(p["id"]) for p in team] for team in teams_nested]
         )
 
     # Ensure team names exist
@@ -443,6 +449,8 @@ async def start_matches(
             status_code=400,
             detail="team_a_idx/team_b_idx must be distinct valid team indices.",
         )
+    if not teams_nested[team_a_idx] or not teams_nested[team_b_idx]:
+        raise HTTPException(status_code=400, detail="Both teams must have players.")
 
     team_a = teams_nested[team_a_idx]
     team_b = teams_nested[team_b_idx]

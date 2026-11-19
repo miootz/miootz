@@ -172,13 +172,20 @@ async def test_push_subscription_ownership_and_allowlist(
     monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "pub")
     monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "pri")
     async with await client() as ac:
-        # Foreign host: rejected before any DB write.
-        r = await ac.post(
-            "/users/me/push/subscription",
-            json={"endpoint": "https://evil.example.com/x", "keys": {"p256dh": "k", "auth": "a"}},
-            headers=hdr("p1"),
-        )
-        assert r.status_code == 400, r.text
+        for host in ("evil.example.com", "push.apple.com.example.com", "fakepush.apple.com"):
+            r = await ac.post(
+                "/users/me/push/subscription",
+                json={"endpoint": f"https://{host}/x", "keys": {"p256dh": "k", "auth": "a"}},
+                headers=hdr("p1"),
+            )
+            assert r.status_code == 400, r.text
+        for host in ("web.push.apple.com", "updates.push.services.mozilla.com", "push.services.mozilla.com"):
+            r = await ac.post(
+                "/users/me/push/subscription",
+                json={"endpoint": f"https://{host}/x", "keys": {"p256dh": "k", "auth": "a"}},
+                headers=hdr("p1"),
+            )
+            assert r.status_code == 200, r.text
         # Allowed host: p1 registers, p2 cannot steal it.
         body = {
             "endpoint": "https://fcm.googleapis.com/fcm/send/dev1",

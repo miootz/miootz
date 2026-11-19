@@ -17,6 +17,9 @@ from app.models.chat import ChatMessage
 from app.models.user import User
 from app.services.rating_windows import may_rate_or_edit
 from app.services.rating_settings import get_rating_settings
+from app.services.rating_settings import selected_rating
+from app.services.team_assignment import draft_skill
+from app.services.manual_teams import resolve_meetup_teams_nested
 
 
 @pytest.mark.asyncio
@@ -40,6 +43,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert recent is not None
         template = await db.get(GameTemplate, 1)
         assert template is not None
+        assert template.team_assignment_mode == "auto-balanced"
         assert template.weekday == 4 and (template.hour, template.minute) == (18, 30)
         assert template.fee == 8 and template.fee_text == "8 credits"
         assert template.location == "Example Sports Centre"
@@ -79,8 +83,23 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         )
         assert len({row.user_id for row in attendance}) == len(attendance)
         confirmed = {row.user_id for row in attendance if row.status == "confirmed"}
-        assert current.manual_teams_json
-        teams = json.loads(current.manual_teams_json)
+        assert current.team_assignment_mode == ("random" if scenario == "random" else "auto-balanced")
+        if current.manual_teams_json:
+            teams = json.loads(current.manual_teams_json)
+        else:
+            assert scenario not in ("random", "live", "kickoff")
+            computed = (await get_rating_settings(db)).computed_scores
+            users = await db.scalars(select(User).where(User.id.in_(confirmed)))
+            players = [
+                {"id": str(user.id), "user_id": user.id,
+                 "skill": draft_skill(selected_rating(user, computed)), "pac": user.pac, "dri": user.dri}
+                for user in users
+            ]
+            teams = [
+                [int(p["id"]) for p in team] for team in resolve_meetup_teams_nested(
+                    None, current.team_assignment_mode, players, max_teams=current.max_teams,
+                )
+            ]
         assert set(uid for team in teams for uid in team) == confirmed
         assert sum(len(team) for team in teams) == len(confirmed)
         if scenario in ("live", "kickoff"):

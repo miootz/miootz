@@ -2,7 +2,7 @@ import { apiFetch, parseApiError } from './client';
 
 export type WaitlistMode = 'broadcast' | 'auto_promote';
 
-export type TeamAssignmentMode = 'balanced' | 'random';
+export type TeamAssignmentMode = 'auto-balanced' | 'balanced' | 'random';
 
 export interface MeetupCreateBody {
   start_time: string;

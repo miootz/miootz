@@ -47,7 +47,7 @@ export function AdminGameTemplateEditPage() {
   const [maxPlayers, setMaxPlayers] = useState("15");
   const [waitlistMode, setWaitlistMode] =
     useState<WaitlistMode>("auto_promote");
-  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("balanced");
+  const [teamMode, setTeamMode] = useState<TeamAssignmentMode>("auto-balanced");
   const [matchDuration, setMatchDuration] = useState("10");
   const [allowsDraws, setAllowsDraws] = useState(false);
   const [isActive, setIsActive] = useState(true);
@@ -90,7 +90,7 @@ export function AdminGameTemplateEditPage() {
       setWaitlistMode(
         t.waitlist_mode === "broadcast" ? "broadcast" : "auto_promote",
       );
-      setTeamMode(t.team_assignment_mode === "random" ? "random" : "balanced");
+      setTeamMode(t.team_assignment_mode ?? "balanced");
       setMatchDuration(String(t.match_duration_minutes ?? 10));
       setAllowsDraws(t.allows_draws === true);
       setIsActive(t.is_active);
@@ -333,14 +333,16 @@ export function AdminGameTemplateEditPage() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-ink-dim mb-1">
+          <label htmlFor="template-team-assignment" className="block text-xs font-medium text-ink-dim mb-1">
             Team assignment
           </label>
           <select
+            id="template-team-assignment"
             value={teamMode}
             onChange={(e) => setTeamMode(e.target.value as TeamAssignmentMode)}
             className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
           >
+            <option value="auto-balanced">Auto-balanced</option>
             <option value="balanced">Balanced (skill snake)</option>
             <option value="random">Random order (snake)</option>
           </select>
