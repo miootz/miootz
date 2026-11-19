@@ -18,7 +18,7 @@ describe("AdminPlayerDetailPage", () => {
     adminGetPlayerHistory.mockReset().mockResolvedValue({
       user: {
         id: 1, display_name: "Sam Vale", username: null, avatar_url: null,
-        calculated_skill: 3.8, seed_skill: 0, pac: 3.25, dri: null,
+        calculated_skill: 3.8, seed_skill: 0, pac: 3.25, dri: null, pas_override: 4,
         primary_specialty: "DEF", secondary_specialty: null,
         is_admin: false, pocket_id_sub: null, has_pocket_id: true,
       },
@@ -36,12 +36,16 @@ describe("AdminPlayerDetailPage", () => {
     );
     const seed = await screen.findByLabelText("Base Rating (0–5, optional)");
     expect(seed).toHaveValue(0);
-    expect(screen.getByLabelText("Pace (PAC) (optional)")).toHaveValue(3.25);
-    fireEvent.change(screen.getByLabelText("Pace (PAC) (optional)"), { target: { value: "" } });
-    fireEvent.change(screen.getByLabelText("Dribbling (DRI) (optional)"), { target: { value: "4.5" } });
+    expect(screen.getByLabelText("Pace (PAC)")).toHaveValue(78.13);
+    expect(screen.getByLabelText("Passing (PAS)")).toHaveValue(87.5);
+    fireEvent.change(screen.getByLabelText("Passing (PAS)"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Shooting (SHO)"), { target: { value: "50" } });
+    fireEvent.change(screen.getByLabelText("Defending (DEF)"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Dribbling (DRI)"), { target: { value: "93.75" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(adminUpdateUser).toHaveBeenCalledWith(1, {
-      display_name: "Sam Vale", seed_skill: 0, pac: null, dri: 4.5,
+      display_name: "Sam Vale", seed_skill: 0, dri: 4.5,
+      sho_override: 1, pas_override: null, def_override: 5,
       primary_specialty: "DEF", secondary_specialty: null, is_admin: false,
     }));
   });

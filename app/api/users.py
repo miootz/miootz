@@ -525,6 +525,9 @@ class AdminUserListOut(BaseModel):
     seed_skill: float | None = None
     pac: float | None = None
     dri: float | None = None
+    sho_override: float | None = None
+    pas_override: float | None = None
+    def_override: float | None = None
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool = False
@@ -536,6 +539,9 @@ class AdminUserUpdate(BaseModel):
     seed_skill: float | None = Field(None, ge=0, le=5)
     pac: float | None = Field(None, ge=1, le=5)
     dri: float | None = Field(None, ge=1, le=5)
+    sho_override: float | None = Field(None, ge=1, le=5)
+    pas_override: float | None = Field(None, ge=1, le=5)
+    def_override: float | None = Field(None, ge=1, le=5)
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool | None = None
@@ -739,7 +745,8 @@ async def admin_update_user(
     for key, value in dumped.items():
         setattr(user, key, value)
 
-    if {"seed_skill", "pac", "dri"} & dumped.keys():
+    rating_fields = {"seed_skill", "pac", "dri", "sho_override", "pas_override", "def_override"}
+    if rating_fields & dumped.keys():
         await update_user_calculated_skill(db, user.id, commit=False)
     await db.commit()
     await db.refresh(user)

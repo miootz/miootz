@@ -19,7 +19,7 @@ a lineup. **Balanced (skill snake)** deals players by skill. **Random order
    can differ until an admin saves a lineup.
 4. **Spread pace and dribbling.** In balanced mode, Miootz swaps unlocked
    players across teams when that improves the distribution of players with
-   PAC or DRI above 3.0. It compares each category against each team's share of
+   PAC or DRI above 75. It compares each category against each team's share of
    the available playing spots. The bench does not take part in these swaps.
    When two swaps improve the distribution equally, it
    prefers the one that keeps rating totals closer. The roster labels identify
@@ -120,13 +120,19 @@ a credited assist. A blank assist counts as an uncredited goal for coverage,
 and a match with no team open-play goals provides no PAS scoring evidence.
 An attribute stays unavailable until its minimum evidence is met.
 
-Miootz converts each rate to a 1–5 attribute by interpolating between its
-anchors, caps the result at 1–5, and rounds it to one decimal place. Rankings'
-**Attributes** view shows SHO, PAS, and DEF for the selected period and can
-sort by each. History shows goals, assists, and clean sheets for the meetup.
-The profile shows current attributes and overall skill. Admins can set PAC
-and DRI. The roster import seeds PAC at 4.0 for players marked `Y` in
-`Runs` who have no PAC value.
+Miootz interpolates between the anchors, caps the internal score at 1–5, and
+rounds the automatic score to one decimal place. The app displays attributes
+on a **50–100** scale using `50 + (internal score − 1) × 12.5`. Base and Adjusted
+Rating are still measured in stars. Rankings' **Ratings** view shows SHO, PAS,
+and DEF for the selected period and can sort by each. History shows goals,
+assists, and clean sheets for the meetup. The profile shows current attributes
+and automatic scores' supporting counts.
+
+On a player's admin edit page, admins can override all five attributes on the
+50–100 scale. An override replaces the automatic score across periods and in
+Adjusted Rating. Clear SHO, PAS, or DEF to use the automatic score again. Clear
+PAC or DRI to leave it unrated. The roster import seeds PAC at 87.5 for players
+marked `Y` in `Runs` who have no PAC value.
 
 Fresh databases work without migrating the former additive match bonus.
 Attributes use eligible recorded or imported match history.

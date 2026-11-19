@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { AttributeRankingRow, AttributeSort } from "../api/rankingsApi";
+import { toAttributeScale } from "../utils/attributeScale";
+import { PlayerEditLink } from "./PlayerEditLink";
 
 const ATTRIBUTES: { key: AttributeSort; label: string }[] = [
   { key: "sho", label: "Shooting" },
@@ -55,17 +57,22 @@ export function AttributeRankingsTable({
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((row) => (
-              <tr key={row.user.id} className={row.user.id === highlightUserId ? "bg-live/10" : ""}>
+              <tr key={row.user.id} className={`relative ${row.user.id === highlightUserId ? "bg-live/10" : ""}`}>
                 <th scope="row" className="px-2 py-3 text-left font-medium text-ink sm:px-3">
                   <span className="mr-2 text-xs text-ink-dim tabular-nums">{row.rank ?? "—"}</span>
-                  <span className="[overflow-wrap:anywhere]">{row.user.display_name}</span>
+                  <PlayerEditLink playerId={row.user.id} className="[overflow-wrap:anywhere]" stretch>{row.user.display_name}</PlayerEditLink>
                   {row.user.id === highlightUserId && <span className="ml-1 text-xs text-live">You</span>}
                 </th>
-                {columns.map(({ key }) => (
-                  <td key={key} className="px-1 py-3 text-right font-bold tabular-nums sm:px-3">
-                    {row[key] == null ? <span className="text-ink-dim" aria-label="Insufficient data">—</span> : row[key].toFixed(1)}
-                  </td>
-                ))}
+                {columns.map(({ key }) => {
+                  const value = row[key];
+                  return (
+                    <td key={key} className="px-1 py-3 text-right font-bold tabular-nums sm:px-3">
+                      {value == null ? <span className="text-ink-dim" aria-label="Insufficient data">—</span> : (
+                        key === "rating" ? value.toFixed(1) : toAttributeScale(value)
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

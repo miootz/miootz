@@ -62,6 +62,7 @@ export interface PlayerAttributes {
 
 export interface AttributeEvidence {
     score: number | null;
+    overridden?: boolean;
     count: number;
     sample: number;
     meetups: number;

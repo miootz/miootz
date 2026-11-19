@@ -26,10 +26,20 @@ import { PaginationControls } from "../../components/PaginationControls";
 import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
 import { useToast } from "../../context/ToastContext";
 import { shareLink } from "../../utils/share";
+import { ATTRIBUTE_MAX, ATTRIBUTE_MIN, fromAttributeScale, toAttributeScale } from "../../utils/attributeScale";
 
 const HISTORY_PAGE_SIZE = 25;
 
 const SPECIALTIES = ["ATT", "MID", "DEF", "GK"] as const;
+
+const ATTRIBUTE_FIELDS = [
+	{ key: "sho_override", label: "Shooting (SHO)", placeholder: "Automatic" },
+	{ key: "pas_override", label: "Passing (PAS)", placeholder: "Automatic" },
+	{ key: "def_override", label: "Defending (DEF)", placeholder: "Automatic" },
+	{ key: "pac", label: "Pace (PAC)", placeholder: "Unrated" },
+	{ key: "dri", label: "Dribbling (DRI)", placeholder: "Unrated" },
+] as const;
+type AttributeField = (typeof ATTRIBUTE_FIELDS)[number]["key"];
 
 const STATUS_META: Record<
 	PlayerHistoryRow["status"],
@@ -79,8 +89,7 @@ export function AdminPlayerDetailPage() {
 	// Profile form (mirrors the loaded row)
 	const [editDisplayName, setEditDisplayName] = useState("");
 	const [editSeedSkill, setEditSeedSkill] = useState("");
-	const [editPace, setEditPace] = useState("");
-	const [editDribbling, setEditDribbling] = useState("");
+	const [editAttributes, setEditAttributes] = useState<Partial<Record<AttributeField, string>>>({});
 	const [editPrimary, setEditPrimary] = useState("");
 	const [editSecondary, setEditSecondary] = useState("");
 	const [editIsAdmin, setEditIsAdmin] = useState(false);
@@ -105,8 +114,7 @@ export function AdminPlayerDetailPage() {
 				setNotFound(false);
 				setEditDisplayName(r.user.display_name || "");
 				setEditSeedSkill(r.user.seed_skill?.toString() ?? "");
-				setEditPace(r.user.pac?.toString() ?? "");
-				setEditDribbling(r.user.dri?.toString() ?? "");
+				setEditAttributes({});
 				setEditPrimary(r.user.primary_specialty || "");
 				setEditSecondary(r.user.secondary_specialty || "");
 				setEditIsAdmin(r.user.is_admin);
@@ -137,8 +145,12 @@ export function AdminPlayerDetailPage() {
 			const body: AdminUserUpdate = {};
 			body.display_name = editDisplayName.trim() || null;
 			body.seed_skill = editSeedSkill === "" ? null : Number(editSeedSkill);
-			body.pac = editPace === "" ? null : Number(editPace);
-			body.dri = editDribbling === "" ? null : Number(editDribbling);
+			for (const { key } of ATTRIBUTE_FIELDS) {
+				const value = editAttributes[key];
+				if (value !== undefined) {
+					body[key] = value === "" ? null : fromAttributeScale(Number(value));
+				}
+			}
 			body.primary_specialty =
 				(editPrimary as AdminUserUpdate["primary_specialty"]) || null;
 			body.secondary_specialty =
@@ -348,27 +360,37 @@ export function AdminPlayerDetailPage() {
 					<p className="mt-1 text-xs text-ink-dim">This is separate from the current overall rating.</p>
 				</div>
 
-				<div className="grid grid-cols-2 gap-4">
-					{([
-						{ id: "player-pace", label: "Pace (PAC)", value: editPace, set: setEditPace },
-						{ id: "player-dribbling", label: "Dribbling (DRI)", value: editDribbling, set: setEditDribbling },
-					] as const).map((field) => (
-						<div key={field.id}>
-							<label htmlFor={field.id} className="mb-1 block text-xs font-medium text-ink-dim">{field.label} (optional)</label>
-							<input
-								id={field.id}
-								type="number"
-								min="1"
-								max="5"
-								step="any"
-								value={field.value}
-								onChange={(event) => field.set(event.target.value)}
-								placeholder="Unrated"
-								className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
-							/>
-						</div>
-					))}
-				</div>
+				<fieldset aria-describedby="player-attribute-help" className="min-w-0">
+					<legend className="text-sm font-semibold text-ink">Player attributes ({ATTRIBUTE_MIN}–{ATTRIBUTE_MAX})</legend>
+					<p id="player-attribute-help" className="mb-3 mt-1 text-xs text-ink-dim">
+						Leave a field blank to use automatic shooting, passing or defending, or to leave pace or dribbling unrated.
+					</p>
+					<div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+						{ATTRIBUTE_FIELDS.map(({ key, label, placeholder }) => {
+							const stored = user[key];
+							const id = `player-${key}`;
+							return (
+								<div key={key}>
+									<label htmlFor={id} className="mb-1 block text-xs font-medium text-ink-dim">{label}</label>
+									<input
+										id={id}
+										type="number"
+										min={ATTRIBUTE_MIN}
+										max={ATTRIBUTE_MAX}
+										step="any"
+										value={editAttributes[key] ?? (stored == null ? "" : toAttributeScale(stored))}
+										onChange={(event) => {
+											const value = event.target.value;
+											setEditAttributes((edits) => ({ ...edits, [key]: value }));
+										}}
+										placeholder={placeholder}
+										className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+									/>
+								</div>
+							);
+						})}
+					</div>
+				</fieldset>
 
 				<div className="grid sm:grid-cols-2 gap-4">
 					<div>

@@ -12,6 +12,7 @@ import {
 } from "../api/rankingsApi";
 import { MeetupDetailPanel } from "../components/MeetupDetailPanel";
 import { RankingsTable } from "../components/RankingsTable";
+import { PlayerEditLink } from "../components/PlayerEditLink";
 import { parseMeetupStart } from "../utils/datetime";
 
 function KpiTile({ label, value }: { label: string; value: number }) {
@@ -201,8 +202,10 @@ export function HistoryMeetupPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {performers.map((player) => (
-                  <tr key={player.user.id} className={player.user.id === me?.user?.id ? "bg-live/10" : ""}>
-                    <th scope="row" className="px-3 py-3 text-left font-medium text-ink [overflow-wrap:anywhere]">{player.user.display_name}</th>
+                  <tr key={player.user.id} className={`relative ${player.user.id === me?.user?.id ? "bg-live/10" : ""}`}>
+                    <th scope="row" className="px-3 py-3 text-left font-medium text-ink [overflow-wrap:anywhere]">
+                      <PlayerEditLink playerId={player.user.id} stretch>{player.user.display_name}</PlayerEditLink>
+                    </th>
                     <td className="px-1 py-3 text-right font-bold tabular-nums">{player.goals - player.own_goals}</td>
                     <td className="px-1 py-3 text-right font-bold tabular-nums">{player.assists}</td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums">{player.clean_sheets}</td>

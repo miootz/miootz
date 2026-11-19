@@ -7,7 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
-from app.services.player_attributes import load_player_attributes
+from app.services.player_attributes import (
+    effective_player_attributes,
+    load_player_attributes,
+)
 from app.services.peer_rating_policy import teammate_pairs
 from app.services.rating_settings import PeerRatingMode, get_rating_settings
 from app.services.rating_windows import meetup_end_time
@@ -189,7 +192,10 @@ async def _update_skill(
         if peer is not None
         else 0
     )
-    scores = {key: evidence["score"] for key, evidence in attributes.items()}
+    scores = {
+        key: evidence["score"]
+        for key, evidence in effective_player_attributes(user, attributes).items()
+    }
     scores.update(pac=user.pac, dri=user.dri)
     user.calculated_skill = blend_skill(user.seed_skill, peer, scores, streak)
 

@@ -13,9 +13,7 @@ import { hapticLight } from "../utils/haptics";
 import { DraggableTeams } from "./DraggableTeams";
 
 function ratingOf(p: User): number {
-  return p.calculatedSkill != null
-    ? p.calculatedSkill
-    : Math.round(p.skillScore);
+  return p.calculatedSkill ?? p.skillScore;
 }
 
 /** Display order: rating desc, name (first letter) asc on ties. */
@@ -388,6 +386,7 @@ export function MeetupTeamsPanel({
             onMovePlayer={handleMovePlayer}
             onToggleLock={handleToggleLock}
             canDragTeams={Boolean(teamMeetup)}
+            linkToPlayers
             onReshuffle={() => void reshuffleTeams()}
             reshuffling={reshuffling}
           />

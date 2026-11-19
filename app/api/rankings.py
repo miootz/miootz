@@ -9,7 +9,10 @@ from app.core.timeutil import utcnow
 from app.models.user import User
 from app.schemas.rankings import AttributeRankingsResponse, RankingsResponse
 from app.services import rankings_service
-from app.services.player_attributes import load_player_attributes
+from app.services.player_attributes import (
+    effective_player_attributes,
+    load_player_attributes,
+)
 from app.services.rating_settings import get_rating_settings, selected_rating
 
 router = APIRouter(tags=["rankings"])
@@ -78,7 +81,13 @@ async def get_attribute_rankings(
     computed_scores = (await get_rating_settings(db)).computed_scores
     if computed_scores:
         attributes = await load_player_attributes(db, year=scope)
-        eligible = or_(User.calculated_skill.is_not(None), User.id.in_(attributes))
+        eligible = or_(
+            User.calculated_skill.is_not(None),
+            User.id.in_(attributes),
+            User.sho_override.is_not(None),
+            User.pas_override.is_not(None),
+            User.def_override.is_not(None),
+        )
     else:
         attributes = {}
         eligible = User.seed_skill.is_not(None)
@@ -92,10 +101,16 @@ async def get_attribute_rankings(
                 "avatar_url": user.avatar_url,
             },
             "rating": selected_rating(user, computed_scores),
-            **{
-                key: attributes.get(user.id, {}).get(key, {}).get("score")
-                for key in ("sho", "pas", "def")
-            },
+            **(
+                {
+                    key: evidence["score"]
+                    for key, evidence in effective_player_attributes(
+                        user, attributes.get(user.id)
+                    ).items()
+                }
+                if computed_scores
+                else {"sho": None, "pas": None, "def": None}
+            ),
         }
         for user in users
     ]
