@@ -918,7 +918,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 )
             """))
 
-    for column in ("pac", "dri"):
+    for column in ("pac", "dri", "sho_override", "pas_override", "def_override"):
         if not await has_column("users", column):
             await conn.execute(text(f"ALTER TABLE users ADD COLUMN {column} FLOAT"))
 

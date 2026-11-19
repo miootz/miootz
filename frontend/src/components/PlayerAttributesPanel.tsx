@@ -1,4 +1,9 @@
 import type { PlayerAttributes } from "../api/meApi";
+import { toAttributeScale } from "../utils/attributeScale";
+
+function countLabel(count: number, noun: string, plural = `${noun}s`) {
+  return `${count} ${count === 1 ? noun : plural}`;
+}
 
 export function PlayerAttributesPanel({ attributes, error }: {
   attributes?: PlayerAttributes | null;
@@ -7,26 +12,34 @@ export function PlayerAttributesPanel({ attributes, error }: {
   const rows = attributes && [
     {
       code: "SHO", name: "Shooting", score: attributes.sho.score,
-      evidence: `${attributes.sho.count} open-play goals · ${attributes.sho.sample} eligible matches · ${attributes.sho.meetups} meetups`,
+      evidence: !attributes.sho.overridden && [
+        countLabel(attributes.sho.count, "goal"),
+        countLabel(attributes.sho.sample, "match", "matches"),
+        countLabel(attributes.sho.meetups, "meetup"),
+      ].join(" - "),
     },
     {
       code: "PAS", name: "Passing", score: attributes.pas.score,
-      evidence: `${attributes.pas.count} assists · ${attributes.pas.sample} of ${attributes.pas.total_goals} open-play team goals had a credited assist · ${attributes.pas.meetups} meetups`,
+      evidence: !attributes.pas.overridden && [
+        countLabel(attributes.pas.count, "assist"),
+        countLabel(attributes.pas.meetups, "meetup"),
+      ].join(" - "),
     },
     {
       code: "DEF", name: "Defending", score: attributes.def.score,
-      evidence: `${attributes.def.count} clean sheets · ${attributes.def.sample} eligible matches · ${attributes.def.meetups} meetups`,
+      evidence: !attributes.def.overridden && [
+        countLabel(attributes.def.count, "clean sheet"),
+        countLabel(attributes.def.sample, "match", "matches"),
+        countLabel(attributes.def.meetups, "meetup"),
+      ].join(" - "),
     },
-    { code: "PAC", name: "Pace", score: attributes.pac, evidence: attributes.pac == null ? "Unrated" : "Roster or admin rating" },
-    { code: "DRI", name: "Dribbling", score: attributes.dri, evidence: attributes.dri == null ? "Unrated" : "Admin set" },
+    { code: "PAC", name: "Pace", score: attributes.pac },
+    { code: "DRI", name: "Dribbling", score: attributes.dri },
   ];
 
   return (
     <section aria-labelledby="player-attributes" className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="player-attributes" className="text-lg font-bold text-ink">Player attributes</h2>
-        <span className="shrink-0 text-xs text-ink-dim">Current form</span>
-      </div>
+      <h2 id="player-attributes" className="text-lg font-bold text-ink">Player attributes</h2>
       <div className="border border-line bg-panel">
         {rows ? (
           <ul className="divide-y divide-line">
@@ -35,13 +48,10 @@ export function PlayerAttributesPanel({ attributes, error }: {
                 <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center bg-raised text-xs font-bold text-ink-dim">{row.code}</span>
                 <div className="min-w-0 flex-1">
                   <h3 className="font-bold text-ink">{row.name} <span className="sr-only">({row.code})</span></h3>
-                  <p className="mt-0.5 text-xs leading-5 text-ink-dim">
-                    {row.score == null && row.code !== "PAC" && row.code !== "DRI" && "Insufficient data · "}
-                    {row.evidence}
-                  </p>
+                  {row.evidence && <p className="mt-0.5 text-xs leading-5 text-ink-dim">{row.evidence}</p>}
                 </div>
                 <span className={`shrink-0 text-xl font-bold tabular-nums ${row.score == null ? "text-ink-dim" : "text-ink"}`}>
-                  {row.score == null ? <span aria-label="Unrated">—</span> : row.score.toFixed(1)}
+                  {row.score == null ? <span aria-label="Unrated">—</span> : toAttributeScale(row.score)}
                 </span>
               </li>
             ))}
@@ -52,11 +62,6 @@ export function PlayerAttributesPanel({ attributes, error }: {
           <p role="status" className="px-4 py-3 text-sm text-ink-dim">Loading attributes…</p>
         )}
       </div>
-      <details className="text-sm text-ink-dim">
-        <summary className="cursor-pointer font-medium text-ink">How attributes are calculated</summary>
-        <p className="mt-2">Shooting reflects open-play goals per match, passing reflects assists among open-play team goals with a credited assist, and defending reflects clean sheets per match. Recent meetups count more. Matches with clocked substitutions are excluded, as are incomplete scorecards for shooting and passing.</p>
-        <p className="mt-2">Shooting and defending need eight eligible matches across three meetups. Passing needs eight credited goals across three meetups and at least half of open-play team goals to have an assist. Admins can set pace and dribbling. The roster import can supply a starting pace rating.</p>
-      </details>
     </section>
   );
 }

@@ -180,6 +180,35 @@ async def test_attributes_in_rankings_profile_and_admin_edit():
         profile = await client.get("/users/me/stats", headers=headers)
         assert profile.json()["attributes"]["pac"] == 3.5
         assert profile.json()["attributes"]["dri"] == 4
+        automatic = profile.json()
+
+        overrides = {"sho_override": 1, "pas_override": 1, "def_override": 1}
+        invalid = await client.patch(
+            "/users/1", headers=headers, json={"sho_override": 0}
+        )
+        assert invalid.status_code == 422
+        update = await client.patch("/users/1", headers=headers, json=overrides)
+        assert update.status_code == 200, update.text
+        overridden = (await client.get("/users/me/stats", headers=headers)).json()
+        for key in ("sho", "pas", "def"):
+            assert overridden["attributes"][key] == {
+                **automatic["attributes"][key],
+                "score": 1,
+                "overridden": True,
+            }
+        assert overridden["adjusted_rating"] < automatic["adjusted_rating"]
+
+        rankings = await client.get("/rankings/attributes?year=all", headers=headers)
+        row = next(row for row in rankings.json()["rows"] if row["user"]["id"] == 1)
+        assert (row["sho"], row["pas"], row["def"]) == (1, 1, 1)
+
+        cleared = await client.patch(
+            "/users/1", headers=headers, json=dict.fromkeys(overrides)
+        )
+        assert cleared.status_code == 200, cleared.text
+        profile = (await client.get("/users/me/stats", headers=headers)).json()
+        assert profile["attributes"] == automatic["attributes"]
+        assert profile["adjusted_rating"] == automatic["adjusted_rating"]
 
     async with async_session() as db:
         admin = await db.get(User, 1)

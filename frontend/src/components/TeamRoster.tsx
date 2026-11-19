@@ -2,16 +2,9 @@ import type { User } from "../types";
 import { PlayerAvatarFace } from "./PlayerAvatar";
 import { StarRating } from "./StarRating";
 import { Lock } from "lucide-react";
+import { PlayerEditLink } from "./PlayerEditLink";
 
 // ── Helpers ────────────────────────────────────────────────────────
-
-/** Format the display rating: calculatedSkill (1dp) or skillScore (int). */
-function formatRating(player: User): string {
-    if (player.calculatedSkill != null) {
-        return player.calculatedSkill.toFixed(1);
-    }
-    return String(Math.round(player.skillScore));
-}
 
 /** Format position labels: "(DEF/MID)", "(GK)", etc. */
 function formatPositions(player: User): string {
@@ -41,11 +34,11 @@ function PlayerRow({
     onRatingChange?: (score: number) => void;
     isMe?: boolean;
 }) {
-    const rating = formatRating(player);
+    const rating = (player.calculatedSkill ?? player.skillScore).toFixed(1);
     const positions = formatPositions(player);
 
     return (
-        <div className={`flex items-center gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
+        <div className={`relative flex items-center gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
             {/* Profile picture */}
             <div className="relative shrink-0">
                 <PlayerAvatarFace
@@ -64,9 +57,9 @@ function PlayerRow({
 
             {/* Name + position */}
             <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                <span className="text-sm font-medium text-ink truncate">
+                <PlayerEditLink playerId={player.id} className="text-sm font-medium text-ink truncate" stretch>
                     {player.name}
-                </span>
+                </PlayerEditLink>
                 {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
                 {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
                 {isMe && (
@@ -83,7 +76,7 @@ function PlayerRow({
 
             {/* Inline star rating (when allowed) */}
             {ratingMode === "inline" && (
-                <div className="shrink-0">
+                <div className="relative z-10 shrink-0">
                     <StarRating
                         value={currentRating ?? 0}
                         onChange={onRatingChange}

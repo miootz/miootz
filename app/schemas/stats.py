@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 class AttributeEvidence(BaseModel):
     score: float | None
+    overridden: bool = False
     count: int
     sample: int
     meetups: int

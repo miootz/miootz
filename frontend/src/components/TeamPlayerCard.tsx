@@ -2,6 +2,7 @@ import React from "react";
 import { Lock, Star, Unlock } from "lucide-react";
 import type { User } from "../types";
 import { PlayerAvatarFace } from "./PlayerAvatar";
+import { PlayerEditLink } from "./PlayerEditLink";
 
 /*
  * Single source of UI truth for a team player row: avatar (spans both rows),
@@ -21,13 +22,12 @@ function formatPositions(player: User): string {
   return parts.length > 0 ? `(${parts.join("/")})` : "";
 }
 
-/** Star rating: computed skill when present, rounded raw skill otherwise. */
+/** Star rating: selected player skill, or the draft estimate when unrated. */
 export const SkillRating: React.FC<{
   calculated: number | null | undefined;
   raw: number | null | undefined;
 }> = ({ calculated, raw }) => {
-  const value =
-    calculated != null ? calculated : Math.round(raw ?? 0);
+  const value = calculated ?? raw ?? 0;
   return (
     <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
       <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
@@ -46,8 +46,10 @@ export const TeamPlayerCard: React.FC<{
   dragProps?: React.HTMLAttributes<HTMLDivElement>;
   /** True for the signed-in player's own row — highlighted with a "You" chip. */
   isMe?: boolean;
-}> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps, isMe }) => {
+  linkToPlayer?: boolean;
+}> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps, isMe, linkToPlayer }) => {
   const positions = formatPositions(player);
+  const nameClass = "text-sm font-medium text-ink truncate";
 
   const lockButton =
     canDrag && onToggleLock ? (
@@ -57,7 +59,7 @@ export const TeamPlayerCard: React.FC<{
           e.stopPropagation();
           onToggleLock(player.id);
         }}
-        className={`p-1 transition-colors shrink-0 ${
+        className={`relative z-10 p-1 transition-colors shrink-0 ${
           player.isLocked
             ? "text-live hover:bg-live/10"
             : "text-ink-faint hover:bg-raised"
@@ -73,7 +75,7 @@ export const TeamPlayerCard: React.FC<{
       ref={cardRef}
       style={style}
       {...dragProps}
-      className={`group flex items-center gap-2.5 border px-3 py-2 transition-colors ${
+      className={`group relative flex items-center gap-2.5 border px-3 py-2 transition-colors ${
         isMe
           ? "bg-live/10 border-live"
           : "bg-panel border-line"
@@ -97,9 +99,11 @@ export const TeamPlayerCard: React.FC<{
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm font-medium text-ink truncate">
-            {player.name}
-          </span>
+          {linkToPlayer ? (
+            <PlayerEditLink playerId={player.id} className={nameClass} stretch>{player.name}</PlayerEditLink>
+          ) : (
+            <span className={nameClass}>{player.name}</span>
+          )}
           {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
           {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
           {isMe && (

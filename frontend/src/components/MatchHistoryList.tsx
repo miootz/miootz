@@ -14,6 +14,7 @@ import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
 import { fetchGoals, type GoalRow } from "../api/stewardApi";
 import { GoalList } from "./GoalList";
+import { PlayerEditLink } from "./PlayerEditLink";
 
 export function MatchHistoryList({
   meetupId,
@@ -460,9 +461,9 @@ function MatchResultRow({
                     {team.users.map((u) => (
                       <li
                         key={u.id}
-                        className="text-sm text-ink-dim truncate"
+                        className="relative text-sm text-ink-dim truncate"
                       >
-                        {u.display_name}
+                        <PlayerEditLink playerId={u.id} stretch>{u.display_name}</PlayerEditLink>
                         {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">PAC</span>}
                         {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">DRI</span>}
                       </li>

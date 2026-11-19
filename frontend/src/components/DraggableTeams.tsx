@@ -25,6 +25,7 @@ interface DraggableTeamsProps {
   ) => void | Promise<void>;
   onToggleLock?: (userId: string) => void;
   canDragTeams: boolean;
+  linkToPlayers?: boolean;
   onReshuffle?: () => void;
   reshuffling?: boolean;
   /** Id of the signed-in player; their row gets the "You" highlight. */
@@ -35,9 +36,13 @@ interface DraggableTeamsProps {
 
 function mergePlayerWithAttendance(meetup: Meetup, player: User): User {
   const att = meetup.attendance.find((a) => a.id === player.id);
-  const merged = { ...player, ...att };
-  merged.isLocked = att?.isLocked ?? player.isLocked;
-  return merged;
+  return {
+    ...player,
+    ...att,
+    skillScore: player.skillScore,
+    calculatedSkill: player.calculatedSkill ?? att?.calculatedSkill,
+    isLocked: att?.isLocked ?? player.isLocked,
+  };
 }
 
 /* ── Droppable team column ───────────────────────────────────────── */
@@ -73,18 +78,21 @@ function PlayerRow({
   onToggleLock,
   canDrag,
   isMe,
+  linkToPlayer,
 }: {
   player: User;
   teamId: string;
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
   isMe?: boolean;
+  linkToPlayer?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: player.id,
       data: { teamId },
       disabled: !canDrag || player.isLocked,
+      attributes: { role: "group" },
     });
 
   const translate = CSS.Translate.toString(transform);
@@ -104,8 +112,15 @@ function PlayerRow({
             }
           : undefined
       }
-      dragProps={canDrag ? { ...listeners, ...attributes } : undefined}
+      dragProps={canDrag ? {
+        ...listeners,
+        ...attributes,
+        // A lock disables dragging only. The player link and unlock button still work.
+        "aria-disabled": undefined,
+        tabIndex: undefined,
+      } : undefined}
       isMe={isMe}
+      linkToPlayer={linkToPlayer}
     />
   );
 }
@@ -211,6 +226,7 @@ function TeamColumn({
   onToggleLock,
   canDrag,
   currentUserId,
+  linkToPlayers,
 }: {
   team: { id: string; name?: string };
   index: number;
@@ -218,6 +234,7 @@ function TeamColumn({
   onToggleLock?: (id: string) => void;
   canDrag: boolean;
   currentUserId?: string;
+  linkToPlayers?: boolean;
 }) {
   const content = (
     <div className="space-y-2">
@@ -253,6 +270,7 @@ function TeamColumn({
               onToggleLock={canDrag ? onToggleLock : undefined}
               canDrag={canDrag}
               isMe={currentUserId != null && player.id === currentUserId}
+              linkToPlayer={linkToPlayers}
             />
           ))}
         </div>
@@ -276,6 +294,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
   onReshuffle,
   reshuffling,
   currentUserId,
+  linkToPlayers,
 }) => {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -337,6 +356,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
                   onToggleLock={onToggleLock}
                   canDrag={canDragTeams}
                   currentUserId={currentUserId}
+                  linkToPlayers={linkToPlayers}
                 />
               );
             })}
@@ -356,6 +376,7 @@ export const DraggableTeams: React.FC<DraggableTeamsProps> = ({
                 players={players}
                 canDrag={false}
                 currentUserId={currentUserId}
+                linkToPlayers={linkToPlayers}
               />
             );
           })}

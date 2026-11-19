@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { RankingRow, RankingSort } from "../api/rankingsApi";
 import { Avatar } from "./Avatar";
+import { PlayerEditLink } from "./PlayerEditLink";
 
 type Column = {
   key: RankingSort;
@@ -92,7 +93,7 @@ export function RankingsTable({
           {rows.map((r) => (
             <li
               key={r.user.id}
-              className={`flex items-center gap-2.5 px-3 py-2 ${
+              className={`relative flex items-center gap-2.5 px-3 py-2 ${
                 r.user.id === highlightUserId ? "bg-live/10" : ""
               }`}
             >
@@ -172,13 +173,13 @@ export function RankingsTable({
 
 function PlayerBadge({ row, isMe }: { row: RankingRow; isMe?: boolean }) {
   return (
-    <span className="flex items-center gap-2 min-w-0">
+    <PlayerEditLink playerId={row.user.id} className="flex items-center gap-2 min-w-0" stretch>
       <Avatar url={row.user.avatar_url} username={row.user.display_name} size="sm" />
       <span className="truncate font-medium text-ink">{row.user.display_name}</span>
       {isMe && (
         <span className="text-2xs font-bold text-live shrink-0">You</span>
       )}
-    </span>
+    </PlayerEditLink>
   );
 }
 

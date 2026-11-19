@@ -41,6 +41,9 @@ class User(Base):
     seed_skill: Mapped[float | None] = mapped_column(Float, nullable=True)
     pac: Mapped[float | None] = mapped_column(Float, nullable=True)
     dri: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sho_override: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pas_override: Mapped[float | None] = mapped_column(Float, nullable=True)
+    def_override: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: Primary playing position: ATT, MID, DEF, GK
     primary_specialty: Mapped[str | None] = mapped_column(String, nullable=True)
     #: Secondary playing position: ATT, MID, DEF, GK

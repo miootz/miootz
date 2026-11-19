@@ -247,6 +247,9 @@ export type AdminUserRow = {
   seed_skill: number | null;
   pac: number | null;
   dri: number | null;
+  sho_override?: number | null;
+  pas_override?: number | null;
+  def_override?: number | null;
   primary_specialty: string | null;
   secondary_specialty: string | null;
   is_admin: boolean;
@@ -258,6 +261,9 @@ export interface AdminUserUpdate {
   seed_skill?: number | null;
   pac?: number | null;
   dri?: number | null;
+  sho_override?: number | null;
+  pas_override?: number | null;
+  def_override?: number | null;
   primary_specialty?: string | null;
   secondary_specialty?: string | null;
   is_admin?: boolean;

@@ -27,7 +27,9 @@ describe("RankingsPage attributes", () => {
     expect(await screen.findByText("Season highlights")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ratings" }));
     const passing = await screen.findByRole("button", { name: "Sort by Passing" });
-    expect(screen.getByRole("table", { name: "Player attribute rankings" })).toHaveTextContent("3.6");
+    const table = screen.getByRole("table", { name: "Player attribute rankings" });
+    expect(table).toHaveTextContent("82.5");
+    expect(table).toHaveTextContent("3.4");
     expect(screen.getByLabelText("Insufficient data")).toBeTruthy();
     fireEvent.click(passing);
     await waitFor(() => expect(fetchAttributeRankings).toHaveBeenLastCalledWith(

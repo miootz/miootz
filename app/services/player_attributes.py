@@ -10,6 +10,7 @@ from app.core.json_column import loads_int_list
 from app.models.match import MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Meetup
+from app.models.user import User
 from app.services.rating_windows import meetup_end_time, utc_now
 
 
@@ -19,6 +20,16 @@ def empty_player_attributes() -> dict:
         "pas": {"score": None, "count": 0, "sample": 0, "meetups": 0, "total_goals": 0},
         "def": {"score": None, "count": 0, "sample": 0, "meetups": 0},
     }
+
+
+def effective_player_attributes(user: User, evidence: dict | None) -> dict:
+    """Apply manual overrides without modifying the recorded match evidence."""
+    attributes = evidence.copy() if evidence else empty_player_attributes()
+    for key in ("sho", "pas", "def"):
+        override = getattr(user, f"{key}_override")
+        if override is not None:
+            attributes[key] = {**attributes[key], "score": override, "overridden": True}
+    return attributes
 
 
 def _score(rate: float, middle: float, top: float) -> float:
