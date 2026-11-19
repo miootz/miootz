@@ -984,8 +984,10 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => setShowReshape(true)}
-                className="p-2 text-ink hover:bg-raised active:scale-95 transition-transform"
+                disabled={!meetupDetail || !teamsData}
+                className="grid h-11 w-11 place-items-center text-ink hover:bg-raised disabled:opacity-50"
                 aria-label="Team settings"
+                aria-haspopup="dialog"
               >
                 <Settings className="h-5 w-5" />
               </button>
@@ -1681,20 +1683,21 @@ export function RefereePage() {
       )}
 
       {/* Mid-meetup team reshape — admin only, from the header gear */}
-      {isAdmin && (
+      {isAdmin && showReshape && meetupDetail && teamsData && (
         <TeamReshapeSheet
-          open={showReshape}
+          key={sid}
           meetupId={sid}
           totalPlayers={reshapeTotalPlayers}
-          currentTeamCount={teamsData?.length ?? 2}
+          teams={teamsData}
+          maxTeams={meetupDetail.max_teams}
           liveMatchNumber={
-            matches.find((m) => m.status === "active")?.match_number ?? null
+            matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
           }
           onClose={() => setShowReshape(false)}
-          onSaved={() => {
-            setShowReshape(false);
+          onSaved={(result, teamCount) => {
+            setTeamsData(result.teams);
+            setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount });
             void loadMatches();
-            showToast("Teams updated", "success");
           }}
         />
       )}

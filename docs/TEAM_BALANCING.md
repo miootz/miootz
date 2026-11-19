@@ -152,8 +152,8 @@ Attributes use eligible recorded or imported match history.
 | **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
 | **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
 | **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-rated players before dealing and then spread PAC and DRI among playing teams. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
-| **Change team capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
-| **Reshape during play** | Choose a team count and size. The draft includes a bench team for excess players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
+| **Team capacity** | Choose the number of teams and players per team from Admin Overview or the Referee page. The draft includes a bench team for excess confirmed players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
+| **Adjust waitlist capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
 
 If attendance changes, an invalid saved lineup is ignored. It can take effect
 again if the same confirmed roster returns. A pre-start substitution updates

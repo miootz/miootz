@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, LayoutGrid, Loader2, Minus, Plus } from "lucide-react";
+import { LayoutGrid, Loader2, Minus, Plus, Settings } from "lucide-react";
 import type { Meetup, Team, User } from "../types";
 import {
   fetchMeetupTeams,
@@ -11,6 +11,7 @@ import { adminAdjustTeams, adminReshuffleTeams } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { DraggableTeams } from "./DraggableTeams";
+import { TeamReshapeSheet } from "./TeamReshapeSheet";
 
 function ratingOf(p: User): number {
   return p.calculatedSkill ?? p.skillScore;
@@ -104,6 +105,7 @@ export function MeetupTeamsPanel({
     "expand" | "contract" | null
   >(null);
   const [reshuffling, setReshuffling] = useState(false);
+  const [showReshape, setShowReshape] = useState(false);
   // Locks are client-side only (no server field); keep them across refetches
   // so reshuffles and SSE-driven refreshes don't cancel them.
   const lockedIdsRef = useRef<Set<string>>(new Set());
@@ -111,10 +113,10 @@ export function MeetupTeamsPanel({
   const waitlistedCount = detail.attendees.filter(
     (a) => a.status === "waitlisted",
   ).length;
-  // Capacity controls are a progressive-disclosure detail; stats stay
-  // visible. Auto-expand only when the waitlist can fill a whole extra
-  // team (5 players) — that is when adding a team is actually on the table.
-  const [capOpen, setCapOpen] = useState(() => waitlistedCount >= 5);
+  const confirmedCount = detail.attendees.filter(
+    (a) => a.status === "confirmed",
+  ).length;
+  const teamCount = Math.min(teams?.teams.length ?? 0, detail.max_teams ?? Infinity);
 
   // Re-apply client-side locks onto a freshly built lineup (server payload
   // never carries them), so refetches never cancel an existing lock.
@@ -288,35 +290,32 @@ export function MeetupTeamsPanel({
       </header>
 
       <div className="space-y-3 p-4">
-        {/* Team capacity — header + stats always visible; buttons and notes
-            collapse in an accordion */}
         <div>
           <button
             type="button"
-            onClick={() => setCapOpen((o) => !o)}
-            aria-expanded={capOpen}
-            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-raised transition-colors"
+            onClick={() => setShowReshape(true)}
+            aria-haspopup="dialog"
+            disabled={!teams || teamsLoading || adjustingTeam !== null}
+            className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-raised disabled:opacity-50"
           >
             <span className="min-w-0">
               <span className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink">
                 Team capacity
               </span>
               <span className="block text-xs text-ink-dim mt-0.5 tabular-nums">
-                {teams
-                  ? `${teams.teams.length} team(s) · ${detail.attendees.filter((a) => a.status === "confirmed").length} confirmed`
-                  : "Loading…"}
+                {teamCount} {teamCount === 1 ? "team" : "teams"} · {confirmedCount} confirmed
                 <span className="text-live ml-1">
                   · {waitlistedCount} waitlisted
                 </span>
               </span>
             </span>
-            <ChevronDown
-              className={`w-4 h-4 shrink-0 text-ink-faint transition-transform motion-reduce:transition-none ${capOpen ? "rotate-180" : ""}`}
-              aria-hidden
-            />
+            <Settings className="h-5 w-5 shrink-0 text-ink-dim" aria-hidden />
           </button>
-          {capOpen && (
-            <div className="border-t border-line p-4 space-y-2">
+          <details open={waitlistedCount >= 5} className="border-t border-line">
+            <summary className="min-h-11 cursor-pointer px-4 py-3 text-xs font-semibold leading-5 text-ink-dim hover:bg-raised">
+              Adjust waitlist capacity
+            </summary>
+            <div className="px-4 pb-4 space-y-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -363,7 +362,7 @@ export function MeetupTeamsPanel({
                 </p>
               )}
             </div>
-          )}
+          </details>
         </div>
 
         {teamsLoading ? (
@@ -392,6 +391,26 @@ export function MeetupTeamsPanel({
           />
         )}
       </div>
+      {showReshape && teams && (
+        <TeamReshapeSheet
+          key={meetupId}
+          meetupId={meetupId}
+          totalPlayers={confirmedCount}
+          teams={teams.teams}
+          maxTeams={detail.max_teams}
+          liveMatchNumber={
+            detail.current_match && detail.current_match.status !== "pending"
+              ? detail.current_match.match_number
+              : null
+          }
+          onClose={() => setShowReshape(false)}
+          onSaved={(result) => {
+            setTeams(result);
+            setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, result, meetupId)));
+            void onChanged();
+          }}
+        />
+      )}
     </section>
   );
 }

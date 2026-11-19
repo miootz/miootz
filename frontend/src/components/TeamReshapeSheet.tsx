@@ -1,22 +1,23 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Minus, Plus, X } from "lucide-react";
-import { reshapeMeetupTeams } from "../api/meetupsApi";
+import { reshapeMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
+import { useToast } from "../context/ToastContext";
 
 /**
- * Mid-meetup team reshape (admin, from the Match Control gear): pick the
- * team count and players per side. N×M players form the playing teams
+ * Admin team reshape: pick the team count and players per side.
+ * N×M players form the playing teams
  * (skill-balanced); everyone else goes to ONE bench team — there is no
  * "not on a team" category. Fine-tune the lineup afterwards with the
  * pre-start substitutions panel (two-tap swap).
  */
 interface TeamReshapeSheetProps {
-  open: boolean;
   meetupId: number;
   totalPlayers: number;
-  currentTeamCount: number;
+  teams: TeamsResponse["teams"];
+  maxTeams?: number | null;
   liveMatchNumber: number | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (result: TeamsResponse, teamCount: number) => void;
 }
 
 const MAX_TEAM_COUNT = 5;
@@ -24,89 +25,90 @@ const MIN_TEAM_SIZE = 2;
 const MAX_TEAM_SIZE = 15;
 
 export function TeamReshapeSheet({
-  open,
   meetupId,
   totalPlayers,
-  currentTeamCount,
+  teams,
+  maxTeams,
   liveMatchNumber,
   onClose,
   onSaved,
 }: TeamReshapeSheetProps) {
   const titleId = useId();
-  const [teamCount, setTeamCount] = useState(
-    Math.min(Math.max(2, currentTeamCount), MAX_TEAM_COUNT),
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const { showToast } = useToast();
+  const [teamCount, setTeamCount] = useState(() =>
+    Math.min(MAX_TEAM_COUNT, Math.max(2, Math.min(teams.length, maxTeams ?? teams.length))),
   );
-  const [teamSize, setTeamSize] = useState(() =>
-    Math.max(
-      MIN_TEAM_SIZE,
-      Math.round(totalPlayers / Math.max(2, currentTeamCount)),
-    ),
-  );
+  const [teamSize, setTeamSize] = useState(() => {
+    const playing = teams.slice(0, teamCount).reduce((total, team) => total + team.players.length, 0);
+    return Math.min(MAX_TEAM_SIZE, Math.max(MIN_TEAM_SIZE, Math.floor(playing / teamCount)));
+  });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const capacity = teamCount * teamSize;
   const benchCount = Math.max(0, totalPlayers - capacity);
 
   useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
 
   const reason =
     capacity > totalPlayers
       ? `Need ${capacity} players, ${totalPlayers} confirmed`
       : null;
 
-  if (!open) return null;
+  const close = () => {
+    dialogRef.current?.close();
+    onClose();
+  };
 
   const apply = async () => {
     if (reason || saving) return;
     setSaving(true);
+    setError(null);
+    let result: TeamsResponse;
     try {
-      await reshapeMeetupTeams(meetupId, {
+      result = await reshapeMeetupTeams(meetupId, {
         team_count: teamCount,
         team_size: teamSize,
       });
-      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update teams.");
+      return;
     } finally {
       setSaving(false);
     }
+    close();
+    onSaved(result, teamCount);
+    showToast("Teams updated.", "success");
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-end justify-center p-4 sm:items-center sm:p-6"
-      role="presentation"
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) close();
+      }}
+      onClick={(event) => {
+        if (!saving && event.target === event.currentTarget) close();
+      }}
+      className="fixed inset-x-0 top-auto bottom-4 mx-auto max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-md overflow-y-auto overscroll-contain border border-line bg-panel p-0 text-ink shadow-xl backdrop:overflow-hidden backdrop:overscroll-contain backdrop:bg-black/50 sm:inset-0 sm:m-auto"
     >
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/50"
-        aria-label="Dismiss"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative z-10 w-full max-w-md border border-line bg-panel p-6 shadow-xl"
-      >
+      <div className="p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <h2 id={titleId} className="text-lg font-bold text-ink">
-            Teams
+            Team capacity
           </h2>
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 text-ink-dim hover:bg-raised hover:text-ink active:scale-95 transition-transform"
+            onClick={close}
+            disabled={saving}
+            className="grid h-11 w-11 place-items-center text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -124,6 +126,7 @@ export function TeamReshapeSheet({
                 key={n}
                 type="button"
                 onClick={() => setTeamCount(n)}
+                disabled={saving}
                 aria-pressed={teamCount === n}
                 className={`min-h-[44px] border text-base font-bold tabular-nums transition-colors ${
                   teamCount === n
@@ -146,7 +149,7 @@ export function TeamReshapeSheet({
             <button
               type="button"
               onClick={() => setTeamSize(Math.max(MIN_TEAM_SIZE, teamSize - 1))}
-              disabled={teamSize <= MIN_TEAM_SIZE}
+              disabled={saving || teamSize <= MIN_TEAM_SIZE}
               className="flex h-11 w-11 items-center justify-center border border-line text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform"
               aria-label="Fewer players per team"
             >
@@ -158,7 +161,7 @@ export function TeamReshapeSheet({
             <button
               type="button"
               onClick={() => setTeamSize(Math.min(MAX_TEAM_SIZE, teamSize + 1))}
-              disabled={teamSize >= MAX_TEAM_SIZE}
+              disabled={saving || teamSize >= MAX_TEAM_SIZE}
               className="flex h-11 w-11 items-center justify-center border border-line text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform"
               aria-label="More players per team"
             >
@@ -168,7 +171,7 @@ export function TeamReshapeSheet({
         </div>
 
         {/* Result line */}
-        <p className="mt-5 border border-line bg-raised px-3 py-2 text-sm font-medium tabular-nums text-ink">
+        <p role="status" className="mt-5 border border-line bg-raised px-3 py-2 text-sm font-medium tabular-nums text-ink">
           {Math.min(capacity, totalPlayers)} playing
           {benchCount > 0
             ? ` · ${benchCount} on bench`
@@ -177,7 +180,7 @@ export function TeamReshapeSheet({
 
         {liveMatchNumber !== null && (
           <p className="mt-3 border border-live/40 bg-live/10 px-3 py-2 text-sm text-ink">
-            Match {liveMatchNumber} is live — it keeps its lineup.
+            Match {liveMatchNumber} keeps its current lineup.
           </p>
         )}
 
@@ -185,6 +188,7 @@ export function TeamReshapeSheet({
           {reason && (
             <p className="mb-2 text-center text-sm text-danger">{reason}</p>
           )}
+          {error && <p role="alert" className="mb-2 text-center text-sm text-danger">{error}</p>}
           <button
             type="button"
             onClick={() => void apply()}
@@ -195,6 +199,6 @@ export function TeamReshapeSheet({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
