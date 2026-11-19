@@ -16,7 +16,7 @@ from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
-from app.services.team_assignment import assign_teams_snake
+from app.services.team_assignment import assign_teams_snake, draft_skill
 from app.services.skill_service import update_user_calculated_skill
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
@@ -186,7 +186,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     for member in members[:15]:
         await update_user_calculated_skill(db, member.id, commit=False)
 
-    players = [{'id': u.id, 'skill': u.calculated_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
+    players = [{'id': u.id, 'skill': draft_skill(u.calculated_skill)} for u in [*members, placeholder] if u.id in confirmed]
     if live_like:
         # 3 teams of 5 (skill-snake) + the lowest-rated player as the bench
         # pool — a 1-person bench is valid per validate_team_partition.

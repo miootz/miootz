@@ -716,6 +716,10 @@ async def admin_update_user(
         val = dumped.pop("display_name")
         user.sso_display_name = val if val else None
 
+    if "calculated_skill" in dumped and dumped["calculated_skill"] != user.calculated_skill:
+        user.skill_without_match_bonus = None
+        user.match_skill_bonus = None
+
     for key, value in dumped.items():
         setattr(user, key, value)
 

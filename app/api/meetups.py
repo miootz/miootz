@@ -39,6 +39,7 @@ from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
+    refresh_match_skill_bonuses,
 )
 from app.core.meetup_data_manager import meetup_data_manager
 from app.services.meetup_promotion import handle_leave_or_cancel
@@ -56,7 +57,7 @@ from app.services.manual_teams import (
     build_teams_from_manual,
 )
 from app.services.team_adjustment import expand_teams, contract_teams
-from app.services.team_assignment import rebalance_around_locked
+from app.services.team_assignment import draft_skill, rebalance_around_locked
 from app.services.team_names import generate_team_names
 from app.services.web_push import (
     notify_new_meetup_invites,
@@ -224,13 +225,6 @@ async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
         .where(Attendance.meetup_id == meetup_id, Attendance.status == "confirmed")
     )
     return count or 0
-
-
-def _user_skill(u: User) -> float:
-    """Single display skill for matchmaking: calculated, with fallback."""
-    if u.calculated_skill is not None:
-        return u.calculated_skill
-    return 50.0
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
@@ -460,7 +454,7 @@ async def get_meetup(
                 "avatar_url": user.avatar_url,
                 "status": att.status,
                 "joined_at": att.joined_at.isoformat() if att.joined_at else None,
-                "skill": _user_skill(user),
+                "skill": draft_skill(user.calculated_skill),
                 "calculated_skill": user.calculated_skill,
                 "is_plus_one": user.id in plus_one_user_ids,
                 "primary_specialty": user.primary_specialty,
@@ -644,7 +638,7 @@ async def get_meetup_teams(meetup_id: int, db: AsyncSession = Depends(get_db)):
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(user.calculated_skill),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
             "primary_specialty": user.primary_specialty,
@@ -718,7 +712,7 @@ async def patch_meetup_teams(
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(user.calculated_skill),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
         }
@@ -804,7 +798,7 @@ async def reshuffle_meetup_teams(
         players = [
             {
                 "id": str(user.id),
-                "skill": _user_skill(user),
+                "skill": draft_skill(user.calculated_skill),
                 "user_id": user.id,
             }
             for _, user in rows
@@ -949,7 +943,7 @@ async def reshape_meetup_teams(
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(user.calculated_skill),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
             "primary_specialty": user.primary_specialty,
@@ -1597,6 +1591,9 @@ async def delete_meetup(
 
     await delete_meetup_children(db, meetup_id)
     await db.delete(meetup)
+    if meetup.start_time <= utcnow():
+        await db.flush()
+        await refresh_match_skill_bonuses(db)
     await db.commit()
     log_action(
         request,

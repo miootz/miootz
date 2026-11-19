@@ -1,16 +1,24 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_column import loads_int_list
+from app.models.match import MatchSubstitution
+from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rankings_service import _aggregate, _load_scope
+from app.services.rating_windows import meetup_end_time
 
 _MAX_MISS_DECAY = 1.0
 _WEIGHT_RECENT = 1.0
 _WEIGHT_OLD = 0.5
 _RECENT_ATTENDANCE_CUTOFF = 4
+_MATCH_BONUS_HALF_LIFE = timedelta(weeks=3)
+_MATCH_BONUS_PRIOR_WEIGHT = 3.0
 
 
 def _utc_now() -> datetime:
@@ -131,8 +139,7 @@ async def update_user_calculated_skill(
     db: AsyncSession, user_id: int, *, commit: bool = True
 ) -> None:
     """
-    Recalculates the 'calculated_skill' for a user based on:
-    recency-weighted_avg_peer_rating - miss_decay
+    Recalculates the peer and attendance component of a user's skill.
 
     Peer ratings are recency-weighted: ratings from the user's 4 most recent
     confirmed attendances carry full weight; older ratings carry half weight.
@@ -141,8 +148,7 @@ async def update_user_calculated_skill(
     confirmed attendance, subtract 0.1 per miss beyond the first,
     capped at 1.0.  One miss is forgiven; the penalty compounds from the second.
 
-    With no peer ratings the stored value is left untouched — that is the
-    admin seed (player creation / guest invite) or the admin's last edit.
+    With no peer ratings the stored value is left untouched.
     """
     user = await db.get(User, user_id)
     if not user:
@@ -152,20 +158,97 @@ async def update_user_calculated_skill(
     if avg_peer is None:
         return
 
-    try:
-        peer_val = float(avg_peer)
-    except TypeError, ValueError:
-        peer_val = 0.0
-
     # Miss decay
     streak = await get_consecutive_miss_streak(db, user_id)
     decay = min(_MAX_MISS_DECAY, max(0, streak - 1) * 0.1)
-    new_skill = peer_val - decay
-    user.calculated_skill = round(max(0, new_skill), 1)
+    user.skill_without_match_bonus = avg_peer - decay
+    _apply_match_bonus(user)
     if commit:
         await db.commit()
     else:
         await db.flush()
+
+
+def _apply_match_bonus(user: User) -> None:
+    base = user.skill_without_match_bonus
+    if base is None:
+        base = user.calculated_skill
+    if base is not None:
+        user.skill_without_match_bonus = base
+        user.calculated_skill = round(
+            max(0, min(5, base + (user.match_skill_bonus or 0))), 1
+        )
+
+
+async def refresh_match_skill_bonuses(db: AsyncSession) -> None:
+    """Refresh match bonuses in the caller's transaction, including for absent players."""
+    now = _utc_now()
+    meetups = {
+        meetup.id: meetup
+        for meetup in (
+            await db.scalars(
+                select(Meetup).where(
+                    Meetup.start_time <= now, Meetup.skipped.is_(False)
+                )
+            )
+        ).all()
+        if meetup_end_time(meetup) <= now
+    }
+
+    weights: dict[int, float] = defaultdict(float)
+    bonuses: dict[int, float] = defaultdict(float)
+    if meetups:
+        as_of = max(meetup_end_time(meetup) for meetup in meetups.values())
+        _, matches, goals, subs = await _load_scope(db, None, meetup_ids=list(meetups))
+        goals_by_match: dict[int, list[MatchGoal]] = defaultdict(list)
+        subs_by_match: dict[int, list[MatchSubstitution]] = defaultdict(list)
+        for goal in goals:
+            goals_by_match[goal.match_id].append(goal)
+        for sub in subs:
+            subs_by_match[sub.match_id].append(sub)
+
+        for match in matches:
+            match_goals = goals_by_match[match.id]
+            match_subs = subs_by_match[match.id]
+            stats = _aggregate({}, [match], match_goals, False, match_subs)
+            played = set(loads_int_list(match.team_a_users))
+            played.update(loads_int_list(match.team_b_users))
+            for goal in match_goals:
+                played.add(goal.scorer_id)
+                if goal.assist_id is not None:
+                    played.add(goal.assist_id)
+                if goal.goalkeeper_id is not None:
+                    played.add(goal.goalkeeper_id)
+            for sub in match_subs:
+                if sub.clock_secs is not None:
+                    played.update(loads_int_list(sub.old_team_a_users))
+                    played.update(loads_int_list(sub.old_team_b_users))
+
+            age = as_of - _to_utc(meetups[match.meetup_id].start_time)
+            weight = 0.5 ** (age / _MATCH_BONUS_HALF_LIFE)
+            for user_id in played:
+                weights[user_id] += weight
+            for user_id, metrics in stats.items():
+                match_bonus = (
+                    0.30 * metrics["goals"]
+                    + 0.20 * metrics["assists"]
+                    + 0.10 * metrics["clean_sheets"]
+                )
+                bonuses[user_id] += min(0.60, match_bonus) * weight
+
+    for user in await db.scalars(select(User)):
+        bonus = bonuses[user.id] / (_MATCH_BONUS_PRIOR_WEIGHT + weights[user.id])
+        if bonus or user.match_skill_bonus:
+            user.match_skill_bonus = bonus
+            _apply_match_bonus(user)
+
+
+async def refresh_match_skills_after_meetup(db: AsyncSession, meetup_id: int) -> None:
+    """Refresh after a historical correction or a match that finishes late."""
+    meetup = await db.get(Meetup, meetup_id)
+    if meetup and not meetup.skipped and meetup_end_time(meetup) <= _utc_now():
+        await db.flush()
+        await refresh_match_skill_bonuses(db)
 
 
 async def recalculate_skills_for_attendance_change(

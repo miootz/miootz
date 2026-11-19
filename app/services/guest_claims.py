@@ -14,7 +14,10 @@ from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup, MatchScore
 from app.models.user import User
 from app.services.meetup_revision import bump_meetup_revision
-from app.services.skill_service import update_user_calculated_skill
+from app.services.skill_service import (
+    refresh_match_skills_after_meetup,
+    update_user_calculated_skill,
+)
 from app.core.timeutil import utcnow
 
 
@@ -157,5 +160,6 @@ async def claim_reservation(
             rating.rater_id, rating.ratee_id = rater, ratee
 
     await db.flush()
+    await refresh_match_skills_after_meetup(db, sid)
     await update_user_calculated_skill(db, user_id=member.id, commit=False)
     return await bump_meetup_revision(db, sid)

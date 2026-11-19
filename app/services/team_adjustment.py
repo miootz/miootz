@@ -19,7 +19,7 @@ from app.services.meetup_revision import (
     bump_meetup_revision,
     notify_meetup_data_changed,
 )
-from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, team_counts
+from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, draft_skill, team_counts
 
 
 def _compute_capacity(n_teams: int) -> int:
@@ -43,7 +43,7 @@ async def _load_meetup_players(
     rows = result.all()
 
     def _player_dict(u: User) -> dict[str, Any]:
-        skill = u.calculated_skill if u.calculated_skill is not None else 50.0
+        skill = draft_skill(u.calculated_skill)
         return {
             "id": str(u.id),
             "name": u.display_name,
@@ -122,7 +122,7 @@ async def expand_teams(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -220,7 +220,7 @@ async def contract_teams(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,

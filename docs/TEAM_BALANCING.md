@@ -26,8 +26,8 @@ setting has no effect on the draft. See the
 ## How peer ratings affect skill
 
 The balanced draft uses the player's stored skill. An admin can set the
-initial value. When Miootz recalculates with at least one valid peer rating,
-it replaces that value with the weighted peer average minus attendance decay.
+initial value. With at least one valid peer rating, the skill before any match
+bonus is the weighted peer average minus attendance decay.
 
 | Rating's meetup | Weight per rating |
 | --- | --- |
@@ -42,21 +42,46 @@ contributes nothing. Older ratings retain half weight.
 attendance, looking at up to 20 past meetups the skill calculation treats as
 closed. It stops at the first confirmed attendance. The first miss is free.
 Each further consecutive miss subtracts **0.1**, up to **1.0** in total.
-Miootz floors the result at zero and rounds it to one decimal place.
+After adding any match bonus, Miootz limits the result to **0–5** and rounds
+it to one decimal place.
 
 **Example.** A recent 5 and an older 3 give a weighted average of
 `(5 × 1 + 3 × 0.5) ÷ 1.5 = 4.33…`. Three consecutive misses subtract 0.2,
-leaving a stored skill of **4.1**.
+leaving a skill of **4.1** before any match bonus.
 
 Adding, editing, or clearing a peer rating recalculates skill, as can changes
-to attendance. If there are no valid ratings left, Miootz keeps the current
-stored value. [Skill calculation](../app/services/skill_service.py) ·
+to attendance. If there are no valid ratings left, Miootz keeps the last
+skill before the match bonus. Players who have never had a skill rating
+stay unrated. [Skill calculation](../app/services/skill_service.py) ·
 [Rating updates](../app/api/ratings.py)
 
-**Missing skill.** The Teams endpoint substitutes 50 for a missing value and
-keeps zero. Match endpoints substitute 3 for either case, so an automatic
-lineup can differ between these views.
-[Teams endpoint](../app/api/meetups.py) · [Match endpoints](../app/api/matches.py)
+**Missing skill.** Team drafts use **3.0** for an unrated player. An actual
+**0.0** remains zero.
+
+## How match performance affects skill
+
+| Event in a completed match | Bonus points |
+| --- | ---: |
+| Goal | +0.30 |
+| Assist | +0.20 |
+| Clean sheet | +0.10 |
+
+Own goals and shootout kicks earn no bonus. A clean sheet follows the same
+eligibility rules as Rankings. Each player's total is capped at **0.60 per
+match**.
+
+Every match played counts, including appearances without a goal, assist or
+clean sheet. A match's weight halves every **three weeks**, measured from
+its meetup's kickoff to the most recent meetup's scheduled end. Miootz
+divides the weighted bonus points by the total match weight plus **3**,
+equivalent to three fresh matches with no bonus.
+For example, a fresh match with one goal and a clean sheet contributes
+`(0.30 + 0.10) ÷ (1 + 3) = 0.10` to a player with no other matches.
+
+The bonus refreshes at the scheduled end of a meetup, after late match
+completion, and after historical match corrections or imports. The scheduled
+end defaults to two hours after kickoff. Between these updates, peer ratings
+and attendance changes use the last calculated bonus.
 
 ## How admins adjust teams
 

@@ -32,6 +32,7 @@ from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.rankings_service import _load_scope, rank_player_metrics
+from app.services.skill_service import refresh_match_skill_bonuses
 
 TEAMS = ("A", "B", "C")
 GOAL_PREFIX = "team-maker:"
@@ -670,6 +671,8 @@ async def import_workbook(
                 meetup_ids = await upsert_nights(
                     db, nights, ids, template, kickoff, timezone, ids[recorded_by]
                 )
+                await refresh_match_skill_bonuses(db)
+                await db.flush()
                 differences = await compare_stats(db, meetup_ids, ids, expected)
             await conn.commit()
             return differences

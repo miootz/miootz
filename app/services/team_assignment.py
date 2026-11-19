@@ -17,6 +17,10 @@ DEFAULT_TEAM_SIZE = 5
 MIN_TEAMS = 2
 
 
+def draft_skill(calculated_skill: float | None) -> float:
+    return 3.0 if calculated_skill is None else calculated_skill
+
+
 def team_counts(total: int, max_teams: int | None = None) -> list[int]:
     """Return per-team size targets that sum to *total*.
 

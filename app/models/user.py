@@ -36,9 +36,10 @@ class User(Base):
     )
 
     # ── App-specific fields (game data only) ──────────────────────────
-    #: Computed skill (1–5 scale). Seeded by admins at player creation /
-    #: guest invite; recomputed from peer ratings + miss decay; admin-editable.
+    #: Computed skill (0–5 scale), including any cached match bonus.
     calculated_skill: Mapped[float | None] = mapped_column(Float, nullable=True)
+    skill_without_match_bonus: Mapped[float | None] = mapped_column(Float, nullable=True)
+    match_skill_bonus: Mapped[float | None] = mapped_column(Float, nullable=True)
     #: Primary playing position: ATT, MID, DEF, GK
     primary_specialty: Mapped[str | None] = mapped_column(String, nullable=True)
     #: Secondary playing position: ATT, MID, DEF, GK

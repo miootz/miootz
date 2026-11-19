@@ -67,7 +67,7 @@ async def test_rating_reminder_queued_repointed_and_dropped():
         rows = await _queued_rows(meetup_id)
         assert len(rows) == 1
         assert rows[0].job_type == "rating_reminder"
-        assert rows[0].run_at == _utc(start + timedelta(minutes=60))
+        assert rows[0].run_at == _utc(start + timedelta(hours=2))
 
         # Moving the meetup re-points the same job (no duplicate row).
         new_start = start + timedelta(hours=2)
@@ -79,7 +79,7 @@ async def test_rating_reminder_queued_repointed_and_dropped():
         assert resp.status_code == 200
         rows = await _queued_rows(meetup_id)
         assert len(rows) == 1
-        assert rows[0].run_at == _utc(new_start + timedelta(minutes=60))
+        assert rows[0].run_at == _utc(new_start + timedelta(hours=2))
 
         # Deleting the meetup drops the queued job.
         resp = await ac.delete(

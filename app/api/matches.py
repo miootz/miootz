@@ -37,6 +37,8 @@ from app.services.manual_teams import (
 )
 from app.services.meetup_revision import bump_and_notify
 from app.services.audit import log_action
+from app.services.skill_service import refresh_match_skills_after_meetup
+from app.services.team_assignment import draft_skill
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +396,7 @@ async def start_matches(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or 3),
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -536,7 +538,7 @@ async def create_new_pending_match(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or 3),
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -697,6 +699,8 @@ async def delete_match(
     del_teams = f"{match.team_a_name} vs {match.team_b_name} ({match.score_a}-{match.score_b})"
     await delete_match_children(db, match_id)
     await db.delete(match)
+    if match.status == "completed":
+        await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     await bump_and_notify(db, meetup_id)
     log_action(
@@ -903,7 +907,7 @@ async def _propagate_swap_to_meetup(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or 3),
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
@@ -1607,6 +1611,8 @@ async def set_score(
     match.score_b = body.score_b
     match.score_offset_a = body.score_a - count_a
     match.score_offset_b = body.score_b - count_b
+    if match.status == "completed":
+        await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(
         request,
@@ -1713,7 +1719,7 @@ async def end_match(
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": (u.calculated_skill or 3),
+            "skill": draft_skill(u.calculated_skill),
             "user_id": u.id,
         }
         for u in _result.scalars().all()
@@ -1789,6 +1795,7 @@ async def end_match(
         users_by_id = await _load_users_for_meetup(db, meetup_id)
         next_match_data = _match_json(next_match, users_by_id)
 
+    await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(
         request,
@@ -2279,6 +2286,8 @@ async def create_goal(
     lease.holder_id = None
     lease.expires_at = utcnow()
     lease.release_token = ""
+    if match.status == "completed":
+        await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     scorer_name = users_by_id.get(body.scorer_id, {}).get("name", str(body.scorer_id))
     log_action(
@@ -2390,6 +2399,8 @@ async def update_goal(
     lease.holder_id = None
     lease.expires_at = utcnow()
     lease.release_token = ""
+    if match.status == "completed":
+        await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     scorer_name = users_by_id.get(goal.scorer_id, {}).get("name", str(goal.scorer_id))
     log_action(
@@ -2451,6 +2462,8 @@ async def remove_goal(
     goal.deleted_at = utcnow()
     await db.flush()
     score_a, score_b = await _recompute_scores(db, match)
+    if match.status == "completed":
+        await refresh_match_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(
         request,
