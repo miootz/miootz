@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Download, Loader2, Play } from "lucide-react";
+import { Bell, Download, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
-import { adminExportData, adminRunRecurringNow } from "../../api/adminApi";
+import { adminExportData, adminRunRecurringNow, adminSendTestPush } from "../../api/adminApi";
 import { fetchRatingSettings, saveRatingSettings, type RatingSettings } from "../../api/ratingSettingsApi";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
@@ -26,6 +26,9 @@ export function AdminToolsPage() {
     "idle" | "preparing" | "downloaded"
   >("idle");
   const [exportError, setExportError] = useState<string | null>(null);
+  const [sendingPush, setSendingPush] = useState(false);
+  const [pushResult, setPushResult] = useState<{ sent: number; failed: number; expired: number } | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
   const exporting = exportStatus === "preparing";
 
   useEffect(() => {
@@ -87,6 +90,20 @@ export function AdminToolsPage() {
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");
       setExportStatus("idle");
+    }
+  }
+
+  async function sendTestPush() {
+    if (sendingPush) return;
+    setSendingPush(true);
+    setPushError(null);
+    setPushResult(null);
+    try {
+      setPushResult(await adminSendTestPush());
+    } catch (e) {
+      setPushError(e instanceof Error ? e.message : "Could not send test notification");
+    } finally {
+      setSendingPush(false);
     }
   }
 
@@ -153,6 +170,30 @@ export function AdminToolsPage() {
         )}
         {ratingError && <p role="alert" className="mt-3 text-sm text-danger">{ratingError}</p>}
         {!ratingSettings && !ratingError && <p role="status" className="mt-3 text-sm text-ink-dim">Loading rating settings…</p>}
+      </section>
+
+      <section className="border border-line bg-panel p-6">
+        <h2 className="text-base font-semibold text-ink">Test push notifications</h2>
+        <p className="mt-1 mb-4 text-sm text-ink-dim">
+          Send a notification to your registered devices.
+        </p>
+        <button
+          type="button"
+          onClick={() => void sendTestPush()}
+          disabled={sendingPush}
+          className="inline-flex min-h-11 items-center gap-2 bg-ink px-5 py-2.5 font-bold text-board hover:bg-white/90 disabled:opacity-50"
+        >
+          {sendingPush ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden /> : <Bell className="h-4 w-4" aria-hidden />}
+          {sendingPush ? "Sending…" : "Send a test push notification to myself"}
+        </button>
+        <p role="status" className="mt-3 text-sm text-ink-dim empty:sr-only">
+          {pushResult && (
+            pushResult.sent === 0 && pushResult.failed === 0 && pushResult.expired === 0
+              ? "No devices registered. Register this device in your profile."
+              : `Sent: ${pushResult.sent} · Failed: ${pushResult.failed} · Expired: ${pushResult.expired}`
+          )}
+        </p>
+        {pushError && <p role="alert" className="mt-3 text-sm text-danger">{pushError}</p>}
       </section>
 
       <div className="border border-line bg-panel p-6 transition-colors">

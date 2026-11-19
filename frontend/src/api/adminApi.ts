@@ -223,6 +223,15 @@ export async function adminRunRecurringNow(): Promise<{
   return jsonOrThrow(r);
 }
 
+export async function adminSendTestPush(): Promise<{
+  sent: number;
+  failed: number;
+  expired: number;
+}> {
+  const r = await apiFetch('/users/me/push/test', { method: 'POST' });
+  return jsonOrThrow(r);
+}
+
 export async function adminExportData(): Promise<Blob> {
   const response = await apiFetch('/admin/export');
   if (!response.ok) throw new Error(await parseApiError(response));

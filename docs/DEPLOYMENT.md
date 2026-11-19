@@ -85,8 +85,16 @@ or an HTTPS origin without a trailing slash.
 
 From the current release as the deploy account, apply the new settings with
 `docker compose --project-name miootz --env-file .env up -d --no-deps --force-recreate api`.
-Sign in over HTTPS and register a device. Preserve and back up the VAPID key
-pair across releases so registered devices can continue receiving notifications.
+Sign in over HTTPS and register a device in your profile. If the browser
+already created a subscription but the server has no record of it, use
+**Finish registering this device** in your profile.
+
+Use **Admin → Tools → Send a test push notification to myself** to check
+notifications on devices registered to your own account. The result reports
+how many devices the push provider accepted, rejected, or marked expired.
+Check the device itself to confirm delivery.
+Preserve and back up the VAPID key pair across releases so registered devices
+can continue receiving notifications.
 
 ## First demo setup
 
