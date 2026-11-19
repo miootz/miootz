@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trophy } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "../auth/useAuth";
 import { fetchMeetupDetail, type MeetupDetail } from "../api/meetupsApi";
@@ -9,6 +9,7 @@ import {
   type NightStats,
   type RankingRow,
   type RankingSort,
+  type TeamNightRecord,
 } from "../api/rankingsApi";
 import { MeetupDetailPanel } from "../components/MeetupDetailPanel";
 import { RankingsTable } from "../components/RankingsTable";
@@ -23,6 +24,44 @@ function KpiTile({ label, value }: { label: string; value: number }) {
         {label}
       </p>
     </div>
+  );
+}
+
+function MeetupWinnerCard({ teams }: { teams: TeamNightRecord[] }) {
+  return (
+    <article className="@container mt-3 border border-live/35 bg-panel">
+      <h3 className="flex items-center gap-2 border-b border-live/20 bg-live/10 px-4 py-2.5 text-sm font-semibold text-live">
+        <Trophy className="size-4 shrink-0" aria-hidden="true" />
+        {teams.length === 1 ? "Meetup winner" : "Joint meetup winners"}
+      </h3>
+      <div className="divide-y divide-line">
+        {teams.map((team) => (
+          <div key={team.name} className="p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h4 className="min-w-0 text-xl leading-tight font-bold text-ink [overflow-wrap:anywhere]">
+                {team.name}
+              </h4>
+              <span className="text-xs text-ink-dim tabular-nums">
+                {team.matches} {team.matches === 1 ? "match" : "matches"} played
+              </span>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-px border border-line bg-line @min-[22rem]:grid-cols-4">
+              {([
+                ["Wins", team.wins],
+                ["Goals", team.goals_for],
+                ["Assists", team.assists],
+                ["Clean sheets", team.clean_sheets],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="min-w-0 bg-raised px-3 py-2">
+                  <dt className="text-xs text-ink-dim">{label}</dt>
+                  <dd className="text-xl font-bold text-ink tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -127,6 +166,7 @@ export function HistoryMeetupPage() {
   const start = parseMeetupStart(detail.start_time);
   const dateLabel = format(start, "EEEE, d MMMM yyyy");
   const timeLabel = format(start, "HH:mm");
+  const winners = night?.teams.filter((team) => night.winning_teams?.includes(team.name)) ?? [];
 
   return (
     <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4">
@@ -167,21 +207,7 @@ export function HistoryMeetupPage() {
             <KpiTile label="Players" value={night.kpis.players} />
             <KpiTile label="Draws" value={night.kpis.draws} />
           </div>
-          {night.draw_matches.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {night.draw_matches.map((m) => (
-                <li
-                  key={`${m.team_a}-${m.team_b}`}
-                  className="text-xs text-ink-dim tabular-nums"
-                >
-                  <span className="font-medium text-ink">{m.team_a}</span> {m.score_a} –{" "}
-                  {m.score_b} <span className="font-medium text-ink">{m.team_b}</span>
-                  {" → "}
-                  <span className="font-medium text-live">{m.advancer}</span> advances
-                </li>
-              ))}
-            </ul>
-          )}
+          {winners.length > 0 && <MeetupWinnerCard teams={winners} />}
         </section>
       )}
 

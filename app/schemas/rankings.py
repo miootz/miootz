@@ -62,6 +62,7 @@ class TeamNightRecord(BaseModel):
     matches: int
     goals_for: int
     goals_against: int
+    assists: int
     goal_diff: int
     clean_sheets: int
     roster: list[TeamRosterUser] = []
@@ -86,6 +87,7 @@ class DrawMatch(BaseModel):
 class NightStats(BaseModel):
     kpis: NightKpis
     teams: list[TeamNightRecord] = []
+    winning_teams: list[str] = []
     draw_matches: list[DrawMatch] = []
 
 

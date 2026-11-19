@@ -18,7 +18,15 @@ describe("HistoryMeetupPage contributions", () => {
     fetchMeetupDetail.mockReset().mockResolvedValue({ start_time: "2026-11-10T18:00:00", location: "Court", fee: 0 });
     fetchMeetupRankings.mockReset().mockResolvedValue({
       rows: [{ user: { id: 1, display_name: "Sam Vale" }, goals: 3, own_goals: 1, assists: 1, clean_sheets: 2 }],
-      night: { kpis: { matches: 4, goals: 9, players: 1, draws: 0 }, teams: [], draw_matches: [] },
+      night: {
+        kpis: { matches: 4, goals: 9, players: 1, draws: 1 },
+        teams: [
+          { name: "Team A", wins: 1, matches: 4, goals_for: 3, assists: 2, clean_sheets: 0 },
+          { name: "Team B", wins: 3, matches: 4, goals_for: 6, assists: 4, clean_sheets: 2 },
+        ],
+        winning_teams: ["Team B"],
+        draw_matches: [{ team_a: "Team A", team_b: "Team B", score_a: 1, score_b: 1, advancer: "Team B" }],
+      },
     });
   });
 
@@ -32,5 +40,10 @@ describe("HistoryMeetupPage contributions", () => {
     const row = player.closest("tr")!;
     expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["2", "1", "2"]);
     expect(screen.getByText("Match statistics")).toBeTruthy();
+    const winner = screen.getByRole("article");
+    expect(within(winner).getByRole("heading", { name: "Meetup winner" })).toBeInTheDocument();
+    expect(within(winner).getByRole("heading", { name: "Team B" })).toBeInTheDocument();
+    expect(within(winner).getAllByRole("definition").map((stat) => stat.textContent)).toEqual(["3", "6", "4", "2"]);
+    expect(screen.queryByText(/advances/)).not.toBeInTheDocument();
   });
 });
