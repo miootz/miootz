@@ -137,20 +137,23 @@ def test_deploy_vapid_key_is_private_and_never_replaced(
     env.pop("VAPID_PRIVATE_KEY_PEM", None)
     if secret_present:
         env["VAPID_PRIVATE_KEY_PEM"] = secret
+    if sys.platform == "darwin":
+        # GNU ln -T is used on the Linux host; os.link has the same no-clobber semantics.
+        ln = tmp_path / "ln"
+        ln.write_text(
+            '#!/usr/bin/env python3\nimport os, sys\n'
+            'if sys.argv[1] == "-T": os.link(sys.argv[2], sys.argv[3])\n'
+            'else: os.execv("/bin/ln", ["ln", *sys.argv[1:]])\n'
+        )
+        ln.chmod(0o700)
+        env["PATH"] = str(tmp_path) + os.pathsep + env["PATH"]
     wrapper = (
         'ssh() { local command="${@: -1}"; '
         'case "$command" in "bash -s -- "*) cat >/dev/null ;; '
-        '*vapid-private.pem*) if [[ "$TEST_TRUNCATE" == 1 ]]; then head -c 10 | bash -c "$command"; '
-        'else bash -c "$command"; fi ;; *) bash -c "$command" ;; esac; }; '
+        '*vapid-private.pem*) if [[ "$TEST_TRUNCATE" == 1 ]]; then head -c 10 | sh -c "$command"; '
+        'else sh -c "$command"; fi ;; *) sh -c "$command" ;; esac; }; '
         'source "$1" "$2" "$3"'
     )
-    if sys.platform == "darwin":
-        # GNU ln -T is used on the Linux host; os.link has the same no-clobber semantics.
-        wrapper = (
-            'ln() { if [[ "$1" == -T ]]; then '
-            'python3 -c "import os, sys; os.link(sys.argv[1], sys.argv[2])" "$2" "$3"; '
-            'else command ln "$@"; fi; }; export -f ln; ' + wrapper
-        )
 
     for attempt in ("1", "2"):
         env["GITHUB_RUN_ATTEMPT"] = attempt
