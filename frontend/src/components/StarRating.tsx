@@ -3,6 +3,7 @@ import { Star, X } from 'lucide-react';
 
 interface StarRatingProps {
   value: number | null;
+  defaultValue?: number | null;
   onChange?: (value: number) => void;
   onClear?: () => void;
   size?: number;
@@ -14,6 +15,7 @@ interface StarRatingProps {
 
 export function StarRating({
   value,
+  defaultValue = null,
   onChange,
   onClear,
   size = 24,
@@ -25,7 +27,9 @@ export function StarRating({
   const interactive = !readonly && !!onChange;
   const [preview, setPreview] = useState<number | null>(null);
   const dragging = useRef(false);
-  const current = preview ?? value;
+  const initialValue = value ?? defaultValue;
+  const current = preview ?? initialValue;
+  const showingDefault = preview == null && value == null && defaultValue != null;
   const targetSize = Math.max(size, 24);
 
   return (
@@ -49,7 +53,7 @@ export function StarRating({
               <span className="relative inline-block text-ink-faint" style={{ width: size, height: size }}>
                 <Star width={size} height={size} fill="none" strokeWidth={1.5} />
                 {frac > 0 && (
-                  <span className="absolute inset-0 overflow-hidden text-live" style={{ width: `${frac * 100}%` }}>
+                  <span className={`absolute inset-0 overflow-hidden ${showingDefault ? 'text-ink-dim' : 'text-live'}`} style={{ width: `${frac * 100}%` }}>
                     <Star width={size} height={size} fill="currentColor" strokeWidth={1.5} />
                   </span>
                 )}
@@ -66,9 +70,9 @@ export function StarRating({
             disabled={disabled}
             value={Math.max(0.5, Math.min(5, Math.round((current ?? 0.5) * 2) / 2))}
             aria-label={label}
-            aria-valuemin={value === 0 ? 0 : min}
+            aria-valuemin={Math.min(min, current ?? min)}
             aria-valuenow={current ?? min}
-            aria-valuetext={current == null ? 'Not rated' : `${current} out of 5 stars`}
+            aria-valuetext={current == null ? 'Not rated' : `${current} out of 5 stars${showingDefault ? ', current rating, no vote' : ''}`}
             onPointerDown={(event) => {
               dragging.current = true;
               event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -78,20 +82,23 @@ export function StarRating({
               dragging.current = false;
               const next = Math.max(min, event.currentTarget.valueAsNumber);
               setPreview(null);
-              if (next !== value) onChange(next);
+              const initialStep = value == null && defaultValue != null
+                ? Math.max(min, Math.round(defaultValue * 2) / 2)
+                : value;
+              if (next !== initialStep) onChange(next);
             }}
             onPointerCancel={() => {
               dragging.current = false;
               setPreview(null);
             }}
             onKeyDown={(event) => {
-              if ((value == null || value < min) && ['Home', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].includes(event.key)) {
+              if ((initialValue == null || initialValue < min) && ['Home', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].includes(event.key)) {
                 event.preventDefault();
                 onChange(min);
-              } else if (value != null && !Number.isInteger(value * 2) && ['ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].includes(event.key)) {
+              } else if (initialValue != null && !Number.isInteger(initialValue * 2) && ['ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowRight'].includes(event.key)) {
                 event.preventDefault();
                 const up = event.key === 'ArrowUp' || event.key === 'ArrowRight';
-                onChange(Math.max(min, (up ? Math.ceil(value * 2) : Math.floor(value * 2)) / 2));
+                onChange(Math.max(min, (up ? Math.ceil(initialValue * 2) : Math.floor(initialValue * 2)) / 2));
               }
             }}
             onChange={(event) => {

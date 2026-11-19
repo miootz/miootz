@@ -15,14 +15,14 @@ vi.mock('../context/ToastContext', () => ({
 }));
 vi.mock('./MatchHistoryList', () => ({ MatchHistoryList: () => null }));
 
-it('saves and clears an initially blank rating in History', async () => {
+it.each([3, 3.7])('shows the current rating %s until a vote is changed or cleared', async (currentRating) => {
   vi.mocked(fetchMeetupTeams).mockResolvedValue({
     meetup_id: 7,
     content_revision: 0,
     teams: [{
       id: 'a',
       name: 'A',
-      players: [{ id: '2', name: 'Alex', skillScore: 3, isLocked: false }],
+      players: [{ id: '2', name: 'Alex', skillScore: 3, calculatedSkill: currentRating, isLocked: false }],
     }],
   });
   vi.mocked(fetchRatingContext).mockResolvedValue({
@@ -36,13 +36,18 @@ it('saves and clears an initially blank rating in History', async () => {
     viewer_attended: true,
     ratees: [{ user_id: 2, display_name: 'Alex', avatar_url: null, my_score: null }],
   });
-  vi.mocked(submitRating).mockResolvedValue();
+  vi.mocked(submitRating).mockReset().mockResolvedValue();
 
   render(<MeetupDetailPanel meetupId={7} />);
   const rating = await screen.findByRole('slider', { name: 'Your rating of Alex' });
   const clear = screen.getByRole('button', { name: 'Clear Your rating of Alex' });
-  expect(rating).toHaveAttribute('aria-valuetext', 'Not rated');
+  const defaultText = `${currentRating} out of 5 stars, current rating, no vote`;
+  expect(rating).toHaveAttribute('aria-valuetext', defaultText);
   expect(clear).toBeDisabled();
+
+  fireEvent.pointerDown(rating);
+  fireEvent.pointerUp(rating);
+  expect(submitRating).not.toHaveBeenCalled();
 
   fireEvent.change(rating, { target: { value: '1.5' } });
   await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, 1.5));
@@ -52,7 +57,7 @@ it('saves and clears an initially blank rating in History', async () => {
   fireEvent.click(clear);
   await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, 0));
   expect(clear).toBeDisabled();
-  expect(rating).toHaveAttribute('aria-valuetext', 'Not rated');
+  expect(rating).toHaveAttribute('aria-valuetext', defaultText);
 });
 
 it('does not offer rating controls when peer ratings are off', async () => {

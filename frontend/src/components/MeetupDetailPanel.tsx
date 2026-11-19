@@ -363,6 +363,12 @@ export function MeetupDetailPanel({
           )}
         </h2>
 
+        {canRate && ratees.length > 0 && (
+          <p className="mb-3 text-xs text-ink-dim">
+            Change a player’s current rating to cast a vote.
+          </p>
+        )}
+
         {teamsLoading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink-faint">
             <Loader2 className="h-4 w-4 animate-spin" />

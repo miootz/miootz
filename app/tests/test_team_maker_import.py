@@ -91,6 +91,12 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     ratings, runners, tokens, nights, expected, warnings = parse_workbook(
         workbook, {day.date(): corrected}
     )
+    assert ratings == {
+        "Alex Example": 5,
+        "Casey Sample": 1,
+        "Jordan Fixture": 4,
+        "Taylor Mock": 3,
+    }
     assert list(nights) == [corrected]
     assert runners == {"Alex Example", "Jordan Fixture"}
     assert any(
@@ -198,7 +204,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         assert db.execute(
             "SELECT seed_skill, calculated_skill FROM users "
             "WHERE is_admin ORDER BY historical_roster_name"
-        ).fetchall() == [(5.0, 4.9), (0.0, 0.1)]
+        ).fetchall() == [(5.0, 4.9), (1.0, 1.1)]
         assert db.execute(
             "SELECT historical_roster_name, pac FROM users ORDER BY historical_roster_name"
         ).fetchall() == [

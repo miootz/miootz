@@ -72,6 +72,7 @@ function PlayerRow({
                     <div className="relative z-10 mt-1">
                         <StarRating
                             value={currentRating}
+                            defaultValue={player.calculatedSkill}
                             onChange={onRatingChange}
                             size={20}
                             min={1}

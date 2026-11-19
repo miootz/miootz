@@ -23,6 +23,10 @@ uses their underlying **1–5** scores before display rounding.
 | Teammates only | Confirmed attendees can rate teammates they shared a side with in a completed match. A side includes its live substitutes. |
 | Everyone | Confirmed attendees can rate any other confirmed attendee in that meetup. |
 
+History starts the voting control at the player's current Base or Adjusted
+Rating, following the computed scores setting. A change casts a vote.
+Clearing a vote restores the starting value. Leaving it alone adds no vote.
+
 An eligible vote is one to five stars in half-star increments. At least three different eligible
 people must rate the same player in the same meetup before those votes can
 affect Adjusted Rating. Miootz averages qualifying votes within each meetup,
