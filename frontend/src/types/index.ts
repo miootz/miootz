@@ -19,6 +19,8 @@ export interface User {
   pitchPosition?: Specialty;
   /** Computed skill rating from meetup history (1–5). Preferred display value. */
   calculatedSkill?: number | null;
+  pac?: number | null;
+  dri?: number | null;
 }
 
 export interface ChatMessage {

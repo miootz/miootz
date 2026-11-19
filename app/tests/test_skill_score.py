@@ -8,6 +8,8 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.demo_data import seed_demo
 from app.services.skill_service import blend_skill, update_user_calculated_skill
+from app.api import rankings, users_stats
+from app.services import skill_service
 from app.services.team_assignment import draft_skill
 
 
@@ -33,8 +35,9 @@ async def test_skill_score_calculation_logic():
             seed_skill=3.0,
             calculated_skill=3.0,
         )
-        rater1 = User(pocket_id_sub="test-r1", sso_display_name="r1")
-        db.add_all([auth_user, player, rater1])
+        rater1 = User(pocket_id_sub="p1-uuid", sso_display_name="r1")
+        rater2 = User(pocket_id_sub="p2-uuid", sso_display_name="r2")
+        db.add_all([auth_user, player, rater1, rater2])
         await db.commit()
         await db.refresh(auth_user)
         await db.refresh(player)
@@ -50,7 +53,7 @@ async def test_skill_score_calculation_logic():
         await db.refresh(meetup1)
 
         s1id = meetup1.id
-        for uid in (rater1.id, player.id, auth_user.id):
+        for uid in (rater1.id, rater2.id, player.id, auth_user.id):
             db.add(Attendance(meetup_id=s1id, user_id=uid))
         await db.commit()
 
@@ -58,22 +61,38 @@ async def test_skill_score_calculation_logic():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.post(
+        for token, expected in (("tester", 3.0), ("p1", 3.0), ("p2", 3.6)):
+            resp = await ac.post(
+                "/ratings/",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"meetup_id": s1id, "ratee_id": player_id, "score": 5},
+            )
+            assert resp.status_code == 200, resp.text
+            async with async_session() as db:
+                assert (await db.get(User, player_id)).calculated_skill == expected
+
+        for mode, expected in (("teammates-only", 3.0), ("everyone", 3.6)):
+            changed = await ac.patch(
+                "/rating-settings",
+                headers={"Authorization": "Bearer admin"},
+                json={"computed_scores": True, "peer_rating_mode": mode},
+            )
+            assert changed.status_code == 200, changed.text
+            async with async_session() as db:
+                assert (await db.get(User, player_id)).calculated_skill == expected
+
+        cleared = await ac.post(
             "/ratings/",
-            headers={"Authorization": "Bearer tester"},
-            json={
-                "meetup_id": s1id,
-                "ratee_id": player_id,
-                "score": 5,
-            },
+            headers={"Authorization": "Bearer p2"},
+            json={"meetup_id": s1id, "ratee_id": player_id, "score": 0},
         )
-        assert resp.status_code == 200, f"rating failed: {resp.text}"
+        assert cleared.json() is None
 
     async with async_session() as db:
         player_row = await db.get(User, player_id)
         assert player_row is not None
-        # The original seed carries 55 parts and the peer vote carries 25.
-        assert player_row.calculated_skill == 3.6
+        # Dropping below three reviewers restores the baseline.
+        assert player_row.calculated_skill == 3.0
         assert player_row.seed_skill == 3.0
 
 
@@ -124,7 +143,7 @@ async def test_attributes_in_rankings_profile_and_admin_edit():
             "/rankings/attributes?year=all&sort=pas&per_page=3", headers=headers
         )
         assert rankings.status_code == 200, rankings.text
-        assert rankings.json()["total"] == 15
+        assert rankings.json()["total"] == 20
         rows = rankings.json()["rows"]
         assert len(rows) == 3
         assert [row["pas"] for row in rows] == sorted(
@@ -159,3 +178,75 @@ async def test_attributes_in_rankings_profile_and_admin_edit():
 def test_draft_skill_uses_three_for_unrated_players_and_preserves_zero():
     assert draft_skill(None) == 3.0
     assert draft_skill(0.0) == 0.0
+
+
+async def test_disabling_computation_uses_base_everywhere_without_loading_attributes(
+    monkeypatch,
+):
+    async with async_session() as db:
+        await seed_demo(
+            db, anchor=datetime.now(UTC).replace(tzinfo=None), scenario="squad"
+        )
+        admin = await db.get(User, 1)
+        admin.pocket_id_sub = "admin-uuid"
+        await db.commit()
+
+    async def unavailable(*args, **kwargs):
+        pytest.fail("Base Rating mode must skip attribute calculation")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        admin = {"Authorization": "Bearer admin"}
+        member = {"Authorization": "Bearer user"}
+        settings = {"computed_scores": False, "peer_rating_mode": "off"}
+        assert (
+            await client.patch("/rating-settings", headers=member, json=settings)
+        ).status_code == 403
+
+        with monkeypatch.context() as patches:
+            for module in (rankings, users_stats, skill_service):
+                patches.setattr(module, "load_player_attributes", unavailable)
+            response = await client.patch(
+                "/rating-settings", headers=admin, json=settings
+            )
+            assert response.status_code == 200, response.text
+            assert (
+                await client.get("/rating-settings", headers=member)
+            ).json() == settings
+            edit = await client.patch(
+                "/users/1", headers=admin, json={"seed_skill": 4.7}
+            )
+            assert edit.status_code == 200
+            profile = (await client.get("/users/me/stats", headers=admin)).json()
+            assert (
+                profile["base_rating"],
+                profile["adjusted_rating"],
+                profile["skill_level"],
+            ) == (4.7, None, 4.7)
+            assert profile["attributes"] is None
+            assert (await client.get("/me", headers=admin)).json()["user"][
+                "calculated_skill"
+            ] == 4.7
+            ratings = (
+                await client.get(
+                    "/rankings/attributes?year=all&sort=pas", headers=admin
+                )
+            ).json()
+            assert ratings["computed_scores"] is False
+            row = next(row for row in ratings["rows"] if row["user"]["id"] == 1)
+            assert row["rating"] == 4.7
+            assert row["pas"] is None
+
+        reactivated = await client.patch(
+            "/rating-settings",
+            headers=admin,
+            json={**settings, "computed_scores": True},
+        )
+        assert reactivated.status_code == 200, reactivated.text
+        profile = (await client.get("/users/me/stats", headers=admin)).json()
+        attrs = {
+            key: profile["attributes"][key]["score"] for key in ("sho", "pas", "def")
+        }
+        assert profile["adjusted_rating"] == blend_skill(4.7, None, attrs)
+        assert profile["skill_level"] == profile["adjusted_rating"]

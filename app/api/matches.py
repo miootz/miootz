@@ -39,6 +39,7 @@ from app.services.meetup_revision import bump_and_notify
 from app.services.audit import log_action
 from app.services.skill_service import refresh_skills_after_meetup
 from app.services.team_assignment import draft_skill
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,8 @@ async def _load_users_for_meetup(db: AsyncSession, meetup_id: int) -> dict[int, 
             "id": user.id,
             "display_name": user.display_name,
             "avatar_url": user.avatar_url,
+            "pac": user.pac,
+            "dri": user.dri,
         }
     return users
 
@@ -392,16 +395,19 @@ async def start_matches(
         )
     )
     confirmed_users = result.scalars().all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": draft_skill(u.calculated_skill),
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": selected_rating(u, computed_scores),
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for u in confirmed_users
     ]
@@ -534,16 +540,19 @@ async def create_new_pending_match(
         )
     )
     confirmed_users = result.scalars().all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": draft_skill(u.calculated_skill),
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": selected_rating(u, computed_scores),
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for u in confirmed_users
     ]
@@ -903,16 +912,19 @@ async def _propagate_swap_to_meetup(
         )
     )
     confirmed_users = result.scalars().all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": draft_skill(u.calculated_skill),
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": selected_rating(u, computed_scores),
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for u in confirmed_users
     ]
@@ -1715,12 +1727,15 @@ async def end_match(
             Attendance.status == "confirmed",
         )
     )
+    computed_scores = (await get_rating_settings(db)).computed_scores
     _players = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": draft_skill(u.calculated_skill),
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for u in _result.scalars().all()
     ]

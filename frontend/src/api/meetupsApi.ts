@@ -100,6 +100,8 @@ export interface MeetupDetail extends MeetupListItem {
     joined_at: string | null;
     skill: number;
     calculated_skill?: number | null;
+    pac?: number | null;
+    dri?: number | null;
     /** True when this attendee is a plus-one guest reservation. */
     is_plus_one?: boolean;
     primary_specialty?: "ATT" | "MID" | "DEF" | "GK" | null;
@@ -179,6 +181,8 @@ export interface TeamsResponse {
       primarySpecialty?: "ATT" | "MID" | "DEF" | "GK" | null;
       secondarySpecialty?: "ATT" | "MID" | "DEF" | "GK" | null;
       calculatedSkill?: number | null;
+      pac?: number | null;
+      dri?: number | null;
     }[];
   }[];
 }

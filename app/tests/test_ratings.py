@@ -287,7 +287,7 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         assert history.json()["stats"]["total_ratings"] == 2
         assert history.json()["history"]["items"][0]["rating_avg"] == 3
         async with async_session() as db:
-            assert (await db.get(User, player_id)).calculated_skill == 3.3
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
 
         assert (await rate("tester", 0)).json() is None
         assert (await rate("tester", 0)).json() is None
@@ -296,7 +296,7 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         )
         assert stats.json() == {"average_score": 1, "total_ratings": 1}
         async with async_session() as db:
-            assert (await db.get(User, player_id)).calculated_skill == 2.7
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
 
         # Clearing the last valid vote returns skill to the seed.
         assert (await rate("p1", 0)).json() is None

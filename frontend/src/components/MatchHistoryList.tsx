@@ -463,6 +463,8 @@ function MatchResultRow({
                         className="text-sm text-ink-dim truncate"
                       >
                         {u.display_name}
+                        {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">PAC</span>}
+                        {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">DRI</span>}
                       </li>
                     ))}
                   </ul>

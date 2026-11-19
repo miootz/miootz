@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +29,7 @@ class RateeContext(BaseModel):
 
 
 class RatingContextResponse(BaseModel):
+    peer_rating_mode: Literal["off", "teammates-only", "everyone"] = "everyone"
     meetup_id: int
     meetup_start_time: datetime
     meetup_end_time: datetime

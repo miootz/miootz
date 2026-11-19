@@ -11,6 +11,8 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
+from app.services.peer_rating_policy import teammate_pairs
+from app.services.rating_settings import get_rating_settings
 
 logger = logging.getLogger(__name__)
 
@@ -371,6 +373,9 @@ async def notify_rating_reminder_for_meetup(
     """Notify all confirmed attendees to rate their peers after the meetup ends."""
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
+    mode = (await get_rating_settings(db)).peer_rating_mode
+    if mode == "off":
+        return
 
     r = await db.execute(
         select(Attendance.user_id).where(
@@ -379,6 +384,16 @@ async def notify_rating_reminder_for_meetup(
         )
     )
     user_ids = {row[0] for row in r.all()}
+    if mode == "teammates-only":
+        pairs = (await teammate_pairs(db, [meetup.id]))[meetup.id]
+        user_ids = {
+            user_id
+            for pair in pairs
+            if set(pair) <= user_ids
+            for user_id in pair
+        }
+    elif len(user_ids) < 2:
+        return
     if not user_ids:
         return
 

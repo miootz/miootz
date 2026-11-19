@@ -2,7 +2,7 @@ import { apiFetch, parseApiError } from "./client";
 
 export interface MatchTeamInfo {
   name: string;
-  users: { id: number; display_name: string; avatar_url: string | null }[];
+  users: { id: number; display_name: string; avatar_url: string | null; pac?: number | null; dri?: number | null }[];
 }
 
 export interface MatchSummary {

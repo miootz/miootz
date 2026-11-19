@@ -1,7 +1,11 @@
 """Unit tests for manual team partition validation."""
 
 from app.services.manual_teams import validate_team_partition
-from app.services.team_assignment import rebalance_around_locked
+from app.services.team_assignment import (
+    assign_teams_random,
+    assign_teams_snake,
+    rebalance_around_locked,
+)
 
 
 def test_validate_empty_roster():
@@ -113,3 +117,36 @@ def test_rebalance_equal_skill_varies_layout_keeps_totals():
         assert t == reference  # equal-skill shuffle never moves a total
         layouts.add(ids)
     assert len(layouts) > 1  # …but it does produce new layouts
+
+
+def test_balanced_draft_spreads_pace_and_dribbling_and_keeps_locked_players():
+    # The first snake draft groups all three runners on one team and all
+    # three technical players on the other.
+    players = [
+        {
+            "id": str(i),
+            "skill": 3.0,
+            "pac": 4.0 if i in (1, 4, 5) else None,
+            "dri": 4.0 if i in (2, 3, 6) else None,
+        }
+        for i in range(1, 7)
+    ]
+    teams = assign_teams_snake(players)
+    for attribute in ("pac", "dri"):
+        assert sorted(sum((p[attribute] or 3) > 3 for p in t) for t in teams) == [1, 2]
+
+    teams = rebalance_around_locked(players, [[1, 4, 5], [2, 3, 6]], locked={1, 4})
+    assert {p["id"] for p in teams[0]} >= {"1", "4"}
+    assert sorted(len(team) for team in teams) == [3, 3]
+    for attribute in ("pac", "dri"):
+        assert sorted(sum((p[attribute] or 3) > 3 for p in t) for t in teams) == [1, 2]
+
+
+def test_random_draft_does_not_rebalance_attributes(monkeypatch):
+    monkeypatch.setattr("app.services.team_assignment.random.shuffle", lambda players: None)
+    players = [
+        {"id": str(i), "skill": 3.0, "pac": 4.0 if i in (1, 4, 5) else None}
+        for i in range(1, 7)
+    ]
+    teams = assign_teams_random(players)
+    assert [[p["id"] for p in team] for team in teams] == [["1", "4", "5"], ["2", "3", "6"]]

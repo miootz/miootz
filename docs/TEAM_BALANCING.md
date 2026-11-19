@@ -11,22 +11,33 @@ a lineup. **Balanced (skill snake)** deals players by skill. **Random order
    player count by five, round up, apply the cap, then keep the result between
    two teams and the number of players (one team for a solo player, none for
    an empty roster). Team sizes differ by at most one.
-2. **Order the players.** Balanced mode sorts highest skill first. Tied players
+2. **Order the players.** Balanced mode sorts highest active rating first. Tied players
    retain their order from the roster query, which has no explicit tie-breaker.
    Random mode shuffles the full roster.
 3. **Deal in alternating directions.** With three teams, the draft goes
    1 → 2 → 3, then 3 → 2 → 1. A full team is skipped. Each new random draft
    can differ until an admin saves a lineup.
+4. **Spread pace and dribbling.** In balanced mode, Miootz swaps unlocked
+   players across teams when that improves the distribution of players with
+   PAC or DRI above 3.0. It compares each category against each team's share of
+   the available playing spots. The bench does not take part in these swaps.
+   When two swaps improve the distribution equally, it
+   prefers the one that keeps rating totals closer. The roster labels identify
+   players above 3.0. This step works with either rating mode.
 
 The draft spreads skill by order. Team totals can still vary, and positions
 such as goalkeeper are display information. The meetup's minimum attendance
 setting has no effect on the draft. See the
 [assignment code](../app/services/team_assignment.py).
 
-## How overall skill is calculated
+## Base Rating and Adjusted Rating
 
-The balanced draft uses overall skill, a combination of peer ratings, a
-permanent seed set by an admin or import, and five attributes:
+Admins can change the app-wide rating mode under **Admin → Tools → Player
+ratings**. With computed scores off, Rankings and balanced drafts use
+**Base Rating**, the seed set by an admin or workbook import. With computed
+scores on, they use **Adjusted Rating**, which combines the seed, eligible
+peer ratings, and five attributes. The profile shows both ratings. Adjusted
+Rating is labeled disabled when computation is off. See [Rating settings](RATINGS.md).
 
 | Input | Share |
 | --- | ---: |
@@ -55,7 +66,11 @@ attribute and is 4.0, the other attribute shares return to the baseline, giving
 | One of the player's four most recently joined confirmed meetups, ordered by signup time | 1.0 |
 | Any other meetup | 0.5 |
 
-Scores from **1 to 5** count. Multiply each score by its weight, add the
+Scores from **1 to 5** count in Adjusted Rating once at least three distinct
+eligible peers rate the same player for the same meetup. Off disables peer
+voting. Teammates only covers everyone who played on the same side of a
+completed match, including players who came on or went off as substitutes.
+Everyone lets confirmed attendees rate one another. Multiply each qualifying score by its weight, add the
 results, and divide by the sum of the weights. A skipped or cleared rating
 contributes nothing. Older ratings retain half weight.
 
@@ -66,9 +81,9 @@ Each further consecutive miss subtracts **0.1**, up to **1.0** in total. The
 deduction is applied once when valid peer ratings exist. The final overall
 skill is limited to **0–5** and rounded to one decimal place.
 
-**Example.** A recent 5 and an older 3 give a weighted average of
-`(5 × 1 + 3 × 0.5) ÷ 1.5 = 4.33…` as the peer-rating input. Three consecutive
-misses cause a deduction of 0.2 from the combined skill.
+**Example.** Three recent scores of 5 and three older scores of 3 give a
+weighted average of `(15 × 1 + 9 × 0.5) ÷ (3 × 1 + 3 × 0.5) = 4.33…`.
+Three consecutive misses cause a deduction of 0.2 from Adjusted Rating.
 
 Adding, editing, or clearing a peer rating recalculates skill, as can changes
 to attendance. If no valid ratings remain, only the seed can provide the
@@ -122,7 +137,7 @@ Attributes use eligible recorded or imported match history.
 | --- | --- |
 | **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
 | **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
-| **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-skill players before dealing. Random reshuffles shuffle all unlocked players. Locks are local, and the preview uses the default team-count rule and skill order. The server saves a changed lineup. |
+| **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-rated players before dealing and then spread PAC and DRI among playing teams. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
 | **Change team capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
 | **Reshape during play** | Choose a team count and size. The draft includes a bench team for excess players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
 

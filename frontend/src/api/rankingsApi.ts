@@ -70,11 +70,12 @@ export interface NightStats {
   draw_matches: DrawMatch[];
 }
 
-export type AttributeSort = "sho" | "pas" | "def";
+export type AttributeSort = "rating" | "sho" | "pas" | "def";
 
 export interface AttributeRankingRow {
   rank: number | null;
   user: RankingUser;
+  rating: number | null;
   sho: number | null;
   pas: number | null;
   def: number | null;
@@ -82,6 +83,7 @@ export interface AttributeRankingRow {
 
 export interface AttributeRankingsResponse {
   total: number;
+  computed_scores?: boolean;
   rows: AttributeRankingRow[];
 }
 

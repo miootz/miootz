@@ -18,14 +18,14 @@ describe("RankingsPage attributes", () => {
     });
     fetchAttributeRankings.mockReset().mockResolvedValue({
       total: 26,
-      rows: [{ rank: 1, user: { id: 1, display_name: "Sam Vale", avatar_url: null }, sho: 3.6, pas: null, def: 3.9 }],
+      rows: [{ rank: 1, user: { id: 1, display_name: "Sam Vale", avatar_url: null }, rating: 3.4, sho: 3.6, pas: null, def: 3.9 }],
     });
   });
 
   it("keeps highlights and requests the selected attribute, order, scope, and page", async () => {
     render(<RankingsPage />);
     expect(await screen.findByText("Season highlights")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Attributes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ratings" }));
     const passing = await screen.findByRole("button", { name: "Sort by Passing" });
     expect(screen.getByRole("table", { name: "Player attribute rankings" })).toHaveTextContent("3.6");
     expect(screen.getByLabelText("Insufficient data")).toBeTruthy();
@@ -48,4 +48,20 @@ describe("RankingsPage attributes", () => {
       expect.objectContaining({ year: "all", page: 1 }), expect.any(AbortSignal),
     ));
   });
+});
+
+it("shows only Base Rating when computed scores are disabled", async () => {
+  fetchRankings.mockResolvedValue({
+    year: 2026, available_years: [2026], total: 0, rows: [], night: null, highlights: {},
+  });
+  fetchAttributeRankings.mockResolvedValue({
+    total: 1, computed_scores: false,
+    rows: [{ rank: 1, user: { id: 1, display_name: "Sam Vale", avatar_url: null }, rating: 3.4, sho: null, pas: null, def: null }],
+  });
+  render(<RankingsPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ratings" }));
+  expect(await screen.findByText("Base Rating · current")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Sort by Base Rating" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Sort by Passing" })).toBeNull();
+  expect(screen.queryByText("How attributes work")).toBeNull();
 });

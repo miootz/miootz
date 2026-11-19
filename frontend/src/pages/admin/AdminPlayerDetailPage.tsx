@@ -332,7 +332,7 @@ export function AdminPlayerDetailPage() {
 
 				<div>
 					<label htmlFor="player-seed-skill" className="mb-1 block text-xs font-medium text-ink-dim">
-						Starting skill (0–5, optional)
+						Base Rating (0–5, optional)
 					</label>
 					<input
 						id="player-seed-skill"

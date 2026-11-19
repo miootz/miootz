@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, UTC
+from collections import defaultdict
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,8 @@ from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.player_attributes import load_player_attributes
+from app.services.peer_rating_policy import teammate_pairs
+from app.services.rating_settings import PeerRatingMode, get_rating_settings
 from app.services.rating_windows import meetup_end_time
 
 _MAX_MISS_DECAY = 1.0
@@ -91,14 +94,42 @@ async def get_consecutive_miss_streak(
     return streak
 
 
-async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | None:
+async def _get_weighted_peer_average(
+    db: AsyncSession,
+    user_id: int,
+    mode: PeerRatingMode,
+    pairs: dict[int, set[tuple[int, int]]] | None,
+) -> float | None:
     """Compute the peer-rating average for a user with recency weighting.
 
     Ratings from the user's N most recent confirmed attendances carry full
     weight (1.0).  Ratings from older meetups carry reduced weight (0.5).
     Ratings from meetups the user never attended also carry reduced weight.
-    Returns None if there are no ratings at all.
+    Each meetup needs three eligible reviewers before its votes count.
     """
+    if mode == "off":
+        return None
+
+    votes = await db.scalars(
+        select(Rating)
+        .join(Meetup)
+        .where(
+            Rating.ratee_id == user_id,
+            Rating.rater_id != user_id,
+            Rating.score.between(1, 5),
+            Meetup.skipped.is_(False),
+        )
+    )
+    by_meetup: dict[int, dict[int, int]] = defaultdict(dict)
+    for vote in votes:
+        pair = (min(vote.rater_id, user_id), max(vote.rater_id, user_id))
+        if pairs is not None and pair not in pairs.get(vote.meetup_id, ()):
+            continue
+        by_meetup[vote.meetup_id][vote.rater_id] = vote.score
+    qualified = {mid: scores for mid, scores in by_meetup.items() if len(scores) >= 3}
+    if not qualified:
+        return None
+
     # Fetch the user's most recent confirmed meetup IDs
     result = await db.execute(
         select(Attendance.meetup_id)
@@ -111,25 +142,13 @@ async def _get_weighted_peer_average(db: AsyncSession, user_id: int) -> float | 
     )
     recent_meetup_ids = {row[0] for row in result.fetchall()}
 
-    # Fetch all ratings for this user
-    result = await db.execute(
-        select(Rating.meetup_id, Rating.score).where(
-            Rating.ratee_id == user_id, Rating.score.between(1, 5)
-        )
-    )
-    ratings = result.fetchall()
-    if not ratings:
-        return None
-
     weighted_sum = 0.0
     total_weight = 0.0
-    for meetup_id, score in ratings:
+    for meetup_id, scores in qualified.items():
         weight = _WEIGHT_RECENT if meetup_id in recent_meetup_ids else _WEIGHT_OLD
-        weighted_sum += score * weight
-        total_weight += weight
+        weighted_sum += sum(scores.values()) * weight
+        total_weight += len(scores) * weight
 
-    if total_weight == 0:
-        return None
     return weighted_sum / total_weight
 
 
@@ -160,9 +179,11 @@ async def _update_skill(
     db: AsyncSession,
     user: User,
     attributes: dict,
+    mode: PeerRatingMode,
+    pairs: dict[int, set[tuple[int, int]]] | None,
     locked_ids: list[int] | None = None,
 ) -> None:
-    peer = await _get_weighted_peer_average(db, user.id)
+    peer = await _get_weighted_peer_average(db, user.id, mode, pairs)
     streak = (
         await get_consecutive_miss_streak(db, user.id, locked_ids=locked_ids)
         if peer is not None
@@ -173,13 +194,28 @@ async def _update_skill(
     user.calculated_skill = blend_skill(user.seed_skill, peer, scores, streak)
 
 
+async def _load_peer_pairs(
+    db: AsyncSession, mode: PeerRatingMode, user_id: int | None = None
+):
+    if mode != "teammates-only":
+        return None
+    query = select(Rating.meetup_id).where(Rating.score.between(1, 5)).distinct()
+    if user_id is not None:
+        query = query.where(Rating.ratee_id == user_id)
+    return await teammate_pairs(db, (await db.scalars(query)).all())
+
+
 async def update_user_calculated_skill(
     db: AsyncSession, user_id: int, *, commit: bool = True
 ) -> None:
     user = await db.get(User, user_id)
     if user is None:
         return
-    await _update_skill(db, user, (await load_player_attributes(db)).get(user_id, {}))
+    settings = await get_rating_settings(db)
+    if settings.computed_scores:
+        attributes = (await load_player_attributes(db)).get(user_id, {})
+        pairs = await _load_peer_pairs(db, settings.peer_rating_mode, user_id)
+        await _update_skill(db, user, attributes, settings.peer_rating_mode, pairs)
     if commit:
         await db.commit()
     else:
@@ -188,7 +224,11 @@ async def update_user_calculated_skill(
 
 async def refresh_player_skills(db: AsyncSession) -> None:
     """Refresh overall skills in the caller's transaction after a change in match data."""
+    settings = await get_rating_settings(db)
+    if not settings.computed_scores:
+        return
     attributes = await load_player_attributes(db)
+    pairs = await _load_peer_pairs(db, settings.peer_rating_mode)
     locked_ids = await _get_locked_meetup_ids(db)
     users = await db.scalars(
         select(User).where(
@@ -200,7 +240,14 @@ async def refresh_player_skills(db: AsyncSession) -> None:
         )
     )
     for user in users:
-        await _update_skill(db, user, attributes.get(user.id, {}), locked_ids)
+        await _update_skill(
+            db,
+            user,
+            attributes.get(user.id, {}),
+            settings.peer_rating_mode,
+            pairs,
+            locked_ids,
+        )
 
 
 async def refresh_skills_after_meetup(db: AsyncSession, meetup_id: int) -> None:

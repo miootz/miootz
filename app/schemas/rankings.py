@@ -10,12 +10,14 @@ class RankingUser(BaseModel):
 class AttributeRankingRow(BaseModel):
     rank: int | None
     user: RankingUser
+    rating: float | None
     sho: float | None
     pas: float | None
     def_: float | None = Field(alias="def")
 
 
 class AttributeRankingsResponse(BaseModel):
+    computed_scores: bool
     total: int
     rows: list[AttributeRankingRow]
 

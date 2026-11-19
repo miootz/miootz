@@ -119,9 +119,9 @@ async def test_claim_transfers_place_and_results_without_replacing_identity(
     assert result["display_name"] == "Mara"
     assert d.member.pocket_id_sub == "member"
     assert d.guest.pocket_id_sub == "placeholder"
-    # The guest seed stays in the calculation alongside the transferred vote.
+    # The vote transfers, but a single reviewer is below the minimum.
     assert d.member.seed_skill == 3.0
-    assert d.member.calculated_skill == 3.3
+    assert d.member.calculated_skill == 3.0
     assert await d.db.scalar(select(MatchGoal.scorer_id)) == d.member.id
     assert d.attendance.user_id == d.member.id
     assert d.attendance.status == status
@@ -164,7 +164,7 @@ async def test_cancelled_attendance_is_replaced_and_missing_skill_is_filled(clai
     assert len(entries) == 1
     assert entries[0].status == "confirmed"
     assert d.member.seed_skill == 3.0
-    assert d.member.calculated_skill == 3.3
+    assert d.member.calculated_skill == 3.0
 
 
 @pytest.mark.asyncio

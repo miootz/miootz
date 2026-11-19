@@ -16,6 +16,8 @@ import { Loader2 } from "lucide-react";
 export interface PanelTeamUser {
   id: number;
   display_name: string;
+  pac?: number | null;
+  dri?: number | null;
 }
 
 export interface ExtraTeam {
@@ -254,6 +256,8 @@ export function SubstitutionsPanel({
                 aria-pressed={isSelected}
               >
                 {u.display_name}
+                {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-ink-dim">PAC</span>}
+                {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-ink-dim">DRI</span>}
               </button>
             </li>
           );

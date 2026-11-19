@@ -68,6 +68,56 @@ def _snake_draft(
     return teams
 
 
+def _balance_attributes(
+    teams: list[list[dict[str, Any]]], locked: set[str] | None = None
+) -> None:
+    """Swap unlocked players to spread above-neutral pace and dribbling."""
+    locked = locked or set()
+    total_players = sum(len(team) for team in teams)
+    if not total_players:
+        return
+
+    def imbalance() -> int:
+        total = 0
+        for attribute in ("pac", "dri"):
+            counts = [
+                sum(p.get(attribute) is not None and p[attribute] > 3 for p in team)
+                for team in teams
+            ]
+            players_with_attribute = sum(counts)
+            total += sum(
+                (count * total_players - players_with_attribute * len(team)) ** 2
+                for count, team in zip(counts, teams, strict=True)
+            )
+        return total
+
+    while True:
+        current = imbalance()
+        if current == 0:
+            return
+        best = None
+        best_score = (current, float("inf"))
+        for first in range(len(teams)):
+            for second in range(first + 1, len(teams)):
+                for i, a in enumerate(teams[first]):
+                    if str(a["id"]) in locked:
+                        continue
+                    for j, b in enumerate(teams[second]):
+                        if str(b["id"]) in locked:
+                            continue
+                        teams[first][i], teams[second][j] = b, a
+                        candidate = imbalance()
+                        totals = [sum(float(p.get("skill", 0)) for p in t) for t in teams]
+                        score = (candidate, max(totals) - min(totals))
+                        if candidate < current and score < best_score:
+                            best, best_score = (first, second, i, j), score
+                        teams[first][i], teams[second][j] = a, b
+        if best is None:
+            return
+        first, second, i, j = best
+        teams[first][i], teams[second][j] = teams[second][j], teams[first][i]
+
+
 def assign_teams_snake(
     players: list[dict[str, Any]],
     max_teams: int | None = None,
@@ -75,7 +125,9 @@ def assign_teams_snake(
     sorted_p = sorted(
         players, key=lambda x: float(x.get("skill", 0)), reverse=True
     )
-    return _snake_draft(sorted_p, max_teams=max_teams)
+    teams = _snake_draft(sorted_p, max_teams=max_teams)
+    _balance_attributes(teams)
+    return teams
 
 
 def assign_teams_random(
@@ -144,4 +196,6 @@ def rebalance_around_locked(
                 remaining[t] -= 1
                 i += 1
         round_idx += 1
+    if not randomize:
+        _balance_attributes(teams[:max_teams], locked_str)
     return teams

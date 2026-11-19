@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
 import { adminExportData, adminRunRecurringNow } from "../../api/adminApi";
+import { fetchRatingSettings, saveRatingSettings, type RatingSettings } from "../../api/ratingSettingsApi";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import { useToast } from "../../context/ToastContext";
@@ -16,6 +17,10 @@ export function AdminToolsPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ratingSettings, setRatingSettings] = useState<RatingSettings | null>(null);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+  const [savingRatings, setSavingRatings] = useState(false);
+  const [ratingSaved, setRatingSaved] = useState(false);
   const [history, setHistory] = useState<JobHistoryEntry[]>([]);
   const [exportStatus, setExportStatus] = useState<
     "idle" | "preparing" | "downloaded"
@@ -25,7 +30,26 @@ export function AdminToolsPage() {
 
   useEffect(() => {
     setHistory(readJobHistory());
+    void fetchRatingSettings().then(setRatingSettings).catch((e: unknown) => {
+      setRatingError(e instanceof Error ? e.message : "Could not load rating settings");
+    });
   }, []);
+
+  async function saveRatings(event: React.FormEvent) {
+    event.preventDefault();
+    if (!ratingSettings) return;
+    setSavingRatings(true);
+    setRatingSaved(false);
+    setRatingError(null);
+    try {
+      setRatingSettings(await saveRatingSettings(ratingSettings));
+      setRatingSaved(true);
+    } catch (e) {
+      setRatingError(e instanceof Error ? e.message : "Could not save rating settings");
+    } finally {
+      setSavingRatings(false);
+    }
+  }
 
   async function runRecurring() {
     setLoading(true);
@@ -76,6 +100,60 @@ export function AdminToolsPage() {
         }
         title="Tools"
       />
+
+      <section className="border border-line bg-panel p-6">
+        <h2 className="text-lg font-bold text-ink">Player ratings</h2>
+        {ratingSettings && (
+          <form onSubmit={(event) => void saveRatings(event)} className="mt-4 space-y-5">
+            <label className="flex min-h-11 items-center gap-3 text-sm text-ink">
+              <input
+                type="checkbox"
+                disabled={savingRatings}
+                className="h-5 w-5 accent-live"
+                checked={ratingSettings.computed_scores}
+                onChange={(event) => {
+                  setRatingSaved(false);
+                  setRatingSettings({ ...ratingSettings, computed_scores: event.target.checked });
+                }}
+              />
+              Use adjusted ratings
+            </label>
+            <p className="text-sm text-ink-dim">Turn off to use base ratings for rankings and team balancing.</p>
+            <fieldset disabled={savingRatings}>
+              <legend className="font-semibold text-ink">Peer ratings</legend>
+              <div className="mt-2 space-y-1">
+                {([
+                  ["off", "Off"],
+                  ["teammates-only", "Teammates only"],
+                  ["everyone", "Everyone"],
+                ] as const).map(([value, label]) => (
+                  <label key={value} className="flex min-h-11 items-center gap-3 text-sm text-ink">
+                    <input
+                      type="radio"
+                      name="peer-rating-mode"
+                      value={value}
+                      className="h-5 w-5 accent-live"
+                      checked={ratingSettings.peer_rating_mode === value}
+                      onChange={() => {
+                        setRatingSaved(false);
+                        setRatingSettings({ ...ratingSettings, peer_rating_mode: value });
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-sm text-ink-dim">At least three eligible players must rate the same player at a meetup before those ratings affect skill.</p>
+            </fieldset>
+            <button type="submit" disabled={savingRatings} className="min-h-11 bg-ink px-5 py-2 font-bold text-board hover:bg-white/90 disabled:opacity-50">
+              {savingRatings ? "Saving…" : "Save rating settings"}
+            </button>
+            {ratingSaved && <p role="status" className="text-sm text-team-a">Rating settings saved.</p>}
+          </form>
+        )}
+        {ratingError && <p role="alert" className="mt-3 text-sm text-danger">{ratingError}</p>}
+        {!ratingSettings && !ratingError && <p role="status" className="mt-3 text-sm text-ink-dim">Loading rating settings…</p>}
+      </section>
 
       <div className="border border-line bg-panel p-6 transition-colors">
         <h2 className="text-base font-semibold text-ink mb-1">

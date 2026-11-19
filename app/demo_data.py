@@ -18,6 +18,7 @@ from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.services.team_assignment import assign_teams_snake, draft_skill
 from app.services.skill_service import refresh_player_skills
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
@@ -186,7 +187,16 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     await db.flush()
     await refresh_player_skills(db)
 
-    players = [{'id': u.id, 'skill': draft_skill(u.calculated_skill)} for u in [*members, placeholder] if u.id in confirmed]
+    computed_scores = (await get_rating_settings(db)).computed_scores
+    players = [
+        {
+            'id': u.id,
+            'skill': draft_skill(selected_rating(u, computed_scores)),
+            'pac': u.pac,
+            'dri': u.dri,
+        }
+        for u in [*members, placeholder] if u.id in confirmed
+    ]
     if live_like:
         # 3 teams of 5 (skill-snake) + the lowest-rated player as the bench
         # pool — a 1-person bench is valid per validate_team_partition.

@@ -26,10 +26,13 @@ Admins can review and adjust the lineups. The balanced draft uses overall skill.
 With every input available, skill combines an admin or imported seed (55%),
 peer ratings (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
 dribbling (2%). Miootz calculates shooting, passing, and defending from match
-data. Admins can set pace and dribbling. Rankings shows the match-derived
+data. Admins can set pace and dribbling. Balanced drafts spread players with
+PAC or DRI above 3.0 in either rating mode. Rankings shows the match-derived
 attributes for the selected period, and profiles show current attributes and
 overall skill. See the [team balancing guide](docs/TEAM_BALANCING.md) for the
-formulas and how missing data affects the result.
+formulas and how missing data affects the result. Admins can choose Base or
+Adjusted Rating and set [peer rating eligibility](docs/RATINGS.md) under
+**Admin → Tools → Player ratings**.
 
 ## Quick Start
 

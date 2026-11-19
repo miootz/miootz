@@ -9,7 +9,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import MeetupMatch
+from app.models.match import MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup, MatchScore
@@ -128,6 +128,24 @@ async def claim_reservation(
                 json.dumps([member.id if uid == guest_id else uid for uid in ids]),
             )
     match_ids = select(MeetupMatch.id).where(MeetupMatch.meetup_id == sid)
+    substitutions = await db.scalars(
+        select(MatchSubstitution).where(MatchSubstitution.match_id.in_(match_ids))
+    )
+    for sub in substitutions:
+        for field in (
+            "old_team_a_users", "old_team_b_users",
+            "new_team_a_users", "new_team_b_users",
+        ):
+            raw = getattr(sub, field)
+            try:
+                ids = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(ids, list) and guest_id in ids:
+                setattr(
+                    sub, field,
+                    json.dumps([member.id if uid == guest_id else uid for uid in ids]),
+                )
     for role in (MatchGoal.scorer_id, MatchGoal.assist_id, MatchGoal.goalkeeper_id):
         await db.execute(
             update(MatchGoal)

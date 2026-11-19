@@ -34,7 +34,7 @@ describe("AdminPlayerDetailPage", () => {
         <Routes><Route path="/admin/players/:userId" element={<AdminPlayerDetailPage />} /></Routes>
       </MemoryRouter>,
     );
-    const seed = await screen.findByLabelText("Starting skill (0–5, optional)");
+    const seed = await screen.findByLabelText("Base Rating (0–5, optional)");
     expect(seed).toHaveValue(0);
     expect(screen.getByLabelText("Pace (PAC) (optional)")).toHaveValue(3.25);
     fireEvent.change(screen.getByLabelText("Pace (PAC) (optional)"), { target: { value: "" } });

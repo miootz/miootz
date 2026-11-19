@@ -24,12 +24,13 @@ async def get_my_stats(
     db: AsyncSession = Depends(get_db),
 ):
     stats = await get_user_statistics(db, current_user.id)
-    attributes = (await load_player_attributes(db)).get(current_user.id)
-    stats["attributes"] = {
-        **(attributes if attributes is not None else empty_player_attributes()),
-        "pac": current_user.pac,
-        "dri": current_user.dri,
-    }
+    if stats["computed_scores"]:
+        attributes = (await load_player_attributes(db)).get(current_user.id)
+        stats["attributes"] = {
+            **(attributes if attributes is not None else empty_player_attributes()),
+            "pac": current_user.pac,
+            "dri": current_user.dri,
+        }
     return stats
 
 

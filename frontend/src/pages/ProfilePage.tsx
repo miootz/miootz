@@ -388,21 +388,25 @@ export function ProfilePage() {
           </div>
         </section>
 
-        <section aria-labelledby="overall-skill" className="flex items-center justify-between gap-4 border border-line bg-panel p-5">
-          <div>
-            <h2 id="overall-skill" className="text-lg font-bold text-ink">Overall skill</h2>
-            <p className="mt-1 text-sm text-ink-dim">Player rating</p>
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-bold tabular-nums text-ink">{u.calculated_skill?.toFixed(1) ?? "—"}</p>
-            <p className="text-xs text-ink-dim">{u.calculated_skill == null ? "Unrated" : "out of 5"}</p>
-          </div>
+        <section aria-label="Player ratings" className="grid grid-cols-2 divide-x divide-line border border-line bg-panel">
+          {([
+            { label: "Base Rating", value: stats?.base_rating, disabled: false },
+            { label: "Adjusted Rating", value: stats?.adjusted_rating === undefined ? u.calculated_skill : stats.adjusted_rating, disabled: stats?.computed_scores === false },
+          ]).map(({ label, value, disabled }) => (
+            <div key={label} className="min-w-0 p-5">
+              <h2 className="text-sm font-bold text-ink">{label}</h2>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-ink">{disabled ? "—" : value?.toFixed(1) ?? "—"}</p>
+              <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
+            </div>
+          ))}
         </section>
 
-        <PlayerAttributesPanel
-          attributes={stats?.attributes}
-          error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
-        />
+        {stats?.computed_scores !== false && (
+          <PlayerAttributesPanel
+            attributes={stats?.attributes}
+            error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
+          />
+        )}
 
         <ProfileScoreboard stats={stats} error={statsError} />
 

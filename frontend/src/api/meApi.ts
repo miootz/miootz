@@ -21,6 +21,9 @@ export interface MeResponse {
 }
 
 export interface UserStats {
+    base_rating?: number | null;
+    adjusted_rating?: number | null;
+    computed_scores?: boolean;
     games_played: number;
     season_games: number;
     average_rating: number;

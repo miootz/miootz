@@ -26,6 +26,9 @@ class UserStats(BaseModel):
     average_rating: float
     total_ratings: int
     skill_level: float
+    computed_scores: bool = True
+    base_rating: float | None = None
+    adjusted_rating: float | None = None
     goals: int = 0
     assists: int = 0
     clean_sheets: int = 0

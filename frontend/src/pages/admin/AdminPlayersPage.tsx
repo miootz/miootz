@@ -205,7 +205,7 @@ export function AdminPlayersPage() {
 						value={skill}
 						onChange={setSkill}
 						size={28}
-						label="Skill rating"
+						label="Base Rating"
 					/>
 					<p className="mt-1 text-2xs text-ink-faint">
 						{SKILL_SCALE_BLURB}

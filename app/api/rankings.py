@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.rankings import AttributeRankingsResponse, RankingsResponse
 from app.services import rankings_service
 from app.services.player_attributes import load_player_attributes
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 router = APIRouter(tags=["rankings"])
 
@@ -66,17 +67,23 @@ async def get_season_rankings(
 @router.get("/rankings/attributes", response_model=AttributeRankingsResponse)
 async def get_attribute_rankings(
     year: str | None = None,
-    sort: Literal["sho", "pas", "def"] = "sho",
+    sort: Literal["rating", "sho", "pas", "def"] = "rating",
     order: Literal["asc", "desc"] = "desc",
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=25, ge=1, le=100),
     _: User = Depends(get_current_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
-    attributes = await load_player_attributes(db, year=_ranking_year(year))
-    if not attributes:
-        return {"total": 0, "rows": []}
-    users = await db.scalars(select(User).where(User.id.in_(attributes)))
+    scope = _ranking_year(year)
+    computed_scores = (await get_rating_settings(db)).computed_scores
+    if computed_scores:
+        attributes = await load_player_attributes(db, year=scope)
+        eligible = or_(User.calculated_skill.is_not(None), User.id.in_(attributes))
+    else:
+        attributes = {}
+        eligible = User.seed_skill.is_not(None)
+        sort = "rating"
+    users = await db.scalars(select(User).where(eligible))
     rows = [
         {
             "user": {
@@ -84,7 +91,11 @@ async def get_attribute_rankings(
                 "display_name": user.display_name,
                 "avatar_url": user.avatar_url,
             },
-            **{key: evidence["score"] for key, evidence in attributes[user.id].items()},
+            "rating": selected_rating(user, computed_scores),
+            **{
+                key: attributes.get(user.id, {}).get(key, {}).get("score")
+                for key in ("sho", "pas", "def")
+            },
         }
         for user in users
     ]
@@ -99,6 +110,7 @@ async def get_attribute_rankings(
     )
     start = (page - 1) * per_page
     return {
+        "computed_scores": computed_scores,
         "total": len(rows),
         "rows": [
             {**row, "rank": index if row[sort] is not None else None}

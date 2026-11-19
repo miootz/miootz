@@ -105,7 +105,7 @@ export function RankingsPage() {
   const [sort, setSort] = useState<RankingSort>("attendances");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [view, setView] = useState<"stats" | "attributes">("stats");
-  const [attributeSort, setAttributeSort] = useState<AttributeSort>("sho");
+  const [attributeSort, setAttributeSort] = useState<AttributeSort>("rating");
   const [attributeOrder, setAttributeOrder] = useState<"asc" | "desc">("desc");
   const [attributeData, setAttributeData] = useState<AttributeRankingsResponse | null>(null);
   const [attributeLoading, setAttributeLoading] = useState(false);
@@ -152,7 +152,13 @@ export function RankingsPage() {
       year: yearSel, sort: attributeSort, order: attributeOrder, page, perPage: PER_PAGE,
     }, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setAttributeData(result);
+        if (!controller.signal.aborted) {
+          setAttributeData(result);
+          if (result.computed_scores === false && attributeSort !== "rating") {
+            setAttributeSort("rating");
+            setPage(1);
+          }
+        }
       })
       .catch((e: unknown) => {
         if (!controller.signal.aborted) {
@@ -257,7 +263,7 @@ export function RankingsPage() {
             />
           )}
           <div role="group" aria-label="Ranking view" className="grid grid-cols-2 border border-line bg-panel">
-            {([ ["stats", "Match stats"], ["attributes", "Attributes"] ] as const).map(([key, label]) => (
+            {([ ["stats", "Match stats"], ["attributes", "Ratings"] ] as const).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -288,15 +294,16 @@ export function RankingsPage() {
             <>
               <AttributeRankingsTable
                 rows={attributeData.rows}
+                computedScores={attributeData.computed_scores !== false}
                 sort={attributeSort}
                 order={attributeOrder}
                 onSortChange={(s, o) => { setAttributeSort(s); setAttributeOrder(o); setPage(1); }}
                 highlightUserId={me?.user?.id}
               />
-              <details className="text-sm text-ink-dim">
+              {attributeData.computed_scores !== false && <details className="text-sm text-ink-dim">
                 <summary className="cursor-pointer font-medium text-ink">How attributes work</summary>
                 <p className="mt-2">Shooting and defending reflect open-play goals and clean sheets per eligible match. Passing reflects assists among open-play team goals with a credited assist. Recent meetups count more, and scores need enough reliable data.</p>
-              </details>
+              </details>}
             </>
           ) : (
             <p className="py-8 text-center text-sm text-ink-dim">Loading attributes…</p>
