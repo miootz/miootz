@@ -123,12 +123,7 @@ export interface MeetupDetail extends MeetupListItem {
 
 export interface MeetupHistorySummary {
   match_count: number;
-  final: {
-    team_a_name: string;
-    score_a: number;
-    team_b_name: string;
-    score_b: number;
-  } | null;
+  winning_teams: string[];
   my_rating_avg: number | null;
 }
 

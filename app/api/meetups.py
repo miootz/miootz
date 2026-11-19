@@ -63,6 +63,7 @@ from app.services.team_adjustment import (
 )
 from app.services.team_assignment import draft_skill, rebalance_around_locked
 from app.services.rating_settings import get_rating_settings, selected_rating
+from app.services.rankings_service import meetup_winning_teams
 from app.services.team_names import generate_team_names
 from app.services.web_push import (
     notify_new_meetup_invites,
@@ -631,25 +632,14 @@ async def get_meetup(
 async def get_meetup_history_summary(
     meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """Lightweight per-meetup summary for the History list: match count, final
-    result, and the viewer's average rating. One request instead of N+1."""
+    """Completed match count, meetup winners and the viewer's average vote."""
     user = getattr(request.state, "user", None)
     result = await db.execute(
         select(MeetupMatch)
         .where(MeetupMatch.meetup_id == meetup_id)
         .where(MeetupMatch.status == "completed")
-        .order_by(MeetupMatch.completed_at.asc(), MeetupMatch.match_number.asc())
     )
-    matches = result.scalars().all()
-    final = None
-    if matches:
-        last = matches[-1]
-        final = {
-            "team_a_name": last.team_a_name,
-            "score_a": last.score_a,
-            "team_b_name": last.team_b_name,
-            "score_b": last.score_b,
-        }
+    matches = list(result.scalars())
     my_rating_avg = None
     if user is not None:
         r = await db.execute(
@@ -663,7 +653,7 @@ async def get_meetup_history_summary(
             my_rating_avg = sum(scores) / len(scores)
     return {
         "match_count": len(matches),
-        "final": final,
+        "winning_teams": await meetup_winning_teams(db, matches),
         "my_rating_avg": my_rating_avg,
     }
 

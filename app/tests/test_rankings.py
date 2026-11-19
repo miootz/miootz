@@ -19,6 +19,7 @@ from app.core.database import Base, engine
 from app.models.match import MatchPenalty, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
+from app.models.rating import Rating
 from app.models.user import User
 from app.services.rating_settings import RatingSettings
 
@@ -352,6 +353,68 @@ async def test_meetup_rankings_and_404():
 
         r = await ac.get("/meetups/3/rankings", headers=hdr("p1"))
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_history_summary_winner_tiebreakers_and_viewers_votes():
+    async with await client() as ac:
+        ids = await seed(ac)
+        headers = hdr("p1")
+
+        async def summary(meetup_id=2):
+            response = await ac.get(f"/meetups/{meetup_id}/history-summary", headers=headers)
+            assert response.status_code == 200
+            return response.json()
+
+        assert await summary(3) == {
+            "match_count": 0, "winning_teams": [], "my_rating_avg": None,
+        }
+        assert (await summary())["winning_teams"] == ["A"]  # Goals break a win tie.
+
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            first, second = (await db.scalars(
+                select(MeetupMatch).where(MeetupMatch.meetup_id == 2)
+                .order_by(MeetupMatch.match_number)
+            )).all()
+            first.score_b = 2
+            db.add_all([
+                Rating(meetup_id=2, rater_id=ids["p1"], ratee_id=ids["p2"], score=4),
+                Rating(meetup_id=2, rater_id=ids["p1"], ratee_id=ids["p3"], score=4.5),
+                Rating(meetup_id=2, rater_id=ids["p2"], ratee_id=ids["p1"], score=1),
+            ])
+            await db.commit()
+            assert await summary() == {
+                "match_count": 2, "winning_teams": ["A", "B"], "my_rating_avg": 4.25,
+            }
+
+            goal = await db.scalar(select(MatchGoal).where(MatchGoal.match_id == first.id))
+            goal.assist_id = ids["p3"]
+            await db.commit()
+            assert (await summary())["winning_teams"] == ["B"]  # Assists break a goals tie.
+
+            goal.deleted_at = datetime(2026, 1, 2, 20)
+            await db.commit()
+            assert (await summary())["winning_teams"] == ["A", "B"]  # Deleted assist is ignored.
+
+            second.score_a, second.score_b = 3, 1
+            await db.commit()
+            assert (await summary())["winning_teams"] == ["B"]  # Clean sheets break the tie.
+
+            first.team_a_name, first.team_b_name = "B", "A"
+            first.score_a, first.score_b, first.penalty_winner = 0, 0, "a"
+            second.score_a, second.score_b = 7, 0
+            db.add(MeetupMatch(
+                meetup_id=2, match_number=3, team_a_name="A", team_b_name="B",
+                team_a_users="[]", team_b_users="[]", score_a=0, score_b=1, status="completed",
+            ))
+            db.add(MeetupMatch(
+                meetup_id=2, match_number=4, team_a_name="A", team_b_name="B",
+                team_a_users="[]", team_b_users="[]", score_a=9, score_b=0, status="active",
+            ))
+            await db.commit()
+            assert await summary() == {
+                "match_count": 3, "winning_teams": ["B"], "my_rating_avg": 4.25,
+            }
 
 
 @pytest.mark.asyncio
