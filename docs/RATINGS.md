@@ -14,6 +14,9 @@ computation off disables Adjusted Rating and automatic attribute scores. PAC
 and DRI still inform balanced team drafts in both modes. Setting Base Rating
 in the admin player editor changes the seed used by both modes.
 
+Player attributes appear as whole numbers from **50 to 100**. Adjusted Rating
+uses their underlying **1–5** scores before display rounding.
+
 | Peer ratings setting | Who can rate whom |
 | --- | --- |
 | Off | Voting and rating reminders are disabled. Stored votes are retained. |
@@ -26,5 +29,5 @@ affect Adjusted Rating. Clearing a vote can bring the count below three.
 Changing the peer setting applies the new eligibility rules to existing
 votes when calculating Adjusted Rating.
 
-See [Team balancing](TEAM_BALANCING.md) for the blend weights, attendance
-deduction, attribute formulas, and team assignment rules.
+See [Team balancing](TEAM_BALANCING.md#base-rating-and-adjusted-rating) for the
+blend weights, attendance deduction, attribute formulas, and team assignment rules.

@@ -363,7 +363,7 @@ export function AdminPlayerDetailPage() {
 				<fieldset aria-describedby="player-attribute-help" className="min-w-0">
 					<legend className="text-sm font-semibold text-ink">Player attributes ({ATTRIBUTE_MIN}–{ATTRIBUTE_MAX})</legend>
 					<p id="player-attribute-help" className="mb-3 mt-1 text-xs text-ink-dim">
-						Leave a field blank to use automatic shooting, passing or defending, or to leave pace or dribbling unrated.
+						Enter whole numbers. Leave a field blank to use automatic shooting, passing or defending, or to leave pace or dribbling unrated.
 					</p>
 					<div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
 						{ATTRIBUTE_FIELDS.map(({ key, label, placeholder }) => {
@@ -377,7 +377,7 @@ export function AdminPlayerDetailPage() {
 										type="number"
 										min={ATTRIBUTE_MIN}
 										max={ATTRIBUTE_MAX}
-										step="any"
+										step="1"
 										value={editAttributes[key] ?? (stored == null ? "" : toAttributeScale(stored))}
 										onChange={(event) => {
 											const value = event.target.value;

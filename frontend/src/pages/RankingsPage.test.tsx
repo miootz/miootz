@@ -28,7 +28,7 @@ describe("RankingsPage attributes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ratings" }));
     const passing = await screen.findByRole("button", { name: "Sort by Passing" });
     const table = screen.getByRole("table", { name: "Player attribute rankings" });
-    expect(table).toHaveTextContent("82.5");
+    expect(table).toHaveTextContent("83");
     expect(table).toHaveTextContent("3.4");
     expect(screen.getByLabelText("Insufficient data")).toBeTruthy();
     fireEvent.click(passing);

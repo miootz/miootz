@@ -36,15 +36,18 @@ describe("AdminPlayerDetailPage", () => {
     );
     const seed = await screen.findByLabelText("Base Rating (0–5, optional)");
     expect(seed).toHaveValue(0);
-    expect(screen.getByLabelText("Pace (PAC)")).toHaveValue(78.13);
-    expect(screen.getByLabelText("Passing (PAS)")).toHaveValue(87.5);
+    expect(screen.getByLabelText("Pace (PAC)")).toHaveValue(78);
+    expect(screen.getByLabelText("Passing (PAS)")).toHaveValue(88);
     fireEvent.change(screen.getByLabelText("Passing (PAS)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Shooting (SHO)"), { target: { value: "50" } });
     fireEvent.change(screen.getByLabelText("Defending (DEF)"), { target: { value: "100" } });
-    fireEvent.change(screen.getByLabelText("Dribbling (DRI)"), { target: { value: "93.75" } });
+    const dribbling = screen.getByLabelText("Dribbling (DRI)");
+    fireEvent.change(dribbling, { target: { value: "93.75" } });
+    expect(dribbling).toBeInvalid();
+    fireEvent.change(dribbling, { target: { value: "90" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(adminUpdateUser).toHaveBeenCalledWith(1, {
-      display_name: "Sam Vale", seed_skill: 0, dri: 4.5,
+      display_name: "Sam Vale", seed_skill: 0, dri: 4.2,
       sho_override: 1, pas_override: null, def_override: 5,
       primary_specialty: "DEF", secondary_specialty: null, is_admin: false,
     }));

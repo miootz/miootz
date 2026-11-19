@@ -2,7 +2,7 @@ export const ATTRIBUTE_MIN = 50;
 export const ATTRIBUTE_MAX = 100;
 
 export function toAttributeScale(score: number): number {
-  return Number((ATTRIBUTE_MIN + (score - 1) * 12.5).toFixed(2));
+  return Math.round(ATTRIBUTE_MIN + (score - 1) * 12.5);
 }
 
 export function fromAttributeScale(score: number): number {

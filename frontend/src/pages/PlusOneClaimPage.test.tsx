@@ -10,7 +10,7 @@ vi.mock('../api/meetupsApi');
 vi.mock('../context/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../utils/haptics', () => ({ hapticError: vi.fn(), hapticSuccess: vi.fn() }));
 const login = vi.fn();
-const signedOut = { me: null, loading: false, error: null, tokens: null, login, logout: vi.fn(), refresh: vi.fn() };
+const signedOut = { me: null, loading: false, error: null, tokens: null, login, logout: vi.fn(), refresh: vi.fn(), savePosition: vi.fn() };
 
 beforeEach(() => {
   vi.clearAllMocks();

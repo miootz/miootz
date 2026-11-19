@@ -54,9 +54,16 @@ in the ratio 55:25. If only one exists, it is the baseline. Each unavailable
 attribute's share returns to that baseline. If neither peer ratings nor a seed
 exists, the player has no overall skill, even if attributes are available.
 
+Adjusted Rating uses each attribute's internal 1–5 score. The app rounds
+its 50–100 display to a whole number after converting the score. Display
+rounding does not affect the blend. An admin override entered as a whole
+number is converted back with `1 + (override − 50) ÷ 12.5`, so an override
+of 90 contributes as 4.2 on the internal scale.
+
 For example, a peer average of 4.0 and a seed of 3.0 give a baseline of
 `(55 × 3.0 + 25 × 4.0) ÷ 80 = 3.3125`. If SHO is the only available
-attribute and is 4.0, the other attribute shares return to the baseline, giving
+attribute and its internal score is 4.0 (displayed as 88), the other attribute
+shares return to the baseline, giving
 `3.3125 × 0.94 + 4.0 × 0.06 = 3.35375` before attendance decay and rounding.
 
 ### Peer ratings and attendance
@@ -122,8 +129,9 @@ An attribute stays unavailable until its minimum evidence is met.
 
 Miootz interpolates between the anchors, caps the internal score at 1–5, and
 rounds the automatic score to one decimal place. The app displays attributes
-on a **50–100** scale using `50 + (internal score − 1) × 12.5`. Base and Adjusted
-Rating are still measured in stars. Rankings' **Ratings** view shows SHO, PAS,
+as whole numbers on a **50–100** scale using
+`round(50 + (internal score − 1) × 12.5)`. Base and Adjusted Rating are measured
+in stars. Rankings' **Ratings** view shows SHO, PAS,
 and DEF for the selected period and can sort by each. History shows goals,
 assists, and clean sheets for the meetup. The profile shows current attributes
 and automatic scores' supporting counts.
@@ -131,7 +139,7 @@ and automatic scores' supporting counts.
 On a player's admin edit page, admins can override all five attributes on the
 50–100 scale. An override replaces the automatic score across periods and in
 Adjusted Rating. Clear SHO, PAS, or DEF to use the automatic score again. Clear
-PAC or DRI to leave it unrated. The roster import seeds PAC at 87.5 for players
+PAC or DRI to leave it unrated. The roster import seeds PAC at 88 for players
 marked `Y` in `Runs` who have no PAC value.
 
 Fresh databases work without migrating the former additive match bonus.
