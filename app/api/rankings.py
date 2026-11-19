@@ -115,10 +115,12 @@ async def get_attribute_rankings(
         for user in users
     ]
     direction = -1 if order == "desc" else 1
+    tiebreaks = ("sho", "pas", "def") if sort == "rating" else ("rating",)
     rows.sort(
         key=lambda row: (
             row[sort] is None,
             direction * (row[sort] or 0),
+            *(rankings_service.descending_score(row[key]) for key in tiebreaks),
             row["user"]["display_name"].casefold(),
             row["user"]["id"],
         )

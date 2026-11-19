@@ -256,8 +256,8 @@ export function SubstitutionsPanel({
                 aria-pressed={isSelected}
               >
                 {u.display_name}
-                {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-ink-dim">PAC</span>}
-                {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-ink-dim">DRI</span>}
+                {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-pac">PAC</span>}
+                {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-dri">DRI</span>}
               </button>
             </li>
           );

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { ClipboardList, Loader2, Search } from "lucide-react";
+import { ClipboardList, Loader2, Plus, Search } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { adminMoveAttendance } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { AttendancePlayerCard } from "./AttendancePlayerCard";
+import { AddAttendanceDialog } from "./AddAttendanceDialog";
 
 type AttFilter = "all" | "confirmed" | "waitlisted" | "cancelled";
 
@@ -24,6 +25,7 @@ export function MeetupAttendancePanel({
   const [attFilter, setAttFilter] = useState<AttFilter>("all");
   const [attSearch, setAttSearch] = useState("");
   const [movingKey, setMovingKey] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const attCounts = useMemo(() => {
     return {
@@ -70,17 +72,27 @@ export function MeetupAttendancePanel({
 
       {/* Search + filters */}
       <div className="flex flex-col gap-2 p-3 pb-0">
-        <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
-          <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
-          <input
-            type="search"
-            value={attSearch}
-            onChange={(e) => setAttSearch(e.target.value)}
-            placeholder="Search players…"
-            className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden"
-            aria-label="Search attendance"
-          />
-        </label>
+        <div className="flex gap-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2 border border-line bg-raised px-3 py-2 focus-within:outline focus-within:outline-2 focus-within:outline-live">
+            <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+            <input
+              type="search"
+              value={attSearch}
+              onChange={(e) => setAttSearch(e.target.value)}
+              placeholder="Search players…"
+              className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-ink-faint focus:outline-hidden focus-visible:shadow-none"
+              aria-label="Search attendance"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            aria-label="Add player to attendance"
+            className="grid h-11 w-11 shrink-0 place-items-center border border-line bg-raised text-ink hover:border-ink-faint focus-visible:outline-2 focus-visible:outline-live"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
 
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((key) => (
@@ -122,7 +134,7 @@ export function MeetupAttendancePanel({
               movingKey === `${a.user_id}-waitlisted`;
             return (
               <AttendancePlayerCard
-                key={a.user_id}
+                key={a.attendance_id ?? `${a.user_id}:${a.status}`}
                 name={a.display_name}
                 avatarUrl={a.avatar_url}
                 skill={a.skill}
@@ -174,6 +186,14 @@ export function MeetupAttendancePanel({
           })
         )}
       </div>
+      {adding && (
+        <AddAttendanceDialog
+          meetupId={meetupId}
+          attendees={detail.attendees}
+          onChanged={onChanged}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import type { PlayerAttributes } from "../api/meApi";
-import { toAttributeScale } from "../utils/attributeScale";
+import { ATTRIBUTE_COLOR, toAttributeScale } from "../utils/attributeScale";
 
 function countLabel(count: number, noun: string, plural = `${noun}s`) {
   return `${count} ${count === 1 ? noun : plural}`;
@@ -11,7 +11,7 @@ export function PlayerAttributesPanel({ attributes, error }: {
 }) {
   const rows = attributes && [
     {
-      code: "SHO", name: "Shooting", score: attributes.sho.score,
+      code: "sho" as const, name: "Shooting", score: attributes.sho.score,
       evidence: !attributes.sho.overridden && [
         countLabel(attributes.sho.count, "goal"),
         countLabel(attributes.sho.sample, "match", "matches"),
@@ -19,22 +19,22 @@ export function PlayerAttributesPanel({ attributes, error }: {
       ].join(" - "),
     },
     {
-      code: "PAS", name: "Passing", score: attributes.pas.score,
+      code: "pas" as const, name: "Passing", score: attributes.pas.score,
       evidence: !attributes.pas.overridden && [
         countLabel(attributes.pas.count, "assist"),
         countLabel(attributes.pas.meetups, "meetup"),
       ].join(" - "),
     },
     {
-      code: "DEF", name: "Defending", score: attributes.def.score,
+      code: "def" as const, name: "Defending", score: attributes.def.score,
       evidence: !attributes.def.overridden && [
         countLabel(attributes.def.count, "clean sheet"),
         countLabel(attributes.def.sample, "match", "matches"),
         countLabel(attributes.def.meetups, "meetup"),
       ].join(" - "),
     },
-    { code: "PAC", name: "Pace", score: attributes.pac },
-    { code: "DRI", name: "Dribbling", score: attributes.dri },
+    { code: "pac" as const, name: "Pace", score: attributes.pac },
+    { code: "dri" as const, name: "Dribbling", score: attributes.dri },
   ];
 
   return (
@@ -45,12 +45,12 @@ export function PlayerAttributesPanel({ attributes, error }: {
           <ul className="divide-y divide-line">
             {rows.map((row) => (
               <li key={row.code} className="flex items-center gap-3 px-3 py-3 sm:px-4">
-                <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center bg-raised text-xs font-bold text-ink-dim">{row.code}</span>
+                <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center bg-raised text-xs font-bold uppercase ${ATTRIBUTE_COLOR[row.code]}`}>{row.code.toUpperCase()}</span>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-ink">{row.name} <span className="sr-only">({row.code})</span></h3>
+                  <h3 className={`font-bold ${ATTRIBUTE_COLOR[row.code]}`}>{row.name} <span className="sr-only">({row.code.toUpperCase()})</span></h3>
                   {row.evidence && <p className="mt-0.5 text-xs leading-5 text-ink-dim">{row.evidence}</p>}
                 </div>
-                <span className={`shrink-0 text-xl font-bold tabular-nums ${row.score == null ? "text-ink-dim" : "text-ink"}`}>
+                <span className={`shrink-0 text-xl font-bold tabular-nums ${row.score == null ? "text-ink-dim" : ATTRIBUTE_COLOR[row.code]}`}>
                   {row.score == null ? <span aria-label="Unrated">—</span> : toAttributeScale(row.score)}
                 </span>
               </li>

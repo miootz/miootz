@@ -464,8 +464,8 @@ function MatchResultRow({
                         className="relative text-sm text-ink-dim truncate"
                       >
                         <PlayerEditLink playerId={u.id} stretch>{u.display_name}</PlayerEditLink>
-                        {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">PAC</span>}
-                        {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold">DRI</span>}
+                        {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-pac">PAC</span>}
+                        {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-dri">DRI</span>}
                       </li>
                     ))}
                   </ul>

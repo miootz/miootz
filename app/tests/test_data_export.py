@@ -76,7 +76,7 @@ async def setup_db():
             [
                 Attendance(id=301, meetup_id=201, user_id=102),
                 MatchScore(id=302, meetup_id=201, player_id=102, score=2, type="goal"),
-                Rating(id=303, meetup_id=201, rater_id=102, ratee_id=103, score=4),
+                Rating(id=303, meetup_id=201, rater_id=102, ratee_id=103, score=4.5),
                 MatchGoal(
                     id=501,
                     match_id=401,
@@ -217,7 +217,7 @@ async def test_export_preserves_dataset_and_omits_capabilities():
         assert _rows(archive, "match_goals.csv")[0]["match_id"] == match["id"]
         assert _rows(archive, "match_penalties.csv")[0]["scored"] == "1"
         assert _rows(archive, "match_substitutions.csv")[0]["match_id"] == match["id"]
-        assert _rows(archive, "ratings.csv")[0]["score"] == "4"
+        assert _rows(archive, "ratings.csv")[0]["score"] == "4.5"
 
         foreign_keys = {
             (

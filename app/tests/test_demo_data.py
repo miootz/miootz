@@ -74,15 +74,11 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             ) == (True, None)
         assert await db.scalar(select(func.count()).select_from(ChatMessage)) == 5
         assert await db.scalar(select(func.count()).select_from(GuestPlusOne)) == 1
-        confirmed = set(
-            (
-                await db.scalars(
-                    select(Attendance.user_id).where(
-                        Attendance.meetup_id == 1, Attendance.status == "confirmed"
-                    )
-                )
-            ).all()
+        attendance = list(
+            await db.scalars(select(Attendance).where(Attendance.meetup_id == 1))
         )
+        assert len({row.user_id for row in attendance}) == len(attendance)
+        confirmed = {row.user_id for row in attendance if row.status == "confirmed"}
         assert current.manual_teams_json
         teams = json.loads(current.manual_teams_json)
         assert set(uid for team in teams for uid in team) == confirmed
@@ -145,6 +141,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             assert all((vote.rater_id - 1) // 5 == (vote.ratee_id - 1) // 5 for vote in past_votes)
             assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 5}) < 3
             assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 2}) == 4
+            assert users[1].calculated_skill == 3.8
             assert users[2].calculated_skill != users[2].seed_skill
         assert current.waitlist_mode == (
             "broadcast" if scenario == "broadcast" else "auto_promote"

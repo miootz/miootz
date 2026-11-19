@@ -19,6 +19,7 @@ from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 METRIC_KEYS = (
     "attendances",
@@ -259,6 +260,7 @@ async def _rows_for_users(
             await db.execute(select(User).where(User.id.in_(list(stats))))
         ).scalars().all()
     )
+    computed_scores = (await get_rating_settings(db)).computed_scores
     rows = []
     for user in users:
         metrics = stats[user.id]
@@ -270,21 +272,25 @@ async def _rows_for_users(
                     "avatar_url": user.avatar_url,
                 },
                 **metrics,
+                "rating": selected_rating(user, computed_scores),
                 "win_rate": round(metrics["win_rate"], 3),
             }
         )
     return rows
 
 
+def descending_score(value: int | float | None) -> float:
+    return -value if value is not None else float("inf")
+
+
 def _sort_rows(rows: list[dict], sort: str, order: str) -> list[dict]:
-    reverse = order == "desc"
-    rows.sort(key=lambda r: r["user"]["display_name"])
-    # Deterministic tie-break chain under the selected primary column.
-    rows.sort(key=lambda r: r["clean_sheets"], reverse=True)
-    rows.sort(key=lambda r: r["assists"], reverse=True)
-    rows.sort(key=lambda r: r["goals"], reverse=True)
-    rows.sort(key=lambda r: r["wins"], reverse=True)
-    rows.sort(key=lambda r: r[sort], reverse=reverse)
+    direction = -1 if order == "desc" else 1
+    rows.sort(key=lambda r: (
+        direction * r[sort],
+        descending_score(r["rating"]),
+        r["user"]["display_name"].casefold(),
+        r["user"]["id"],
+    ))
     return rows
 
 
@@ -303,7 +309,7 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
 
     def top(key: str, fmt, min_matches: int = 0) -> list[dict]:
         eligible = [r for r in rows if r["matches"] >= min_matches]
-        ordered = sorted(eligible, key=lambda r: (-r[key], r["user"]["display_name"]))
+        ordered = _sort_rows(eligible, key, "desc")
         return [
             {
                 "user_id": r["user"]["id"],
@@ -329,21 +335,15 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
     }
 
 
-async def _night_block(
-    db: AsyncSession,
-    matches: list[MeetupMatch],
-    goals: list[MatchGoal],
-) -> dict:
-    """Per-meetup night stats: KPIs + one record per team name."""
+def _team_records(matches: list[MeetupMatch]) -> dict[str, dict]:
     teams: dict[str, dict] = {}
-    all_player_ids: set[int] = set()
     for m in matches:
+        winner = _match_winner_side(m)
         for side in ("a", "b"):
             name = m.team_a_name if side == "a" else m.team_b_name
             roster = json.loads((m.team_a_users if side == "a" else m.team_b_users) or "[]")
             gf = m.score_a if side == "a" else m.score_b
             ga = m.score_b if side == "a" else m.score_a
-            is_winner = _match_winner_side(m) == side
             rec = teams.setdefault(
                 name,
                 {"wins": 0, "matches": 0, "goals_for": 0, "goals_against": 0,
@@ -352,12 +352,51 @@ async def _night_block(
             rec["matches"] += 1
             rec["goals_for"] += gf
             rec["goals_against"] += ga
-            if is_winner:
+            if winner == side:
                 rec["wins"] += 1
             if not ga:
                 rec["clean_sheets"] += 1
             rec["_ids"].update(roster)
-            all_player_ids.update(roster)
+    return teams
+
+
+async def meetup_winning_teams(db: AsyncSession, matches: list[MeetupMatch]) -> list[str]:
+    if not matches:
+        return []
+    teams = _team_records(matches)
+    by_id = {m.id: m for m in matches}
+    by_team = Counter()
+    assists = await db.execute(
+        select(MatchGoal.match_id, MatchGoal.team, func.count())
+        .where(
+            MatchGoal.match_id.in_(by_id),
+            MatchGoal.deleted_at.is_(None),
+            MatchGoal.is_own_goal.is_(False),
+            MatchGoal.assist_id.is_not(None),
+        )
+        .group_by(MatchGoal.match_id, MatchGoal.team)
+    )
+    for match_id, side, count in assists:
+        match = by_id[match_id]
+        name = match.team_a_name if side == "a" else match.team_b_name
+        by_team[name] += count
+
+    scores = {
+        name: (rec["wins"], rec["goals_for"], by_team[name], rec["clean_sheets"])
+        for name, rec in teams.items()
+    }
+    best = max(scores.values())
+    return sorted(name for name, score in scores.items() if score == best)
+
+
+async def _night_block(
+    db: AsyncSession,
+    matches: list[MeetupMatch],
+    goals: list[MatchGoal],
+) -> dict:
+    """Per-meetup night stats: KPIs + one record per team name."""
+    teams = _team_records(matches)
+    all_player_ids = {uid for rec in teams.values() for uid in rec["_ids"]}
     db_users = await _display_names(db, all_player_ids)
     team_rows = []
     for name, rec in teams.items():

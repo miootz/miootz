@@ -1,10 +1,12 @@
 import pytest
 from datetime import datetime, timedelta, UTC
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.api.main import app
 from app.core.database import Base, async_session, engine
 from app.models.meetup import Attendance, Meetup
+from app.models.rating import Rating
 from app.models.user import User
 from app.demo_data import seed_demo
 from app.services.skill_service import blend_skill, update_user_calculated_skill
@@ -125,6 +127,43 @@ async def test_seed_skill_persists_without_peer_ratings():
         assert player_row is not None
         # No peer ratings: the admin seed is left untouched.
         assert player_row.calculated_skill == 3.0
+
+
+async def test_peer_decay_counts_meetups_and_weights_averages_not_vote_counts():
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        db.add_all(User(id=i, pocket_id_sub=f"peer-{i}") for i in range(1, 6))
+        db.add_all(
+            Meetup(
+                id=mid,
+                start_time=now - timedelta(days=age),
+                location="Test pitch",
+                max_players=10,
+                skipped=skipped,
+            )
+            for mid, age, skipped in ((1, 50, False), (2, 17, False), (3, 8, True), (4, 2, False))
+        )
+        await db.flush()
+        db.add_all(
+            Rating(meetup_id=mid, rater_id=rater, ratee_id=1, score=score)
+            for mid, votes in ((1, (5, 5, 5, 5)), (2, (1, 1)), (3, (1, 1, 1)), (4, (1, 2, 3)))
+            for rater, score in enumerate(votes, start=2)
+        )
+        await db.flush()
+        positions = await skill_service._peer_meetup_positions(db)
+        assert positions == {4: 0, 2: 1, 1: 2}
+        peer, adjustment = await skill_service._get_weighted_peer_average(db, 1, None, positions)
+        assert adjustment is None
+        assert peer == pytest.approx((2 + 0.5 * 5) / 1.5)
+
+        vote = await db.scalar(select(Rating).where(Rating.meetup_id == 4, Rating.rater_id == 2))
+        vote.score, vote.review = 3, "expected"
+        await db.flush()
+        peer, adjustment = await skill_service._get_weighted_peer_average(
+            db, 1, None, positions, anchor=4.5,
+        )
+        assert peer is None
+        assert adjustment == pytest.approx(((4.5 + 2 + 3) / 3 + 0.5 * 5) / 1.5 - 4.5)
 
 
 def test_blend_keeps_missing_attribute_weight_on_baseline():

@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
             if await db.get(RatingSettings, 1) is None:
                 db.add(RatingSettings(id=1))
                 await db.flush()
-                await refresh_player_skills(db)
-                await db.flush()
+            await refresh_player_skills(db)
+            await db.flush()
 
     # Fail fast on a Pocket ID config that would silently skip iss/aud checks.
     from app.services.pocket_id_jwt import assert_oidc_config
@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     shutdown_scheduler()
 
 
-app = FastAPI(title=settings.PROJECT_NAME, version="1.1.1", lifespan=lifespan)
+app = FastAPI(title=settings.PROJECT_NAME, version="1.1.2", lifespan=lifespan)
 
 # Rate limiting (slowapi, in-memory per-process store; single uvicorn worker).
 app.state.limiter = limiter

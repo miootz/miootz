@@ -1,8 +1,10 @@
 import type { User } from "../types";
+import type { PeerReview } from "../api/ratingsApi";
 import { PlayerAvatarFace } from "./PlayerAvatar";
-import { StarRating } from "./StarRating";
+import { PeerReviewControl } from "./PeerReview";
 import { Lock } from "lucide-react";
 import { PlayerEditLink } from "./PlayerEditLink";
+import { SkillRating } from "./SkillRating";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -24,21 +26,20 @@ function formatPositions(player: User): string {
 function PlayerRow({
     player,
     ratingMode,
-    currentRating,
-    onRatingChange,
+    currentReview,
+    onReviewChange,
     isMe,
 }: {
     player: User;
     ratingMode: "none" | "popover" | "inline";
-    currentRating: number | null;
-    onRatingChange?: (score: number) => void;
+    currentReview: PeerReview | null;
+    onReviewChange?: (review: PeerReview | null) => void;
     isMe?: boolean;
 }) {
-    const rating = (player.calculatedSkill ?? player.skillScore).toFixed(1);
     const positions = formatPositions(player);
 
     return (
-        <div className={`relative flex items-center gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
+        <div className={`relative flex items-start gap-2.5 px-3 py-2 ${isMe ? "bg-live/10" : ""}`}>
             {/* Profile picture */}
             <div className="relative shrink-0">
                 <PlayerAvatarFace
@@ -55,42 +56,29 @@ function PlayerRow({
                 )}
             </div>
 
-            {/* Name + position */}
-            <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                <PlayerEditLink playerId={player.id} className="text-sm font-medium text-ink truncate" stretch>
-                    {player.name}
-                </PlayerEditLink>
-                {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
-                {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
-                {isMe && (
-                    <span className="text-2xs font-bold text-live shrink-0">
-                        You
-                    </span>
-                )}
-                {positions && (
-                    <span className="text-2xs text-ink-faint shrink-0">
-                        {positions}
-                    </span>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5">
+                        <PlayerEditLink playerId={player.id} className="break-words text-sm font-medium text-ink [overflow-wrap:anywhere]" stretch>
+                            {player.name}
+                        </PlayerEditLink>
+                        {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-pac shrink-0">PAC</span>}
+                        {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-dri shrink-0">DRI</span>}
+                        {isMe && <span className="text-2xs font-bold text-live shrink-0">You</span>}
+                        {positions && <span className="text-2xs text-ink-faint shrink-0">{positions}</span>}
+                    </div>
+                    <SkillRating score={player.calculatedSkill ?? player.skillScore} className="text-sm text-ink" />
+                </div>
+                {ratingMode === "inline" && (
+                    <div className="relative z-10 mt-1">
+                        <PeerReviewControl
+                            value={currentReview}
+                            onChange={onReviewChange}
+                            playerName={player.name}
+                        />
+                    </div>
                 )}
             </div>
-
-            {/* Inline star rating (when allowed) */}
-            {ratingMode === "inline" && (
-                <div className="relative z-10 shrink-0">
-                    <StarRating
-                        value={currentRating ?? 0}
-                        onChange={onRatingChange}
-                        size={14}
-                        label={`Your rating of ${player.name}`}
-                        clearable
-                    />
-                </div>
-            )}
-
-            {/* Computed rating in bold */}
-            <span className="text-sm font-bold text-ink tabular-nums shrink-0">
-                {rating}
-            </span>
         </div>
     );
 }
@@ -101,8 +89,8 @@ export function TeamRoster({
     players,
     onPlayerTap: _onPlayerTap,
     ratingMode = "none",
-    ratingScores,
-    onRatingChange,
+    ratingReviews,
+    onReviewChange,
     droppable,
     currentUserId,
 }: {
@@ -112,12 +100,12 @@ export function TeamRoster({
         player: User,
         event: React.MouseEvent | React.TouchEvent,
     ) => void;
-    /** How to display star ratings. */
+    /** How to display peer reviews. */
     ratingMode?: "none" | "popover" | "inline";
-    /** Player id → current star rating from the viewer. */
-    ratingScores?: Record<string, number | null>;
-    /** Called when an inline star rating changes. */
-    onRatingChange?: (playerId: string, score: number) => void;
+    /** Player id → current peer review from the viewer. */
+    ratingReviews?: Record<string, PeerReview | null>;
+    /** Called when an inline peer review changes. */
+    onReviewChange?: (playerId: string, review: PeerReview | null) => void;
     /** Signed-in player's id; their row gets a highlight + "You" chip. */
     currentUserId?: number;
     /** Droppable container props from dnd-kit (optional). */
@@ -153,14 +141,14 @@ export function TeamRoster({
                         isMe={currentUserId != null && player.id === String(currentUserId)}
                         ratingMode={
                             ratingMode === "inline" &&
-                            !Object.hasOwn(ratingScores ?? {}, player.id)
+                            !Object.hasOwn(ratingReviews ?? {}, player.id)
                                 ? "none"
                                 : ratingMode
                         }
-                        currentRating={ratingScores?.[player.id] ?? null}
-                        onRatingChange={
-                            onRatingChange
-                                ? (score) => onRatingChange(player.id, score)
+                        currentReview={ratingReviews?.[player.id] ?? null}
+                        onReviewChange={
+                            onReviewChange
+                                ? (review) => onReviewChange(player.id, review)
                                 : undefined
                         }
                     />

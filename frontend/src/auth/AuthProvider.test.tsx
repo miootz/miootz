@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthCallbackPage } from '../pages/AuthCallbackPage';
+import { ProfilePage } from '../pages/ProfilePage';
 import { AuthProvider } from './AuthProvider';
 import { RequireAuth } from './RequireAuth';
 import { authorize, handleCallback } from './pocketIdOidc';
@@ -9,8 +10,12 @@ import { authorize, handleCallback } from './pocketIdOidc';
 vi.mock('./pocketIdOidc', () => ({
   authorize: vi.fn(),
   handleCallback: vi.fn(),
+  getPocketIdUrl: () => 'https://auth.example.test',
   logout: vi.fn(),
   refreshTokens: vi.fn(),
+}));
+vi.mock('../context/ToastContext', () => ({
+  useToast: () => ({ showToast: vi.fn() }),
 }));
 vi.mock('../offline/db', () => ({
   cacheDelete: vi.fn().mockResolvedValue(undefined),
@@ -37,6 +42,7 @@ function openApp(path: string) {
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route element={<RequireAuth />}>
             <Route path="/rankings" element={<Rankings />} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Routes>
       </AuthProvider>
@@ -109,4 +115,52 @@ it('restores the selected room session without reading the other room token', as
     headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
   }));
   expect(JSON.parse(localStorage.getItem('miootz_tokens:/matchday')!).accessToken).toBe('other-room');
+});
+
+it('keeps the profile header and positions in sync with successful saves', async () => {
+  localStorage.setItem('miootz_tokens', JSON.stringify(tokens));
+  const profile = {
+    user: {
+      id: 1, pocket_id_sub: 'test-player', display_name: 'Sam Vale',
+      primary_specialty: 'DEF', secondary_specialty: 'MID',
+    },
+  };
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/me') return Response.json(profile);
+    if (url === '/api/users/me' && init?.method === 'PATCH') {
+      return init.body === '{"primary_specialty":"GK"}'
+        ? Response.json({ detail: 'Position could not be saved' }, { status: 500 })
+        : Response.json({ message: 'Profile updated successfully' });
+    }
+    if (url === '/api/users/1/history?limit=25&offset=0') {
+      return Response.json({ history: { items: [], total: 0 } });
+    }
+    return url.endsWith('/stats')
+      ? new Response(null, { status: 503 })
+      : Response.json({ items: [] });
+  });
+  vi.stubGlobal('fetch', fetch);
+  openApp('/profile');
+
+  const heading = await screen.findByRole('heading', { name: 'Sam Vale' });
+  const header = within(heading.closest('section')!);
+  const primary = screen.getByLabelText('Primary position');
+  const secondary = screen.getByLabelText('Secondary position');
+  expect(header.getByText('Defender')).toBeInTheDocument();
+
+  fireEvent.change(primary, { target: { value: 'ATT' } });
+  expect(await header.findByText('Attacker')).toBeInTheDocument();
+  expect(primary).toHaveValue('ATT');
+  fireEvent.change(primary, { target: { value: 'DEF' } });
+  expect(await header.findByText('Defender')).toBeInTheDocument();
+  expect(primary).toHaveValue('DEF');
+
+  fireEvent.change(secondary, { target: { value: '' } });
+  await waitFor(() => expect(header.queryByText('Midfielder')).not.toBeInTheDocument());
+  expect(secondary).toHaveValue('');
+
+  fireEvent.change(primary, { target: { value: 'GK' } });
+  expect(await screen.findByText('Position could not be saved')).toBeInTheDocument();
+  expect(header.getByText('Defender')).toBeInTheDocument();
+  expect(primary).toHaveValue('DEF');
 });

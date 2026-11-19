@@ -4,21 +4,20 @@ from collections import defaultdict
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.rating import Rating
+from app.models.rating import PEER_REVIEW_ADJUSTMENTS, Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.player_attributes import (
     effective_player_attributes,
     load_player_attributes,
+    pace_and_dribbling,
 )
 from app.services.peer_rating_policy import teammate_pairs
 from app.services.rating_settings import PeerRatingMode, get_rating_settings
 from app.services.rating_windows import meetup_end_time
 
 _MAX_MISS_DECAY = 1.0
-_WEIGHT_RECENT = 1.0
-_WEIGHT_OLD = 0.5
-_RECENT_ATTENDANCE_CUTOFF = 4
+_PEER_HALF_LIFE_MEETUPS = 2
 _ATTRIBUTE_WEIGHTS = {"sho": 0.06, "pas": 0.05, "def": 0.05, "pac": 0.02, "dri": 0.02}
 
 
@@ -97,62 +96,69 @@ async def get_consecutive_miss_streak(
     return streak
 
 
+async def _peer_meetup_positions(db: AsyncSession) -> dict[int, int]:
+    now = _utc_now()
+    meetups = await db.scalars(
+        select(Meetup)
+        .where(Meetup.skipped.is_(False), Meetup.start_time <= now)
+        .order_by(Meetup.start_time.desc(), Meetup.id.desc())
+    )
+    return {
+        meetup.id: index
+        for index, meetup in enumerate(m for m in meetups if meetup_end_time(m) <= now)
+    }
+
+
 async def _get_weighted_peer_average(
     db: AsyncSession,
     user_id: int,
-    mode: PeerRatingMode,
     pairs: dict[int, set[tuple[int, int]]] | None,
-) -> float | None:
-    """Compute the peer-rating average for a user with recency weighting.
-
-    Ratings from the user's N most recent confirmed attendances carry full
-    weight (1.0).  Ratings from older meetups carry reduced weight (0.5).
-    Ratings from meetups the user never attended also carry reduced weight.
-    Each meetup needs three eligible reviewers before its votes count.
-    """
-    if mode == "off":
-        return None
+    positions: dict[int, int],
+    anchor: float = 3.0,
+) -> tuple[float | None, float | None]:
+    """Return a legacy star average or a relative adjustment across meetups."""
+    if not positions:
+        return None, None
 
     votes = await db.scalars(
         select(Rating)
-        .join(Meetup)
         .where(
             Rating.ratee_id == user_id,
             Rating.rater_id != user_id,
             Rating.score.between(1, 5),
-            Meetup.skipped.is_(False),
         )
     )
-    by_meetup: dict[int, dict[int, int]] = defaultdict(dict)
+    by_meetup: dict[int, dict[int, Rating]] = defaultdict(dict)
     for vote in votes:
+        if vote.meetup_id not in positions:
+            continue
         pair = (min(vote.rater_id, user_id), max(vote.rater_id, user_id))
         if pairs is not None and pair not in pairs.get(vote.meetup_id, ()):
             continue
-        by_meetup[vote.meetup_id][vote.rater_id] = vote.score
+        by_meetup[vote.meetup_id][vote.rater_id] = vote
     qualified = {mid: scores for mid, scores in by_meetup.items() if len(scores) >= 3}
     if not qualified:
-        return None
+        return None, None
 
-    # Fetch the user's most recent confirmed meetup IDs
-    result = await db.execute(
-        select(Attendance.meetup_id)
-        .where(
-            Attendance.user_id == user_id,
-            Attendance.status == "confirmed",
-        )
-        .order_by(Attendance.joined_at.desc())
-        .limit(_RECENT_ATTENDANCE_CUTOFF)
-    )
-    recent_meetup_ids = {row[0] for row in result.fetchall()}
-
+    latest_position = min(positions[mid] for mid in qualified)
     weighted_sum = 0.0
     total_weight = 0.0
-    for meetup_id, scores in qualified.items():
-        weight = _WEIGHT_RECENT if meetup_id in recent_meetup_ids else _WEIGHT_OLD
-        weighted_sum += sum(scores.values()) * weight
-        total_weight += len(scores) * weight
+    has_reviews = False
+    for meetup_id, ratings in qualified.items():
+        distance = positions[meetup_id] - latest_position
+        weight = 0.5 ** (distance / _PEER_HALF_LIFE_MEETUPS)
+        scores = []
+        for vote in ratings.values():
+            if vote.review is None:
+                scores.append(vote.score)
+            else:
+                has_reviews = True
+                scores.append(anchor + PEER_REVIEW_ADJUSTMENTS[vote.review])
+        weighted_sum += (sum(scores) / len(scores)) * weight
+        total_weight += weight
 
-    return weighted_sum / total_weight
+    average = weighted_sum / total_weight
+    return (None, average - anchor) if has_reviews else (average, None)
 
 
 def blend_skill(
@@ -160,6 +166,8 @@ def blend_skill(
     peer: float | None,
     attributes: dict[str, float | None],
     miss_streak: int = 0,
+    *,
+    peer_adjustment: float | None = None,
 ) -> float | None:
     """Blend the ratings that exist, with missing attribute weight left on the baseline."""
     baseline = seed if peer is None else peer
@@ -173,7 +181,9 @@ def blend_skill(
         score = attributes.get(key)
         if score is not None:
             skill += weight * (score - baseline)
-    if peer is not None:
+    if peer_adjustment is not None:
+        skill += 0.25 * peer_adjustment
+    if peer is not None or peer_adjustment is not None:
         skill -= min(_MAX_MISS_DECAY, max(0, miss_streak - 1) * 0.1)
     return round(max(0, min(5, skill)), 1)
 
@@ -182,22 +192,26 @@ async def _update_skill(
     db: AsyncSession,
     user: User,
     attributes: dict,
-    mode: PeerRatingMode,
     pairs: dict[int, set[tuple[int, int]]] | None,
+    positions: dict[int, int],
     locked_ids: list[int] | None = None,
 ) -> None:
-    peer = await _get_weighted_peer_average(db, user.id, mode, pairs)
+    anchor = user.seed_skill if user.seed_skill is not None else 3.0
+    peer, adjustment = await _get_weighted_peer_average(db, user.id, pairs, positions, anchor)
     streak = (
         await get_consecutive_miss_streak(db, user.id, locked_ids=locked_ids)
-        if peer is not None
+        if peer is not None or adjustment is not None
         else 0
     )
     scores = {
         key: evidence["score"]
         for key, evidence in effective_player_attributes(user, attributes).items()
     }
-    scores.update(pac=user.pac, dri=user.dri)
-    user.calculated_skill = blend_skill(user.seed_skill, peer, scores, streak)
+    scores.update(pace_and_dribbling(user))
+    user.calculated_skill = blend_skill(
+        anchor if adjustment is not None else user.seed_skill,
+        peer, scores, streak, peer_adjustment=adjustment,
+    )
 
 
 async def _load_peer_pairs(
@@ -221,7 +235,8 @@ async def update_user_calculated_skill(
     if settings.computed_scores:
         attributes = (await load_player_attributes(db)).get(user_id, {})
         pairs = await _load_peer_pairs(db, settings.peer_rating_mode, user_id)
-        await _update_skill(db, user, attributes, settings.peer_rating_mode, pairs)
+        positions = {} if settings.peer_rating_mode == "off" else await _peer_meetup_positions(db)
+        await _update_skill(db, user, attributes, pairs, positions)
     if commit:
         await db.commit()
     else:
@@ -235,6 +250,7 @@ async def refresh_player_skills(db: AsyncSession) -> None:
         return
     attributes = await load_player_attributes(db)
     pairs = await _load_peer_pairs(db, settings.peer_rating_mode)
+    positions = {} if settings.peer_rating_mode == "off" else await _peer_meetup_positions(db)
     locked_ids = await _get_locked_meetup_ids(db)
     users = await db.scalars(
         select(User).where(
@@ -250,8 +266,8 @@ async def refresh_player_skills(db: AsyncSession) -> None:
             db,
             user,
             attributes.get(user.id, {}),
-            settings.peer_rating_mode,
             pairs,
+            positions,
             locked_ids,
         )
 
@@ -267,14 +283,7 @@ async def refresh_skills_after_meetup(db: AsyncSession, meetup_id: int) -> None:
 async def recalculate_skills_for_attendance_change(
     db: AsyncSession, meetup_id: int, changed_user_id: int
 ) -> None:
-    """Recalculate calculated_skill for players affected by an attendance change.
-
-    When a user joins or leaves a meetup, their own attendance history shifts,
-    which changes the recency weighting of their peer ratings.  Only the changed
-    user needs recalculation (other attendees' histories are unaffected).
-    """
-    # Check the changed user still has an attendance row (even cancelled ones
-    # affect the "most recent confirmed" ranking when they rejoin later)
+    """Refresh the changed player's rating to reflect their attendance streak."""
     result = await db.execute(
         select(Attendance).where(
             Attendance.meetup_id == meetup_id,

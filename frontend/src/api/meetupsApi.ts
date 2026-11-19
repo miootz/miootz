@@ -92,7 +92,11 @@ export interface MeetupDetail extends MeetupListItem {
   duration_minutes?: number | null;
   /** Upper bound on team count. Null = algorithmic. */
   max_teams?: number | null;
+  team_size?: number | null;
+  /** Whether a match has started or completed. */
+  has_started?: boolean;
   attendees: {
+    attendance_id?: number;
     user_id: number;
     display_name: string;
     avatar_url: string | null;
@@ -119,12 +123,7 @@ export interface MeetupDetail extends MeetupListItem {
 
 export interface MeetupHistorySummary {
   match_count: number;
-  final: {
-    team_a_name: string;
-    score_a: number;
-    team_b_name: string;
-    score_b: number;
-  } | null;
+  winning_teams: string[];
   my_rating_avg: number | null;
 }
 
@@ -269,8 +268,7 @@ export async function patchMeetupTeams(
   return r.json();
 }
 
-/** Mid-meetup reshape: N teams of M players; leftovers form a bench team.
- *  Requires N × M <= confirmed. Rewrites pending matches. */
+/** Set signup capacity and reshape teams, rewriting pending matches. */
 export async function reshapeMeetupTeams(
   id: number,
   body: { team_count: number; team_size: number },

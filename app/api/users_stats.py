@@ -9,6 +9,7 @@ from app.services.stats_service import get_user_statistics
 from app.services.player_attributes import (
     effective_player_attributes,
     load_player_attributes,
+    pace_and_dribbling,
 )
 from app.services.audit import log_action
 
@@ -31,8 +32,7 @@ async def get_my_stats(
         attributes = (await load_player_attributes(db)).get(current_user.id)
         stats["attributes"] = {
             **effective_player_attributes(current_user, attributes),
-            "pac": current_user.pac,
-            "dri": current_user.dri,
+            **pace_and_dribbling(current_user),
         }
     return stats
 

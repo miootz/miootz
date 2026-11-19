@@ -64,6 +64,8 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
 
     if await has_table("ratings"):
+        if not await has_column("ratings", "review"):
+            await conn.execute(text("ALTER TABLE ratings ADD COLUMN review VARCHAR"))
         if not await has_column("ratings", "updated_at"):
             await conn.execute(
                 text("ALTER TABLE ratings ADD COLUMN updated_at TIMESTAMP")
@@ -669,6 +671,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(
             text("ALTER TABLE meetups ADD COLUMN max_teams INTEGER")
         )
+
+    if not await has_column("meetups", "team_size"):
+        await conn.execute(text("ALTER TABLE meetups ADD COLUMN team_size INTEGER"))
 
     # ── match_goals.goalkeeper_id: the keeper who conceded (optional) ──
     # A fresh DB gets this column (and its index) from create_all; this block

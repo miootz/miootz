@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.user import User
 from app.models.meetup import Meetup, Attendance
-from app.models.rating import Rating
+from app.models.rating import PEER_REVIEW_ADJUSTMENTS, PeerReview, Rating
 from app.schemas.rating import (
     RatingContextResponse,
     RatingCreate,
@@ -95,7 +95,10 @@ async def upsert_rating(
             status_code=400, detail="You can only rate confirmed attendees"
         )
 
-    if mode == "teammates-only" and rating_data.score != 0:
+    review = rating_data.review
+    score = 3 + PEER_REVIEW_ADJUSTMENTS[review] if review else rating_data.score
+    clearing = score is None or score == 0
+    if mode == "teammates-only" and not clearing:
         pairs = await teammate_pairs(db, [meetup.id])
         pair = tuple(sorted((current_user.id, rating_data.ratee_id)))
         if pair not in pairs[meetup.id]:
@@ -113,7 +116,7 @@ async def upsert_rating(
     existing = result.scalar_one_or_none()
     ratee = await db.get(User, rating_data.ratee_id)
     ratee_name = ratee.display_name if ratee else str(rating_data.ratee_id)
-    if rating_data.score == 0:
+    if clearing:
         if existing:
             await db.delete(existing)
             await db.flush()
@@ -130,43 +133,34 @@ async def upsert_rating(
             )
         return None
 
-    if existing:
-        existing.score = rating_data.score
-        existing.updated_at = utcnow()
-        await db.flush()
-        await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
-        await db.commit()
-        await db.refresh(existing)
-        log_action(
-            request,
-            "rating",
-            "rating.updated",
-            f"Updated rating of {ratee_name} for '{meetup.location}' to "
-            f"{rating_data.score}/5",
-            meetup_id=rating_data.meetup_id,
-        )
-        return existing
-
-    new_rating = Rating(
-        meetup_id=rating_data.meetup_id,
-        rater_id=current_user.id,
-        ratee_id=rating_data.ratee_id,
-        score=rating_data.score,
+    rating = existing or Rating(
+        meetup_id=meetup.id, rater_id=current_user.id, ratee_id=rating_data.ratee_id,
     )
-    db.add(new_rating)
+    rating.score = score
+    rating.review = review
+    rating.updated_at = utcnow()
+    db.add(rating)
     await db.flush()
     await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
     await db.commit()
-    await db.refresh(new_rating)
+    await db.refresh(rating)
+    value = review if review else f"{score}/5"
     log_action(
         request,
         "rating",
-        "rating.submitted",
-        f"Rated {ratee_name} {rating_data.score}/5 for '{meetup.location}'",
+        "rating.updated" if existing else "rating.submitted",
+        f"Rated {ratee_name} {value} for '{meetup.location}'",
         meetup_id=rating_data.meetup_id,
     )
 
-    return new_rating
+    return rating
+
+
+def _display_review(vote: Rating, seed: float | None) -> PeerReview:
+    if vote.review is not None:
+        return vote.review
+    delta = vote.score - (3 if seed is None else seed)
+    return min(PEER_REVIEW_ADJUSTMENTS, key=lambda key: abs(PEER_REVIEW_ADJUSTMENTS[key] - delta))
 
 
 @router.get("/meetups/{meetup_id}/context", response_model=RatingContextResponse)
@@ -220,7 +214,7 @@ async def get_rating_context(
         ]
 
     ratee_ids = [u.id for _, u in rows]
-    my_scores: dict[int, int] = {}
+    my_votes: dict[int, Rating] = {}
     if viewer_attended and ratee_ids:
         r2 = await db.execute(
             select(Rating).where(
@@ -231,14 +225,15 @@ async def get_rating_context(
             )
         )
         for r in r2.scalars().all():
-            my_scores[r.ratee_id] = r.score
+            my_votes[r.ratee_id] = r
 
     ratees = [
         RateeContext(
             user_id=u.id,
             display_name=u.display_name,
             avatar_url=u.avatar_url,
-            my_score=my_scores.get(u.id),
+            my_score=vote.score if (vote := my_votes.get(u.id)) else None,
+            my_review=_display_review(vote, u.seed_skill) if vote else None,
         )
         for _, u in rows
     ]

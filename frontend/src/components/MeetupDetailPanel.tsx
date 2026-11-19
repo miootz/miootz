@@ -1,5 +1,5 @@
 import { parseMeetupStart } from "../utils/datetime";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Loader2, MapPin, MessageSquare, Trophy } from "lucide-react";
 import type { User } from "../types";
 import { fetchMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
@@ -7,6 +7,7 @@ import type { TeamNightRecord } from "../api/rankingsApi";
 import {
   fetchRatingContext,
   submitRating,
+  type PeerReview,
   type RateeContext,
 } from "../api/ratingsApi";
 import { TeamRoster } from "./TeamRoster";
@@ -254,13 +255,11 @@ export function MeetupDetailPanel({
     void Promise.all([loadTeams(), loadRatings(), loadWeather()]);
   }, [loadTeams, loadRatings, loadWeather]);
 
-  // Build a lookup: player id → my_score
-  const scoreMap = useMemo(() => {
-    const m: Record<string, number | null> = {};
+  const reviewMap = useMemo(() => {
+    const m: Record<string, PeerReview | null> = {};
     for (const r of ratees) {
-      // Match ratees to players by user_id; we need the string id
       const playerId = String(r.user_id);
-      m[playerId] = r.my_score != null && r.my_score > 0 ? r.my_score : null;
+      m[playerId] = r.my_review;
     }
     return m;
   }, [ratees]);
@@ -274,8 +273,9 @@ export function MeetupDetailPanel({
     return m;
   }, [ratees]);
 
-  const handleRatingChange = useCallback(
-    async (playerId: string, score: number) => {
+  const ratingSaves = useRef<Record<string, Promise<void>>>({});
+  const handleReviewChange = useCallback(
+    (playerId: string, review: PeerReview | null) => {
       if (!canRate) return;
       const rateeId = rateeIdMap[playerId];
       if (!rateeId) {
@@ -283,18 +283,19 @@ export function MeetupDetailPanel({
         return;
       }
 
-      try {
-        await submitRating(meetupId, rateeId, score);
-        setRatees((prev) =>
-          prev.map((r) =>
-            r.user_id === rateeId ? { ...r, my_score: score || null } : r,
-          ),
-        );
-      } catch (e) {
+      setRatees((prev) => prev.map((r) =>
+        r.user_id === rateeId ? { ...r, my_review: review } : r,
+      ));
+      const previous = ratingSaves.current[playerId] ?? Promise.resolve();
+      const save = previous.catch(() => {}).then(() => submitRating(meetupId, rateeId, review));
+      ratingSaves.current[playerId] = save;
+      void save.catch((e) => {
+        if (ratingSaves.current[playerId] !== save) return;
         showToast(e instanceof Error ? e.message : "Rating failed", "error");
-      }
+        void loadRatings();
+      });
     },
-    [canRate, rateeIdMap, meetupId, showToast],
+    [canRate, rateeIdMap, meetupId, showToast, loadRatings],
   );
 
   /* ── Render ─────────────────────────────────────────── */
@@ -394,8 +395,8 @@ export function MeetupDetailPanel({
                   <TeamRoster
                     players={players}
                     ratingMode={canRate ? "inline" : "none"}
-                    ratingScores={canRate ? scoreMap : undefined}
-                    onRatingChange={canRate ? handleRatingChange : undefined}
+                    ratingReviews={canRate ? reviewMap : undefined}
+                    onReviewChange={canRate ? handleReviewChange : undefined}
                     currentUserId={currentUserId}
                   />
                 </div>

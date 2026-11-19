@@ -9,7 +9,6 @@ import {
   fetchMyStats,
   fetchNotificationPreferences,
   patchGameTemplateSubscription,
-  patchMyProfile,
   patchNotificationPreference,
   type GameTemplateSubscriptionRow,
   type NotificationCategory,
@@ -23,6 +22,7 @@ import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
+import { SkillRating } from "../components/SkillRating";
 import {
   pushSupported,
   subscribeToWebPush,
@@ -167,14 +167,10 @@ function ToggleSwitch({
 /* ── Main Page ─────────────────────────────────────────────────────── */
 
 export function ProfilePage() {
-  const { me, logout } = useAuth();
+  const { me, logout, savePosition } = useAuth();
   const { showToast } = useToast();
 
   // Profile field state
-  const [primarySpecialty, setPrimarySpecialty] = useState<Specialty | "">("");
-  const [secondarySpecialty, setSecondarySpecialty] = useState<Specialty | "">(
-    "",
-  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,12 +201,6 @@ export function ProfilePage() {
   );
 
   /* ── Effects ───────────────────────────────────────────────────── */
-
-  useEffect(() => {
-    if (!me) return;
-    setPrimarySpecialty(me.user.primary_specialty ?? "");
-    setSecondarySpecialty(me.user.secondary_specialty ?? "");
-  }, [me]);
 
   useEffect(() => {
     if (!import.meta.env.PROD || !pushSupported()) return;
@@ -306,20 +296,17 @@ export function ProfilePage() {
   const saveSpecialty = async (
     field: "primary_specialty" | "secondary_specialty",
     value: Specialty | null,
-    prev: Specialty | null | undefined,
-    setter: React.Dispatch<React.SetStateAction<Specialty | "">>,
   ) => {
-    if (value === prev) return;
+    if (value === (me?.user[field] ?? null)) return;
     setSaving(true);
     setError(null);
     try {
-      await patchMyProfile({ [field]: value });
-      showToast("Specialty saved.", "success");
+      await savePosition(field, value);
+      showToast("Position saved.", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
       setError(msg);
       showToast(msg, "error");
-      setter(prev ?? "");
     } finally {
       setSaving(false);
     }
@@ -395,7 +382,7 @@ export function ProfilePage() {
           ]).map(({ label, value, disabled }) => (
             <div key={label} className="min-w-0 p-5">
               <h2 className="text-sm font-bold text-ink">{label}</h2>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-ink">{disabled ? "—" : value?.toFixed(1) ?? "—"}</p>
+              <p className="mt-2 text-2xl text-ink"><SkillRating score={disabled ? null : value} /></p>
               <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
             </div>
           ))}
@@ -422,20 +409,17 @@ export function ProfilePage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <span className="text-xs text-ink-dim">
+                <label htmlFor="profile-primary-position" className="block text-xs text-ink-dim">
                   Primary position
-                </span>
+                </label>
                 <select
-                  value={primarySpecialty}
+                  id="profile-primary-position"
+                  value={u.primary_specialty ?? ""}
                   disabled={saving}
                   onChange={(e) => {
-                    const val = e.target.value as Specialty | "";
-                    setPrimarySpecialty(val);
                     void saveSpecialty(
                       "primary_specialty",
-                      val || null,
-                      u.primary_specialty,
-                      setPrimarySpecialty,
+                      (e.target.value || null) as Specialty | null,
                     );
                   }}
                   className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
@@ -450,20 +434,17 @@ export function ProfilePage() {
               </div>
 
               <div className="space-y-1">
-                <span className="text-xs text-ink-dim">
+                <label htmlFor="profile-secondary-position" className="block text-xs text-ink-dim">
                   Secondary position
-                </span>
+                </label>
                 <select
-                  value={secondarySpecialty}
+                  id="profile-secondary-position"
+                  value={u.secondary_specialty ?? ""}
                   disabled={saving}
                   onChange={(e) => {
-                    const val = e.target.value as Specialty | "";
-                    setSecondarySpecialty(val);
                     void saveSpecialty(
                       "secondary_specialty",
-                      val || null,
-                      u.secondary_specialty,
-                      setSecondarySpecialty,
+                      (e.target.value || null) as Specialty | null,
                     );
                   }}
                   className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"

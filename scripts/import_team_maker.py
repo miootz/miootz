@@ -146,7 +146,7 @@ def parse_workbook(workbook, date_corrections=None):
             raise ValueError(f"{label}: expected a roster rating from 1 through 5")
         name = name.strip()
         names[name.casefold()] = name
-        ratings[name] = 5 * (5 - rating) / 4
+        ratings[name] = 6 - rating
         if isinstance(runs, str) and runs.strip().upper() == "Y":
             runners.add(name)
         tokens[name] = 0 if token is None else whole_number(token, f"{label} Tokens")
@@ -395,7 +395,7 @@ async def upsert_users(db, ratings, runners, links, admins):
         if user.seed_skill is None:
             user.seed_skill = skill
         if user.pac is None and name in runners:
-            user.pac = 4.0
+            user.pac = 4.2  # 90 on the displayed attribute scale.
         if name in admins:
             user.is_admin = True
         if name in links:

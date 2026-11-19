@@ -39,6 +39,7 @@ from app.services.meetup_revision import bump_and_notify
 from app.services.audit import log_action
 from app.services.skill_service import refresh_skills_after_meetup
 from app.services.team_assignment import draft_skill
+from app.services.team_adjustment import fill_empty_pending_matches
 from app.services.rating_settings import get_rating_settings, selected_rating
 
 logger = logging.getLogger(__name__)
@@ -419,6 +420,7 @@ async def start_matches(
         mode,
         players,
         max_teams=getattr(meetup, "max_teams", None),
+        team_size=meetup.team_size,
     )
     if len(teams_nested) < 2:
         raise HTTPException(
@@ -563,6 +565,7 @@ async def create_new_pending_match(
         mode,
         players,
         max_teams=getattr(meetup, "max_teams", None),
+        team_size=meetup.team_size,
     )
     team_names = get_team_names(meetup)
 
@@ -937,6 +940,7 @@ async def _propagate_swap_to_meetup(
         new_a,
         new_b,
         max_teams=meetup.max_teams,
+        team_size=meetup.team_size,
     )
 
 
@@ -1256,6 +1260,13 @@ async def start_timer(
             "ends_at": _timer_ends_at_iso(match),
             "controlled_by": {"name": user.display_name},
         }
+
+    if not _loads_int_list(match.team_a_users) or not _loads_int_list(match.team_b_users):
+        meetup = await db.get(Meetup, meetup_id)
+        if meetup and meetup.team_size is not None:
+            await fill_empty_pending_matches(db, meetup)
+            if not _loads_int_list(match.team_a_users) or not _loads_int_list(match.team_b_users):
+                raise HTTPException(status_code=409, detail="Both teams need a player before starting the timer.")
 
     match.timer_started_at = datetime.now(UTC)
     match.timer_seconds_remaining = match.timer_total_seconds
@@ -1745,6 +1756,7 @@ async def end_match(
         _mode,
         _players,
         max_teams=getattr(_meetup, "max_teams", None),
+        team_size=_meetup.team_size,
     )
     team_names = get_team_names(_meetup)
 

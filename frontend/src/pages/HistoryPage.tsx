@@ -1,56 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { MeetupListItem } from "../api/meetupsApi";
+import type { MeetupHistorySummary, MeetupListItem } from "../api/meetupsApi";
 import { fetchMeetups, fetchMeetupHistorySummary } from "../api/meetupsApi";
 import { parseMeetupStart } from "../utils/datetime";
-import { ChevronRight, Loader2, Search, Users } from "lucide-react";
+import { ChevronRight, Loader2, Search, Star, Users } from "lucide-react";
 import { format } from "date-fns";
 
 const PAGE_SIZE = 10;
 
 type SortKey = "date-desc" | "date-asc" | "location";
 
-interface MatchSummaryMini {
-  matchCount: number;
-  final: {
-    teamA: string;
-    scoreA: number;
-    teamB: string;
-    scoreB: number;
-  } | null;
-  ratingAvg: number | null;
-}
-
 /* ── Per-meetup summary (single request) ─────────────── */
 
-function useHistorySummary(meetupId: number): MatchSummaryMini {
-  const [summary, setSummary] = useState<MatchSummaryMini>({
-    matchCount: 0,
-    final: null,
-    ratingAvg: null,
-  });
+function useHistorySummary(meetupId: number) {
+  const [summary, setSummary] = useState<MeetupHistorySummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void fetchMeetupHistorySummary(meetupId)
       .then((res) => {
         if (cancelled) return;
-        setSummary({
-          matchCount: res.match_count,
-          final: res.final
-            ? {
-                teamA: res.final.team_a_name,
-                scoreA: res.final.score_a,
-                teamB: res.final.team_b_name,
-                scoreB: res.final.score_b,
-              }
-            : null,
-          ratingAvg: res.my_rating_avg,
-        });
+        setSummary(res);
       })
       .catch(() => {
-        if (!cancelled)
-          setSummary({ matchCount: 0, final: null, ratingAvg: null });
+        if (!cancelled) setSummary(null);
       });
     return () => {
       cancelled = true;
@@ -64,14 +37,17 @@ function useHistorySummary(meetupId: number): MatchSummaryMini {
 
 function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
   const start = parseMeetupStart(row.start_time);
-  const { matchCount, final, ratingAvg } = useHistorySummary(row.id);
+  const summary = useHistorySummary(row.id);
+  const matchCount = summary?.match_count ?? 0;
+  const winners = summary?.winning_teams ?? [];
+  const ratingAvg = summary?.my_rating_avg;
 
   return (
     <Link
       to={`/history/${row.id}`}
       className="block border border-line bg-panel overflow-hidden transition-colors hover:bg-raised"
     >
-      <div className="flex items-start gap-3 p-3.5">
+      <article className="flex items-start gap-3 p-3.5">
         {/* Date chip */}
         <div className="shrink-0 mt-0.5">
           <div className="bg-raised px-2.5 py-1.5 text-center min-w-[52px]">
@@ -103,17 +79,17 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
             {matchCount > 0 && (
               <span className="bg-raised px-2 py-0.5 text-2xs text-ink-dim">
                 {matchCount} match{matchCount !== 1 ? "es" : ""}
-                {final && (
-                  <span className="ml-1 tabular-nums text-ink">
-                    · Final: {final.teamA} {final.scoreA} – {final.scoreB}{" "}
-                    {final.teamB}
+                {winners.length > 0 && (
+                  <span className="text-ink [overflow-wrap:anywhere]">
+                    {" · "}{winners.length === 1 ? "Winner" : "Joint winners"}: {winners.join(", ")}
                   </span>
                 )}
               </span>
             )}
             {ratingAvg != null && (
-              <span className="bg-live/15 px-2 py-0.5 text-2xs font-medium text-live tabular-nums">
-                ★ {ratingAvg.toFixed(1)}
+              <span className="inline-flex flex-wrap items-center gap-x-1 bg-live/15 px-2 py-0.5 text-2xs font-medium text-live tabular-nums">
+                <Star className="size-3 fill-current" aria-hidden="true" />
+                {ratingAvg.toFixed(1)} avg. rating you gave
               </span>
             )}
           </div>
@@ -123,7 +99,7 @@ function HistoryMeetupRow({ row }: { row: MeetupListItem }) {
         <div className="shrink-0 self-center mt-0.5">
           <ChevronRight className="w-4 h-4 text-ink-faint" />
         </div>
-      </div>
+      </article>
     </Link>
   );
 }

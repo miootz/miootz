@@ -41,38 +41,47 @@ Rating is labeled disabled when computation is off. See [Rating settings](RATING
 
 | Input | Share |
 | --- | ---: |
-| Admin or imported seed | 55% |
-| Recency-weighted peer ratings | 25% |
+| Admin or imported seed | 80% |
+| Recency-weighted peer adjustment | × 25% |
 | Shooting (SHO) | 6% |
 | Passing (PAS) | 5% |
 | Defense (DEF) | 5% |
 | Pace (PAC), set by an admin or seeded by the roster import | 2% |
 | Dribbling (DRI), set by an admin | 2% |
 
-The seed and peer ratings form a baseline. When both exist, they are averaged
-in the ratio 55:25. If only one exists, it is the baseline. Each unavailable
-attribute's share returns to that baseline. If neither peer ratings nor a seed
-exists, the player has no overall skill, even if attributes are available.
+Base Rating supplies 80% of the score before peer review and absorbs the
+share of any unavailable attribute. The peer adjustment is then added
+separately at 25% of the weighted average of the review adjustments. With
+qualifying emoji reviews and no Base Rating, Miootz uses 3.0 as the baseline.
 
-For example, a peer average of 4.0 and a seed of 3.0 give a baseline of
-`(55 × 3.0 + 25 × 4.0) ÷ 80 = 3.3125`. If SHO is the only available
-attribute and is 4.0, the other attribute shares return to the baseline, giving
-`3.3125 × 0.94 + 4.0 × 0.06 = 3.35375` before attendance decay and rounding.
+Adjusted Rating uses each attribute's internal 1–5 score. The app rounds
+its 50–100 display to a whole number after converting the score. Display
+rounding does not affect the blend. An admin override entered as a whole
+number is converted back with `1 + (override − 50) ÷ 12.5`, so an override
+of 90 contributes as 4.2 on the internal scale.
+
+For example, a player with a 3.0 Base Rating, 4.0 Shooting, default PAC
+and DRI, and unavailable PAS and DEF has a rating before votes of
+`3.0 × 0.94 + 4.0 × 0.06 = 3.06`. A weighted peer adjustment of +0.5
+adds 0.125, yielding 3.185 before attendance decay and rounding.
 
 ### Peer ratings and attendance
 
-| Rating's meetup | Weight per rating |
-| --- | --- |
-| One of the player's four most recently joined confirmed meetups, ordered by signup time | 1.0 |
-| Any other meetup | 0.5 |
+Miootz first averages reviews within each meetup that has at least three
+distinct eligible reviewers. Teammates only covers players who shared a
+side in a completed match, including substitutes. Everyone lets confirmed
+attendees rate one another. Off disables peer voting.
 
-Scores from **1 to 5** count in Adjusted Rating once at least three distinct
-eligible peers rate the same player for the same meetup. Off disables peer
-voting. Teammates only covers everyone who played on the same side of a
-completed match, including players who came on or went off as substitutes.
-Everyone lets confirmed attendees rate one another. Multiply each qualifying score by its weight, add the
-results, and divide by the sum of the weights. A skipped or cleared rating
-contributes nothing. Older ratings retain half weight.
+The latest qualifying meetup has weight **1.0**. Each step back through
+finished, non-skipped meetups multiplies the weight by **√0.5**. A meetup two
+steps back has **half** the weight. An intervening meetup counts as a step
+even if it has too few votes to supply an average. Miootz divides the sum of
+the weighted meetup averages by the sum of their weights.
+
+When a qualifying emoji review and older star votes both count, Miootz
+subtracts Base Rating from each old star vote to put it on the adjustment
+scale. A player with only qualifying star votes keeps the previous blend
+that weights Base and the peer average in the ratio 55:25.
 
 **Attendance decay.** Miootz counts consecutive meetups without confirmed
 attendance, looking at up to 20 past meetups the skill calculation treats as
@@ -81,8 +90,9 @@ Each further consecutive miss subtracts **0.1**, up to **1.0** in total. The
 deduction is applied once when valid peer ratings exist. The final overall
 skill is limited to **0–5** and rounded to one decimal place.
 
-**Example.** Three recent scores of 5 and three older scores of 3 give a
-weighted average of `(15 × 1 + 9 × 0.5) ÷ (3 × 1 + 3 × 0.5) = 4.33…`.
+**Example.** A recent meetup averaging +0.5 and one two steps back averaging
+−0.5 give a weighted adjustment of `(0.5 × 1 − 0.5 × 0.5) ÷ 1.5 ≈ 0.17`.
+It adds about 0.04 stars to Adjusted Rating before rounding.
 Three consecutive misses cause a deduction of 0.2 from Adjusted Rating.
 
 Adding, editing, or clearing a peer rating recalculates skill, as can changes
@@ -122,8 +132,9 @@ An attribute stays unavailable until its minimum evidence is met.
 
 Miootz interpolates between the anchors, caps the internal score at 1–5, and
 rounds the automatic score to one decimal place. The app displays attributes
-on a **50–100** scale using `50 + (internal score − 1) × 12.5`. Base and Adjusted
-Rating are still measured in stars. Rankings' **Ratings** view shows SHO, PAS,
+as whole numbers on a **50–100** scale using
+`round(50 + (internal score − 1) × 12.5)`. Base and Adjusted Rating are measured
+in stars. Rankings' **Ratings** view shows SHO, PAS,
 and DEF for the selected period and can sort by each. History shows goals,
 assists, and clean sheets for the meetup. The profile shows current attributes
 and automatic scores' supporting counts.
@@ -131,7 +142,8 @@ and automatic scores' supporting counts.
 On a player's admin edit page, admins can override all five attributes on the
 50–100 scale. An override replaces the automatic score across periods and in
 Adjusted Rating. Clear SHO, PAS, or DEF to use the automatic score again. Clear
-PAC or DRI to leave it unrated. The roster import seeds PAC at 87.5 for players
+PAC or DRI to restore the default of 75, which contributes as 3.0 to Adjusted
+Rating. The roster import seeds PAC at 90 for players
 marked `Y` in `Runs` who have no PAC value.
 
 Fresh databases work without migrating the former additive match bonus.
@@ -144,12 +156,12 @@ Attributes use eligible recorded or imported match history.
 | **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
 | **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
 | **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-rated players before dealing and then spread PAC and DRI among playing teams. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
-| **Change team capacity** | Adding capacity promotes the earliest waitlisted players into free places, up to five per capped team. Reducing it waitlists the latest excess signups. Both clear the saved lineup and redraft. |
-| **Reshape during play** | Choose a team count and size. The draft includes a bench team for excess players. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
+| **Team capacity** | Use the cog in Admin Overview or on the Referee page to choose the number of teams and players per team. Before kickoff, increasing capacity confirms the earliest waitlisted players and shrinking it returns the latest excess signups to the waitlist. After a match starts, excess confirmed players stay on the bench. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
 
-If attendance changes, an invalid saved lineup is ignored. It can take effect
-again if the same confirmed roster returns. A pre-start substitution updates
-the lineup for future rounds. A substitution during play updates that match.
+When an admin has set team capacity, later attendance changes keep that team
+shape and retain existing player placements where possible. A pre-start
+substitution updates the lineup for future rounds. A substitution during play
+updates that match.
 
 The Teams panel labels a spread of 2 or less between the highest and lowest
 team totals **Balanced** and a larger spread **Uneven**. A reshuffle that

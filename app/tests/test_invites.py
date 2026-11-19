@@ -44,6 +44,26 @@ async def test_admin_create_user(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_admin_create_user_accepts_half_or_unset_rating():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        for skill in (None, 0.5, 3.5):
+            r = await ac.post(
+                "/users",
+                json={"first_name": "New", "last_name": "Player", "calculated_skill": skill},
+                headers={"Authorization": "Bearer admintoken"},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["seed_skill"] == skill
+        r = await ac.post(
+            "/users",
+            json={"first_name": "New", "last_name": "Player", "calculated_skill": 2.25},
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_admin_create_user_requires_names():
     """Creating a user requires first and last name."""
     transport = ASGITransport(app=app)

@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import type { MeResponse } from '../api/meApi';
+import type { MeResponse, Specialty } from '../api/meApi';
 import type { OidcTokens } from './pocketIdOidc';
 
 export type AuthState = {
@@ -8,6 +8,7 @@ export type AuthState = {
   error: string | null;
   tokens: OidcTokens | null;
   refresh: () => Promise<void>;
+  savePosition: (field: 'primary_specialty' | 'secondary_specialty', value: Specialty | null) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
 };

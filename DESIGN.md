@@ -12,6 +12,11 @@ colors:
   team-a: "#16a34a"
   team-b: "#2563eb"
   live: "#f59e0b"
+  attribute-pac: "#c5dc85"
+  attribute-sho: "#f7a48f"
+  attribute-pas: "#93c5fd"
+  attribute-dri: "#d2affb"
+  attribute-def: "#c3cddf"
   danger: "#ef4444"
   plus-one: "#ec4899"
 typography:
@@ -169,6 +174,14 @@ Tailwind v4 `@theme` tokens in `frontend/src/index.css`. Each means exactly one 
 | `team-b` | `#2563eb` | Team B slab; team-related info. |
 | `live` | `#f59e0b` | The single "now" colour: live/active/selected states, focus rings, countdowns, half-time band, sparse warnings (below-min, uneven, timer < ⅓). |
 | `danger` | `#ef4444` | Errors, destructive, "Time's up", unread dot, timer < ⅒. |
+| `attribute-pac` | `#c5dc85` | Pace labels and scores. |
+| `attribute-sho` | `#f7a48f` | Shooting labels and scores. |
+| `attribute-pas` | `#93c5fd` | Passing labels and scores. |
+| `attribute-dri` | `#d2affb` | Dribbling labels and scores. |
+| `attribute-def` | `#c3cddf` | Defending labels and scores. |
+
+An attribute's color identifies its category. Attribute names and codes
+are visible alongside the color. Keep the background neutral.
 
 **Functional:** plus-one identity is pink, and pink is used nowhere else —
 Tailwind default `pink-500/15` fill with `pink-400` text on the `+1` badge, so
@@ -269,7 +282,7 @@ Direct: buttons press 2% (`active:scale-[0.98]`), disabled is an opacity step
 - **Floating:** dialog/sheet `bg-panel border border-line shadow-xl`; dropdown/toast `shadow-lg`.
 - **Micro-label:** `text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim`.
 - **Team slab:** `bg-team-a` / `bg-team-b text-white uppercase` band; beyond two teams `bg-raised text-ink`.
-- **Skill badge:** neutral — `bg-raised text-ink-dim`; the tabular number carries the level, no color.
+- **Player rating:** a small neutral outline star followed by the tabular rating with one decimal place. Attribute values display as whole numbers in their category color.
 - **Plus-one:** pink badge/avatar tint only, never structural.
 
 ## Do's and Don'ts

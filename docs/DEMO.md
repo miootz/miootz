@@ -124,7 +124,7 @@ attributes influence the synthetic match events so those ratings vary.
 
 New demo rooms start with **Teammates only**. Historical votes vary by
 player and meetup. The Member has no outgoing votes in the latest meetup,
-so you can try rating teammates at `/history/2` in the Squad room. Paolo
+so you can try the four emoji reviews at `/history/2` in the Squad room. Paolo
 Maldini has fewer than three reviewers per past meetup at seed time, so
 those votes cannot affect his Adjusted Rating. [Rating settings](RATINGS.md)
 

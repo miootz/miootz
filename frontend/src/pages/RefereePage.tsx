@@ -35,6 +35,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
 import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
 import { TeamReshapeSheet } from "../components/TeamReshapeSheet";
+import { SkillRating } from "../components/SkillRating";
 import { AuthContext } from "../auth/auth-context";
 import {
   ArrowLeft,
@@ -75,12 +76,6 @@ function sortRosterBySkill<T extends { id: number }>(
   return [...users].sort(
     (a, b) => (skillById.get(b.id) ?? 0) - (skillById.get(a.id) ?? 0),
   );
-}
-
-/** Discreet rating label: whole numbers plain, calculated skills 1dp. */
-function skillLabel(v: number | undefined): string {
-  if (v == null) return "";
-  return v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1);
 }
 
 // ── Manual Match Form ────────────────────────────────────────────
@@ -541,6 +536,11 @@ export function RefereePage() {
             setIsPaused(false);
             prevRatioRef.current = null;
             setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
+            void loadMatches();
+            break;
+          case "meetup_updated":
+            void loadMatches();
+            void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             break;
           case "match_timer_paused":
             setTimerSeconds(secs ?? 0);
@@ -984,8 +984,10 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => setShowReshape(true)}
-                className="p-2 text-ink hover:bg-raised active:scale-95 transition-transform"
+                disabled={!meetupDetail || !teamsData}
+                className="grid h-11 w-11 place-items-center text-ink hover:bg-raised disabled:opacity-50"
                 aria-label="Team settings"
+                aria-haspopup="dialog"
               >
                 <Settings className="h-5 w-5" />
               </button>
@@ -1054,9 +1056,9 @@ export function RefereePage() {
                         className="flex min-w-0 items-baseline gap-1.5"
                       >
                         <span className="truncate">{u.display_name}</span>
-                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
-                          {skillLabel(skillById.get(u.id))}
-                        </span>
+                        {skillById.has(u.id) && (
+                          <SkillRating score={skillById.get(u.id)} className="text-2xs text-ink-dim" />
+                        )}
                       </li>
                     ),
                   )}
@@ -1074,9 +1076,9 @@ export function RefereePage() {
                         className="flex min-w-0 items-baseline justify-end gap-1.5"
                       >
                         <span className="truncate">{u.display_name}</span>
-                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
-                          {skillLabel(skillById.get(u.id))}
-                        </span>
+                        {skillById.has(u.id) && (
+                          <SkillRating score={skillById.get(u.id)} className="text-2xs text-ink-dim" />
+                        )}
                       </li>
                     ),
                   )}
@@ -1681,20 +1683,27 @@ export function RefereePage() {
       )}
 
       {/* Mid-meetup team reshape — admin only, from the header gear */}
-      {isAdmin && (
+      {isAdmin && showReshape && meetupDetail && teamsData && (
         <TeamReshapeSheet
-          open={showReshape}
+          key={sid}
           meetupId={sid}
           totalPlayers={reshapeTotalPlayers}
-          currentTeamCount={teamsData?.length ?? 2}
+          waitlistedPlayers={meetupDetail.attendees.filter((a) => a.status === "waitlisted").length}
+          teams={teamsData}
+          maxTeams={meetupDetail.max_teams}
+          currentTeamSize={meetupDetail.team_size}
+          minPlayers={meetupDetail.min_players}
+          maxPlayers={meetupDetail.max_players}
+          hasStarted={Boolean(meetupDetail.has_started) || matches.some((m) => m.status !== "pending")}
           liveMatchNumber={
-            matches.find((m) => m.status === "active")?.match_number ?? null
+            matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
           }
           onClose={() => setShowReshape(false)}
-          onSaved={() => {
-            setShowReshape(false);
+          onSaved={(result, teamCount, signupCapacity, teamSize) => {
+            setTeamsData(result.teams);
+            setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount, max_players: signupCapacity, team_size: teamSize });
+            void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             void loadMatches();
-            showToast("Teams updated", "success");
           }}
         />
       )}

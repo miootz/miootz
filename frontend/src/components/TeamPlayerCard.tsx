@@ -1,8 +1,9 @@
 import React from "react";
-import { Lock, Star, Unlock } from "lucide-react";
+import { Lock, Unlock } from "lucide-react";
 import type { User } from "../types";
 import { PlayerAvatarFace } from "./PlayerAvatar";
 import { PlayerEditLink } from "./PlayerEditLink";
+import { SkillRating } from "./SkillRating";
 
 /*
  * Single source of UI truth for a team player row: avatar (spans both rows),
@@ -21,20 +22,6 @@ function formatPositions(player: User): string {
   }
   return parts.length > 0 ? `(${parts.join("/")})` : "";
 }
-
-/** Star rating: selected player skill, or the draft estimate when unrated. */
-export const SkillRating: React.FC<{
-  calculated: number | null | undefined;
-  raw: number | null | undefined;
-}> = ({ calculated, raw }) => {
-  const value = calculated ?? raw ?? 0;
-  return (
-    <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
-      <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
-      {value.toFixed(1)}
-    </span>
-  );
-};
 
 export const TeamPlayerCard: React.FC<{
   player: User;
@@ -104,8 +91,8 @@ export const TeamPlayerCard: React.FC<{
           ) : (
             <span className={nameClass}>{player.name}</span>
           )}
-          {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
-          {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
+          {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-pac shrink-0">PAC</span>}
+          {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-dri shrink-0">DRI</span>}
           {isMe && (
             <span className="shrink-0 rounded bg-live/20 px-1.5 py-0.5 text-2xs font-semibold text-live">
               You
@@ -118,10 +105,7 @@ export const TeamPlayerCard: React.FC<{
               {positions}
             </span>
           )}
-          <SkillRating
-            calculated={player.calculatedSkill}
-            raw={player.skillScore}
-          />
+          <SkillRating score={player.calculatedSkill ?? player.skillScore} className="text-sm text-ink" />
         </div>
       </div>
 

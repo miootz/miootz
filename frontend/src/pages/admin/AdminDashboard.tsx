@@ -295,7 +295,7 @@ export function AdminDashboard() {
                   }`}
                 >
                   <SkipForward className="w-4 h-4" aria-hidden />
-                  {confirmingSkip ? "Tap again to skip" : "Skip"}
+                  {confirmingSkip ? "Tap again to skip meetup" : "Skip meetup"}
                 </button>
                 <MeetupWeatherBadge meetupId={detail.id} />
               </div>

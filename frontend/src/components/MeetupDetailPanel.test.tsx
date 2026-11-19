@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { fetchMeetupTeams } from '../api/meetupsApi';
 import { fetchRatingContext, submitRating } from '../api/ratingsApi';
@@ -15,14 +15,14 @@ vi.mock('../context/ToastContext', () => ({
 }));
 vi.mock('./MatchHistoryList', () => ({ MatchHistoryList: () => null }));
 
-it('saves and clears an initially blank rating in History', async () => {
+function prepareReview(myReview: 'poorly' | 'expected' | 'well' | 'excellent' | null = null) {
   vi.mocked(fetchMeetupTeams).mockResolvedValue({
     meetup_id: 7,
     content_revision: 0,
     teams: [{
       id: 'a',
       name: 'A',
-      players: [{ id: '2', name: 'Alex', skillScore: 3, isLocked: false }],
+      players: [{ id: '2', name: 'Alex', skillScore: 3, calculatedSkill: 3.7, isLocked: false }],
     }],
   });
   vi.mocked(fetchRatingContext).mockResolvedValue({
@@ -34,32 +34,55 @@ it('saves and clears an initially blank rating in History', async () => {
     ratings_editable: true,
     ratings_lock_at: null,
     viewer_attended: true,
-    ratees: [{ user_id: 2, display_name: 'Alex', avatar_url: null, my_score: null }],
+    ratees: [{ user_id: 2, display_name: 'Alex', avatar_url: null, my_review: myReview }],
   });
-  vi.mocked(submitRating).mockResolvedValue();
+}
+
+it('shows the default without voting, saves an explicit neutral review and clears it', async () => {
+  prepareReview();
+  vi.mocked(submitRating).mockReset().mockResolvedValue();
 
   render(<MeetupDetailPanel meetupId={7} />);
-  const first = await screen.findByRole('button', { name: '1 star, Your rating of Alex' });
-  const clear = screen.getByRole('button', { name: 'Clear Your rating of Alex' });
-  expect(first).toHaveAttribute('aria-pressed', 'false');
-  expect(clear).toBeDisabled();
+  const group = await screen.findByRole('group', { name: 'Your review of Alex' });
+  const neutral = within(group).getByRole('button', { name: 'As expected' });
+  const well = within(group).getByRole('button', { name: 'Well' });
 
-  fireEvent.click(first);
-  await waitFor(() => expect(first).toHaveAttribute('aria-pressed', 'true'));
-  expect(submitRating).toHaveBeenLastCalledWith(7, 2, 1);
-  expect(clear).toBeEnabled();
+  expect(neutral).toHaveAttribute('aria-pressed', 'true');
+  expect(group).toHaveAccessibleDescription('As expected is selected by default. Select a review to save it.');
+  expect(within(group).getAllByRole('button')).toHaveLength(4);
+  expect(submitRating).not.toHaveBeenCalled();
 
-  fireEvent.click(clear);
-  await waitFor(() => expect(clear).toBeDisabled());
-  expect(submitRating).toHaveBeenLastCalledWith(7, 2, 0);
-  expect(first).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(neutral);
+  await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, 'expected'));
+  expect(group).toHaveAccessibleDescription('Activate the selected review again to clear it.');
+
+  fireEvent.click(neutral);
+  await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, null));
+  expect(neutral).toHaveAttribute('aria-pressed', 'true');
+  expect(group).toHaveAccessibleDescription('As expected is selected by default. Select a review to save it.');
+
+  fireEvent.click(well);
+  await waitFor(() => expect(submitRating).toHaveBeenLastCalledWith(7, 2, 'well'));
+  expect(well).toHaveAttribute('aria-pressed', 'true');
+  expect(neutral).toHaveAttribute('aria-pressed', 'false');
 });
 
-it('does not offer rating controls when peer ratings are off', async () => {
-  vi.mocked(fetchMeetupTeams).mockResolvedValue({
-    meetup_id: 7, content_revision: 0,
-    teams: [{ id: 'a', name: 'A', players: [{ id: '2', name: 'Alex', skillScore: 3, isLocked: false }] }],
-  });
+it('shows a saved review and clears it when activated again', async () => {
+  prepareReview('excellent');
+  vi.mocked(submitRating).mockReset().mockResolvedValue();
+
+  render(<MeetupDetailPanel meetupId={7} />);
+  const group = await screen.findByRole('group', { name: 'Your review of Alex' });
+  const excellent = within(group).getByRole('button', { name: 'Excellent' });
+  expect(excellent).toHaveAttribute('aria-pressed', 'true');
+
+  fireEvent.click(excellent);
+  await waitFor(() => expect(submitRating).toHaveBeenCalledWith(7, 2, null));
+  expect(within(group).getByRole('button', { name: 'As expected' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('does not offer review controls when peer ratings are off', async () => {
+  prepareReview();
   vi.mocked(fetchRatingContext).mockResolvedValue({
     peer_rating_mode: 'off', meetup_id: 7, meetup_start_time: '', meetup_end_time: '',
     before_meetup_end: false, ratings_locked: false, ratings_editable: false, ratings_lock_at: null,
@@ -67,5 +90,24 @@ it('does not offer rating controls when peer ratings are off', async () => {
   });
   render(<MeetupDetailPanel meetupId={7} />);
   await screen.findByText('Alex');
-  expect(screen.queryByRole('button', { name: '1 star, Your rating of Alex' })).toBeNull();
+  expect(screen.queryByRole('group', { name: 'Your review of Alex' })).toBeNull();
+});
+
+it('saves rapid changes in order so an older request cannot overwrite the latest', async () => {
+  prepareReview();
+  let finishFirst!: () => void;
+  vi.mocked(submitRating).mockReset()
+    .mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }))
+    .mockResolvedValue();
+
+  render(<MeetupDetailPanel meetupId={7} />);
+  const group = await screen.findByRole('group', { name: 'Your review of Alex' });
+  fireEvent.click(within(group).getByRole('button', { name: 'Poorly' }));
+  fireEvent.click(within(group).getByRole('button', { name: 'Well' }));
+  await waitFor(() => expect(submitRating).toHaveBeenCalledTimes(1));
+  expect(submitRating).toHaveBeenCalledWith(7, 2, 'poorly');
+  expect(within(group).getByRole('button', { name: 'Well' })).toHaveAttribute('aria-pressed', 'true');
+  finishFirst();
+  await waitFor(() => expect(submitRating).toHaveBeenCalledTimes(2));
+  expect(submitRating).toHaveBeenLastCalledWith(7, 2, 'well');
 });

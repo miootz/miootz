@@ -85,7 +85,9 @@ export function HistoryMeetupPage() {
     rows.sort((a, b) => {
       const d = a[pSort] - b[pSort];
       if (d !== 0) return pOrder === "desc" ? -d : d;
-      return a.user.display_name.localeCompare(b.user.display_name);
+      return (b.rating ?? -1) - (a.rating ?? -1)
+        || a.user.display_name.localeCompare(b.user.display_name)
+        || a.user.id - b.user.id;
     });
     return rows.map((r, i) => ({ ...r, rank: i + 1 }));
   }, [performers, pSort, pOrder]);

@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, Hourglass, XCircle } from "lucide-react";
 import { PlayerAvatarFace } from "./PlayerAvatar";
-import { SkillRating } from "./TeamPlayerCard";
+import { SkillRating } from "./SkillRating";
 
 /*
  * Single source of UI truth for an attendance row at every breakpoint:
@@ -104,7 +104,7 @@ export const AttendancePlayerCard: React.FC<{
               {posLabel}
             </span>
           )}
-          <SkillRating calculated={calculatedSkill} raw={skill} />
+          <SkillRating score={calculatedSkill ?? skill} className="text-sm text-ink" />
         </div>
       </div>
       {/* Action — spans both rows */}

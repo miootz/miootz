@@ -25,6 +25,7 @@ class AttributeRankingsResponse(BaseModel):
 class RankingRow(BaseModel):
     rank: int
     user: RankingUser
+    rating: float | None = None
     attendances: int
     goals: int
     own_goals: int

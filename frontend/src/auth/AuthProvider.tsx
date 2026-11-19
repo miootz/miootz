@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMatch, useNavigate } from 'react-router-dom';
-import { type MeResponse } from '../api/meApi';
+import { patchMyProfile, type MeResponse } from '../api/meApi';
 import { apiBase } from '../api/client';
 import { roomPath, roomStorageKey } from '../utils/demoRoom';
 import { startDemoActivity } from '../utils/demoActivity';
@@ -136,6 +136,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return startDemoActivity(tokens.accessToken);
   }, [me, tokens?.accessToken]);
 
+  useEffect(() => {
+    if (me && !error) void cachePut(CACHE_PROFILE_ME, me).catch(() => {});
+  }, [me, error]);
+
+  const savePosition = useCallback<AuthState['savePosition']>(async (field, value) => {
+    if (!me) return;
+    await patchMyProfile({ [field]: value });
+    setMe((current) => {
+      if (current?.user.id !== me.user.id || current.user.pocket_id_sub !== me.user.pocket_id_sub) {
+        return current;
+      }
+      return { ...current, user: { ...current.user, [field]: value } };
+    });
+  }, [me]);
+
   const refresh = useCallback(async () => {
     if (!tokens) return;
     setError(null);
@@ -157,9 +172,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await fetchMeWithAuth(currentTokens);
       setMe(data);
-      if (data) {
-        await cachePut(CACHE_PROFILE_ME, data);
-      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load profile';
       // Try cached profile
@@ -221,7 +233,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTokens(newTokens);
           setMe(data);
           scheduleRefresh(newTokens);
-          void cachePut(CACHE_PROFILE_ME, data).catch(() => {});
           void navigate(consumeReturnPath(), { replace: true });
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Authentication failed');
@@ -255,9 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const data = await fetchMeWithAuth(tokensToUse);
           setMe(data);
-          if (data) {
-            await cachePut(CACHE_PROFILE_ME, data);
-          } else {
+          if (!data) {
             clearTokens();
             setTokens(null);
             if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
@@ -291,8 +300,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isCallback, navigate, fetchMeWithAuth, tryRefreshTokens, scheduleRefresh]);
 
   const value = useMemo(
-    () => ({ me, loading, error, tokens, refresh, login, logout }),
-    [me, loading, error, tokens, refresh, login, logout],
+    () => ({ me, loading, error, tokens, refresh, savePosition, login, logout }),
+    [me, loading, error, tokens, refresh, savePosition, login, logout],
   );
 
   return (

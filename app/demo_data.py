@@ -166,7 +166,11 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         db.add(Attendance(meetup_id=1, user_id=uid,
                           status='confirmed' if uid in confirmed else 'waitlisted',
                           joined_at=anchor - timedelta(hours=24) + timedelta(minutes=index)))
-    db.add(Attendance(meetup_id=1, user_id=15, status='cancelled', previous_status='confirmed', joined_at=anchor))
+    cancelled_user_id = 16 if live_like else 15
+    db.add(Attendance(
+        meetup_id=1, user_id=cancelled_user_id, status='cancelled',
+        previous_status='confirmed', joined_at=anchor,
+    ))
     guest_first_name, guest_last_name = NAMES[guest_index].split(' ', 1)
     db.add(GuestPlusOne(
         meetup_id=1, inviter_id=2, guest_user_id=21, first_name=guest_first_name, last_name=guest_last_name,
