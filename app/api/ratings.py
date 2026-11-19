@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -21,6 +21,8 @@ from app.services.rating_windows import (
     utc_now,
 )
 from app.services.skill_service import update_user_calculated_skill
+from app.services.peer_rating_policy import teammate_pairs
+from app.services.rating_settings import get_rating_settings
 from app.core.timeutil import utcnow
 from app.services.audit import log_action
 
@@ -43,12 +45,19 @@ async def upsert_rating(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Serialize eligibility checks with changes to the app-wide rating mode.
+    if not db.in_transaction():
+        await db.execute(text("BEGIN IMMEDIATE"))
     result = await db.execute(
         select(Meetup).where(Meetup.id == rating_data.meetup_id)
     )
     meetup = result.scalar_one_or_none()
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
+
+    mode = (await get_rating_settings(db)).peer_rating_mode
+    if mode == "off":
+        raise HTTPException(status_code=403, detail="Peer ratings are disabled")
 
     now = utc_now()
     nxt = await next_meetup_start_after(db, meetup)
@@ -86,6 +95,14 @@ async def upsert_rating(
             status_code=400, detail="You can only rate confirmed attendees"
         )
 
+    if mode == "teammates-only" and rating_data.score != 0:
+        pairs = await teammate_pairs(db, [meetup.id])
+        pair = tuple(sorted((current_user.id, rating_data.ratee_id)))
+        if pair not in pairs[meetup.id]:
+            raise HTTPException(
+                status_code=403, detail="You can only rate teammates from this meetup"
+            )
+
     result = await db.execute(
         select(Rating).where(
             Rating.meetup_id == rating_data.meetup_id,
@@ -116,9 +133,10 @@ async def upsert_rating(
     if existing:
         existing.score = rating_data.score
         existing.updated_at = utcnow()
+        await db.flush()
+        await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
         await db.commit()
         await db.refresh(existing)
-        await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
         log_action(
             request,
             "rating",
@@ -136,10 +154,10 @@ async def upsert_rating(
         score=rating_data.score,
     )
     db.add(new_rating)
+    await db.flush()
+    await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
     await db.commit()
     await db.refresh(new_rating)
-
-    await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
     log_action(
         request,
         "rating",
@@ -163,6 +181,7 @@ async def get_rating_context(
         raise HTTPException(status_code=404, detail="Meetup not found")
 
     now = utc_now()
+    mode = (await get_rating_settings(db)).peer_rating_mode
     nxt = await next_meetup_start_after(db, meetup)
     ok, _ = may_rate_or_edit(now, meetup, nxt)
     before_end = now < meetup_end_time(meetup)
@@ -176,7 +195,7 @@ async def get_rating_context(
         )
     )
     viewer_attended = result.scalar_one_or_none() is not None
-    if not viewer_attended:
+    if not viewer_attended or mode == "off":
         ok = False
 
     result = await db.execute(
@@ -190,6 +209,15 @@ async def get_rating_context(
         .order_by(User.sso_display_name.asc())
     )
     rows = result.all()
+
+    if mode == "off":
+        rows = []
+    elif mode == "teammates-only":
+        pairs = (await teammate_pairs(db, [meetup_id]))[meetup_id]
+        rows = [
+            row for row in rows
+            if tuple(sorted((current_user.id, row[1].id))) in pairs
+        ]
 
     ratee_ids = [u.id for _, u in rows]
     my_scores: dict[int, int] = {}
@@ -218,6 +246,7 @@ async def get_rating_context(
     locks_at = to_utc_aware(nxt) if nxt else None
     end = meetup_end_time(meetup)
     return RatingContextResponse(
+        peer_rating_mode=mode,
         meetup_id=meetup_id,
         meetup_start_time=meetup.start_time,
         meetup_end_time=end,

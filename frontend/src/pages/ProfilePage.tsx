@@ -22,6 +22,7 @@ import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
+import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import {
   pushSupported,
   subscribeToWebPush,
@@ -352,29 +353,12 @@ export function ProfilePage() {
               avatarUrl={avatarUrl}
               size="md"
             />
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold text-ink truncate">
-                {displayName}
-              </h1>
-              <p className="text-sm text-ink-dim truncate">
-                {u.pocket_id_sub ?? ""}
-              </p>
-            </div>
-            <a
-              href={pocketIdSettingsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 inline-flex items-center gap-1 border border-line px-3 py-1.5 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
-              aria-label="Edit account in Pocket ID"
-            >
-              <User className="w-3.5 h-3.5" />
-              Edit
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            <h1 className="min-w-0 flex-1 text-balance text-xl font-bold text-ink [overflow-wrap:anywhere]">
+              {displayName}
+            </h1>
           </div>
 
-          {/* Position badges */}
-          <div className="flex flex-wrap gap-2 mt-4">
+          <div className="flex flex-wrap items-center gap-2 mt-4">
             {u.primary_specialty && (
               <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
                 {SPECIALTY_LABEL[u.primary_specialty]}
@@ -390,10 +374,41 @@ export function ProfilePage() {
                 Admin
               </span>
             )}
+            <a
+              href={pocketIdSettingsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 border border-line px-3 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
+              aria-label="Edit account in Pocket ID"
+            >
+              <User className="w-3.5 h-3.5" />
+              Edit
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
         </section>
 
-        <ProfileScoreboard stats={stats} skill={u.calculated_skill} error={statsError} />
+        <section aria-label="Player ratings" className="grid grid-cols-2 divide-x divide-line border border-line bg-panel">
+          {([
+            { label: "Base Rating", value: stats?.base_rating, disabled: false },
+            { label: "Adjusted Rating", value: stats?.adjusted_rating === undefined ? u.calculated_skill : stats.adjusted_rating, disabled: stats?.computed_scores === false },
+          ]).map(({ label, value, disabled }) => (
+            <div key={label} className="min-w-0 p-5">
+              <h2 className="text-sm font-bold text-ink">{label}</h2>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-ink">{disabled ? "—" : value?.toFixed(1) ?? "—"}</p>
+              <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
+            </div>
+          ))}
+        </section>
+
+        {stats?.computed_scores !== false && (
+          <PlayerAttributesPanel
+            attributes={stats?.attributes}
+            error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
+          />
+        )}
+
+        <ProfileScoreboard stats={stats} error={statsError} />
 
         <section className="border border-line bg-panel p-5 space-y-5">
           {/* Attendance history (paginated) */}

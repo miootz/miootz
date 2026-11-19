@@ -34,6 +34,8 @@ function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
     primarySpecialty: p.primarySpecialty ?? undefined,
     secondarySpecialty: p.secondarySpecialty ?? undefined,
     calculatedSkill: p.calculatedSkill ?? null,
+    pac: p.pac,
+    dri: p.dri,
   }));
 }
 
@@ -196,13 +198,14 @@ export function MeetupDetailPanel({
   const [ratingsEditable, setRatingsEditable] = useState(false);
   const [ratingsLocked, setRatingsLocked] = useState(false);
   const [viewerAttended, setViewerAttended] = useState(true);
+  const [peerRatingMode, setPeerRatingMode] = useState<"off" | "teammates-only" | "everyone">("teammates-only");
   const [weatherData, setWeatherData] = useState<{
     temperature_c: number;
     weather_code: number | null;
     label: string | null;
   } | null>(null);
 
-  const canRate = viewerAttended && !ratingsLocked && ratingsEditable;
+  const canRate = peerRatingMode !== "off" && viewerAttended && !ratingsLocked && ratingsEditable;
 
   const loadTeams = useCallback(async () => {
     setTeamsLoading(true);
@@ -223,6 +226,7 @@ export function MeetupDetailPanel({
       setRatingsEditable(ctx.ratings_editable);
       setRatingsLocked(ctx.ratings_locked);
       setViewerAttended(ctx.viewer_attended ?? true);
+      setPeerRatingMode(ctx.peer_rating_mode ?? "teammates-only");
     } catch {
       setRatees([]);
     }
@@ -350,7 +354,7 @@ export function MeetupDetailPanel({
         <h2 className="text-sm font-semibold text-ink-dim mb-3 flex items-center gap-1.5">
           <Trophy className="h-4 w-4" aria-hidden />
           Starting Teams
-          {viewerAttended && ratingsLocked && (
+          {peerRatingMode !== "off" && viewerAttended && ratingsLocked && (
             <span className="text-2xs font-normal text-ink-faint ml-auto">
               Ratings final
             </span>

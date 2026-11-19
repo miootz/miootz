@@ -182,6 +182,39 @@ export function HistoryMeetupPage() {
         </section>
       )}
 
+      {performers && night && (
+        <section className="space-y-3" aria-labelledby="player-contributions">
+          <div>
+            <h2 id="player-contributions" className="text-lg font-bold text-ink">Player contributions</h2>
+            <p className="text-sm text-ink-dim">This meetup</p>
+          </div>
+          <div className="border border-line bg-panel">
+            <table className="w-full table-fixed text-sm">
+              <caption className="sr-only">Goals, assists and clean sheets for this meetup</caption>
+              <thead>
+                <tr className="border-b border-line text-ink-dim">
+                  <th scope="col" className="w-[55%] px-3 py-3 text-left">Player</th>
+                  <th scope="col" className="w-[15%] px-1 py-3 text-right"><abbr title="Goals">G</abbr></th>
+                  <th scope="col" className="w-[15%] px-1 py-3 text-right"><abbr title="Assists">A</abbr></th>
+                  <th scope="col" className="w-[15%] px-3 py-3 text-right"><abbr title="Clean sheets">CS</abbr></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {performers.map((player) => (
+                  <tr key={player.user.id} className={player.user.id === me?.user?.id ? "bg-live/10" : ""}>
+                    <th scope="row" className="px-3 py-3 text-left font-medium text-ink [overflow-wrap:anywhere]">{player.user.display_name}</th>
+                    <td className="px-1 py-3 text-right font-bold tabular-nums">{player.goals - player.own_goals}</td>
+                    <td className="px-1 py-3 text-right font-bold tabular-nums">{player.assists}</td>
+                    <td className="px-3 py-3 text-right font-bold tabular-nums">{player.clean_sheets}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-ink-dim">Goals exclude own goals.</p>
+        </section>
+      )}
+
       {/* Detail panel (starting teams get the night stats merged in) */}
       <MeetupDetailPanel
         meetupId={id}

@@ -1,4 +1,23 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class AttributeEvidence(BaseModel):
+    score: float | None
+    count: int
+    sample: int
+    meetups: int
+
+
+class PassingEvidence(AttributeEvidence):
+    total_goals: int
+
+
+class PlayerAttributes(BaseModel):
+    sho: AttributeEvidence
+    pas: PassingEvidence
+    def_: AttributeEvidence = Field(alias="def")
+    pac: float | None
+    dri: float | None
 
 
 class UserStats(BaseModel):
@@ -7,6 +26,9 @@ class UserStats(BaseModel):
     average_rating: float
     total_ratings: int
     skill_level: float
+    computed_scores: bool = True
+    base_rating: float | None = None
+    adjusted_rating: float | None = None
     goals: int = 0
     assists: int = 0
     clean_sheets: int = 0
@@ -27,6 +49,7 @@ class UserStats(BaseModel):
     season_penalties_scored: int = 0
     season_penalty_conversion_rate: float = 0.0
     weather_hero_unused: int = 0
+    attributes: PlayerAttributes | None = None
 
 
 class MatchScoreReport(BaseModel):

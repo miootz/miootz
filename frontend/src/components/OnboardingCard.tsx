@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
 import { roomStorageKey } from "../utils/demoRoom";
+import { fetchRatingSettings, type PeerRatingMode } from "../api/ratingSettingsApi";
 
 export const SKILL_SCALE_BLURB = "1 = brand new · 5 = very experienced";
 
@@ -29,6 +30,7 @@ function storageKey(userId: string) {
  */
 export function OnboardingCard({ userId }: { userId: string }) {
   const [step, setStep] = useState(0);
+  const [peerMode, setPeerMode] = useState<PeerRatingMode>("teammates-only");
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(storageKey(userId)) === "1";
@@ -36,6 +38,14 @@ export function OnboardingCard({ userId }: { userId: string }) {
       return false;
     }
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRatingSettings().then((settings) => {
+      if (!cancelled) setPeerMode(settings.peer_rating_mode);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   if (dismissed) return null;
 
@@ -48,15 +58,17 @@ export function OnboardingCard({ userId }: { userId: string }) {
     setDismissed(true);
   };
 
-  const stepData = STEPS[step];
-  const isLast = step === STEPS.length - 1;
+  const steps = peerMode === "off" ? STEPS.slice(0, 2) : STEPS;
+  const currentStep = Math.min(step, steps.length - 1);
+  const stepData = steps[currentStep];
+  const isLast = currentStep === steps.length - 1;
 
   return (
     <div className="border border-line bg-panel p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-            New to Miootz? · Step {step + 1} of {STEPS.length}
+            New to Miootz? · Step {currentStep + 1} of {steps.length}
           </p>
           <h3 className="mt-1 text-base font-bold text-ink">
             {stepData.title}
@@ -77,7 +89,7 @@ export function OnboardingCard({ userId }: { userId: string }) {
 
       <div className="mt-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5" aria-hidden>
-          {STEPS.map((s, i) => (
+            {steps.map((s, i) => (
             <span
               key={s.title}
               className={`h-1.5 w-6 ${

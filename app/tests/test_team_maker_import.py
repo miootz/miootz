@@ -30,9 +30,9 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         "Roster": Sheet(
             [
                 ROSTER_COLUMNS,
-                ("Alex Example", 1, None, None, None, None, None, 2),
-                ("Casey Sample", 5, None, None, None, None, None, 1),
-                ("Jordan Fixture", 2, None, None, None, None, None, None),
+                ("Alex Example", 1, "Y", None, None, None, None, 2),
+                ("Casey Sample", 5, "N", None, None, None, None, 1),
+                ("Jordan Fixture", 2, " y ", None, None, None, None, None),
                 ("Taylor Mock", 3, None, None, None, None, None, 0),
             ]
         ),
@@ -88,10 +88,11 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         ),
     }
     corrected = date(2024, 3, 18)
-    ratings, tokens, nights, expected, warnings = parse_workbook(
+    ratings, runners, tokens, nights, expected, warnings = parse_workbook(
         workbook, {day.date(): corrected}
     )
     assert list(nights) == [corrected]
+    assert runners == {"Alex Example", "Jordan Fixture"}
     assert any(
         "matched 'Allex Example' to 'Alex Example'" in warning for warning in warnings
     )
@@ -130,6 +131,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         return await import_workbook(
             database,
             ratings,
+            runners,
             tokens,
             nights,
             expected,
@@ -194,8 +196,15 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             is not None
         )
         assert db.execute(
-            "SELECT calculated_skill FROM users WHERE is_admin ORDER BY historical_roster_name"
-        ).fetchall() == [(5.0,), (0.0,)]
+            "SELECT seed_skill, calculated_skill FROM users "
+            "WHERE is_admin ORDER BY historical_roster_name"
+        ).fetchall() == [(5.0, 5.0), (0.0, 0.0)]
+        assert db.execute(
+            "SELECT historical_roster_name, pac FROM users ORDER BY historical_roster_name"
+        ).fetchall() == [
+            ("Alex Example", 4.0), ("Casey Sample", None),
+            ("Jordan Fixture", 4.0), ("Taylor Mock", None),
+        ]
         assert db.execute(
             "SELECT score_a, score_b, penalty_score_a, penalty_score_b, penalty_winner "
             "FROM meetup_matches WHERE match_number = 1"
@@ -208,7 +217,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         ).fetchone()[0]
         assert set(json.loads(old)) - set(json.loads(new)) == {taylor}
         db.execute(
-            "UPDATE users SET sso_preferred_username = 'updated', calculated_skill = 3 "
+            "UPDATE users SET sso_preferred_username = 'updated', seed_skill = 3, pac = 2.5 "
             "WHERE pocket_id_sub = ?",
             (subject,),
         )
@@ -230,6 +239,10 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     tokens["Alex Example"] = 3
     assert await run_import({}) == []
     with sqlite3.connect(database) as db:
+        assert db.execute(
+            "SELECT seed_skill, calculated_skill, pac FROM users WHERE pocket_id_sub = ?",
+            (subject,),
+        ).fetchone() == (3.0, 3.0, 2.5)
         assert db.execute(
             "SELECT import_source, COUNT(*), SUM(used_at IS NOT NULL), "
             "SUM(granted_meetup_id IS NOT NULL) FROM weather_hero_awards a "

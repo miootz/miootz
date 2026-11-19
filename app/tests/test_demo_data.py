@@ -9,12 +9,14 @@ from app.core.database import Base
 from app.demo_data import seed_demo, SCENARIOS
 from app.models.game_template import GameTemplate
 from app.models.meetup import Attendance, Meetup
+from app.models.rating import Rating
 from app.models.match import MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.chat import ChatMessage
 from app.models.user import User
 from app.services.rating_windows import may_rate_or_edit
+from app.services.rating_settings import get_rating_settings
 
 
 @pytest.mark.asyncio
@@ -95,7 +97,7 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         )
         matches = list(await db.scalars(select(MeetupMatch)))
         goals = list(await db.scalars(select(MatchGoal)))
-        assert len(goals) == 45  # 15 per past meetup: score_a totals 12, score_b totals 3
+        assert len(goals) == 45  # 15 per past meetup.
         for match in matches:
             if match.status != "completed":
                 continue
@@ -123,6 +125,27 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
         assert u20.pocket_id_sub != u21.pocket_id_sub
         assert u20.sso_display_name == u21.sso_display_name == "Marco van Basten"
         assert u20.primary_specialty == u21.primary_specialty == "ATT"
+        if scenario == "full":
+            users = {user.id: user for user in await db.scalars(select(User))}
+            assert (users[1].seed_skill, users[1].pac, users[1].dri) == (4.2, 2.5, 4.0)
+            assert all(users[uid].pac == users[uid].dri == 4.0 for uid in (7, 15, 16, 18, 19))
+            assert users[8].dri is None  # Buffon's card uses the goalkeeper scale.
+            assert users[14].seed_skill is None
+            assert (await get_rating_settings(db)).peer_rating_mode == "teammates-only"
+            for attribute in ("pac", "dri"):
+                counts = [
+                    sum((getattr(users[uid], attribute) or 3.0) > 3.0 for uid in team)
+                    for team in teams
+                ]
+                assert max(counts) - min(counts) <= 1
+
+            past_votes = (await db.scalars(select(Rating).where(Rating.meetup_id == 2))).all()
+            assert len({vote.score for vote in past_votes}) >= 4
+            assert all(vote.rater_id != 2 for vote in past_votes)
+            assert all((vote.rater_id - 1) // 5 == (vote.ratee_id - 1) // 5 for vote in past_votes)
+            assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 5}) < 3
+            assert len({vote.rater_id for vote in past_votes if vote.ratee_id == 2}) == 4
+            assert users[2].calculated_skill != users[2].seed_skill
         assert current.waitlist_mode == (
             "broadcast" if scenario == "broadcast" else "auto_promote"
         )

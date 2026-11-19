@@ -8,6 +8,7 @@ from app.core.database import Base, async_session, engine
 from app.models.meetup import Attendance, Meetup
 from app.models.rating import Rating
 from app.models.user import User
+from app.services.rating_settings import RatingSettings
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -15,6 +16,9 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    async with async_session() as db:
+        db.add(RatingSettings(id=1, peer_rating_mode="everyone"))
+        await db.commit()
     yield
 
 
@@ -228,7 +232,8 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         other = User(pocket_id_sub="p1-uuid", sso_display_name="Other")
         legacy = User(pocket_id_sub="p2-uuid", sso_display_name="Legacy")
         player = User(
-            pocket_id_sub="user-uuid", sso_display_name="Player", calculated_skill=3.5
+            pocket_id_sub="user-uuid", sso_display_name="Player",
+            seed_skill=3.5, calculated_skill=3.5,
         )
         meetup = Meetup(
             start_time=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=5),
@@ -286,7 +291,7 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         assert history.json()["stats"]["total_ratings"] == 2
         assert history.json()["history"]["items"][0]["rating_avg"] == 3
         async with async_session() as db:
-            assert (await db.get(User, player_id)).calculated_skill == 3
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
 
         assert (await rate("tester", 0)).json() is None
         assert (await rate("tester", 0)).json() is None
@@ -295,10 +300,10 @@ async def test_clear_rating_ignores_zero_and_recomputes_remaining_ratings():
         )
         assert stats.json() == {"average_score": 1, "total_ratings": 1}
         async with async_session() as db:
-            assert (await db.get(User, player_id)).calculated_skill == 1
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
 
-        # No remaining valid votes: keep the current skill instead of applying zero.
+        # Clearing the last valid vote returns skill to the seed.
         assert (await rate("p1", 0)).json() is None
         async with async_session() as db:
-            assert (await db.get(User, player_id)).calculated_skill == 1
+            assert (await db.get(User, player_id)).calculated_skill == 3.5
             assert [r.score for r in (await db.scalars(select(Rating))).all()] == [0]

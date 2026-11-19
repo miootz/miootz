@@ -7,7 +7,7 @@ import { Lock } from "lucide-react";
 
 /** Format the display rating: calculatedSkill (1dp) or skillScore (int). */
 function formatRating(player: User): string {
-    if (player.calculatedSkill != null && player.calculatedSkill > 0) {
+    if (player.calculatedSkill != null) {
         return player.calculatedSkill.toFixed(1);
     }
     return String(Math.round(player.skillScore));
@@ -67,6 +67,8 @@ function PlayerRow({
                 <span className="text-sm font-medium text-ink truncate">
                     {player.name}
                 </span>
+                {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
+                {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
                 {isMe && (
                     <span className="text-2xs font-bold text-live shrink-0">
                         You

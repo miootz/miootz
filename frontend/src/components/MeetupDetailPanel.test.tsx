@@ -54,3 +54,18 @@ it('saves and clears an initially blank rating in History', async () => {
   expect(submitRating).toHaveBeenLastCalledWith(7, 2, 0);
   expect(first).toHaveAttribute('aria-pressed', 'false');
 });
+
+it('does not offer rating controls when peer ratings are off', async () => {
+  vi.mocked(fetchMeetupTeams).mockResolvedValue({
+    meetup_id: 7, content_revision: 0,
+    teams: [{ id: 'a', name: 'A', players: [{ id: '2', name: 'Alex', skillScore: 3, isLocked: false }] }],
+  });
+  vi.mocked(fetchRatingContext).mockResolvedValue({
+    peer_rating_mode: 'off', meetup_id: 7, meetup_start_time: '', meetup_end_time: '',
+    before_meetup_end: false, ratings_locked: false, ratings_editable: false, ratings_lock_at: null,
+    viewer_attended: true, ratees: [],
+  });
+  render(<MeetupDetailPanel meetupId={7} />);
+  await screen.findByText('Alex');
+  expect(screen.queryByRole('button', { name: '1 star, Your rating of Alex' })).toBeNull();
+});

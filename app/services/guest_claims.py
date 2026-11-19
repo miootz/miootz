@@ -9,12 +9,16 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import MeetupMatch
+from app.models.match import MatchSubstitution, MeetupMatch
+from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup, MatchScore
 from app.models.user import User
 from app.services.meetup_revision import bump_meetup_revision
-from app.services.skill_service import update_user_calculated_skill
+from app.services.skill_service import (
+    refresh_skills_after_meetup,
+    update_user_calculated_skill,
+)
 from app.core.timeutil import utcnow
 
 
@@ -86,8 +90,8 @@ async def claim_reservation(
     if existing:
         await db.delete(existing)
     attendance.user_id = member.id  # Preserve status and original waitlist ordering.
-    if member.calculated_skill is None:
-        member.calculated_skill = float(reservation.skill)
+    if member.seed_skill is None and member.calculated_skill is None:
+        member.seed_skill = float(reservation.skill)
 
     meetup = await db.get(Meetup, sid)
     if meetup is None:
@@ -123,6 +127,31 @@ async def claim_reservation(
                 field,
                 json.dumps([member.id if uid == guest_id else uid for uid in ids]),
             )
+    match_ids = select(MeetupMatch.id).where(MeetupMatch.meetup_id == sid)
+    substitutions = await db.scalars(
+        select(MatchSubstitution).where(MatchSubstitution.match_id.in_(match_ids))
+    )
+    for sub in substitutions:
+        for field in (
+            "old_team_a_users", "old_team_b_users",
+            "new_team_a_users", "new_team_b_users",
+        ):
+            raw = getattr(sub, field)
+            try:
+                ids = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(ids, list) and guest_id in ids:
+                setattr(
+                    sub, field,
+                    json.dumps([member.id if uid == guest_id else uid for uid in ids]),
+                )
+    for role in (MatchGoal.scorer_id, MatchGoal.assist_id, MatchGoal.goalkeeper_id):
+        await db.execute(
+            update(MatchGoal)
+            .where(MatchGoal.match_id.in_(match_ids), role == guest_id)
+            .values({role: member.id})
+        )
     await db.execute(
         update(MatchScore)
         .where(
@@ -157,5 +186,6 @@ async def claim_reservation(
             rating.rater_id, rating.ratee_id = rater, ratee
 
     await db.flush()
+    await refresh_skills_after_meetup(db, sid)
     await update_user_calculated_skill(db, user_id=member.id, commit=False)
     return await bump_meetup_revision(db, sid)

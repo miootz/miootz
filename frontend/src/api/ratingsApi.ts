@@ -8,6 +8,7 @@ export interface RateeContext {
 }
 
 export interface RatingContextResponse {
+  peer_rating_mode?: "off" | "teammates-only" | "everyone";
   meetup_id: number;
   meetup_start_time: string;
   meetup_end_time: string;

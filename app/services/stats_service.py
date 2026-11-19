@@ -7,6 +7,7 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.core.timeutil import utcnow
 from app.services import rankings_service
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 
 async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
@@ -61,9 +62,8 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    skill_level = (
-        user.calculated_skill if user and user.calculated_skill is not None else 0.0
-    )
+    computed_scores = (await get_rating_settings(db)).computed_scores
+    skill_level = selected_rating(user, computed_scores) if user is not None else None
 
     try:
         average = round(float(avg_rating), 2)
@@ -83,7 +83,12 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> dict:
         "season_games": season_games,
         "average_rating": average,
         "total_ratings": total_ratings,
-        "skill_level": skill_level,
+        "skill_level": skill_level if skill_level is not None else 0.0,
+        "computed_scores": computed_scores,
+        "base_rating": user.seed_skill if user is not None else None,
+        "adjusted_rating": user.calculated_skill
+        if user is not None and computed_scores
+        else None,
         "goals": all_time["goals"],
         "assists": all_time["assists"],
         "clean_sheets": all_time["clean_sheets"],

@@ -21,6 +21,7 @@ from app.models.match import MeetupMatch
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup, MatchScore
 from app.models.user import User
+from app.models.match_goal import MatchGoal
 from app.services.stats_service import get_user_statistics
 from app.schemas.stats import UserStats
 
@@ -108,14 +109,20 @@ async def test_claim_transfers_place_and_results_without_replacing_identity(
 ):
     d = claim_data
     d.attendance.status = status
+    d.db.add(MatchGoal(
+        match_id=d.match.id, team="b", scorer_id=d.guest.id, recorded_by=d.host.id,
+        clock_secs=300, clock_minute=5, intent_id="guest-goal",
+    ))
     await d.db.commit()
     result = await claim(d)
     assert result["user_id"] == d.member.id
     assert result["display_name"] == "Mara"
     assert d.member.pocket_id_sub == "member"
     assert d.guest.pocket_id_sub == "placeholder"
-    # Peer rating (4) drives the recalculated skill once votes exist.
-    assert d.member.calculated_skill == 4.0
+    # The vote transfers, but a single reviewer is below the minimum.
+    assert d.member.seed_skill == 3.0
+    assert d.member.calculated_skill == 3.0
+    assert await d.db.scalar(select(MatchGoal.scorer_id)) == d.member.id
     assert d.attendance.user_id == d.member.id
     assert d.attendance.status == status
     assert d.attendance.joined_at == datetime(2026, 1, 1)
@@ -156,7 +163,8 @@ async def test_cancelled_attendance_is_replaced_and_missing_skill_is_filled(clai
     ).all()
     assert len(entries) == 1
     assert entries[0].status == "confirmed"
-    assert d.member.calculated_skill == 4.0
+    assert d.member.seed_skill == 3.0
+    assert d.member.calculated_skill == 3.0
 
 
 @pytest.mark.asyncio

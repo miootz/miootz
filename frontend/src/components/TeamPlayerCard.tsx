@@ -27,7 +27,7 @@ export const SkillRating: React.FC<{
   raw: number | null | undefined;
 }> = ({ calculated, raw }) => {
   const value =
-    calculated != null && calculated > 0 ? calculated : Math.round(raw ?? 0);
+    calculated != null ? calculated : Math.round(raw ?? 0);
   return (
     <span className="inline-flex items-center gap-1 text-sm font-bold text-ink tabular-nums shrink-0">
       <Star className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
@@ -100,6 +100,8 @@ export const TeamPlayerCard: React.FC<{
           <span className="text-sm font-medium text-ink truncate">
             {player.name}
           </span>
+          {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
+          {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
           {isMe && (
             <span className="shrink-0 rounded bg-live/20 px-1.5 py-0.5 text-2xs font-semibold text-live">
               You

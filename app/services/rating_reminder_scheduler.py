@@ -7,35 +7,28 @@ and re-pointed automatically when the meetup's start time or duration changes.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.timeutil import to_utc
 from app.models.meetup import Meetup
 from app.services.job_queue import remove_job, upsert_job
+from app.services.rating_windows import meetup_end_time
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DURATION_MINUTES = 60
 JOB_TYPE = "rating_reminder"
-
-
-def _compute_end_time(meetup: Meetup):
-    """Expected end time as naive UTC (DB storage format)."""
-    duration = meetup.duration_minutes or _DEFAULT_DURATION_MINUTES
-    return to_utc(meetup.start_time).replace(tzinfo=None) + timedelta(minutes=duration)
 
 
 async def register_rating_reminder(db: AsyncSession, meetup: Meetup) -> None:
     """Queue (or re-point) the rating-reminder job at meetup end time."""
-    await upsert_job(db, JOB_TYPE, meetup.id, _compute_end_time(meetup))
+    run_at = meetup_end_time(meetup).replace(tzinfo=None)
+    await upsert_job(db, JOB_TYPE, meetup.id, run_at)
     await db.commit()
     logger.info(
         "Queued %s for meetup %s at %s",
         JOB_TYPE,
         meetup.id,
-        _compute_end_time(meetup).isoformat(),
+        run_at.isoformat(),
     )
 
 

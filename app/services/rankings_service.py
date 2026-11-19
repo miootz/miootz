@@ -479,7 +479,7 @@ async def get_meetup_rankings(db: AsyncSession, meetup_id: int) -> dict | None:
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), "goals", "desc")
     night = await _night_block(db, matches, goals)
-    return _envelope(year=None, available_years=None, rows=rows, night=night)
+    return _envelope(year=None, available_years=None, rows=rows, night=night, per_page=max(1, len(rows)))
 
 
 async def get_user_metrics(

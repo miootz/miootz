@@ -39,6 +39,7 @@ from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
+    refresh_player_skills,
 )
 from app.core.meetup_data_manager import meetup_data_manager
 from app.services.meetup_promotion import handle_leave_or_cancel
@@ -56,7 +57,8 @@ from app.services.manual_teams import (
     build_teams_from_manual,
 )
 from app.services.team_adjustment import expand_teams, contract_teams
-from app.services.team_assignment import rebalance_around_locked
+from app.services.team_assignment import draft_skill, rebalance_around_locked
+from app.services.rating_settings import get_rating_settings, selected_rating
 from app.services.team_names import generate_team_names
 from app.services.web_push import (
     notify_new_meetup_invites,
@@ -224,13 +226,6 @@ async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
         .where(Attendance.meetup_id == meetup_id, Attendance.status == "confirmed")
     )
     return count or 0
-
-
-def _user_skill(u: User) -> float:
-    """Single display skill for matchmaking: calculated, with fallback."""
-    if u.calculated_skill is not None:
-        return u.calculated_skill
-    return 50.0
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
@@ -438,6 +433,7 @@ async def get_meetup(
         .order_by(Attendance.joined_at.asc())
     )
     rows = result.all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
 
     # Resolve which attendees are plus-one guests
     plus_one_user_ids: set[int] = set()
@@ -460,8 +456,10 @@ async def get_meetup(
                 "avatar_url": user.avatar_url,
                 "status": att.status,
                 "joined_at": att.joined_at.isoformat() if att.joined_at else None,
-                "skill": _user_skill(user),
-                "calculated_skill": user.calculated_skill,
+                "skill": draft_skill(selected_rating(user, computed_scores)),
+                "calculated_skill": selected_rating(user, computed_scores),
+                "pac": user.pac,
+                "dri": user.dri,
                 "is_plus_one": user.id in plus_one_user_ids,
                 "primary_specialty": user.primary_specialty,
                 "secondary_specialty": user.secondary_specialty,
@@ -528,6 +526,8 @@ async def get_meetup(
                             "id": uid,
                             "display_name": a["display_name"],
                             "avatar_url": a["avatar_url"],
+                            "pac": a["pac"],
+                            "dri": a["dri"],
                         }
                     )
                 else:
@@ -640,16 +640,19 @@ async def get_meetup_teams(meetup_id: int, db: AsyncSession = Depends(get_db)):
         )
     )
     rows = result.all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(selected_rating(user, computed_scores)),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
             "primary_specialty": user.primary_specialty,
             "secondary_specialty": user.secondary_specialty,
-            "calculated_skill": user.calculated_skill,
+            "calculated_skill": selected_rating(user, computed_scores),
+            "pac": user.pac,
+            "dri": user.dri,
         }
         for _, user in rows
     ]
@@ -714,13 +717,17 @@ async def patch_meetup_teams(
         )
     )
     rows = result.all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(selected_rating(user, computed_scores)),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
+            "calculated_skill": selected_rating(user, computed_scores),
+            "pac": user.pac,
+            "dri": user.dri,
         }
         for _, user in rows
     ]
@@ -801,11 +808,14 @@ async def reshuffle_meetup_teams(
             )
         )
         rows = result.all()
+        computed_scores = (await get_rating_settings(db)).computed_scores
         players = [
             {
                 "id": str(user.id),
-                "skill": _user_skill(user),
+                "skill": draft_skill(selected_rating(user, computed_scores)),
                 "user_id": user.id,
+                "pac": user.pac,
+                "dri": user.dri,
             }
             for _, user in rows
         ]
@@ -945,16 +955,19 @@ async def reshape_meetup_teams(
         )
     )
     rows = result.all()
+    computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
         {
             "id": str(user.id),
             "name": user.display_name,
-            "skill": _user_skill(user),
+            "skill": draft_skill(selected_rating(user, computed_scores)),
             "user_id": user.id,
             "avatar_url": user.avatar_url,
             "primary_specialty": user.primary_specialty,
             "secondary_specialty": user.secondary_specialty,
-            "calculated_skill": user.calculated_skill,
+            "calculated_skill": selected_rating(user, computed_scores),
+            "pac": user.pac,
+            "dri": user.dri,
         }
         for _, user in rows
     ]
@@ -981,7 +994,7 @@ async def reshape_meetup_teams(
     if leftover:
         chunks.append(leftover)
     rebalanced = rebalance_around_locked(
-        players, chunks, locked=set(), randomize=(mode == "random")
+        players, chunks, locked=set(), max_teams=body.team_count, randomize=(mode == "random")
     )
     partition = [[p["user_id"] for p in team] for team in rebalanced]
 
@@ -1108,6 +1121,9 @@ async def skip_meetup(
         )
     if not meetup.skipped:
         meetup.skipped = True
+        if meetup.start_time <= utcnow():
+            await db.flush()
+            await refresh_player_skills(db)
         await db.commit()
     # The overview must always have a next meetup: pull the upcoming
     # occurrence forward (normally created at end-of-meetup-day) so the admin
@@ -1597,6 +1613,9 @@ async def delete_meetup(
 
     await delete_meetup_children(db, meetup_id)
     await db.delete(meetup)
+    if meetup.start_time <= utcnow():
+        await db.flush()
+        await refresh_player_skills(db)
     await db.commit()
     log_action(
         request,
@@ -1854,6 +1873,7 @@ async def add_plus_one(
     guest_user = User(
         pocket_id_sub=guest_sub,
         sso_display_name=f"{first_name} {last_name}",
+        seed_skill=float(body.skill),
         calculated_skill=float(body.skill),
     )
     db.add(guest_user)
@@ -2129,7 +2149,9 @@ async def claim_plus_one(
         "status": "claimed",
         "user_id": member.id,
         "display_name": member.display_name,
-        "calculated_skill": member.calculated_skill,
+        "calculated_skill": selected_rating(
+            member, (await get_rating_settings(db)).computed_scores
+        ),
     }
 
 

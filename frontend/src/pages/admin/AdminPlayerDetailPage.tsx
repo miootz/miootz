@@ -24,7 +24,6 @@ import {
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { PaginationControls } from "../../components/PaginationControls";
 import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
-import { StarRating } from "../../components/StarRating";
 import { useToast } from "../../context/ToastContext";
 import { shareLink } from "../../utils/share";
 
@@ -79,7 +78,9 @@ export function AdminPlayerDetailPage() {
 
 	// Profile form (mirrors the loaded row)
 	const [editDisplayName, setEditDisplayName] = useState("");
-	const [editSkill, setEditSkill] = useState(0);
+	const [editSeedSkill, setEditSeedSkill] = useState("");
+	const [editPace, setEditPace] = useState("");
+	const [editDribbling, setEditDribbling] = useState("");
 	const [editPrimary, setEditPrimary] = useState("");
 	const [editSecondary, setEditSecondary] = useState("");
 	const [editIsAdmin, setEditIsAdmin] = useState(false);
@@ -103,7 +104,9 @@ export function AdminPlayerDetailPage() {
 				setData(r);
 				setNotFound(false);
 				setEditDisplayName(r.user.display_name || "");
-				setEditSkill(r.user.calculated_skill != null ? Math.min(5, Math.max(1, r.user.calculated_skill)) : 0);
+				setEditSeedSkill(r.user.seed_skill?.toString() ?? "");
+				setEditPace(r.user.pac?.toString() ?? "");
+				setEditDribbling(r.user.dri?.toString() ?? "");
 				setEditPrimary(r.user.primary_specialty || "");
 				setEditSecondary(r.user.secondary_specialty || "");
 				setEditIsAdmin(r.user.is_admin);
@@ -133,7 +136,9 @@ export function AdminPlayerDetailPage() {
 		try {
 			const body: AdminUserUpdate = {};
 			body.display_name = editDisplayName.trim() || null;
-			body.calculated_skill = editSkill > 0 ? editSkill : null;
+			body.seed_skill = editSeedSkill === "" ? null : Number(editSeedSkill);
+			body.pac = editPace === "" ? null : Number(editPace);
+			body.dri = editDribbling === "" ? null : Number(editDribbling);
 			body.primary_specialty =
 				(editPrimary as AdminUserUpdate["primary_specialty"]) || null;
 			body.secondary_specialty =
@@ -303,7 +308,7 @@ export function AdminPlayerDetailPage() {
 			</section>
 
 			{/* Profile */}
-			<section className="border border-line bg-panel p-4 sm:p-6 space-y-4">
+			<form onSubmit={(event) => { event.preventDefault(); void saveProfile(); }} className="border border-line bg-panel p-4 sm:p-6 space-y-4">
 				<h2 className="text-base sm:text-lg font-semibold text-ink">
 					Profile
 				</h2>
@@ -321,21 +326,48 @@ export function AdminPlayerDetailPage() {
 						value={editDisplayName}
 						onChange={(e) => setEditDisplayName(e.target.value)}
 						placeholder="e.g. John Smith"
-						className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+						className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 					/>
 				</div>
 
 				<div>
-					<span className="block text-xs font-medium text-ink-dim mb-1.5">
-						Skill
-					</span>
-					<StarRating
-						value={editSkill}
-						onChange={(v) => setEditSkill(v)}
-						size={28}
-						label="Skill rating"
-						halfSteps
+					<label htmlFor="player-seed-skill" className="mb-1 block text-xs font-medium text-ink-dim">
+						Base Rating (0–5, optional)
+					</label>
+					<input
+						id="player-seed-skill"
+						type="number"
+						min="0"
+						max="5"
+						step="any"
+						value={editSeedSkill}
+						onChange={(event) => setEditSeedSkill(event.target.value)}
+						placeholder="Unset"
+						className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
 					/>
+					<p className="mt-1 text-xs text-ink-dim">This is separate from the current overall rating.</p>
+				</div>
+
+				<div className="grid grid-cols-2 gap-4">
+					{([
+						{ id: "player-pace", label: "Pace (PAC)", value: editPace, set: setEditPace },
+						{ id: "player-dribbling", label: "Dribbling (DRI)", value: editDribbling, set: setEditDribbling },
+					] as const).map((field) => (
+						<div key={field.id}>
+							<label htmlFor={field.id} className="mb-1 block text-xs font-medium text-ink-dim">{field.label} (optional)</label>
+							<input
+								id={field.id}
+								type="number"
+								min="1"
+								max="5"
+								step="any"
+								value={field.value}
+								onChange={(event) => field.set(event.target.value)}
+								placeholder="Unrated"
+								className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+							/>
+						</div>
+					))}
 				</div>
 
 				<div className="grid sm:grid-cols-2 gap-4">
@@ -394,9 +426,8 @@ export function AdminPlayerDetailPage() {
 						<span className="text-sm text-ink">Admin</span>
 					</label>
 					<button
-						type="button"
+						type="submit"
 						disabled={saving}
-						onClick={() => void saveProfile()}
 						className="inline-flex items-center gap-2 bg-ink text-board px-4 py-2.5 text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] transition-colors"
 					>
 						{saving ? (
@@ -405,7 +436,7 @@ export function AdminPlayerDetailPage() {
 						Save
 					</button>
 				</div>
-			</section>
+			</form>
 
 			{/* Access */}
 			<section className="border border-line bg-panel p-4 sm:p-6 space-y-4">

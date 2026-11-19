@@ -903,6 +903,26 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 )
 
 
+    if not await has_column("users", "seed_skill"):
+        await conn.execute(text("ALTER TABLE users ADD COLUMN seed_skill FLOAT"))
+        # Pending reminders for meetups without a set duration used the old 60-minute default.
+        if await has_table("job_queue"):
+            await conn.execute(text("""
+                UPDATE job_queue
+                SET run_at = (
+                    SELECT datetime(substr(start_time, 1, 19), '+120 minutes') || substr(start_time, 20)
+                    FROM meetups WHERE id = job_queue.ref_id
+                )
+                WHERE job_type = 'rating_reminder' AND ref_id IN (
+                    SELECT id FROM meetups WHERE coalesce(duration_minutes, 0) = 0
+                )
+            """))
+
+    for column in ("pac", "dri"):
+        if not await has_column("users", column):
+            await conn.execute(text(f"ALTER TABLE users ADD COLUMN {column} FLOAT"))
+
+
 def _parse_sqlite_version(version: str) -> tuple[int, ...]:
     """Parse '3.35.1' -> (3, 35, 1)."""
     try:

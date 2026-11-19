@@ -21,6 +21,9 @@ export interface MeResponse {
 }
 
 export interface UserStats {
+    base_rating?: number | null;
+    adjusted_rating?: number | null;
+    computed_scores?: boolean;
     games_played: number;
     season_games: number;
     average_rating: number;
@@ -46,6 +49,22 @@ export interface UserStats {
     season_penalties_scored: number;
     season_penalty_conversion_rate: number;
     weather_hero_unused: number;
+    attributes: PlayerAttributes | null;
+}
+
+export interface PlayerAttributes {
+    sho: AttributeEvidence;
+    pas: AttributeEvidence & { total_goals: number };
+    def: AttributeEvidence;
+    pac: number | null;
+    dri: number | null;
+}
+
+export interface AttributeEvidence {
+    score: number | null;
+    count: number;
+    sample: number;
+    meetups: number;
 }
 
 export interface UserHistoryItem {

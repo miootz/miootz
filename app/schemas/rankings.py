@@ -1,10 +1,25 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RankingUser(BaseModel):
     id: int
     display_name: str
     avatar_url: str | None = None
+
+
+class AttributeRankingRow(BaseModel):
+    rank: int | None
+    user: RankingUser
+    rating: float | None
+    sho: float | None
+    pas: float | None
+    def_: float | None = Field(alias="def")
+
+
+class AttributeRankingsResponse(BaseModel):
+    computed_scores: bool
+    total: int
+    rows: list[AttributeRankingRow]
 
 
 class RankingRow(BaseModel):

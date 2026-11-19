@@ -182,6 +182,8 @@ def format_teams_api_payload(
                         "primarySpecialty": p.get("primary_specialty"),
                         "secondarySpecialty": p.get("secondary_specialty"),
                         "calculatedSkill": p.get("calculated_skill"),
+                        "pac": p.get("pac"),
+                        "dri": p.get("dri"),
                     }
                     for p in team
                 ],

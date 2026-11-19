@@ -28,6 +28,8 @@ from app.services.pocket_id_client import (
     get_user_by_id,
 )
 from app.services.stats_service import get_user_statistics
+from app.services.skill_service import refresh_player_skills, update_user_calculated_skill
+from app.services.rating_settings import get_rating_settings, selected_rating
 from app.services.template_subscriptions import user_wants_template_notifications
 from app.services.audit import log_action
 from pydantic import BaseModel, ConfigDict, Field
@@ -78,6 +80,7 @@ async def admin_create_user(
 
     user = User(
         sso_display_name=f"{first_name} {last_name}",
+        seed_skill=float(body.calculated_skill),
         calculated_skill=float(body.calculated_skill),
     )
     db.add(user)
@@ -97,6 +100,9 @@ async def admin_create_user(
         "username": None,
         "avatar_url": user.avatar_url,
         "calculated_skill": user.calculated_skill,
+        "seed_skill": user.seed_skill,
+        "pac": user.pac,
+        "dri": user.dri,
         "primary_specialty": user.primary_specialty,
         "secondary_specialty": user.secondary_specialty,
         "is_admin": user.is_admin,
@@ -193,7 +199,8 @@ def get_current_user(request: Request) -> User:
 
 @router.get("/me")
 async def get_my_profile(
-    request: Request, current_user: User = Depends(get_current_user)
+    request: Request, current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Same identity payload as `GET /me` minus admin flags (use `/me` for full auth context)."""
     return {
@@ -202,7 +209,9 @@ async def get_my_profile(
             "pocket_id_sub": current_user.pocket_id_sub,
             "display_name": getattr(request.state, "sso_display_name", None),
             "avatar_url": current_user.avatar_url,
-            "calculated_skill": current_user.calculated_skill,
+            "calculated_skill": selected_rating(
+                current_user, (await get_rating_settings(db)).computed_scores
+            ),
             "primary_specialty": current_user.primary_specialty,
             "secondary_specialty": current_user.secondary_specialty,
             "is_admin": getattr(request.state, "is_admin", False),
@@ -513,6 +522,9 @@ class AdminUserListOut(BaseModel):
     username: str | None = None
     avatar_url: str | None = None
     calculated_skill: float | None = None
+    seed_skill: float | None = None
+    pac: float | None = None
+    dri: float | None = None
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool = False
@@ -521,15 +533,19 @@ class AdminUserListOut(BaseModel):
 
 class AdminUserUpdate(BaseModel):
     calculated_skill: float | None = Field(None, ge=0, le=5)
+    seed_skill: float | None = Field(None, ge=0, le=5)
+    pac: float | None = Field(None, ge=1, le=5)
+    dri: float | None = Field(None, ge=1, le=5)
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool | None = None
     display_name: str | None = None
 
 
-def _user_out(user: User, sso: dict[str, Any] | None) -> dict[str, Any]:
+def _user_out(user: User, sso: dict[str, Any] | None, computed_scores: bool) -> dict[str, Any]:
     return {
         **AdminUserListOut.model_validate(user).model_dump(),
+        "calculated_skill": selected_rating(user, computed_scores),
         "display_name": sso.get("displayName") if sso else user.sso_display_name,
         "username": (
             sso.get("preferredUsername") or sso.get("username")
@@ -540,7 +556,7 @@ def _user_out(user: User, sso: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-async def _enrich(users: list[User]) -> list[dict[str, Any]]:
+async def _enrich(users: list[User], computed_scores: bool) -> list[dict[str, Any]]:
     """Fetch fresh SSO profiles in parallel for users with a pocket_id_sub."""
     subs = [u for u in users if u.pocket_id_sub]
     cache: dict[str, dict[str, Any]] = {}
@@ -553,7 +569,7 @@ async def _enrich(users: list[User]) -> list[dict[str, Any]]:
         for u, sso_data in zip(subs, results, strict=True):
             if sso_data:
                 cache[u.pocket_id_sub] = sso_data
-    return [_user_out(u, cache.get(u.pocket_id_sub)) for u in users]
+    return [_user_out(u, cache.get(u.pocket_id_sub), computed_scores) for u in users]
 
 
 @router.get("")
@@ -592,7 +608,8 @@ async def list_users_admin(
         .scalars()
         .all()
     )
-    return {"items": await _enrich(list(rows)), "total": total}
+    settings = await get_rating_settings(db)
+    return {"items": await _enrich(list(rows), settings.computed_scores), "total": total}
 
 
 @router.get("/{user_id}/history")
@@ -687,7 +704,7 @@ async def admin_get_player_history(
         )
 
     return {
-        "user": (await _enrich([user]))[0],
+        "user": (await _enrich([user], stats["computed_scores"]))[0],
         "stats": stats,
         "history": {"items": items, "total": total},
     }
@@ -716,9 +733,14 @@ async def admin_update_user(
         val = dumped.pop("display_name")
         user.sso_display_name = val if val else None
 
+    if "calculated_skill" in dumped:
+        dumped.setdefault("seed_skill", dumped.pop("calculated_skill"))
+
     for key, value in dumped.items():
         setattr(user, key, value)
 
+    if {"seed_skill", "pac", "dri"} & dumped.keys():
+        await update_user_calculated_skill(db, user.id, commit=False)
     await db.commit()
     await db.refresh(user)
     changed = ", ".join(sorted(body.model_dump(exclude_unset=True)))
@@ -750,6 +772,8 @@ async def admin_delete_user(
 
     await delete_user_children(db, user.id)
     await db.delete(user)
+    await db.flush()
+    await refresh_player_skills(db)
     await db.commit()
     log_action(
         request,

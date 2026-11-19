@@ -70,6 +70,23 @@ export interface NightStats {
   draw_matches: DrawMatch[];
 }
 
+export type AttributeSort = "rating" | "sho" | "pas" | "def";
+
+export interface AttributeRankingRow {
+  rank: number | null;
+  user: RankingUser;
+  rating: number | null;
+  sho: number | null;
+  pas: number | null;
+  def: number | null;
+}
+
+export interface AttributeRankingsResponse {
+  total: number;
+  computed_scores?: boolean;
+  rows: AttributeRankingRow[];
+}
+
 export interface RankingsResponse {
   /** Selected season; null = all time (or the per-meetup scope). */
   year: number | null;
@@ -116,4 +133,26 @@ export async function fetchMeetupRankings(
   const r = await apiFetch(`/meetups/${meetupId}/rankings`);
   if (!r.ok) throw new Error(await parseApiError(r));
   return (await r.json()) as RankingsResponse;
+}
+
+export async function fetchAttributeRankings(
+  params: {
+    year: number | "all";
+    sort: AttributeSort;
+    order: "asc" | "desc";
+    page: number;
+    perPage: number;
+  },
+  signal?: AbortSignal,
+): Promise<AttributeRankingsResponse> {
+  const q = new URLSearchParams({
+    year: String(params.year),
+    sort: params.sort,
+    order: params.order,
+    page: String(params.page),
+    per_page: String(params.perPage),
+  });
+  const r = await apiFetch(`/rankings/attributes?${q.toString()}`, { signal });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json() as Promise<AttributeRankingsResponse>;
 }

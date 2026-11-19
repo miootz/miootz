@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta
 import json
 import random
+from math import floor
+from typing import NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,27 +18,71 @@ from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
-from app.services.team_assignment import assign_teams_snake
-from app.services.skill_service import update_user_calculated_skill
+from app.services.team_assignment import assign_teams_snake, draft_skill
+from app.services.skill_service import refresh_player_skills
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
-NAMES = (
-    'Andrea Pirlo', 'Zinedine Zidane', 'Pelé', 'Diego Maradona', 'Paolo Maldini',
-    'Franz Beckenbauer', 'Johan Cruyff', 'Gianluigi Buffon', 'Roberto Baggio', 'Xavi Hernández',
-    'Ronaldo Nazário', 'Lev Yashin', 'Franco Baresi', 'Michel Platini', 'George Best',
-    'Bobby Charlton', 'Garrincha', 'Eusébio', 'Thierry Henry', 'Marco van Basten',
+
+
+class DemoPlayer(NamedTuple):
+    name: str
+    position: str
+    overall: int | None = None
+    pace: int | None = None
+    shooting: int | None = None
+    passing: int | None = None
+    dribbling: int | None = None
+    defending: int | None = None
+
+
+# FC 26 base ICON data. See docs/DEMO.md for sources and conversion details.
+PLAYERS = (
+    # Name, position, OVR, PAC (SPD for keepers), SHO, PAS, DRI, DEF
+    DemoPlayer('Andrea Pirlo', 'MID', 90, 73, 79, 93, 89, 69),
+    DemoPlayer('Zinedine Zidane', 'MID', 94, 83, 90, 94, 94, 73),
+    DemoPlayer('Pelé', 'ATT', 95, 93, 94, 91, 94, 58),
+    DemoPlayer('Diego Maradona', 'MID', 95, 90, 91, 91, 96, 40),
+    DemoPlayer('Paolo Maldini', 'DEF', 92, 85, 55, 74, 69, 95),
+    DemoPlayer('Franz Beckenbauer', 'DEF', 92, 82, 73, 88, 84, 93),
+    DemoPlayer('Johan Cruyff', 'ATT', 93, 90, 91, 90, 93, 42),
+    DemoPlayer('Gianluigi Buffon', 'GK', 91, 51),
+    DemoPlayer('Roberto Baggio', 'ATT', 91, 84, 82, 90, 91, 38),
+    DemoPlayer('Xavi Hernández', 'MID', 91, 80, 78, 92, 91, 69),
+    DemoPlayer('Ronaldo Nazário', 'ATT', 94, 94, 94, 79, 94, 43),
+    DemoPlayer('Lev Yashin', 'GK', 92, 60),
+    DemoPlayer('Franco Baresi', 'DEF', 91, 73, 48, 75, 70, 94),
+    DemoPlayer('Michel Platini', 'MID'),
+    DemoPlayer('George Best', 'ATT', 90, 91, 89, 82, 92, 56),
+    DemoPlayer('Bobby Charlton', 'MID', 92, 90, 91, 87, 91, 50),
+    DemoPlayer('Garrincha', 'ATT', 92, 89, 85, 92, 94, 40),
+    DemoPlayer('Eusébio', 'ATT', 91, 92, 92, 84, 91, 44),
+    DemoPlayer('Thierry Henry', 'ATT', 91, 93, 90, 82, 89, 51),
+    DemoPlayer('Marco van Basten', 'ATT', 91, 84, 92, 74, 87, 37),
 )
-POSITIONS = ('MID', 'MID', 'ATT', 'MID', 'DEF', 'DEF', 'ATT', 'GK', 'ATT', 'MID',
-             'ATT', 'GK', 'DEF', 'MID', 'ATT', 'MID', 'ATT', 'ATT', 'ATT', 'ATT')
+NAMES = tuple(player.name for player in PLAYERS)
 TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
+
+
+def _stars(value: int) -> float:
+    return min(5.0, max(1.0, (value - 40) / 12))
+
+
+def _attribute_stars(value: int | None) -> float | None:
+    return floor(2 * _stars(value)) / 2 if value is not None else None
+
+
+def _event_weight(user_id: int, attribute: str) -> float:
+    value = getattr(PLAYERS[user_id - 1], attribute)
+    return _stars(value) if value is not None else 3.0
 
 
 def team_keeper(roster: list[int]) -> int:
     """Keeper listed for a conceding goal; team 1 has no GK, so fall back to its defender."""
     for specialty in ('GK', 'DEF'):
         for uid in roster:
-            if POSITIONS[uid - 1] == specialty:
+            if PLAYERS[uid - 1].position == specialty:
                 return uid
     return roster[0]
 
@@ -51,16 +97,21 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             raise ValueError('Demo fixtures require an empty database; existing data is never reset')
 
     members = [User(
-        id=i, pocket_id_sub=f'demo-{i}', sso_display_name=name,
-        sso_preferred_username=name.lower().replace(' ', '.'),
+        id=i, pocket_id_sub=f'demo-{i}', sso_display_name=player.name,
+        sso_preferred_username=player.name.lower().replace(' ', '.'),
         sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
-        calculated_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
-    ) for i, name in enumerate(NAMES, 1)]
+        seed_skill=round(_stars(player.overall), 1) if player.overall is not None else None,
+        pac=_attribute_stars(player.pace), dri=_attribute_stars(player.dribbling),
+        primary_specialty=player.position,
+    ) for i, player in enumerate(PLAYERS, 1)]
     guest_index = ACTORS['guest'] - 1
-    members[guest_index].calculated_skill = None
+    guest = members[guest_index]
+    guest_seed = round(guest.seed_skill or 3.0)
+    guest.seed_skill = None
     placeholder = User(
-        id=21, pocket_id_sub='demo-placeholder', sso_display_name=NAMES[guest_index],
-        calculated_skill=3.0, primary_specialty=POSITIONS[guest_index],
+        id=21, pocket_id_sub='demo-placeholder', sso_display_name=guest.sso_display_name,
+        seed_skill=float(guest_seed), pac=guest.pac, dri=guest.dri,
+        primary_specialty=guest.primary_specialty,
     )
     unlinked = User(id=22, sso_display_name='Alfredo Di Stéfano', primary_specialty='ATT')
     db.add_all([*members, placeholder, unlinked])
@@ -119,7 +170,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     guest_first_name, guest_last_name = NAMES[guest_index].split(' ', 1)
     db.add(GuestPlusOne(
         meetup_id=1, inviter_id=2, guest_user_id=21, first_name=guest_first_name, last_name=guest_last_name,
-        skill=3, claim_token='demo-guest-reservation', status='pending', created_at=anchor,
+        skill=guest_seed, claim_token='demo-guest-reservation', status='pending', created_at=anchor,
     ))
     db.add(UserNotificationPreference(user_id=2, category='chat', enabled=False))
     db.add(GameTemplateSubscription(user_id=19, game_template_id=1, notifications_enabled=False))
@@ -140,10 +191,15 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         # A couple of own goals so the OG flag and its ranking toggle have coverage.
         own_goals = {(3, 2, 'a', 0), (4, 5, 'b', 0)}
         for index, (a, b) in enumerate([(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)], 1):
+            score_a, score_b = 1 + index % 3, index % 2
+            if (sid, index, 'a', 0) not in own_goals:
+                defense = [sum(_event_weight(uid, 'defending') for uid in teams[side]) for side in (a, b)]
+                if rng.choices((True, False), weights=defense)[0] is False:
+                    score_a, score_b = score_b, score_a
             match = MeetupMatch(
                 meetup_id=sid, match_number=index, team_a_users=json.dumps(teams[a]), team_b_users=json.dumps(teams[b]),
                 team_a_name=TEAM_NAMES[a], team_b_name=TEAM_NAMES[b],
-                score_a=1 + index % 3, score_b=index % 2, status='completed',
+                score_a=score_a, score_b=score_b, status='completed',
                 timer_total_seconds=600, timer_seconds_remaining=0,
                 created_at=start + timedelta(minutes=10 * (index - 1)), completed_at=start + timedelta(minutes=10 * index),
             )
@@ -154,8 +210,15 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                     own = (sid, index, team, goal_no) in own_goals
                     keeper = team_keeper(conceded_by)
                     pool = [u for u in conceded_by if u != keeper] if own else scorers
-                    scorer = rng.choice(pool)
-                    assist = None if own else rng.choice([u for u in scorers if u != scorer])
+                    scorer = rng.choice(pool) if own else rng.choices(
+                        pool, weights=[_event_weight(uid, 'shooting') for uid in pool]
+                    )[0]
+                    assist = None
+                    if not own:
+                        passers = [uid for uid in scorers if uid != scorer]
+                        assist = rng.choices(
+                            passers, weights=[_event_weight(uid, 'passing') for uid in passers]
+                        )[0]
                     elapsed = rng.randint(0, 599)
                     db.add(MatchGoal(
                         match_id=match.id, team=team, scorer_id=scorer, assist_id=assist,
@@ -165,14 +228,19 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
                         recorded_by=1, intent_id=f'demo-{sid}-{index}-{team}-{goal_no}',
                         created_at=match.created_at + timedelta(seconds=elapsed),
                     ))
-        for rater in range(1, 16):
-            if sid == 2 and rater == 2:
-                continue  # Member has an editable rating task to demonstrate.
-            for ratee in range(1, 16):
-                if rater != ratee:
+        for team in teams:
+            for rater in team:
+                if sid == 2 and rater == ACTORS['member']:
+                    continue  # Leave the editable rating task open for the demo member.
+                for ratee in team:
+                    if rater == ratee or (ratee == 5 and rater > 2):
+                        continue  # Maldini demonstrates a player below the three-reviewer minimum.
+                    target = 2 + ratee % 4
+                    recent_form = (1 if ratee % 2 else -1) if sid == 2 else 0
+                    score = min(5, max(1, target + recent_form + (rater + sid) % 3 - 1))
                     db.add(Rating(meetup_id=sid, rater_id=rater, ratee_id=ratee,
-                                  score=3 + (rater + ratee + sid) % 3,
-                                  created_at=start + timedelta(hours=2), updated_at=start + timedelta(hours=2)))
+                                  score=score, created_at=start + timedelta(hours=2),
+                                  updated_at=start + timedelta(hours=2)))
 
     for uid, message, minutes in [
         (1, 'Pitch 2 is booked. Please arrive ten minutes before kickoff.', 32),
@@ -183,10 +251,18 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         db.add(ChatMessage(meetup_id=1, user_id=uid, message=message, created_at=anchor - timedelta(minutes=minutes)))
     db.add(ChatMessage(meetup_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
     await db.flush()
-    for member in members[:15]:
-        await update_user_calculated_skill(db, member.id, commit=False)
+    await refresh_player_skills(db)
 
-    players = [{'id': u.id, 'skill': u.calculated_skill or 3} for u in [*members, placeholder] if u.id in confirmed]
+    computed_scores = (await get_rating_settings(db)).computed_scores
+    players = [
+        {
+            'id': u.id,
+            'skill': draft_skill(selected_rating(u, computed_scores)),
+            'pac': u.pac,
+            'dri': u.dri,
+        }
+        for u in [*members, placeholder] if u.id in confirmed
+    ]
     if live_like:
         # 3 teams of 5 (skill-snake) + the lowest-rated player as the bench
         # pool — a 1-person bench is valid per validate_team_partition.

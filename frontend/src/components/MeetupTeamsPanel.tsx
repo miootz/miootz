@@ -11,10 +11,9 @@ import { adminAdjustTeams, adminReshuffleTeams } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { DraggableTeams } from "./DraggableTeams";
-import { rebalanceTeams } from "../services/teamService";
 
 function ratingOf(p: User): number {
-  return p.calculatedSkill != null && p.calculatedSkill > 0
+  return p.calculatedSkill != null
     ? p.calculatedSkill
     : Math.round(p.skillScore);
 }
@@ -37,6 +36,8 @@ function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
       primarySpecialty: p.primarySpecialty ?? undefined,
       secondarySpecialty: p.secondarySpecialty ?? undefined,
       calculatedSkill: p.calculatedSkill ?? null,
+      pac: p.pac,
+      dri: p.dri,
     })),
   );
 }
@@ -68,6 +69,8 @@ function buildTeamMeetup(
       secondarySpecialty: a.secondary_specialty ?? undefined,
       isPlusOne: a.is_plus_one,
       calculatedSkill: a.calculated_skill ?? null,
+      pac: a.pac,
+      dri: a.dri,
     }));
   const teamList: Team[] = teams.teams.map((t) => ({
     id: t.id,
@@ -223,10 +226,7 @@ export function MeetupTeamsPanel({
       return {
         ...m,
         attendance,
-        teams: rebalanceTeams({ attendance, teams: m.teams }).map((t) => ({
-          ...t,
-          players: sortedPlayers(t.players),
-        })),
+        teams: m.teams,
       };
     });
   }, []);

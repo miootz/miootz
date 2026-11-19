@@ -19,7 +19,8 @@ from app.services.meetup_revision import (
     bump_meetup_revision,
     notify_meetup_data_changed,
 )
-from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, team_counts
+from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, draft_skill, team_counts
+from app.services.rating_settings import get_rating_settings, selected_rating
 
 
 def _compute_capacity(n_teams: int) -> int:
@@ -42,17 +43,21 @@ async def _load_meetup_players(
     )
     rows = result.all()
 
+    computed_scores = (await get_rating_settings(db)).computed_scores
+
     def _player_dict(u: User) -> dict[str, Any]:
-        skill = u.calculated_skill if u.calculated_skill is not None else 50.0
+        skill = selected_rating(u, computed_scores)
         return {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": skill,
+            "skill": draft_skill(skill),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": skill,
+            "pac": u.pac,
+            "dri": u.dri,
         }
 
     confirmed: list[dict[str, Any]] = []
@@ -118,16 +123,19 @@ async def expand_teams(
             Attendance.status == "confirmed",
         )
     )
+    computed_scores = (await get_rating_settings(db)).computed_scores
     updated_confirmed = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": selected_rating(u, computed_scores),
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for _, u in result.all()
     ]
@@ -216,16 +224,19 @@ async def contract_teams(
             Attendance.status == "confirmed",
         )
     )
+    computed_scores = (await get_rating_settings(db)).computed_scores
     updated_confirmed = [
         {
             "id": str(u.id),
             "name": u.display_name,
-            "skill": u.calculated_skill if u.calculated_skill is not None else 50.0,
+            "skill": draft_skill(selected_rating(u, computed_scores)),
             "user_id": u.id,
             "avatar_url": u.avatar_url,
             "primary_specialty": u.primary_specialty,
             "secondary_specialty": u.secondary_specialty,
-            "calculated_skill": u.calculated_skill,
+            "calculated_skill": selected_rating(u, computed_scores),
+            "pac": u.pac,
+            "dri": u.dri,
         }
         for _, u in result.all()
     ]

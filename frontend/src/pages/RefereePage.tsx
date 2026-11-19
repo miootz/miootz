@@ -928,6 +928,8 @@ export function RefereePage() {
               users: t.players.map((p) => ({
                 id: Number(p.id),
                 display_name: p.name,
+                pac: p.pac,
+                dri: p.dri,
               })),
             }));
         })()
