@@ -9,6 +9,7 @@ from app.models.user import User
 
 
 PeerRatingMode = Literal["off", "teammates-only", "everyone"]
+DEFAULT_PEER_RATING_MODE: PeerRatingMode = "teammates-only"
 
 
 class RatingSettings(Base):
@@ -16,7 +17,9 @@ class RatingSettings(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     computed_scores: Mapped[bool] = mapped_column(default=True)
-    peer_rating_mode: Mapped[PeerRatingMode] = mapped_column(String, default="everyone")
+    peer_rating_mode: Mapped[PeerRatingMode] = mapped_column(
+        String, default=DEFAULT_PEER_RATING_MODE
+    )
 
 
 async def get_rating_settings(db: AsyncSession) -> RatingSettings:
@@ -24,7 +27,9 @@ async def get_rating_settings(db: AsyncSession) -> RatingSettings:
     return (
         row
         if row is not None
-        else RatingSettings(id=1, computed_scores=True, peer_rating_mode="everyone")
+        else RatingSettings(
+            id=1, computed_scores=True, peer_rating_mode=DEFAULT_PEER_RATING_MODE
+        )
     )
 
 

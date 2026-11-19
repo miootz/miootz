@@ -198,7 +198,7 @@ export function MeetupDetailPanel({
   const [ratingsEditable, setRatingsEditable] = useState(false);
   const [ratingsLocked, setRatingsLocked] = useState(false);
   const [viewerAttended, setViewerAttended] = useState(true);
-  const [peerRatingMode, setPeerRatingMode] = useState<"off" | "teammates-only" | "everyone">("everyone");
+  const [peerRatingMode, setPeerRatingMode] = useState<"off" | "teammates-only" | "everyone">("teammates-only");
   const [weatherData, setWeatherData] = useState<{
     temperature_c: number;
     weather_code: number | null;
@@ -226,7 +226,7 @@ export function MeetupDetailPanel({
       setRatingsEditable(ctx.ratings_editable);
       setRatingsLocked(ctx.ratings_locked);
       setViewerAttended(ctx.viewer_attended ?? true);
-      setPeerRatingMode(ctx.peer_rating_mode ?? "everyone");
+      setPeerRatingMode(ctx.peer_rating_mode ?? "teammates-only");
     } catch {
       setRatees([]);
     }

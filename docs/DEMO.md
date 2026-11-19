@@ -95,14 +95,38 @@ last 12 hours.
 | Route | Screen |
 |---|---|
 | `/` | Upcoming member meetup (admins initially go to `/admin`) |
-| `/profile` | Personal statistics, skill, notification preferences and weekly subscription |
+| `/profile` | Base and Adjusted Rating, attributes, statistics, notifications, and weekly subscription |
+| `/rankings` | Match stats and the Ratings view |
 | `/history` | Three populated past meetups |
 | `/history/2` | Recent results and editable peer ratings for Member |
 | `/admin` | Organizer overview |
 | `/admin/meetups/1` | Upcoming details, attendance and team management |
 | `/admin/game-templates/1` | Weekly schedule |
-| `/admin/players` | Fictional roster, including an unlinked member |
+| `/admin/players` | Demo accounts named after historical players, including an unlinked member |
 | `/meetup-matches/1` | Referee timer and score controls, especially in `live` |
+
+## Demo ratings
+
+The demo uses EA SPORTS FC 26 **base Icon** card values where available.
+EA's public site describes the Icons, and the card figures come from the
+FUT.GG and WeFUT indexes. Michel Platini and Alfredo Di Stéfano have no
+verified card in those sources, so they have no imported Base Rating, PAC,
+or DRI. Goalkeepers use their card's Speed for PAC. Their DRI is unset.
+[EA SPORTS FC 26 Icons](https://www.ea.com/games/ea-sports-fc/fc-26/features/fc-26-icons) ·
+[FUT.GG base Icon example](https://www.fut.gg/players/190045-johan-cruyff/26-190045/) ·
+[WeFUT Icon index](https://static.wefut.com/league/2118/26/any)
+
+Convert the card value with `(value − 40) ÷ 12` and limit it to **1–5**.
+Overall rounds to one decimal for Base Rating. PAC and DRI round down to half
+stars so players such as Johan Cruyff and George Best have **4.0 in both**.
+Shooting, Passing, and Defending still come from logged demo matches. Card
+attributes influence the synthetic match events so those ratings vary.
+
+New demo rooms start with **Teammates only**. Historical votes vary by
+player and meetup. The Member has no outgoing votes in the latest meetup,
+so you can try rating teammates at `/history/2` in the Squad room. Paolo
+Maldini has fewer than three reviewers per past meetup at seed time, so
+those votes cannot affect his Adjusted Rating. [Rating settings](RATINGS.md)
 
 ## Phone screenshot checklist
 

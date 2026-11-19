@@ -30,7 +30,7 @@ function storageKey(userId: string) {
  */
 export function OnboardingCard({ userId }: { userId: string }) {
   const [step, setStep] = useState(0);
-  const [peerMode, setPeerMode] = useState<PeerRatingMode>("everyone");
+  const [peerMode, setPeerMode] = useState<PeerRatingMode>("teammates-only");
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(storageKey(userId)) === "1";

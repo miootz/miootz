@@ -61,6 +61,16 @@ async def test_skill_score_calculation_logic():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        settings = await ac.get(
+            "/rating-settings", headers={"Authorization": "Bearer tester"}
+        )
+        assert settings.json()["peer_rating_mode"] == "teammates-only"
+        changed = await ac.patch(
+            "/rating-settings",
+            headers={"Authorization": "Bearer admin"},
+            json={"computed_scores": True, "peer_rating_mode": "everyone"},
+        )
+        assert changed.status_code == 200, changed.text
         for token, expected in (("tester", 3.0), ("p1", 3.0), ("p2", 3.6)):
             resp = await ac.post(
                 "/ratings/",
@@ -155,7 +165,9 @@ async def test_attributes_in_rankings_profile_and_admin_edit():
         attrs = profile.json()["attributes"]
         assert attrs["sho"]["sample"] == 12
         assert attrs["def"]["meetups"] == 3
-        assert attrs["pac"] is None
+        assert profile.json()["base_rating"] == 4.2
+        assert attrs["pac"] == 2.5
+        assert attrs["dri"] == 4.0
 
         history = await client.get("/meetups/2/rankings", headers=headers)
         assert history.status_code == 200, history.text

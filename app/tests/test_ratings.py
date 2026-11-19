@@ -8,6 +8,7 @@ from app.core.database import Base, async_session, engine
 from app.models.meetup import Attendance, Meetup
 from app.models.rating import Rating
 from app.models.user import User
+from app.services.rating_settings import RatingSettings
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -15,6 +16,9 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    async with async_session() as db:
+        db.add(RatingSettings(id=1, peer_rating_mode="everyone"))
+        await db.commit()
     yield
 
 

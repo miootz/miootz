@@ -1,7 +1,8 @@
 # Rating settings
 
 Open **Admin → Tools → Player ratings** to change the settings for the whole
-instance. Computed scores are on and peer ratings are set to Everyone by default.
+instance. Computed scores are on and peer ratings are set to **Teammates only**
+by default on new instances.
 
 | Rating mode | Rating used in Rankings and balanced team drafts |
 | --- | --- |
