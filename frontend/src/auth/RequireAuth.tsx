@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { RefreshCw, LogIn } from 'lucide-react';
 import { useAuth } from './useAuth';
+import { AppSplash } from '../components/AppSplash';
 import { roomStorageKey } from '../utils/demoRoom';
 
 const RETURN_PATH_KEY = roomStorageKey('miootz_return_path');
@@ -22,19 +23,9 @@ export function RequireAuth() {
     void login();
   }, [loading, me, error, login]);
 
-  if (loading) {
+  if (loading || (!me && !error)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-board">
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="w-10 h-10 border-2 border-live border-t-transparent rounded-full animate-spin"
-            aria-hidden
-          />
-          <p className="text-sm text-ink-dim">
-            Checking sign-in…
-          </p>
-        </div>
-      </div>
+      <AppSplash status={loading ? 'Checking sign-in…' : 'Redirecting to sign-in…'} />
     );
   }
 
@@ -67,22 +58,6 @@ export function RequireAuth() {
               Sign in
             </button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!me) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-board">
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="w-10 h-10 border-2 border-live border-t-transparent rounded-full animate-spin"
-            aria-hidden
-          />
-          <p className="text-sm text-ink-dim">
-            Redirecting to sign-in…
-          </p>
         </div>
       </div>
     );

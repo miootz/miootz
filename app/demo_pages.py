@@ -48,6 +48,8 @@ main{width:min(100% - 2rem, 60rem);margin-inline:auto;padding-block:clamp(2rem,7
 header{border-bottom:1px solid var(--line);padding-block-end:1.4rem;margin-block-end:1.8rem}
 h1,h2,h3,p{margin:0}
 h1{font-size:clamp(1.5rem,7vw,3rem);font-weight:850;line-height:1.05;letter-spacing:-.03em}
+.brand-title{display:flex;align-items:center;gap:.35em}
+.brand-title img{display:block;width:1em;height:auto;flex-shrink:0}
 h2{font-size:1.125rem;font-weight:750;margin-block-end:.8rem}
 h3{font-size:1.5rem;line-height:1.2;letter-spacing:-.02em}
 .intro{color:var(--muted);max-width:62ch;margin-block-start:.65rem}
@@ -81,6 +83,7 @@ def _page(title: str, content: str, *, account_page: bool = False) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(title)}</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>{_STYLE}</style>
 </head>
 <body><main{page_class}>{content}</main></body>
@@ -101,7 +104,7 @@ def render_lobby() -> str:
         "Miootz demo",
         f"""
         <header>
-          <h1>Miootz demo</h1>
+          <h1 class="brand-title"><img src="/brand/goal-cut.svg" alt="" width="350" height="192">Miootz demo</h1>
           <p class="intro">Try a football meetup with sample accounts and shared match data.</p>
         </header>
         <h2>Choose a scenario</h2>

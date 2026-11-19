@@ -18,6 +18,7 @@ import { logout } from "../../auth/pocketIdOidc";
 import { useAuth } from "../../auth/useAuth";
 import { setPreferMemberView } from "../../auth/memberViewStorage";
 import { OfflineBanner } from "../../components/OfflineBanner";
+import { BrandWordmark } from "../../components/BrandWordmark";
 import { AdminNotificationPrompt } from "../../components/admin/AdminNotificationPrompt";
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -174,8 +175,8 @@ export function AdminLayout() {
           <Menu className="h-5 w-5" />
         </button>
         <div className="min-w-0 text-center">
-          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
-            Admin
+          <p className="text-ink">
+            <BrandWordmark admin />
           </p>
           <p className="truncate text-sm font-medium text-ink">
             {me.user.display_name}
@@ -200,8 +201,8 @@ export function AdminLayout() {
               </span>
             </span>
           </Link>
-          <h2 className="mt-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink">
-            Admin
+          <h2 className="mt-4 text-ink">
+            <BrandWordmark admin />
           </h2>
           <p
             className="text-xs text-ink-dim truncate mt-1"
@@ -249,8 +250,8 @@ export function AdminLayout() {
           >
             <div className="flex items-center justify-between border-b border-line p-4">
               <div>
-                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
-                  Admin
+                <p className="text-ink">
+                  <BrandWordmark admin />
                 </p>
                 <p className="truncate text-sm font-medium text-ink">
                   {me.user.display_name}

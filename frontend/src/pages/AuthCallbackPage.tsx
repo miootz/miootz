@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, XCircle } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
+import { BrandWordmark } from '../components/BrandWordmark';
 
 /** AuthProvider navigates to the requested page after confirming the session. */
 export function AuthCallbackPage() {
@@ -21,8 +22,8 @@ export function AuthCallbackPage() {
     <div className="min-h-screen bg-board flex items-center justify-center p-6">
       <div className="max-w-md w-full border border-line bg-panel p-8 shadow-xl text-center space-y-6">
         <div className="space-y-1">
-          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-            Miootz
+          <p className="text-ink-dim">
+            <BrandWordmark />
           </p>
           <h1 className="text-xl font-semibold text-ink">
             Signing in…
