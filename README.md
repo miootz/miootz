@@ -22,9 +22,14 @@ with Traefik + Pocket ID.
 ## Team balancing
 
 Miootz can draft confirmed players by skill or assign them in random order.
-Admins can review and adjust the lineups. The balanced draft spreads players
-by skill, and team strength can still vary. See the
-[team balancing guide](docs/TEAM_BALANCING.md) for the rules and limitations.
+Admins can review and adjust the lineups. The balanced draft uses overall skill.
+With every input available, skill combines peer ratings (55%), an admin or
+imported seed (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
+dribbling (2%). Miootz calculates shooting, passing, and defending from match
+data. Admins can set pace and dribbling. Rankings shows the match-derived
+attributes for the selected period, and profiles show current attributes and
+overall skill. See the [team balancing guide](docs/TEAM_BALANCING.md) for the
+formulas and how missing data affects the result.
 
 ## Quick Start
 

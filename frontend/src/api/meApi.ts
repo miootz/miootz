@@ -46,6 +46,22 @@ export interface UserStats {
     season_penalties_scored: number;
     season_penalty_conversion_rate: number;
     weather_hero_unused: number;
+    attributes: PlayerAttributes | null;
+}
+
+export interface PlayerAttributes {
+    sho: AttributeEvidence;
+    pas: AttributeEvidence & { total_goals: number };
+    def: AttributeEvidence;
+    pac: number | null;
+    dri: number | null;
+}
+
+export interface AttributeEvidence {
+    score: number | null;
+    count: number;
+    sample: number;
+    meetups: number;
 }
 
 export interface UserHistoryItem {

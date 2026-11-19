@@ -9,7 +9,7 @@ from app.services.recurring_meetups import (
     notify_new_meetup,
 )
 from app.services.web_push import notify_rating_reminder_for_meetup
-from app.services.skill_service import refresh_match_skills_after_meetup
+from app.services.skill_service import refresh_skills_after_meetup
 from app.core.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
@@ -76,10 +76,10 @@ async def run_job_queue_poll() -> None:
 
 async def send_rating_reminder_for_meetup(meetup_id: int) -> None:
     """One-shot job: fire at meetup end time, push confirmed attendees to rate peers
-    and refresh match bonuses and actual weather conditions."""
+    and refresh player skills and record actual weather conditions."""
     async with async_session() as db:
         await db.execute(text("BEGIN IMMEDIATE"))
-        await refresh_match_skills_after_meetup(db, meetup_id)
+        await refresh_skills_after_meetup(db, meetup_id)
         await db.commit()
 
     # Record weather first (uses its own DB meetup)

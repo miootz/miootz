@@ -18,7 +18,7 @@ router = APIRouter()
 
 _EXCLUDED_TABLES = {"chat_messages"}
 _EXCLUDED_COLUMNS = {
-    "users": {"calculated_skill", "skill_without_match_bonus", "match_skill_bonus"},
+    "users": {"calculated_skill"},
     "invite_tokens": {"token"},
     "guest_plus_ones": {"claim_token"},
     "web_push_subscriptions": {"endpoint", "p256dh", "auth"},

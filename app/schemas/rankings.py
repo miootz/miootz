@@ -1,10 +1,23 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RankingUser(BaseModel):
     id: int
     display_name: str
     avatar_url: str | None = None
+
+
+class AttributeRankingRow(BaseModel):
+    rank: int | None
+    user: RankingUser
+    sho: float | None
+    pas: float | None
+    def_: float | None = Field(alias="def")
+
+
+class AttributeRankingsResponse(BaseModel):
+    total: int
+    rows: list[AttributeRankingRow]
 
 
 class RankingRow(BaseModel):
@@ -69,6 +82,8 @@ class DrawMatch(BaseModel):
 
 class NightStats(BaseModel):
     kpis: NightKpis
+    assists_credited: int
+    open_play_goals: int
     teams: list[TeamNightRecord] = []
     draw_matches: list[DrawMatch] = []
 

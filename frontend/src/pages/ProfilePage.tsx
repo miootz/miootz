@@ -22,6 +22,7 @@ import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
+import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import {
   pushSupported,
   subscribeToWebPush,
@@ -393,7 +394,23 @@ export function ProfilePage() {
           </div>
         </section>
 
-        <ProfileScoreboard stats={stats} skill={u.calculated_skill} error={statsError} />
+        <section aria-labelledby="overall-skill" className="flex items-center justify-between gap-4 border border-line bg-panel p-5">
+          <div>
+            <h2 id="overall-skill" className="text-lg font-bold text-ink">Overall skill</h2>
+            <p className="mt-1 text-sm text-ink-dim">Player rating</p>
+          </div>
+          <div className="text-right">
+            <p className="text-3xl font-bold tabular-nums text-ink">{u.calculated_skill?.toFixed(1) ?? "—"}</p>
+            <p className="text-xs text-ink-dim">{u.calculated_skill == null ? "Unrated" : "out of 5"}</p>
+          </div>
+        </section>
+
+        <PlayerAttributesPanel
+          attributes={stats?.attributes}
+          error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
+        />
+
+        <ProfileScoreboard stats={stats} error={statsError} />
 
         <section className="border border-line bg-panel p-5 space-y-5">
           {/* Attendance history (paginated) */}

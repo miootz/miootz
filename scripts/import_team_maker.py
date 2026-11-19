@@ -32,7 +32,7 @@ from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.services.rankings_service import _load_scope, rank_player_metrics
-from app.services.skill_service import refresh_match_skill_bonuses
+from app.services.skill_service import refresh_player_skills
 
 TEAMS = ("A", "B", "C")
 GOAL_PREFIX = "team-maker:"
@@ -389,8 +389,8 @@ async def upsert_users(db, ratings, links, admins):
                 user = User(sso_display_name=name, sso_preferred_username=name)
                 db.add(user)
             user.historical_roster_name = name
-        if user.calculated_skill is None:
-            user.calculated_skill = skill
+        if user.seed_skill is None:
+            user.seed_skill = skill
         if name in admins:
             user.is_admin = True
         if name in links:
@@ -671,7 +671,7 @@ async def import_workbook(
                 meetup_ids = await upsert_nights(
                     db, nights, ids, template, kickoff, timezone, ids[recorded_by]
                 )
-                await refresh_match_skill_bonuses(db)
+                await refresh_player_skills(db)
                 await db.flush()
                 differences = await compare_stats(db, meetup_ids, ids, expected)
             await conn.commit()

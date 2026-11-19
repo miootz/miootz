@@ -17,7 +17,7 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.services.team_assignment import assign_teams_snake, draft_skill
-from app.services.skill_service import update_user_calculated_skill
+from app.services.skill_service import refresh_player_skills
 
 SCENARIOS = ('open', 'full', 'broadcast', 'random', 'live', 'kickoff')
 ACTORS = {'admin': 1, 'member': 2, 'waitlisted': 17, 'newcomer': 19, 'guest': 20}
@@ -54,13 +54,14 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         id=i, pocket_id_sub=f'demo-{i}', sso_display_name=name,
         sso_preferred_username=name.lower().replace(' ', '.'),
         sso_groups=['admins', 'members'] if i == 1 else ['members'], is_admin=i == 1,
-        calculated_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
+        seed_skill=float(2 + i % 4), primary_specialty=POSITIONS[i - 1],
     ) for i, name in enumerate(NAMES, 1)]
     guest_index = ACTORS['guest'] - 1
-    members[guest_index].calculated_skill = None
+    members[guest_index].seed_skill = None
+    members[1].pac = 4.0
     placeholder = User(
         id=21, pocket_id_sub='demo-placeholder', sso_display_name=NAMES[guest_index],
-        calculated_skill=3.0, primary_specialty=POSITIONS[guest_index],
+        seed_skill=3.0, primary_specialty=POSITIONS[guest_index],
     )
     unlinked = User(id=22, sso_display_name='Alfredo Di Stéfano', primary_specialty='ATT')
     db.add_all([*members, placeholder, unlinked])
@@ -183,8 +184,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         db.add(ChatMessage(meetup_id=1, user_id=uid, message=message, created_at=anchor - timedelta(minutes=minutes)))
     db.add(ChatMessage(meetup_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
     await db.flush()
-    for member in members[:15]:
-        await update_user_calculated_skill(db, member.id, commit=False)
+    await refresh_player_skills(db)
 
     players = [{'id': u.id, 'skill': draft_skill(u.calculated_skill)} for u in [*members, placeholder] if u.id in confirmed]
     if live_like:

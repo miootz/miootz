@@ -39,7 +39,7 @@ from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
-    refresh_match_skill_bonuses,
+    refresh_player_skills,
 )
 from app.core.meetup_data_manager import meetup_data_manager
 from app.services.meetup_promotion import handle_leave_or_cancel
@@ -1102,6 +1102,9 @@ async def skip_meetup(
         )
     if not meetup.skipped:
         meetup.skipped = True
+        if meetup.start_time <= utcnow():
+            await db.flush()
+            await refresh_player_skills(db)
         await db.commit()
     # The overview must always have a next meetup: pull the upcoming
     # occurrence forward (normally created at end-of-meetup-day) so the admin
@@ -1593,7 +1596,7 @@ async def delete_meetup(
     await db.delete(meetup)
     if meetup.start_time <= utcnow():
         await db.flush()
-        await refresh_match_skill_bonuses(db)
+        await refresh_player_skills(db)
     await db.commit()
     log_action(
         request,
@@ -1851,6 +1854,7 @@ async def add_plus_one(
     guest_user = User(
         pocket_id_sub=guest_sub,
         sso_display_name=f"{first_name} {last_name}",
+        seed_skill=float(body.skill),
         calculated_skill=float(body.skill),
     )
     db.add(guest_user)

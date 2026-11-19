@@ -116,9 +116,10 @@ async def upsert_rating(
     if existing:
         existing.score = rating_data.score
         existing.updated_at = utcnow()
+        await db.flush()
+        await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
         await db.commit()
         await db.refresh(existing)
-        await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
         log_action(
             request,
             "rating",
@@ -136,10 +137,10 @@ async def upsert_rating(
         score=rating_data.score,
     )
     db.add(new_rating)
+    await db.flush()
+    await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
     await db.commit()
     await db.refresh(new_rating)
-
-    await update_user_calculated_skill(db, user_id=rating_data.ratee_id)
     log_action(
         request,
         "rating",

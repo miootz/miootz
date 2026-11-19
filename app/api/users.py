@@ -28,6 +28,7 @@ from app.services.pocket_id_client import (
     get_user_by_id,
 )
 from app.services.stats_service import get_user_statistics
+from app.services.skill_service import refresh_player_skills, update_user_calculated_skill
 from app.services.template_subscriptions import user_wants_template_notifications
 from app.services.audit import log_action
 from pydantic import BaseModel, ConfigDict, Field
@@ -78,6 +79,7 @@ async def admin_create_user(
 
     user = User(
         sso_display_name=f"{first_name} {last_name}",
+        seed_skill=float(body.calculated_skill),
         calculated_skill=float(body.calculated_skill),
     )
     db.add(user)
@@ -97,6 +99,9 @@ async def admin_create_user(
         "username": None,
         "avatar_url": user.avatar_url,
         "calculated_skill": user.calculated_skill,
+        "seed_skill": user.seed_skill,
+        "pac": user.pac,
+        "dri": user.dri,
         "primary_specialty": user.primary_specialty,
         "secondary_specialty": user.secondary_specialty,
         "is_admin": user.is_admin,
@@ -513,6 +518,9 @@ class AdminUserListOut(BaseModel):
     username: str | None = None
     avatar_url: str | None = None
     calculated_skill: float | None = None
+    seed_skill: float | None = None
+    pac: float | None = None
+    dri: float | None = None
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool = False
@@ -521,6 +529,9 @@ class AdminUserListOut(BaseModel):
 
 class AdminUserUpdate(BaseModel):
     calculated_skill: float | None = Field(None, ge=0, le=5)
+    seed_skill: float | None = Field(None, ge=0, le=5)
+    pac: float | None = Field(None, ge=1, le=5)
+    dri: float | None = Field(None, ge=1, le=5)
     primary_specialty: SPECIALTY_OPTIONS | None = None
     secondary_specialty: SPECIALTY_OPTIONS | None = None
     is_admin: bool | None = None
@@ -716,13 +727,14 @@ async def admin_update_user(
         val = dumped.pop("display_name")
         user.sso_display_name = val if val else None
 
-    if "calculated_skill" in dumped and dumped["calculated_skill"] != user.calculated_skill:
-        user.skill_without_match_bonus = None
-        user.match_skill_bonus = None
+    if "calculated_skill" in dumped:
+        dumped.setdefault("seed_skill", dumped.pop("calculated_skill"))
 
     for key, value in dumped.items():
         setattr(user, key, value)
 
+    if {"seed_skill", "pac", "dri"} & dumped.keys():
+        await update_user_calculated_skill(db, user.id, commit=False)
     await db.commit()
     await db.refresh(user)
     changed = ", ".join(sorted(body.model_dump(exclude_unset=True)))
@@ -754,6 +766,8 @@ async def admin_delete_user(
 
     await delete_user_children(db, user.id)
     await db.delete(user)
+    await db.flush()
+    await refresh_player_skills(db)
     await db.commit()
     log_action(
         request,

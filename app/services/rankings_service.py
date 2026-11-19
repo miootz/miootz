@@ -386,6 +386,7 @@ async def _night_block(
         for m in sorted(matches, key=lambda m: m.match_number)
         if m.was_draw
     ]
+    open_play = [goal for goal in goals if not goal.is_own_goal and not goal.is_penalty]
     return {
         "kpis": {
             "matches": len(matches),
@@ -393,6 +394,8 @@ async def _night_block(
             "players": len(all_player_ids),
             "draws": sum(1 for m in matches if m.was_draw),
         },
+        "open_play_goals": len(open_play),
+        "assists_credited": sum(goal.assist_id is not None for goal in open_play),
         "teams": team_rows,
         "draw_matches": draw_matches,
     }
@@ -479,7 +482,7 @@ async def get_meetup_rankings(db: AsyncSession, meetup_id: int) -> dict | None:
     stats = {uid: s for uid, s in stats.items() if attendances.get(uid, 0) > 0}
     rows = _sort_rows(await _rows_for_users(db, stats), "goals", "desc")
     night = await _night_block(db, matches, goals)
-    return _envelope(year=None, available_years=None, rows=rows, night=night)
+    return _envelope(year=None, available_years=None, rows=rows, night=night, per_page=max(1, len(rows)))
 
 
 async def get_user_metrics(

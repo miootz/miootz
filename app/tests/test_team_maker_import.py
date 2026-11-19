@@ -194,9 +194,9 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             is not None
         )
         assert db.execute(
-            "SELECT skill_without_match_bonus, calculated_skill FROM users "
+            "SELECT seed_skill, calculated_skill FROM users "
             "WHERE is_admin ORDER BY historical_roster_name"
-        ).fetchall() == [(5.0, 5.0), (0.0, 0.2)]
+        ).fetchall() == [(5.0, 5.0), (0.0, 0.0)]
         assert db.execute(
             "SELECT score_a, score_b, penalty_score_a, penalty_score_b, penalty_winner "
             "FROM meetup_matches WHERE match_number = 1"
@@ -209,8 +209,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         ).fetchone()[0]
         assert set(json.loads(old)) - set(json.loads(new)) == {taylor}
         db.execute(
-            "UPDATE users SET sso_preferred_username = 'updated', calculated_skill = 3, "
-            "skill_without_match_bonus = NULL, match_skill_bonus = NULL "
+            "UPDATE users SET sso_preferred_username = 'updated', seed_skill = 3 "
             "WHERE pocket_id_sub = ?",
             (subject,),
         )
@@ -233,9 +232,9 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     assert await run_import({}) == []
     with sqlite3.connect(database) as db:
         assert db.execute(
-            "SELECT skill_without_match_bonus, calculated_skill FROM users WHERE pocket_id_sub = ?",
+            "SELECT seed_skill, calculated_skill FROM users WHERE pocket_id_sub = ?",
             (subject,),
-        ).fetchone() == (3.0, 3.1)
+        ).fetchone() == (3.0, 3.0)
         assert db.execute(
             "SELECT import_source, COUNT(*), SUM(used_at IS NOT NULL), "
             "SUM(granted_meetup_id IS NOT NULL) FROM weather_hero_awards a "

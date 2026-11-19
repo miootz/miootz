@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 import {
+  fetchAttributeRankings,
   fetchRankings,
+  type AttributeRankingsResponse,
+  type AttributeSort,
   type HighlightEntry,
   type RankingRow,
   type RankingSort,
   type RankingsResponse,
 } from "../api/rankingsApi";
+import { AttributeRankingsTable } from "../components/AttributeRankingsTable";
 import { RankingsTable } from "../components/RankingsTable";
 
 const PER_PAGE = 25;
@@ -100,7 +104,14 @@ export function RankingsPage() {
   const [seasonYear, setSeasonYear] = useState<number | null>(null); // server's current season, stable
   const [sort, setSort] = useState<RankingSort>("attendances");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const [view, setView] = useState<"stats" | "attributes">("stats");
+  const [attributeSort, setAttributeSort] = useState<AttributeSort>("sho");
+  const [attributeOrder, setAttributeOrder] = useState<"asc" | "desc">("desc");
+  const [attributeData, setAttributeData] = useState<AttributeRankingsResponse | null>(null);
+  const [attributeLoading, setAttributeLoading] = useState(false);
+  const [attributeError, setAttributeError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const statsPage = view === "stats" ? page : 1;
   // Restore scroll after a rubric change re-renders the table with a new row
   // order (year/page changes intentionally scroll to the top).
   const restoreScroll = useRef<number | null>(null);
@@ -110,7 +121,7 @@ export function RankingsPage() {
     setError(null);
     try {
       const res = await fetchRankings(
-        { year: yearSel ?? undefined, sort, order, page, perPage: PER_PAGE },
+        { year: yearSel ?? undefined, sort, order, page: statsPage, perPage: PER_PAGE },
         signal,
       );
       if (signal.aborted) return;
@@ -124,13 +135,36 @@ export function RankingsPage() {
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [yearSel, sort, order, page]);
+  }, [yearSel, sort, order, statsPage]);
 
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (view !== "attributes" || yearSel === null) return;
+    const controller = new AbortController();
+    setAttributeLoading(true);
+    setAttributeError(null);
+    void fetchAttributeRankings({
+      year: yearSel, sort: attributeSort, order: attributeOrder, page, perPage: PER_PAGE,
+    }, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setAttributeData(result);
+      })
+      .catch((e: unknown) => {
+        if (!controller.signal.aborted) {
+          setAttributeData(null);
+          setAttributeError(e instanceof Error ? e.message : "Failed to load attributes");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAttributeLoading(false);
+      });
+    return () => controller.abort();
+  }, [view, yearSel, attributeSort, attributeOrder, page]);
 
   useEffect(() => {
     if (!loading && restoreScroll.current != null) {
@@ -148,18 +182,19 @@ export function RankingsPage() {
   const nextYear =
     selected === "all" ? null : years.find((y) => y > selected) ?? null;
 
-  const total = data?.total ?? 0;
+  const total = view === "stats" ? (data?.total ?? 0) : (attributeData?.total ?? 0);
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const busy = loading || (view === "attributes" && (attributeLoading || yearSel === null));
 
   return (
     <div className="p-3 sm:p-4 max-w-6xl mx-auto space-y-4">
       <header className="flex items-center gap-2">
         <h1 className="text-2xl font-bold text-ink">Rankings</h1>
-        {loading && data && (
+        {busy && data && (
           <Loader2 className="h-4 w-4 animate-spin text-live motion-reduce:animate-none" aria-hidden />
         )}
       </header>
-      <p role="status" className="sr-only">{loading ? "Loading rankings…" : ""}</p>
+      <p role="status" className="sr-only">{busy ? "Loading rankings…" : ""}</p>
 
       {/* Season navigation */}
       <div className="flex flex-wrap items-center gap-2">
@@ -213,7 +248,7 @@ export function RankingsPage() {
           {error}
         </p>
       ) : (
-        <div className="space-y-3" aria-busy={loading}>
+        <div className="space-y-3" aria-busy={busy}>
           {data?.highlights && (
             <SeasonHighlights
               highlights={data.highlights}
@@ -221,18 +256,51 @@ export function RankingsPage() {
               allTime={data.year === null}
             />
           )}
-          <RankingsTable
-            rows={(data?.rows ?? []) as RankingRow[]}
-            sort={sort}
-            order={order}
-            onSortChange={(s, o) => {
-              restoreScroll.current = window.scrollY;
-              setSort(s);
-              setOrder(o);
-              setPage(1);
-            }}
-            highlightUserId={me?.user?.id}
-          />
+          <div role="group" aria-label="Ranking view" className="grid grid-cols-2 border border-line bg-panel">
+            {([ ["stats", "Match stats"], ["attributes", "Attributes"] ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={view === key}
+                onClick={() => { setView(key); setPage(1); }}
+                className={`min-h-11 border-b-2 px-3 py-2 text-sm font-bold transition-colors ${view === key ? "border-live bg-raised text-live" : "border-transparent text-ink-dim hover:text-ink"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "stats" ? (
+            <RankingsTable
+              rows={(data?.rows ?? []) as RankingRow[]}
+              sort={sort}
+              order={order}
+              onSortChange={(s, o) => {
+                restoreScroll.current = window.scrollY;
+                setSort(s);
+                setOrder(o);
+                setPage(1);
+              }}
+              highlightUserId={me?.user?.id}
+            />
+          ) : attributeError ? (
+            <p role="alert" className="py-8 text-center text-sm text-danger">{attributeError}</p>
+          ) : attributeData ? (
+            <>
+              <AttributeRankingsTable
+                rows={attributeData.rows}
+                sort={attributeSort}
+                order={attributeOrder}
+                onSortChange={(s, o) => { setAttributeSort(s); setAttributeOrder(o); setPage(1); }}
+                highlightUserId={me?.user?.id}
+              />
+              <details className="text-sm text-ink-dim">
+                <summary className="cursor-pointer font-medium text-ink">How attributes work</summary>
+                <p className="mt-2">Shooting and defending reflect open-play goals and clean sheets per eligible match. Passing reflects assists among open-play team goals with a credited assist. Recent meetups count more, and scores need enough reliable data.</p>
+              </details>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-ink-dim">Loading attributes…</p>
+          )}
 
           {/* Pagination */}
           {pages > 1 && (

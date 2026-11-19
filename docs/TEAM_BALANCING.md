@@ -23,11 +23,32 @@ such as goalkeeper are display information. The meetup's minimum attendance
 setting has no effect on the draft. See the
 [assignment code](../app/services/team_assignment.py).
 
-## How peer ratings affect skill
+## How overall skill is calculated
 
-The balanced draft uses the player's stored skill. An admin can set the
-initial value. With at least one valid peer rating, the skill before any match
-bonus is the weighted peer average minus attendance decay.
+The balanced draft uses overall skill, a combination of peer ratings, a
+permanent seed set by an admin or import, and five attributes:
+
+| Input | Share |
+| --- | ---: |
+| Recency-weighted peer ratings | 55% |
+| Admin or imported seed | 25% |
+| Shooting (SHO) | 6% |
+| Passing (PAS) | 5% |
+| Defense (DEF) | 5% |
+| Pace (PAC), set by an admin | 2% |
+| Dribbling (DRI), set by an admin | 2% |
+
+Peer ratings and the seed form a baseline. When both exist, they are averaged
+in the ratio 55:25. If only one exists, it is the baseline. Each unavailable
+attribute's share returns to that baseline. If neither peer ratings nor a seed
+exists, the player has no overall skill, even if attributes are available.
+
+For example, a peer average of 4.0 and a seed of 3.0 give a baseline of
+`(55 × 4.0 + 25 × 3.0) ÷ 80 = 3.6875`. If SHO is the only available
+attribute and is 4.0, the other attribute shares return to the baseline, giving
+`3.6875 × 0.94 + 4.0 × 0.06 = 3.70625` before attendance decay and rounding.
+
+### Peer ratings and attendance
 
 | Rating's meetup | Weight per rating |
 | --- | --- |
@@ -41,47 +62,58 @@ contributes nothing. Older ratings retain half weight.
 **Attendance decay.** Miootz counts consecutive meetups without confirmed
 attendance, looking at up to 20 past meetups the skill calculation treats as
 closed. It stops at the first confirmed attendance. The first miss is free.
-Each further consecutive miss subtracts **0.1**, up to **1.0** in total.
-After adding any match bonus, Miootz limits the result to **0–5** and rounds
-it to one decimal place.
+Each further consecutive miss subtracts **0.1**, up to **1.0** in total. The
+deduction is applied once when valid peer ratings exist. The final overall
+skill is limited to **0–5** and rounded to one decimal place.
 
 **Example.** A recent 5 and an older 3 give a weighted average of
-`(5 × 1 + 3 × 0.5) ÷ 1.5 = 4.33…`. Three consecutive misses subtract 0.2,
-leaving a skill of **4.1** before any match bonus.
+`(5 × 1 + 3 × 0.5) ÷ 1.5 = 4.33…` as the peer-rating input. Three consecutive
+misses cause a deduction of 0.2 from the combined skill.
 
 Adding, editing, or clearing a peer rating recalculates skill, as can changes
-to attendance. If there are no valid ratings left, Miootz keeps the last
-skill before the match bonus. Players who have never had a skill rating
-stay unrated. [Skill calculation](../app/services/skill_service.py) ·
-[Rating updates](../app/api/ratings.py)
+to attendance. If no valid ratings remain, only the seed can provide the
+baseline, and attendance decay does not apply.
+[Skill calculation](../app/services/skill_service.py) · [Rating updates](../app/api/ratings.py)
 
 **Missing skill.** Team drafts use **3.0** for an unrated player. An actual
 **0.0** remains zero.
 
-## How match performance affects skill
+## How match attributes are calculated
 
-| Event in a completed match | Bonus points |
-| --- | ---: |
-| Goal | +0.30 |
-| Assist | +0.15 |
-| Clean sheet | +0.10 |
+SHO, PAS, and DEF use completed matches from non-skipped meetups that have
+reached their scheduled end. Matches with a timed mid-match substitution are
+excluded. For the remaining matches, a player's appearances use the final
+team rosters. SHO and PAS also require each team's regulation score to match
+its count of active goal records. Open-play goals exclude own goals, regulation
+penalties, and shootout kicks. A clean sheet means a player's team conceded no
+regulation goals.
 
-Own goals and shootout kicks earn no bonus. A clean sheet follows the same
-eligibility rules as Rankings. Each player's total is capped at **0.60 per
-match**.
+Each eligible match is weighted by the time from its meetup's scheduled end to
+the latest ended meetup in the requested period. SHO and DEF weights halve
+every **21 days**; PAS weights halve every **42 days**. The scheduled end
+defaults to two hours after kickoff.
 
-Every match played counts, including appearances without a goal, assist or
-clean sheet. A match's weight halves every **three weeks**, measured from
-its meetup's kickoff to the most recent meetup's scheduled end. Miootz
-divides the weighted bonus points by the total match weight plus **3**,
-equivalent to three fresh matches with no bonus.
-For example, a fresh match with one goal and a clean sheet contributes
-`(0.30 + 0.10) ÷ (1 + 3) = 0.10` to a player with no other matches.
+| Attribute | Weighted rate | Minimum evidence | Rate anchors for 1, 3, and 5 |
+| --- | --- | --- | --- |
+| SHO | (open-play goals + 1.2) ÷ (appearances + 4) | 8 appearances across 3 meetups | 0, 0.30, 0.85 |
+| PAS | (player's credited assists + 3) ÷ (team open-play goals with a credited assist + 15) | 8 team open-play goals with a credited assist across 3 meetups, and at least 50% assist coverage | 0, 0.20, 0.45 |
+| DEF | (team clean sheets + 2) ÷ (appearances + 8) | 8 appearances across 3 meetups | 0, 0.25, 0.70 |
 
-The bonus refreshes at the scheduled end of a meetup, after late match
-completion, and after historical match corrections or imports. The scheduled
-end defaults to two hours after kickoff. Between these updates, peer ratings
-and attendance changes use the last calculated bonus.
+The counts in each rate are weighted; the minimum-evidence checks use raw
+counts. Assist coverage is the share of the player's team open-play goals with
+a credited assist. A blank assist counts as an uncredited goal for coverage,
+and a match with no team open-play goals provides no PAS scoring evidence.
+An attribute stays unavailable until its minimum evidence is met.
+
+Miootz converts each rate to a 1–5 attribute by interpolating between its
+anchors, caps the result at 1–5, and rounds it to one decimal place. Rankings'
+**Attributes** view shows SHO, PAS, and DEF for the selected period and can
+sort by each. History shows the underlying goals, assists, clean sheets, and
+assist coverage. The profile shows current attributes and overall skill;
+admins can set PAC and DRI.
+
+Fresh databases work without migrating the former additive match bonus.
+Attributes use eligible recorded or imported match history.
 
 ## How admins adjust teams
 

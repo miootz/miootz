@@ -7,11 +7,10 @@ const percent = new Intl.NumberFormat(undefined, {
 
 interface ProfileScoreboardProps {
   stats: UserStats | null;
-  skill?: number | null;
   error: string | null;
 }
 
-export function ProfileScoreboard({ stats, skill, error }: ProfileScoreboardProps) {
+export function ProfileScoreboard({ stats, error }: ProfileScoreboardProps) {
   return (
     <section aria-labelledby="profile-season-stats" className="@container border border-line bg-panel">
       <h2 id="profile-season-stats" className="border-b border-line px-4 py-3 text-lg font-bold text-ink">
@@ -51,8 +50,7 @@ export function ProfileScoreboard({ stats, skill, error }: ProfileScoreboardProp
           <h3 className="border-y border-line bg-board px-4 py-2.5 text-sm font-semibold text-ink">
             Player record
           </h3>
-          <dl className="grid grid-cols-2 gap-px bg-line">
-            <RecordStat label="Skill rating" value={skill?.toFixed(1) ?? "—"} />
+          <dl className="grid grid-cols-3 gap-px bg-line">
             <RecordStat label="Avg. peer rating" value={stats.total_ratings ? stats.average_rating.toFixed(1) : "—"} />
             <RecordStat label="Season meetups" value={stats.season_games} />
             <RecordStat label="All-time meetups" value={stats.games_played} />

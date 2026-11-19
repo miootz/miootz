@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.meetup import MatchScore, Attendance
 from app.schemas.stats import UserStats, MatchScoreReport
 from app.services.stats_service import get_user_statistics
+from app.services.player_attributes import empty_player_attributes, load_player_attributes
 from app.services.audit import log_action
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -23,6 +24,12 @@ async def get_my_stats(
     db: AsyncSession = Depends(get_db),
 ):
     stats = await get_user_statistics(db, current_user.id)
+    attributes = (await load_player_attributes(db)).get(current_user.id)
+    stats["attributes"] = {
+        **(attributes if attributes is not None else empty_player_attributes()),
+        "pac": current_user.pac,
+        "dri": current_user.dri,
+    }
     return stats
 
 

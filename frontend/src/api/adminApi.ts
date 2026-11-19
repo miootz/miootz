@@ -244,6 +244,9 @@ export type AdminUserRow = {
   username: string | null;
   avatar_url: string | null;
   calculated_skill: number | null;
+  seed_skill: number | null;
+  pac: number | null;
+  dri: number | null;
   primary_specialty: string | null;
   secondary_specialty: string | null;
   is_admin: boolean;
@@ -252,7 +255,9 @@ export type AdminUserRow = {
 };
 
 export interface AdminUserUpdate {
-  calculated_skill?: number | null;
+  seed_skill?: number | null;
+  pac?: number | null;
+  dri?: number | null;
   primary_specialty?: string | null;
   secondary_specialty?: string | null;
   is_admin?: boolean;
