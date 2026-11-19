@@ -451,6 +451,7 @@ async def get_meetup(
     for att, user in rows:
         attendees.append(
             {
+                "attendance_id": att.id,
                 "user_id": user.id,
                 "display_name": user.display_name,
                 "avatar_url": user.avatar_url,

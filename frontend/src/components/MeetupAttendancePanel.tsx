@@ -122,7 +122,7 @@ export function MeetupAttendancePanel({
               movingKey === `${a.user_id}-waitlisted`;
             return (
               <AttendancePlayerCard
-                key={a.user_id}
+                key={a.attendance_id ?? `${a.user_id}:${a.status}`}
                 name={a.display_name}
                 avatarUrl={a.avatar_url}
                 skill={a.skill}

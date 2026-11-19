@@ -74,15 +74,11 @@ async def test_demo_scenarios_have_complete_repeatable_states(scenario):
             ) == (True, None)
         assert await db.scalar(select(func.count()).select_from(ChatMessage)) == 5
         assert await db.scalar(select(func.count()).select_from(GuestPlusOne)) == 1
-        confirmed = set(
-            (
-                await db.scalars(
-                    select(Attendance.user_id).where(
-                        Attendance.meetup_id == 1, Attendance.status == "confirmed"
-                    )
-                )
-            ).all()
+        attendance = list(
+            await db.scalars(select(Attendance).where(Attendance.meetup_id == 1))
         )
+        assert len({row.user_id for row in attendance}) == len(attendance)
+        confirmed = {row.user_id for row in attendance if row.status == "confirmed"}
         assert current.manual_teams_json
         teams = json.loads(current.manual_teams_json)
         assert set(uid for team in teams for uid in team) == confirmed

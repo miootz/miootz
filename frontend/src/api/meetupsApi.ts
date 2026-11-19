@@ -93,6 +93,7 @@ export interface MeetupDetail extends MeetupListItem {
   /** Upper bound on team count. Null = algorithmic. */
   max_teams?: number | null;
   attendees: {
+    attendance_id?: number;
     user_id: number;
     display_name: string;
     avatar_url: string | null;
