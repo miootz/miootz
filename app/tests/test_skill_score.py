@@ -72,8 +72,8 @@ async def test_skill_score_calculation_logic():
     async with async_session() as db:
         player_row = await db.get(User, player_id)
         assert player_row is not None
-        # The peer vote carries 55 parts and the original seed carries 25.
-        assert player_row.calculated_skill == 4.4
+        # The original seed carries 55 parts and the peer vote carries 25.
+        assert player_row.calculated_skill == 3.6
         assert player_row.seed_skill == 3.0
 
 
@@ -100,8 +100,8 @@ async def test_seed_skill_persists_without_peer_ratings():
 
 def test_blend_keeps_missing_attribute_weight_on_baseline():
     attributes = {"sho": 3.4, "pas": 2.7, "def": 3.4, "pac": 4.0, "dri": None}
-    assert blend_skill(3.4, 4.2, attributes) == 3.8
-    assert blend_skill(3.4, 4.2, attributes, miss_streak=3) == 3.6
+    assert blend_skill(3.4, 4.2, attributes) == 3.6
+    assert blend_skill(3.4, 4.2, attributes, miss_streak=3) == 3.4
     assert blend_skill(3.4, None, attributes, miss_streak=3) == 3.4
     assert blend_skill(0.0, None, {}) == 0.0
     assert blend_skill(None, None, attributes) is None

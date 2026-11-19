@@ -23,8 +23,8 @@ with Traefik + Pocket ID.
 
 Miootz can draft confirmed players by skill or assign them in random order.
 Admins can review and adjust the lineups. The balanced draft uses overall skill.
-With every input available, skill combines peer ratings (55%), an admin or
-imported seed (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
+With every input available, skill combines an admin or imported seed (55%),
+peer ratings (25%), shooting (6%), passing (5%), defending (5%), pace (2%), and
 dribbling (2%). Miootz calculates shooting, passing, and defending from match
 data. Admins can set pace and dribbling. Rankings shows the match-derived
 attributes for the selected period, and profiles show current attributes and

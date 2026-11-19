@@ -144,7 +144,7 @@ def blend_skill(
     if baseline is None:
         return None
     if seed is not None and peer is not None:
-        baseline = (55 * peer + 25 * seed) / 80
+        baseline = (55 * seed + 25 * peer) / 80
 
     skill = baseline
     for key, weight in _ATTRIBUTE_WEIGHTS.items():

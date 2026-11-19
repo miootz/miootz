@@ -30,23 +30,23 @@ permanent seed set by an admin or import, and five attributes:
 
 | Input | Share |
 | --- | ---: |
-| Recency-weighted peer ratings | 55% |
-| Admin or imported seed | 25% |
+| Admin or imported seed | 55% |
+| Recency-weighted peer ratings | 25% |
 | Shooting (SHO) | 6% |
 | Passing (PAS) | 5% |
 | Defense (DEF) | 5% |
 | Pace (PAC), set by an admin or seeded by the roster import | 2% |
 | Dribbling (DRI), set by an admin | 2% |
 
-Peer ratings and the seed form a baseline. When both exist, they are averaged
+The seed and peer ratings form a baseline. When both exist, they are averaged
 in the ratio 55:25. If only one exists, it is the baseline. Each unavailable
 attribute's share returns to that baseline. If neither peer ratings nor a seed
 exists, the player has no overall skill, even if attributes are available.
 
 For example, a peer average of 4.0 and a seed of 3.0 give a baseline of
-`(55 × 4.0 + 25 × 3.0) ÷ 80 = 3.6875`. If SHO is the only available
+`(55 × 3.0 + 25 × 4.0) ÷ 80 = 3.3125`. If SHO is the only available
 attribute and is 4.0, the other attribute shares return to the baseline, giving
-`3.6875 × 0.94 + 4.0 × 0.06 = 3.70625` before attendance decay and rounding.
+`3.3125 × 0.94 + 4.0 × 0.06 = 3.35375` before attendance decay and rounding.
 
 ### Peer ratings and attendance
 
