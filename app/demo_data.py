@@ -19,6 +19,7 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.services.team_assignment import assign_teams_snake, draft_skill
+from app.services.manual_teams import resolve_meetup_teams_nested
 from app.services.skill_service import refresh_player_skills
 from app.services.rating_settings import get_rating_settings, selected_rating
 
@@ -125,7 +126,7 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         announce_weekday=3, announce_hour=10, announce_minute=0,
         location='Example Sports Centre', fee=8, fee_text='8 credits', min_players=10, max_players=15,
         waitlist_mode='auto_promote',
-        team_assignment_mode='balanced', match_duration_minutes=10, is_active=True,
+        team_assignment_mode='auto-balanced', match_duration_minutes=10, is_active=True,
     )
     db.add(template)
     await db.flush()
@@ -135,7 +136,10 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
             id=sid, game_template_id=1, start_time=start, location=template.location,
             fee=template.fee, fee_text=template.fee_text, min_players=10, max_players=max_players, latitude=template.latitude, longitude=template.longitude,
             waitlist_mode='broadcast' if scenario == 'broadcast' and sid == 1 else 'auto_promote',
-            team_assignment_mode='random' if scenario == 'random' and sid == 1 else 'balanced',
+            team_assignment_mode=(
+                'random' if scenario == 'random' and sid == 1
+                else 'auto-balanced' if sid == 1 else 'balanced'
+            ),
             duration_minutes=120, match_duration_minutes=10, max_teams=3,
             team_names_json=json.dumps(TEAM_NAMES),
         )
@@ -278,8 +282,12 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
         random.Random(2026).shuffle(order)
         teams = [order[i::3] for i in range(3)]
     else:
-        teams = [[p['id'] for p in team] for team in assign_teams_snake(players, max_teams=3)]
-    upcoming.manual_teams_json = json.dumps(teams)
+        teams = [
+            [p['id'] for p in team]
+            for team in resolve_meetup_teams_nested(None, 'auto-balanced', players, max_teams=3)
+        ]
+    if live_like or scenario == 'random':
+        upcoming.manual_teams_json = json.dumps(teams)
     if scenario == 'live':
         # A rehearsal started ahead of kickoff; paused so the initial capture is repeatable.
         paused = anchor - timedelta(seconds=10)

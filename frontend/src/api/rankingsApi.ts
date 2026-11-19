@@ -46,6 +46,7 @@ export interface TeamNightRecord {
   matches: number;
   goals_for: number;
   goals_against: number;
+  assists: number;
   goal_diff: number;
   clean_sheets: number;
   roster: TeamRosterUser[];
@@ -68,6 +69,7 @@ export interface NightStats {
     draws: number;
   };
   teams: TeamNightRecord[];
+  winning_teams: string[];
   draw_matches: DrawMatch[];
 }
 

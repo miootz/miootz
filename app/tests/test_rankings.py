@@ -386,11 +386,17 @@ async def test_history_summary_winner_tiebreakers_and_viewers_votes():
             assert await summary() == {
                 "match_count": 2, "winning_teams": ["A", "B"], "my_rating_avg": 4.25,
             }
+            detail = (await ac.get("/meetups/2/rankings", headers=headers)).json()["night"]
+            assert detail["winning_teams"] == ["A", "B"]
 
             goal = await db.scalar(select(MatchGoal).where(MatchGoal.match_id == first.id))
             goal.assist_id = ids["p3"]
             await db.commit()
             assert (await summary())["winning_teams"] == ["B"]  # Assists break a goals tie.
+            detail = (await ac.get("/meetups/2/rankings", headers=headers)).json()["night"]
+            assert detail["winning_teams"] == ["B"]
+            winner = next(team for team in detail["teams"] if team["name"] == "B")
+            assert [winner[key] for key in ("wins", "goals_for", "assists", "clean_sheets")] == [1, 2, 1, 1]
 
             goal.deleted_at = datetime(2026, 1, 2, 20)
             await db.commit()

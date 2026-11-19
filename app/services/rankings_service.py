@@ -335,7 +335,9 @@ def _highlights(rows: list[dict]) -> dict[str, list[dict]]:
     }
 
 
-def _team_records(matches: list[MeetupMatch]) -> dict[str, dict]:
+def _team_records(
+    matches: list[MeetupMatch], assists_by_side: dict[tuple[int, str], int]
+) -> dict[str, dict]:
     teams: dict[str, dict] = {}
     for m in matches:
         winner = _match_winner_side(m)
@@ -347,11 +349,12 @@ def _team_records(matches: list[MeetupMatch]) -> dict[str, dict]:
             rec = teams.setdefault(
                 name,
                 {"wins": 0, "matches": 0, "goals_for": 0, "goals_against": 0,
-                 "clean_sheets": 0, "_ids": set()},
+                 "assists": 0, "clean_sheets": 0, "_ids": set()},
             )
             rec["matches"] += 1
             rec["goals_for"] += gf
             rec["goals_against"] += ga
+            rec["assists"] += assists_by_side.get((m.id, side), 0)
             if winner == side:
                 rec["wins"] += 1
             if not ga:
@@ -360,33 +363,30 @@ def _team_records(matches: list[MeetupMatch]) -> dict[str, dict]:
     return teams
 
 
+def _winning_team_names(teams: dict[str, dict]) -> list[str]:
+    scores = {
+        name: (team["wins"], team["goals_for"], team["assists"], team["clean_sheets"])
+        for name, team in teams.items()
+    }
+    best = max(scores.values(), default=None)
+    return sorted(name for name, score in scores.items() if score == best)
+
+
 async def meetup_winning_teams(db: AsyncSession, matches: list[MeetupMatch]) -> list[str]:
     if not matches:
         return []
-    teams = _team_records(matches)
-    by_id = {m.id: m for m in matches}
-    by_team = Counter()
     assists = await db.execute(
         select(MatchGoal.match_id, MatchGoal.team, func.count())
         .where(
-            MatchGoal.match_id.in_(by_id),
+            MatchGoal.match_id.in_([match.id for match in matches]),
             MatchGoal.deleted_at.is_(None),
             MatchGoal.is_own_goal.is_(False),
             MatchGoal.assist_id.is_not(None),
         )
         .group_by(MatchGoal.match_id, MatchGoal.team)
     )
-    for match_id, side, count in assists:
-        match = by_id[match_id]
-        name = match.team_a_name if side == "a" else match.team_b_name
-        by_team[name] += count
-
-    scores = {
-        name: (rec["wins"], rec["goals_for"], by_team[name], rec["clean_sheets"])
-        for name, rec in teams.items()
-    }
-    best = max(scores.values())
-    return sorted(name for name, score in scores.items() if score == best)
+    counts = {(match_id, side): count for match_id, side, count in assists}
+    return _winning_team_names(_team_records(matches, counts))
 
 
 async def _night_block(
@@ -395,7 +395,12 @@ async def _night_block(
     goals: list[MatchGoal],
 ) -> dict:
     """Per-meetup night stats: KPIs + one record per team name."""
-    teams = _team_records(matches)
+    assists = Counter(
+        (goal.match_id, goal.team)
+        for goal in goals
+        if goal.assist_id is not None and not goal.is_own_goal
+    )
+    teams = _team_records(matches, assists)
     all_player_ids = {uid for rec in teams.values() for uid in rec["_ids"]}
     db_users = await _display_names(db, all_player_ids)
     team_rows = []
@@ -433,6 +438,7 @@ async def _night_block(
             "draws": sum(1 for m in matches if m.was_draw),
         },
         "teams": team_rows,
+        "winning_teams": _winning_team_names(teams),
         "draw_matches": draw_matches,
     }
 

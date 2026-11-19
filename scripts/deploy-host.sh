@@ -21,21 +21,22 @@ else
   compose=(docker compose --project-name miootz-demo --env-file "$base/.env" -f "$release/docker-compose.demo-hosted.yml")
 fi
 
-"${compose[@]}" config -q
+# The runner streams this script over SSH. Keep Compose from reading its stdin.
+"${compose[@]}" config -q </dev/null
 if [[ "$target" == demo ]]; then
-  "${compose[@]}" up -d --build --remove-orphans
+  "${compose[@]}" up -d --build --remove-orphans </dev/null
 else
-  "${compose[@]}" up -d --build
+  "${compose[@]}" up -d --build </dev/null
 fi
 
 healthy=false
 for _ in {1..60}; do
   if [[ "$target" == production ]]; then
-    if "${compose[@]}" exec -T api python -c 'import os, urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/health", headers={"Host": os.environ["APP_DOMAIN"]}), timeout=2); urllib.request.urlopen("http://pocket-id:1411/health", timeout=2)' >/dev/null 2>&1 && \
-       "${compose[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/; then
+    if "${compose[@]}" exec -T api python -c 'import os, urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8000/health", headers={"Host": os.environ["APP_DOMAIN"]}), timeout=2); urllib.request.urlopen("http://pocket-id:1411/health", timeout=2)' </dev/null >/dev/null 2>&1 && \
+       "${compose[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/ </dev/null; then
       healthy=true; break
     fi
-  elif "${compose[@]}" exec -T frontend sh -c 'for path in /api/demo /squad/api/demo /matchday/api/demo /squad/api/health /matchday/api/health; do wget -q -T 2 -O /dev/null "http://127.0.0.1$path" || exit 1; done' >/dev/null 2>&1; then
+  elif "${compose[@]}" exec -T frontend sh -c 'for path in /api/demo /squad/api/demo /matchday/api/demo /squad/api/health /matchday/api/health; do wget -q -T 2 -O /dev/null "http://127.0.0.1$path" || exit 1; done' </dev/null >/dev/null 2>&1; then
     healthy=true; break
   fi
   sleep 2

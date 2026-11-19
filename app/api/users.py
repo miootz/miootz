@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
+from app.api.rate_limit import limiter
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.game_template import GameTemplate
@@ -22,6 +23,7 @@ from app.models.invite import InviteToken
 from app.models.meetup import Attendance, MatchScore, Meetup
 from app.models.rating import Rating
 from app.services import rankings_service
+from app.services.web_push import send_test_push
 from app.services.pocket_id_client import (
     create_signup_token,
     delete_user,
@@ -348,6 +350,18 @@ async def push_config(_: User = Depends(get_current_user)):
     return {
         "publicKey": settings.VAPID_PUBLIC_KEY or None,
     }
+
+
+@router.post("/me/push/test")
+@limiter.limit("3 per minute")
+async def test_my_push(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> dict[str, int]:
+    if not settings.VAPID_PUBLIC_KEY or not settings.VAPID_PRIVATE_KEY:
+        raise HTTPException(status_code=503, detail="Web Push is not configured on the server")
+    return await send_test_push(db, admin.id)
 
 
 @router.post("/me/push/subscription")

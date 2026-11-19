@@ -5,15 +5,6 @@
   "categories": ["sports", "productivity"],
   "orientation": "any",
   "prefer_related_applications": false,
-  "screenshots": [
-    {
-      "src": "/logo512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "form_factor": "narrow",
-      "label": "Meetup and teams"
-    }
-  ],
   "icons": [
     {
       "src": "favicon.svg",
@@ -28,13 +19,15 @@
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "id": "/",
+  "start_url": "/",
   "display": "standalone",
-  "theme_color": "#9333ea",
-  "background_color": "#ffffff",
+  "theme_color": "#0b1220",
+  "background_color": "#0b1220",
   "shortcuts": [
     {
       "name": "Sessions",

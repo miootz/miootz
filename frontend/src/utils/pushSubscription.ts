@@ -1,4 +1,4 @@
-import { apiFetch } from "../api/client";
+import { apiFetch, parseApiError } from "../api/client";
 import { demoRoom } from "./demoRoom";
 
 export function urlBase64ToUint8Array(base64String: string): BufferSource {
@@ -52,7 +52,7 @@ export async function subscribeToWebPush(onPermissionGranted?: () => void): Prom
   onPermissionGranted?.();
   let sub: PushSubscription;
   try {
-    sub = await reg.pushManager.subscribe({
+    sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
@@ -78,7 +78,7 @@ export async function subscribeToWebPush(onPermissionGranted?: () => void): Prom
     }),
   });
   if (!save.ok) {
-    return { ok: false, reason: "Could not save subscription on server" };
+    return { ok: false, reason: await parseApiError(save) };
   }
   return { ok: true };
 }
@@ -99,7 +99,7 @@ export async function unsubscribeFromWebPush(): Promise<void> {
 
 export async function fetchPushSubscriptions(): Promise<PushSubscriptionRow[]> {
   const r = await apiFetch("/users/me/push/subscriptions");
-  if (!r.ok) throw new Error("Could not fetch push subscriptions");
+  if (!r.ok) throw new Error(await parseApiError(r));
   const data = (await r.json()) as { items: PushSubscriptionRow[] };
   return data.items;
 }

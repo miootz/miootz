@@ -2,7 +2,7 @@ import { apiFetch, parseApiError } from './client';
 
 export type WaitlistMode = 'broadcast' | 'auto_promote';
 
-export type TeamAssignmentMode = 'balanced' | 'random';
+export type TeamAssignmentMode = 'auto-balanced' | 'balanced' | 'random';
 
 export interface MeetupCreateBody {
   start_time: string;
@@ -220,6 +220,15 @@ export async function adminRunRecurringNow(): Promise<{
   meetups_created: number;
 }> {
   const r = await apiFetch('/meetups/recurring/run-now', { method: 'POST' });
+  return jsonOrThrow(r);
+}
+
+export async function adminSendTestPush(): Promise<{
+  sent: number;
+  failed: number;
+  expired: number;
+}> {
+  const r = await apiFetch('/users/me/push/test', { method: 'POST' });
   return jsonOrThrow(r);
 }
 

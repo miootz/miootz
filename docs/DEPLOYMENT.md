@@ -14,7 +14,7 @@ This workflow uses Compose project `miootz`, production data at `~/miootz/produc
 
 Install Docker Engine, the Compose plugin, Git, `flock` (from util-linux), and an SSH server. The deploy account must be able to use Docker without an interactive password. Docker access is effectively root-level access, so use a dedicated account and key and protect the account accordingly. The server must be able to build the images and reach the container registries and package registries. The two environments may use different servers or the same server and account.
 
-Create GitHub Actions environments named `demo` and `production`. Add these **environment secrets** to each environment, using the appropriate values for its server:
+Create GitHub Actions environments named `demo` and `production`. Add these **environment secrets**, using the appropriate values for each server:
 
 | Secret | Value |
 | --- | --- |
@@ -23,8 +23,27 @@ Create GitHub Actions environments named `demo` and `production`. Add these **en
 | `SSH_PRIVATE_KEY` | Dedicated private key accepted by the server |
 | `SSH_KNOWN_HOSTS` | Complete `known_hosts` entry for the server's SSH host key |
 | `DEPLOY_ENV` | Optional multiline environment file used only for first-time provisioning |
+| `VAPID_PRIVATE_KEY_PEM` | Optional production-only private PEM used for Web Push recovery |
 
 If `DEPLOY_ENV` is set and the target's host `.env` does not exist, the workflow creates it with mode `0600`. It never prints the secret or overwrites an existing `.env`. If the secret is absent, the host file must already exist. After provisioning, edit the host file securely and back it up; changing the GitHub secret does not update an existing installation. Preserve its Pocket ID encryption key, static API key, database paths, and other persistent settings across updates. Do not delete the host file merely to apply a new secret.
+
+After an authorized change to the active production host's `.env`, you can update
+the recovery copy in GitHub without printing its contents. Run this from a trusted
+computer with GitHub CLI access, replacing the SSH address and repository name:
+
+```sh
+(
+  set -eu
+  umask 077
+  tmp=$(mktemp)
+  trap 'rm -f "$tmp"' EXIT
+  ssh deployer@server.example.com 'cat "$HOME/miootz/production/.env"' > "$tmp"
+  test -s "$tmp"
+  gh secret set DEPLOY_ENV --env production --repo OWNER/REPOSITORY < "$tmp"
+)
+```
+
+This updates the secret for a future host; it does not change the active host.
 
 For a new production installation, `DEPLOY_ENV` can contain the following, with all example values replaced:
 
@@ -73,6 +92,41 @@ export MIOOTZ_DATA_DIR="$HOME/miootz/production/data"
 See [initial setup](../INITIAL_SETUP.md) for the account setup. The production container's `/data` mount uses the persistent directory above. The cloned checkout is only for first-time setup; deployments use separate release directories. Keep the deploy account's `~/miootz/production/.env` and `data/` in place.
 
 Alternatively, provide the production `DEPLOY_ENV` secret before the first manual production deployment and create `~/miootz/production/data` on the host. The workflow creates `.env` if absent. After the deployment succeeds, run the same bootstrap commands from `~/miootz/production/current` to configure Pocket ID and the first admin. Bootstrap updates the host `.env` with the discovered group ID; retain that updated file.
+
+After deploying a release that includes it, a Pocket ID admin can upload the
+[Miootz court image](../frontend/public/brand/pocket-id-court.jpg) as the
+background under **Application Configuration** in Pocket ID.
+
+### Enable Web Push
+
+Generate a VAPID key pair using the commands in [.env.example](../.env.example).
+Keep the private PEM in the persistent data directory with mode `0600`. In the
+production host's `.env`, set `VAPID_PUBLIC_KEY` to the corresponding application
+server key, `VAPID_PRIVATE_KEY` to the PEM's path inside `/data`, and
+`VAPID_SUBJECT` to a contact email URI (such as `mailto:owner@example.com`)
+or an HTTPS origin without a trailing slash.
+
+For recovery or a new host, you can also store the private PEM as the optional
+`VAPID_PRIVATE_KEY_PEM` secret in the **production** GitHub environment. The
+workflow sends it over SSH without printing it and creates
+`~/miootz/production/data/vapid-private.pem` with mode `0600` only when the file
+does not exist. Create the data directory first; an existing key is never
+overwritten. Set `VAPID_PRIVATE_KEY=/data/vapid-private.pem` in the host's `.env`
+and make sure `VAPID_PUBLIC_KEY` matches this private key. Updating the GitHub
+secret does not replace a key already on the host.
+
+From the current release as the deploy account, apply the new settings with
+`docker compose --project-name miootz --env-file .env up -d --no-deps --force-recreate api`.
+Sign in over HTTPS and register a device in your profile. If the browser
+already created a subscription but the server has no record of it, use
+**Finish registering this device** in your profile.
+
+Use **Admin → Tools → Send a test push notification to myself** to check
+notifications on devices registered to your own account. The result reports
+how many devices the push provider accepted, rejected, or marked expired.
+Check the device itself to confirm delivery.
+Preserve and back up the VAPID key pair across releases so registered devices
+can continue receiving notifications.
 
 ## First demo setup
 

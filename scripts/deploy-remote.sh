@@ -34,6 +34,19 @@ if [[ -n "${DEPLOY_ENV:-}" ]]; then
     cat > \"\$tmp\"; ln \"\$tmp\" \"\$dir/.env\"; echo 'Created host .env'; fi"
 fi
 
+if [[ "$target" == production && -n "${VAPID_PRIVATE_KEY_PEM:-}" ]]; then
+  key_bytes="$(printf '%s\n' "$VAPID_PRIVATE_KEY_PEM" | wc -c)"
+  printf '%s\n' "$VAPID_PRIVATE_KEY_PEM" | ssh "${ssh_options[@]}" "$server" \
+    "set -eu; umask 077; dir=\"\$HOME/miootz/production/data\"; \
+    [ -d \"\$dir\" ] || { echo 'Production data directory is missing' >&2; exit 1; }; \
+    key=\"\$dir/vapid-private.pem\"; \
+    if [ -f \"\$key\" ] || [ -L \"\$key\" ]; then cat >/dev/null; echo 'Keeping existing VAPID key'; \
+    else tmp=\$(mktemp \"\$dir/.vapid-private.pem.XXXXXX\"); trap 'rm -f \"\$tmp\"' EXIT; \
+    cat > \"\$tmp\"; [ \"\$(wc -c < \"\$tmp\")\" -eq \"$key_bytes\" ] || \
+    { echo 'Incomplete VAPID key transfer' >&2; exit 1; }; \
+    ln -T \"\$tmp\" \"\$key\"; echo 'Created VAPID key'; fi"
+fi
+
 git -C "$source_dir" archive --format=tar HEAD | ssh "${ssh_options[@]}" "$server" \
   "set -eu; dir=\"\$HOME/miootz/$target/releases/$revision\"; mkdir -p \"\$dir\"; tar -xf - -C \"\$dir\""
 ssh "${ssh_options[@]}" "$server" "bash -s -- '$target' '$revision'" < "$(dirname "$0")/deploy-host.sh"

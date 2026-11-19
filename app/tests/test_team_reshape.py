@@ -15,6 +15,7 @@ from app.models.match import MeetupMatch
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rating_settings import RatingSettings
 
 TOKENS = [f"p{i}" for i in range(1, 13)]
 
@@ -276,6 +277,56 @@ async def test_capacity_updates_waitlist_and_preserves_shape_after_join():
             assert {p["id"] for p in old["players"]} <= {p["id"] for p in new["players"]}
         again = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
         assert updated == again
+
+
+@pytest.mark.asyncio
+async def test_auto_balanced_redrafts_when_players_join_after_shape():
+    async with await client() as ac:
+        async with AsyncSession(engine) as db:
+            db.add(User(pocket_id_sub="admint-uuid", is_admin=True))
+            db.add(RatingSettings(id=1, computed_scores=False))
+            db.add_all(
+                User(pocket_id_sub=f"p{i}-uuid", seed_skill=skill, calculated_skill=skill)
+                for i, skill in enumerate((2.5, 1.5, 1.5, 1.5, 1, 1, 3), 1)
+            )
+            await db.commit()
+
+        created = await ac.post(
+            "/meetups/",
+            json={"start_time": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+                  "location": "Pitch", "min_players": 1, "max_players": 8,
+                  "send_push_notifications": False},
+            headers=hdr("admint"),
+        )
+        assert created.status_code == 201
+        sid = created.json()["id"]
+        assert created.json()["team_assignment_mode"] == "auto-balanced"
+        for n in range(1, 6):
+            response = await ac.post(f"/meetups/{sid}/join", headers=hdr(f"p{n}"))
+            assert response.status_code == 200
+        shaped = await ac.post(
+            f"/meetups/{sid}/teams/reshape", json={"team_count": 2, "team_size": 4},
+            headers=hdr("admint"),
+        )
+        assert shaped.status_code == 200, shaped.text
+        async with AsyncSession(engine) as db:
+            meetup = await db.get(Meetup, sid)
+            assert meetup.manual_teams_json is None
+        response = await ac.post(f"/meetups/{sid}/join", headers=hdr("p6"))
+        assert response.status_code == 200 and response.json()["status"] == "confirmed"
+        teams = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
+        assert [sum(p["skillScore"] for p in team["players"]) for team in teams] == [4.5, 4.5]
+        repeated = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
+        assert repeated == teams
+
+        # Preparing the first match freezes existing teams for later signups.
+        started = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admint"))
+        assert started.status_code == 201, started.text
+        response = await ac.post(f"/meetups/{sid}/join", headers=hdr("p7"))
+        assert response.status_code == 200
+        updated = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
+        for old, new in zip(teams, updated, strict=True):
+            assert {p["id"] for p in old["players"]} <= {p["id"] for p in new["players"]}
 
 
 @pytest.mark.asyncio

@@ -2,10 +2,10 @@ import { useId } from "react";
 import type { PeerReview } from "../api/ratingsApi";
 
 const REVIEWS: { value: PeerReview; label: string; emoji: string }[] = [
-  { value: "poorly", label: "Poorly", emoji: "👎" },
-  { value: "expected", label: "As expected", emoji: "👌" },
-  { value: "well", label: "Well", emoji: "👍" },
-  { value: "excellent", label: "Excellent", emoji: "👏" },
+  { value: "poorly", label: "poor", emoji: "😥" },
+  { value: "expected", label: "okay", emoji: "😐" },
+  { value: "well", label: "good", emoji: "😏" },
+  { value: "excellent", label: "great", emoji: "🤩" },
 ];
 
 export function PeerReviewControl({
@@ -27,7 +27,7 @@ export function PeerReviewControl({
     >
       <span id={instructionsId} className="sr-only">
         {value == null
-          ? "As expected is selected by default. Select a review to save it."
+          ? "Okay is selected by default. Select a review to save it."
           : "Activate the selected review again to clear it."}
       </span>
       {REVIEWS.map((review) => {
@@ -40,13 +40,14 @@ export function PeerReviewControl({
             aria-pressed={selected}
             title={value === review.value ? `${review.label} — activate again to clear` : review.label}
             onClick={() => onChange?.(value === review.value ? null : review.value)}
-            className={`grid h-11 w-11 place-items-center border text-xl transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live ${
+            className={`flex min-h-14 w-11 flex-col items-center justify-center gap-0.5 py-1 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live ${
               selected
-                ? value == null ? "border-live/60 bg-live/5" : "border-live bg-live/20"
-                : "border-line bg-raised hover:border-live/60"
+                ? value == null ? "bg-live/10" : "bg-live/20"
+                : "hover:bg-raised"
             }`}
           >
-            <span aria-hidden="true">{review.emoji}</span>
+            <span className="text-xl leading-none" aria-hidden="true">{review.emoji}</span>
+            <span className="text-2xs leading-none text-ink-dim">{review.label}</span>
           </button>
         );
       })}

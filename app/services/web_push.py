@@ -67,6 +67,7 @@ def _send_one(sub: WebPushSubscription, data: str) -> None:
         data=data,
         vapid_private_key=settings.VAPID_PRIVATE_KEY,
         vapid_claims={"sub": settings.VAPID_SUBJECT},
+        timeout=10,
     )
 
 
@@ -139,10 +140,11 @@ async def _send_push_to_users(
     user_ids: set[int],
     data: str,
     category: str | None = None,
-) -> None:
+) -> dict[str, int]:
     """Send push notification to users, optionally filtering by preference category."""
+    counts = {"sent": 0, "failed": 0, "expired": 0}
     if not user_ids:
-        return
+        return counts
 
     if category:
         uid_to_subs = await _get_user_subs_with_filter(db, user_ids, category)
@@ -163,29 +165,44 @@ async def _send_push_to_users(
             if subs:
                 uid_to_subs[uid] = list(subs)
 
-    if not uid_to_subs:
-        return
-
     dead_ids: list[int] = []
     for uid, subs in uid_to_subs.items():
         for sub in subs:
             try:
                 await asyncio.to_thread(_send_one, sub, data)
+                counts["sent"] += 1
             except WebPushException as e:
                 logger.debug("webpush fail uid=%s sub=%s: %s", uid, sub.id, e)
                 if _is_subscription_gone(e):
                     dead_ids.append(sub.id)
+                    counts["expired"] += 1
+                else:
+                    counts["failed"] += 1
             except Exception as e:
                 logger.warning("webpush error uid=%s sub=%s: %s", uid, sub.id, e)
+                counts["failed"] += 1
 
     if dead_ids:
         await db.execute(
             delete(WebPushSubscription).where(WebPushSubscription.id.in_(dead_ids))
         )
         await db.commit()
+    return counts
 
 
 # ── notification functions ───────────────────────────────────────────
+
+
+async def send_test_push(db: AsyncSession, user_id: int) -> dict[str, int]:
+    return await _send_push_to_users(
+        db,
+        {user_id},
+        _payload(
+            title="Miootz test notification",
+            body="This device can receive Miootz notifications.",
+            url="/admin/tools",
+        ),
+    )
 
 
 async def notify_new_meetup_invites(

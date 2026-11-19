@@ -309,6 +309,14 @@ Direct: buttons press 2% (`active:scale-[0.98]`), disabled is an opacity step
 
 ## Asset Provenance
 
+- **Goal Cut** is the Miootz mark. The off-white SVG is used beside the Archivo
+  wordmark. Square app icons set the same mark on the navy board color.
+- **`frontend/public/brand/`** contains Miootz artwork generated locally with
+  ComfyUI and graded to the board palette. The portrait stitched-ball art and
+  wide football-seam crop are used on the app splash. The court photograph is
+  sized for Pocket ID sign-in, and the painted-steel texture is available for
+  larger quiet surfaces.
+
 - **Archivo** (variable 100–900): self-hosted from Google Fonts —
   `frontend/src/assets/fonts/archivo-latin.woff2`, `archivo-latin-ext.woff2`,
   `archivo-vietnamese.woff2`, declared via `@font-face` in

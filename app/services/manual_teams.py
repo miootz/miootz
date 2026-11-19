@@ -87,6 +87,25 @@ def resolve_meetup_teams_nested(
     if manual is not None and validate_team_partition(manual, confirmed_ids, max_teams=max_teams):
         return build_teams_from_manual(players, manual)
     mode = (team_assignment_mode or "balanced").lower()
+    if mode == "auto-balanced" and manual is not None and players and not (max_teams and team_size):
+        # Explicitly saved and match-start lineups stay together after a roster change.
+        by_id = {int(p["id"]): p for p in players}
+        placed: set[int] = set()
+        teams = []
+        for row in manual:
+            team = []
+            for uid in row:
+                if uid in by_id and uid not in placed:
+                    team.append(by_id[uid])
+                    placed.add(uid)
+            teams.append(team)
+        count = len(team_counts(len(players), max_teams=max_teams))
+        while len(teams) < count:
+            teams.append([])
+        for player in players:
+            if int(player["id"]) not in placed:
+                teams[min(range(count), key=lambda i: len(teams[i]))].append(player)
+        return teams
     if max_teams and team_size and players:
         if manual is not None:
             by_id = {int(p["id"]): p for p in players}
@@ -126,10 +145,22 @@ def resolve_meetup_teams_nested(
             lineup.append([p["user_id"] for p in players[offset : offset + count]])
             offset += count
         return rebalance_around_locked(
-            players, lineup, locked=set(), max_teams=max_teams, randomize=mode == "random"
+            players, lineup, locked=set(), max_teams=max_teams, randomize=mode == "random",
+            optimize=mode == "auto-balanced", shuffle_equal=mode != "auto-balanced",
         )
     if mode == "random":
         return assign_teams_random(players, max_teams=max_teams)
+    if mode == "auto-balanced":
+        counts = team_counts(len(players), max_teams=max_teams)
+        lineup = []
+        offset = 0
+        for count in counts:
+            lineup.append([int(p["id"]) for p in players[offset : offset + count]])
+            offset += count
+        return rebalance_around_locked(
+            players, lineup, locked=set(), max_teams=max_teams,
+            optimize=True, shuffle_equal=False,
+        )
     return assign_teams_snake(players, max_teams=max_teams)
 
 

@@ -1,8 +1,10 @@
 # Team balancing
 
 Miootz drafts confirmed players, including confirmed plus-ones, when it needs
-a lineup. **Balanced (skill snake)** deals players by skill. **Random order
-(snake)** shuffles players before dealing. A valid saved lineup takes priority.
+a lineup. **Auto-balanced** is the default for new templates and meetups.
+It improves the skill totals after dealing players. **Balanced (skill snake)**
+deals players by skill. **Random order (snake)** shuffles players before
+dealing. Existing templates and meetups keep their selected mode.
 
 ## How the draft works
 
@@ -11,21 +13,30 @@ a lineup. **Balanced (skill snake)** deals players by skill. **Random order
    player count by five, round up, apply the cap, then keep the result between
    two teams and the number of players (one team for a solo player, none for
    an empty roster). Team sizes differ by at most one.
-2. **Order the players.** Balanced mode sorts highest active rating first. Tied players
-   retain their order from the roster query, which has no explicit tie-breaker.
-   Random mode shuffles the full roster.
+2. **Order the players.** Auto-balanced and balanced modes sort highest active
+   rating first. Auto-balanced resolves equal ratings by player ID so repeated
+   reads are stable. Balanced retains the roster query order for ties. Random
+   mode shuffles the full roster.
 3. **Deal in alternating directions.** With three teams, the draft goes
    1 → 2 → 3, then 3 → 2 → 1. A full team is skipped. Each new random draft
    can differ until an admin saves a lineup.
-4. **Spread pace and dribbling.** In balanced mode, Miootz swaps unlocked
+4. **Spread pace and dribbling.** In both skill modes, Miootz swaps unlocked
    players across teams when that improves the distribution of players with
    PAC or DRI above 75. It compares each category against each team's share of
    the available playing spots. The bench does not take part in these swaps.
    When two swaps improve the distribution equally, it
    prefers the one that keeps rating totals closer. The roster labels identify
-   players above 3.0. This step works with either rating mode.
+   players above 75. This step works with either rating mode.
+5. **Improve skill totals.** Auto-balanced swaps unlocked players when a swap
+   narrows the difference between the strongest and weakest team's total,
+   while preserving the pace and dribbling distribution. It repeats until no
+   single swap improves the difference. The bench does not participate.
 
-The draft spreads skill by order. Team totals can still vary, and positions
+Auto-balanced repeats the draft when confirmed attendance changes. It keeps
+an explicitly saved lineup when valid. The team-capacity control saves the
+shape without freezing an automatic lineup before matches exist. When a
+manual lineup or match exists, its placements are retained on later changes.
+Team totals can still vary, and positions
 such as goalkeeper are display information. The meetup's minimum attendance
 setting has no effect on the draft. See the
 [assignment code](../app/services/team_assignment.py).
@@ -153,13 +164,14 @@ Attributes use eligible recorded or imported match history.
 
 | Control | What happens |
 | --- | --- |
-| **Team assignment** | Choose balanced or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
+| **Team assignment** | Choose auto-balanced, balanced snake, or random for a meetup. Recurring meetups inherit the template setting. Saving meetup details in the admin form clears the saved lineup, even when the mode is the same. |
 | **Drag and save** | Every confirmed player must appear once. With no cap, sizes must match the draft. With a cap, the lineup needs that number of teams, plus an optional bench team of any size. |
-| **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Balanced reshuffles randomize equal-rated players before dealing and then spread PAC and DRI among playing teams. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
+| **Lock and reshuffle** | Locked players keep their team and team sizes stay fixed. Skill-based reshuffles randomize equal-rated players before dealing and spread PAC and DRI among playing teams. Auto-balanced also improves total ratings using the same swap pass as its automatic draft. Random reshuffles shuffle all unlocked players. Locks are local. The server saves the lineup when an admin reshuffles it. |
 | **Team capacity** | Use the cog in Admin Overview or on the Referee page to choose the number of teams and players per team. Before kickoff, increasing capacity confirms the earliest waitlisted players and shrinking it returns the latest excess signups to the waitlist. After a match starts, excess confirmed players stay on the bench. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
 
 When an admin has set team capacity, later attendance changes keep that team
-shape and retain existing player placements where possible. A pre-start
+shape. Auto-balanced redrafts until an admin saves a lineup or matches exist.
+A pre-start
 substitution updates the lineup for future rounds. A substitution during play
 updates that match.
 

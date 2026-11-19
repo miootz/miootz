@@ -9,6 +9,8 @@
 """
 
 from datetime import datetime, timedelta, UTC
+from types import SimpleNamespace
+import json
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -21,7 +23,9 @@ from app.core.database import Base, engine
 from app.models.match import MeetupMatch
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.models.web_push_subscription import WebPushSubscription
 from app.services.pocket_id_jwt import assert_oidc_config
+from app.services import web_push
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -172,13 +176,20 @@ async def test_push_subscription_ownership_and_allowlist(
     monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "pub")
     monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "pri")
     async with await client() as ac:
-        # Foreign host: rejected before any DB write.
-        r = await ac.post(
-            "/users/me/push/subscription",
-            json={"endpoint": "https://evil.example.com/x", "keys": {"p256dh": "k", "auth": "a"}},
-            headers=hdr("p1"),
-        )
-        assert r.status_code == 400, r.text
+        for host in ("evil.example.com", "push.apple.com.example.com", "fakepush.apple.com"):
+            r = await ac.post(
+                "/users/me/push/subscription",
+                json={"endpoint": f"https://{host}/x", "keys": {"p256dh": "k", "auth": "a"}},
+                headers=hdr("p1"),
+            )
+            assert r.status_code == 400, r.text
+        for host in ("web.push.apple.com", "updates.push.services.mozilla.com", "push.services.mozilla.com"):
+            r = await ac.post(
+                "/users/me/push/subscription",
+                json={"endpoint": f"https://{host}/x", "keys": {"p256dh": "k", "auth": "a"}},
+                headers=hdr("p1"),
+            )
+            assert r.status_code == 200, r.text
         # Allowed host: p1 registers, p2 cannot steal it.
         body = {
             "endpoint": "https://fcm.googleapis.com/fcm/send/dev1",
@@ -192,6 +203,49 @@ async def test_push_subscription_ownership_and_allowlist(
 
 
 # ── report-score: players score only confirmed attendees ────────────
+
+
+async def test_push_diagnostic_sends_only_to_calling_admin_and_reports_failures(monkeypatch):
+    admin_id = await seed_user("admin", admin=True)
+    member_id = await seed_user("p1")
+    calls = []
+
+    def mock_send(sub, data):
+        calls.append((sub.user_id, json.loads(data)))
+        if sub.endpoint.endswith("/expired"):
+            raise web_push.WebPushException("gone", response=SimpleNamespace(status_code=410))
+        if sub.endpoint.endswith("/reject"):
+            raise web_push.WebPushException("rejected", response=SimpleNamespace(status_code=403))
+
+    monkeypatch.setattr(web_push, "_send_one", mock_send)
+    async with await client() as ac:
+        url = "/users/me/push/test"
+        assert (await ac.post(url, headers=hdr("p1"))).status_code == 403
+        monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "")
+        assert (await ac.post(url, headers=hdr("admin"))).status_code == 503
+        monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "pub")
+        monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "pri")
+        response = await ac.post(url, headers=hdr("admin"))
+        assert response.json() == {"sent": 0, "failed": 0, "expired": 0}
+
+        async with AsyncSession(engine) as db:
+            db.add_all(
+                WebPushSubscription(
+                    user_id=uid, endpoint=f"https://fcm.googleapis.com/{suffix}",
+                    p256dh="test-key", auth="test-auth",
+                )
+                for uid, suffix in (
+                    (admin_id, "ok"), (admin_id, "expired"), (admin_id, "reject"), (member_id, "other"),
+                )
+            )
+            await db.commit()
+
+        response = await ac.post(url, headers=hdr("admin"))
+        assert response.json() == {"sent": 1, "failed": 1, "expired": 1}
+        assert len(calls) == 3
+        assert all(uid == admin_id and payload["url"] == "/admin/tools" for uid, payload in calls)
+        devices = await ac.get("/users/me/push/subscriptions", headers=hdr("admin"))
+        assert len(devices.json()["items"]) == 2
 
 
 @pytest.mark.asyncio

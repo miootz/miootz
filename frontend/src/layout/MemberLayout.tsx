@@ -21,6 +21,7 @@ import { OfflineBanner } from "../components/OfflineBanner";
 import { InstallAppBanner } from "../components/InstallAppBanner";
 import { MemberNotificationPrompt } from "../components/MemberNotificationPrompt";
 import { MeetupWeatherBadge } from "../components/MeetupWeatherBadge";
+import { BrandWordmark } from "../components/BrandWordmark";
 import { demoRoom } from "../utils/demoRoom";
 
 const BOTTOM_NAV_H = "4.5rem";
@@ -95,8 +96,8 @@ function MemberChrome() {
       <header className="sticky top-0 z-40 border-b border-line bg-board/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
           <div className="min-w-0 flex-1 text-left">
-            <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
-              Miootz
+            <p className="flex items-center text-ink">
+              <BrandWordmark />
               {header?.sseLive != null && (
                 <SseIndicator live={header.sseLive} />
               )}

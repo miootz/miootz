@@ -176,9 +176,12 @@ export function ProfilePage() {
 
   // Push notification state
   const [pushBusy, setPushBusy] = useState(false);
-  const [pushOn, setPushOn] = useState(false);
+  const [pushEndpoint, setPushEndpoint] = useState<string | null>(null);
   const [pushDevices, setPushDevices] = useState<PushSubscriptionRow[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [pushStateError, setPushStateError] = useState<string | null>(null);
+  const [pushRegistrationError, setPushRegistrationError] = useState<string | null>(null);
+  const [pushRefresh, setPushRefresh] = useState(0);
   const [deviceRemoveId, setDeviceRemoveId] = useState<number | null>(null);
 
   // Notification preferences state
@@ -203,18 +206,6 @@ export function ProfilePage() {
   /* ── Effects ───────────────────────────────────────────────────── */
 
   useEffect(() => {
-    if (!import.meta.env.PROD || !pushSupported()) return;
-    let cancelled = false;
-    void navigator.serviceWorker.ready.then(async (reg) => {
-      const sub = await reg.pushManager.getSubscription();
-      if (!cancelled) setPushOn(!!sub);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
     setNotifPrefsLoading(true);
     void fetchNotificationPreferences()
@@ -236,20 +227,31 @@ export function ProfilePage() {
     if (!import.meta.env.PROD || !pushSupported()) return;
     let cancelled = false;
     setDevicesLoading(true);
-    void fetchPushSubscriptions()
-      .then((r) => {
-        if (!cancelled) setPushDevices(r);
-      })
-      .catch(() => {
-        if (!cancelled) setPushDevices([]);
-      })
-      .finally(() => {
+    setPushStateError(null);
+    void (async () => {
+      try {
+        const [registration, devices] = await Promise.all([
+          navigator.serviceWorker.getRegistration(),
+          fetchPushSubscriptions(),
+        ]);
+        const local = await registration?.pushManager.getSubscription();
+        if (!cancelled) {
+          setPushEndpoint(local?.endpoint ?? null);
+          setPushDevices(devices);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          const reason = e instanceof Error ? e.message : "Unknown error";
+          setPushStateError(`Could not check notification registration. ${reason}`);
+        }
+      } finally {
         if (!cancelled) setDevicesLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pushRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -328,6 +330,7 @@ export function ProfilePage() {
   const pocketIdSettingsUrl = `${getPocketIdUrl()}/settings/account`;
 
   const pushEnabled = import.meta.env.PROD && pushSupported();
+  const pushOn = pushEndpoint != null && pushDevices.some((device) => device.endpoint === pushEndpoint);
 
   return (
     <div className="min-h-screen bg-board text-ink">
@@ -474,6 +477,17 @@ export function ProfilePage() {
                 <p className="text-sm text-ink-dim">
                   Loading…
                 </p>
+              ) : pushStateError ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-danger" role="alert">{pushStateError}</p>
+                  <button
+                    type="button"
+                    className="min-h-11 text-sm font-medium text-ink underline underline-offset-2"
+                    onClick={() => setPushRefresh((value) => value + 1)}
+                  >
+                    Retry
+                  </button>
+                </div>
               ) : pushDevices.length === 0 ? (
                 <p className="text-sm text-ink-dim">
                   No devices registered yet.
@@ -504,6 +518,7 @@ export function ProfilePage() {
                         <div className="min-w-0">
                           <p className="text-sm text-ink truncate">
                             {host}
+                            {ep === pushEndpoint && <span className="text-ink-dim"> · This device</span>}
                           </p>
                           {date && (
                             <p className="text-xs text-ink-dim">
@@ -542,26 +557,24 @@ export function ProfilePage() {
                   })}
                 </ul>
               )}
-              {!pushOn && (
+              {!devicesLoading && !pushStateError && !pushOn && (
                 <button
                   type="button"
                   disabled={pushBusy}
                   onClick={() => {
                     setPushBusy(true);
+                    setPushRegistrationError(null);
                     void (async () => {
                       try {
                         const r = await subscribeToWebPush();
                         if (r.ok) {
-                          setPushOn(true);
-                          const devs = await fetchPushSubscriptions();
-                          setPushDevices(devs);
+                          setPushRefresh((value) => value + 1);
                           showToast("Device registered.", "success");
                         } else {
-                          showToast(
-                            r.reason ?? "Could not register device",
-                            "error",
-                          );
+                          setPushRegistrationError(r.reason ?? "Could not register device");
                         }
+                      } catch (e) {
+                        setPushRegistrationError(e instanceof Error ? e.message : "Could not register device");
                       } finally {
                         setPushBusy(false);
                       }
@@ -569,13 +582,11 @@ export function ProfilePage() {
                   }}
                   className="bg-ink px-3 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50"
                 >
-                  {pushBusy ? "Registering…" : "Register this device"}
+                  {pushBusy ? "Registering…" : pushEndpoint ? "Finish registering this device" : "Register this device"}
                 </button>
               )}
-              {pushOn && pushDevices.length === 0 && (
-                <p className="text-xs text-ink-dim">
-                  This device is registered but not yet visible. Try refreshing.
-                </p>
+              {pushRegistrationError && (
+                <p role="alert" className="text-sm text-danger">{pushRegistrationError}</p>
               )}
             </div>
           </CollapsibleSection>

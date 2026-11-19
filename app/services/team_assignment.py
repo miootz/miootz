@@ -68,31 +68,32 @@ def _snake_draft(
     return teams
 
 
+def _attribute_imbalance(teams: list[list[dict[str, Any]]]) -> int:
+    total_players = sum(len(team) for team in teams)
+    if not total_players:
+        return 0
+    total = 0
+    for attribute in ("pac", "dri"):
+        counts = [
+            sum(p.get(attribute) is not None and p[attribute] > 3 for p in team)
+            for team in teams
+        ]
+        players_with_attribute = sum(counts)
+        total += sum(
+            (count * total_players - players_with_attribute * len(team)) ** 2
+            for count, team in zip(counts, teams, strict=True)
+        )
+    return total
+
+
 def _balance_attributes(
     teams: list[list[dict[str, Any]]], locked: set[str] | None = None
 ) -> None:
     """Swap unlocked players to spread above-neutral pace and dribbling."""
     locked = locked or set()
-    total_players = sum(len(team) for team in teams)
-    if not total_players:
-        return
-
-    def imbalance() -> int:
-        total = 0
-        for attribute in ("pac", "dri"):
-            counts = [
-                sum(p.get(attribute) is not None and p[attribute] > 3 for p in team)
-                for team in teams
-            ]
-            players_with_attribute = sum(counts)
-            total += sum(
-                (count * total_players - players_with_attribute * len(team)) ** 2
-                for count, team in zip(counts, teams, strict=True)
-            )
-        return total
 
     while True:
-        current = imbalance()
+        current = _attribute_imbalance(teams)
         if current == 0:
             return
         best = None
@@ -106,11 +107,46 @@ def _balance_attributes(
                         if str(b["id"]) in locked:
                             continue
                         teams[first][i], teams[second][j] = b, a
-                        candidate = imbalance()
+                        candidate = _attribute_imbalance(teams)
                         totals = [sum(float(p.get("skill", 0)) for p in t) for t in teams]
                         score = (candidate, max(totals) - min(totals))
                         if candidate < current and score < best_score:
                             best, best_score = (first, second, i, j), score
+                        teams[first][i], teams[second][j] = a, b
+        if best is None:
+            return
+        first, second, i, j = best
+        teams[first][i], teams[second][j] = teams[second][j], teams[first][i]
+
+
+def _balance_skill(teams: list[list[dict[str, Any]]], locked: set[str]) -> None:
+    """Improve rating totals without undoing pace or dribbling distribution."""
+    if len(teams) < 2:
+        return
+    while True:
+        totals = [sum(float(p.get("skill", 0)) for p in team) for team in teams]
+        current = round(max(totals) - min(totals), 9)
+        attribute_score = _attribute_imbalance(teams)
+        best = None
+        best_diff = current
+        for first in range(len(teams)):
+            for second in range(first + 1, len(teams)):
+                for i, a in enumerate(teams[first]):
+                    if str(a["id"]) in locked:
+                        continue
+                    for j, b in enumerate(teams[second]):
+                        if str(b["id"]) in locked:
+                            continue
+                        candidate = list(totals)
+                        difference = float(a.get("skill", 0)) - float(b.get("skill", 0))
+                        candidate[first] -= difference
+                        candidate[second] += difference
+                        candidate_diff = round(max(candidate) - min(candidate), 9)
+                        if candidate_diff >= best_diff:
+                            continue
+                        teams[first][i], teams[second][j] = b, a
+                        if _attribute_imbalance(teams) <= attribute_score:
+                            best, best_diff = (first, second, i, j), candidate_diff
                         teams[first][i], teams[second][j] = a, b
         if best is None:
             return
@@ -145,6 +181,9 @@ def rebalance_around_locked(
     locked: set[int],
     max_teams: int | None = None,
     randomize: bool = False,
+    *,
+    optimize: bool = False,
+    shuffle_equal: bool = True,
 ) -> list[list[dict[str, Any]]]:
     """Reassign the unlocked players around a lineup with locked spots.
 
@@ -171,11 +210,14 @@ def rebalance_around_locked(
         # players across teams keeps every team's skill total exactly the
         # same (equal-skill players stay contiguous in the snake, so the
         # per-team bucket counts are unchanged).
-        pending.sort(key=lambda x: float(x.get("skill", 0)), reverse=True)
+        if shuffle_equal:
+            pending.sort(key=lambda x: float(x.get("skill", 0)), reverse=True)
+        else:
+            pending.sort(key=lambda x: (-float(x.get("skill", 0)), str(x["id"])))
         start = 0
         for k in range(1, len(pending) + 1):
             if k == len(pending) or float(pending[k].get("skill", 0)) != float(pending[start].get("skill", 0)):
-                if k - start > 1:
+                if shuffle_equal and k - start > 1:
                     group = pending[start:k]
                     random.shuffle(group)
                     pending[start:k] = group
@@ -198,4 +240,6 @@ def rebalance_around_locked(
         round_idx += 1
     if not randomize:
         _balance_attributes(teams[:max_teams], locked_str)
+        if optimize:
+            _balance_skill(teams[:max_teams], locked_str)
     return teams

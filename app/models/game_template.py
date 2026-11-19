@@ -44,7 +44,7 @@ class GameTemplate(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     waitlist_mode: Mapped[str] = mapped_column(String, default="auto_promote")
     #: Copied onto each materialized `Meetup` from this template.
-    team_assignment_mode: Mapped[str] = mapped_column(String, default="balanced")
+    team_assignment_mode: Mapped[str] = mapped_column(String, default="auto-balanced")
 
     #: When False, scheduled jobs do not create new meetups for this template.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

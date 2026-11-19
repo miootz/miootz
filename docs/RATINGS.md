@@ -23,16 +23,16 @@ uses their underlying **1–5** scores before display rounding.
 | Teammates only | Confirmed attendees can rate teammates they shared a side with in a completed match. A side includes its live substitutes. |
 | Everyone | Confirmed attendees can rate any other confirmed attendee in that meetup. |
 
-In Meetup History, tap a hand emoji to review a player.
+In Meetup History, tap an emoji to review a player.
 
 | Review | Peer adjustment |
 | --- | ---: |
-| 👎 Poorly | −1.0 star |
-| 👌 As expected | 0.0 stars |
-| 👍 Well | +0.5 stars |
-| 👏 Excellent | +1.0 star |
+| 😥 poor | −1.0 star |
+| 😐 okay | 0.0 stars |
+| 😏 good | +0.5 stars |
+| 🤩 great | +1.0 star |
 
-The OK sign starts selected. Leaving it alone adds no vote. Tapping it
+The **okay** review starts selected. Leaving it alone adds no vote. Tapping it
 records a neutral vote. Tap your saved choice again to clear it.
 
 At least three distinct eligible reviewers must vote for the same player
