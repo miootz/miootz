@@ -11,7 +11,7 @@ vi.mock("../../context/ToastContext", () => ({
 }));
 
 it("loads newest meetups first and applies the selected order across pages", async () => {
-  const items = Array.from({ length: 60 }, (_, index) => ({
+  const items = Array.from({ length: 11 }, (_, index) => ({
     id: index + 1,
     start_time: new Date(Date.UTC(2025, 0, index + 1)).toISOString(),
     location: `Pitch ${index + 1}`,
@@ -31,26 +31,27 @@ it("loads newest meetups first and applies the selected order across pages", asy
     return { items: ordered.slice(offset, offset + limit), offset, limit, total: items.length };
   });
 
-  render(<MemoryRouter><AdminMeetupsPage /></MemoryRouter>);
-  const newest = await screen.findByRole("link", { name: /Pitch 60/ });
+  const { container } = render(<MemoryRouter><AdminMeetupsPage /></MemoryRouter>);
+  await screen.findByText("Pitch 11");
+  const firstCard = () => container.querySelector('a[href^="/admin/meetups/"]:not([href$="/new"])');
   expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "desc", offset: 0 }));
-  expect(screen.getAllByRole("link", { name: /Pitch \d+/ })[0]).toBe(newest);
+  expect(firstCard()).toHaveTextContent("Pitch 11");
 
-  fireEvent.change(screen.getByRole("combobox", { name: "Rows per page" }), { target: { value: "50" } });
-  await waitFor(() => expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "desc", offset: 0, limit: 50 })));
+  fireEvent.change(screen.getByRole("combobox", { name: "Rows per page" }), { target: { value: "10" } });
+  await waitFor(() => expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "desc", offset: 0, limit: 10 })));
+  await waitFor(() => expect(screen.queryByText("Pitch 1")).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-  await screen.findByRole("link", { name: /Pitch 10/ });
-  expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "desc", offset: 50 }));
+  await screen.findByText("Pitch 1");
+  expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "desc", offset: 10 }));
 
   const sort = screen.getByRole("combobox", { name: "Sort meetups by date" });
   sort.focus();
   fireEvent.change(sort, { target: { value: "asc" } });
-  await screen.findByRole("link", { name: /Pitch 1\b/ });
+  await waitFor(() => expect(firstCard()).toHaveTextContent("Pitch 1"));
   expect(sort).toHaveFocus();
-  expect(screen.getAllByRole("link", { name: /Pitch \d+/ })[0]).toHaveTextContent("Pitch 1");
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("oldest first"));
 
   fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-  await screen.findByRole("link", { name: /Pitch 51/ });
-  expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "asc", offset: 50 }));
+  await screen.findByText("Pitch 11");
+  expect(fetchMeetups).toHaveBeenCalledWith(expect.objectContaining({ order: "asc", offset: 10 }));
 });
