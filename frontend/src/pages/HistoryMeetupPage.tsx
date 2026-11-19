@@ -188,14 +188,6 @@ export function HistoryMeetupPage() {
             <h2 id="player-contributions" className="text-lg font-bold text-ink">Player contributions</h2>
             <p className="text-sm text-ink-dim">This meetup</p>
           </div>
-          <div className="border border-line bg-raised px-3 py-3">
-            <h3 className="text-sm font-bold text-ink">Assist coverage</h3>
-            <p className="mt-1 text-sm text-ink-dim">
-              {night.open_play_goals === 0
-                ? "No open-play goals recorded."
-                : `${night.assists_credited} of ${night.open_play_goals} open-play goals have a credited assist.`}
-            </p>
-          </div>
           <div className="border border-line bg-panel">
             <table className="w-full table-fixed text-sm">
               <caption className="sr-only">Goals, assists and clean sheets for this meetup</caption>

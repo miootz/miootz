@@ -140,8 +140,7 @@ async def test_attributes_in_rankings_profile_and_admin_edit():
 
         history = await client.get("/meetups/2/rankings", headers=headers)
         assert history.status_code == 200, history.text
-        night = history.json()["night"]
-        assert night["assists_credited"] == night["open_play_goals"] > 0
+        assert history.json()["night"]["kpis"]["matches"] == 6
 
         update = await client.patch(
             "/users/1", headers=headers, json={"seed_skill": 4.5, "pac": 3.5, "dri": 4}

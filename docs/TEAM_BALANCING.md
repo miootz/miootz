@@ -108,8 +108,8 @@ An attribute stays unavailable until its minimum evidence is met.
 Miootz converts each rate to a 1–5 attribute by interpolating between its
 anchors, caps the result at 1–5, and rounds it to one decimal place. Rankings'
 **Attributes** view shows SHO, PAS, and DEF for the selected period and can
-sort by each. History shows the underlying goals, assists, clean sheets, and
-assist coverage. The profile shows current attributes and overall skill;
+sort by each. History shows goals, assists, and clean sheets for the meetup.
+The profile shows current attributes and overall skill;
 admins can set PAC and DRI.
 
 Fresh databases work without migrating the former additive match bonus.

@@ -386,7 +386,6 @@ async def _night_block(
         for m in sorted(matches, key=lambda m: m.match_number)
         if m.was_draw
     ]
-    open_play = [goal for goal in goals if not goal.is_own_goal and not goal.is_penalty]
     return {
         "kpis": {
             "matches": len(matches),
@@ -394,8 +393,6 @@ async def _night_block(
             "players": len(all_player_ids),
             "draws": sum(1 for m in matches if m.was_draw),
         },
-        "open_play_goals": len(open_play),
-        "assists_credited": sum(goal.assist_id is not None for goal in open_play),
         "teams": team_rows,
         "draw_matches": draw_matches,
     }

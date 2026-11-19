@@ -68,8 +68,6 @@ export interface NightStats {
   };
   teams: TeamNightRecord[];
   draw_matches: DrawMatch[];
-  assists_credited: number;
-  open_play_goals: number;
 }
 
 export type AttributeSort = "sho" | "pas" | "def";

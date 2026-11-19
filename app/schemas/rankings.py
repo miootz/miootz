@@ -82,8 +82,6 @@ class DrawMatch(BaseModel):
 
 class NightStats(BaseModel):
     kpis: NightKpis
-    assists_credited: int
-    open_play_goals: int
     teams: list[TeamNightRecord] = []
     draw_matches: list[DrawMatch] = []
 
