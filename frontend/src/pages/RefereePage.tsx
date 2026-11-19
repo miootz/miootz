@@ -35,6 +35,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
 import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
 import { TeamReshapeSheet } from "../components/TeamReshapeSheet";
+import { SkillRating } from "../components/SkillRating";
 import { AuthContext } from "../auth/auth-context";
 import {
   ArrowLeft,
@@ -75,12 +76,6 @@ function sortRosterBySkill<T extends { id: number }>(
   return [...users].sort(
     (a, b) => (skillById.get(b.id) ?? 0) - (skillById.get(a.id) ?? 0),
   );
-}
-
-/** Discreet rating label: whole numbers plain, calculated skills 1dp. */
-function skillLabel(v: number | undefined): string {
-  if (v == null) return "";
-  return v % 1 === 0 ? String(Math.round(v)) : v.toFixed(1);
 }
 
 // ── Manual Match Form ────────────────────────────────────────────
@@ -1056,9 +1051,9 @@ export function RefereePage() {
                         className="flex min-w-0 items-baseline gap-1.5"
                       >
                         <span className="truncate">{u.display_name}</span>
-                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
-                          {skillLabel(skillById.get(u.id))}
-                        </span>
+                        {skillById.has(u.id) && (
+                          <SkillRating score={skillById.get(u.id)} className="text-2xs text-ink-dim" />
+                        )}
                       </li>
                     ),
                   )}
@@ -1076,9 +1071,9 @@ export function RefereePage() {
                         className="flex min-w-0 items-baseline justify-end gap-1.5"
                       >
                         <span className="truncate">{u.display_name}</span>
-                        <span className="shrink-0 text-2xs tabular-nums text-ink-faint">
-                          {skillLabel(skillById.get(u.id))}
-                        </span>
+                        {skillById.has(u.id) && (
+                          <SkillRating score={skillById.get(u.id)} className="text-2xs text-ink-dim" />
+                        )}
                       </li>
                     ),
                   )}

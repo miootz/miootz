@@ -3,6 +3,7 @@ import { PlayerAvatarFace } from "./PlayerAvatar";
 import { StarRating } from "./StarRating";
 import { Lock } from "lucide-react";
 import { PlayerEditLink } from "./PlayerEditLink";
+import { SkillRating } from "./SkillRating";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -34,7 +35,6 @@ function PlayerRow({
     onRatingChange?: (score: number) => void;
     isMe?: boolean;
 }) {
-    const rating = (player.calculatedSkill ?? player.skillScore).toFixed(1);
     const positions = formatPositions(player);
 
     return (
@@ -60,8 +60,8 @@ function PlayerRow({
                 <PlayerEditLink playerId={player.id} className="text-sm font-medium text-ink truncate" stretch>
                     {player.name}
                 </PlayerEditLink>
-                {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">PAC</span>}
-                {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-ink-dim shrink-0">DRI</span>}
+                {(player.pac ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-pac shrink-0">PAC</span>}
+                {(player.dri ?? 3) > 3 && <span className="text-2xs font-bold text-attribute-dri shrink-0">DRI</span>}
                 {isMe && (
                     <span className="text-2xs font-bold text-live shrink-0">
                         You
@@ -88,9 +88,7 @@ function PlayerRow({
             )}
 
             {/* Computed rating in bold */}
-            <span className="text-sm font-bold text-ink tabular-nums shrink-0">
-                {rating}
-            </span>
+            <SkillRating score={player.calculatedSkill ?? player.skillScore} className="text-sm text-ink" />
         </div>
     );
 }

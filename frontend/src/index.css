@@ -62,6 +62,13 @@
   --color-live: #f59e0b;
   --color-danger: #ef4444;
 
+  /* Attribute text only. Each hue identifies an attribute, independent of score. */
+  --color-attribute-pac: #c5dc85;
+  --color-attribute-sho: #f7a48f;
+  --color-attribute-pas: #93c5fd;
+  --color-attribute-dri: #d2affb;
+  --color-attribute-def: #c3cddf;
+
   /* v3 compatibility: bare `border` keeps its old default colour. */
   --default-border-color: var(--color-line);
 

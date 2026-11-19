@@ -23,17 +23,11 @@ import {
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
 import { PaginationControls } from "../../components/PaginationControls";
-import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
+import { PlayerAvatarFace } from "../../components/PlayerAvatar";
+import { SkillRating } from "../../components/SkillRating";
 import { useToast } from "../../context/ToastContext";
 
 const PAGE_SIZE = 25;
-
-function skillOf(user: AdminUserRow): number | null {
-	if (user.calculated_skill != null) {
-		return Math.min(5, Math.max(1, Math.round(user.calculated_skill)));
-	}
-	return null;
-}
 
 function displayNameOf(user: AdminUserRow): string {
 	return (
@@ -270,7 +264,6 @@ export function AdminPlayersPage() {
 						<div className="grid gap-3 md:grid-cols-2">
 							{users.map((user) => {
 								const displayName = displayNameOf(user);
-								const skill = skillOf(user);
 								return (
 									<Link
 										key={user.id}
@@ -288,8 +281,8 @@ export function AdminPlayersPage() {
 												<span className="min-w-0 truncate font-semibold text-ink text-sm">
 													{displayName}
 												</span>
-												{skill != null && (
-													<SkillBadge score={skill} size="sm" />
+												{user.calculated_skill != null && (
+													<SkillRating score={user.calculated_skill} className="text-xs text-ink" />
 												)}
 											</span>
 											<span className="mt-1 flex flex-wrap items-center gap-2">

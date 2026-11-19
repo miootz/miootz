@@ -9,11 +9,6 @@ export function initialsFromName(name: string): string {
   return name.slice(0, 2).toUpperCase().replace(/[^A-Z0-9]/g, '') || '?';
 }
 
-/** Tailwind classes for skill badge — the number carries the level. */
-export function skillBadgeClasses(_score: number): string {
-  return "bg-raised text-ink-dim";
-}
-
 export function playerAvatarColor(name: string): string {
   return usernameColor(name);
 }

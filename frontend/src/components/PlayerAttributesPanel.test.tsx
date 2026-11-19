@@ -15,7 +15,8 @@ describe("PlayerAttributesPanel", () => {
     const passing = screen.getByRole("heading", { name: "Passing (PAS)" }).closest("li")!;
     expect(within(passing).getByText("0 assists - 2 meetups")).toBeTruthy();
     expect(within(passing).getByLabelText("Unrated")).toBeTruthy();
-    expect(screen.getByText("81")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Pace (PAC)" })).toHaveClass("text-attribute-pac");
+    expect(screen.getByText("81")).toHaveClass("text-attribute-pac");
     expect(screen.getByText("100")).toBeTruthy();
     expect(screen.queryByText(/7 clean sheets/)).toBeNull();
     expect(screen.queryByText("How attributes are calculated")).toBeNull();

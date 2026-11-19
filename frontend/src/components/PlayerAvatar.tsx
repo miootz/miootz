@@ -1,7 +1,4 @@
-import {
-  initialsFromName,
-  skillBadgeClasses,
-} from "../utils/playerDisplay";
+import { initialsFromName } from "../utils/playerDisplay";
 
 type Size = "sm" | "md" | "lg";
 
@@ -10,29 +7,6 @@ const faceSize: Record<Size, string> = {
   md: "w-10 h-10 text-xs",
   lg: "w-12 h-12 text-sm",
 };
-
-const badgeSize: Record<Size, string> = {
-  sm: "text-2xs px-1.5 py-0",
-  md: "text-xs px-2 py-0.5",
-  lg: "text-sm px-2.5 py-0.5",
-};
-
-export function SkillBadge({
-  score,
-  size = "md",
-}: {
-  score: number;
-  size?: Size;
-}) {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center font-semibold tabular-nums ${badgeSize[size]} ${skillBadgeClasses(score)}`}
-      title={`Skill ${score}`}
-    >
-      {score}
-    </span>
-  );
-}
 
 export function PlayerAvatarFace({
   name,

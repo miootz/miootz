@@ -22,6 +22,7 @@ import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
+import { SkillRating } from "../components/SkillRating";
 import {
   pushSupported,
   subscribeToWebPush,
@@ -381,7 +382,7 @@ export function ProfilePage() {
           ]).map(({ label, value, disabled }) => (
             <div key={label} className="min-w-0 p-5">
               <h2 className="text-sm font-bold text-ink">{label}</h2>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-ink">{disabled ? "—" : value?.toFixed(1) ?? "—"}</p>
+              <p className="mt-2 text-2xl text-ink"><SkillRating score={disabled ? null : value} /></p>
               <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
             </div>
           ))}

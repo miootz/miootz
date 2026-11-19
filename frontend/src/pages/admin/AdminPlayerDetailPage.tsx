@@ -23,21 +23,22 @@ import {
 } from "../../api/adminApi";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { PaginationControls } from "../../components/PaginationControls";
-import { PlayerAvatarFace, SkillBadge } from "../../components/PlayerAvatar";
+import { PlayerAvatarFace } from "../../components/PlayerAvatar";
+import { RatingStar, SkillRating } from "../../components/SkillRating";
 import { useToast } from "../../context/ToastContext";
 import { shareLink } from "../../utils/share";
-import { ATTRIBUTE_MAX, ATTRIBUTE_MIN, fromAttributeScale, toAttributeScale } from "../../utils/attributeScale";
+import { ATTRIBUTE_COLOR, ATTRIBUTE_MAX, ATTRIBUTE_MIN, fromAttributeScale, toAttributeScale } from "../../utils/attributeScale";
 
 const HISTORY_PAGE_SIZE = 25;
 
 const SPECIALTIES = ["ATT", "MID", "DEF", "GK"] as const;
 
 const ATTRIBUTE_FIELDS = [
-	{ key: "sho_override", label: "Shooting (SHO)", placeholder: "Automatic" },
-	{ key: "pas_override", label: "Passing (PAS)", placeholder: "Automatic" },
-	{ key: "def_override", label: "Defending (DEF)", placeholder: "Automatic" },
-	{ key: "pac", label: "Pace (PAC)", placeholder: "Unrated" },
-	{ key: "dri", label: "Dribbling (DRI)", placeholder: "Unrated" },
+	{ key: "sho_override", code: "sho", label: "Shooting (SHO)", placeholder: "Automatic" },
+	{ key: "pas_override", code: "pas", label: "Passing (PAS)", placeholder: "Automatic" },
+	{ key: "def_override", code: "def", label: "Defending (DEF)", placeholder: "Automatic" },
+	{ key: "pac", code: "pac", label: "Pace (PAC)", placeholder: "Unrated" },
+	{ key: "dri", code: "dri", label: "Dribbling (DRI)", placeholder: "Unrated" },
 ] as const;
 type AttributeField = (typeof ATTRIBUTE_FIELDS)[number]["key"];
 
@@ -62,7 +63,7 @@ const STATUS_META: Record<
 	},
 };
 
-function StatBlock({ label, value }: { label: string; value: string }) {
+function StatBlock({ label, value }: { label: string; value: ReactNode }) {
 	return (
 		<div className="border border-line bg-raised p-4">
 			<p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
@@ -277,10 +278,7 @@ export function AdminPlayerDetailPage() {
 					<h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-ink tracking-tight">
 						<span className="min-w-0 truncate">{displayName}</span>
 						{user.calculated_skill != null && (
-							<SkillBadge
-								score={Math.min(5, Math.max(1, Math.round(user.calculated_skill)))}
-								size="md"
-							/>
+							<SkillRating score={user.calculated_skill} className="text-sm" />
 						)}
 					</h1>
 					{handle && (
@@ -310,11 +308,7 @@ export function AdminPlayerDetailPage() {
 					/>
 					<StatBlock
 						label="Skill level"
-						value={
-							stats.skill_level > 0
-								? stats.skill_level.toFixed(1)
-								: "—"
-						}
+						value={<SkillRating score={user.calculated_skill} />}
 					/>
 				</div>
 			</section>
@@ -346,17 +340,20 @@ export function AdminPlayerDetailPage() {
 					<label htmlFor="player-seed-skill" className="mb-1 block text-xs font-medium text-ink-dim">
 						Base Rating (0–5, optional)
 					</label>
-					<input
-						id="player-seed-skill"
-						type="number"
-						min="0"
-						max="5"
-						step="any"
-						value={editSeedSkill}
-						onChange={(event) => setEditSeedSkill(event.target.value)}
-						placeholder="Unset"
-						className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
-					/>
+					<div className="relative">
+						<RatingStar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" />
+						<input
+							id="player-seed-skill"
+							type="number"
+							min="0"
+							max="5"
+							step="any"
+							value={editSeedSkill}
+							onChange={(event) => setEditSeedSkill(event.target.value)}
+							placeholder="Unset"
+							className="min-h-11 w-full border border-line bg-raised py-2 pl-9 pr-3 text-sm text-ink tabular-nums placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+						/>
+					</div>
 					<p className="mt-1 text-xs text-ink-dim">This is separate from the current overall rating.</p>
 				</div>
 
@@ -366,12 +363,12 @@ export function AdminPlayerDetailPage() {
 						Enter whole numbers. Leave a field blank to use automatic shooting, passing or defending, or to leave pace or dribbling unrated.
 					</p>
 					<div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-						{ATTRIBUTE_FIELDS.map(({ key, label, placeholder }) => {
+						{ATTRIBUTE_FIELDS.map(({ key, code, label, placeholder }) => {
 							const stored = user[key];
 							const id = `player-${key}`;
 							return (
 								<div key={key}>
-									<label htmlFor={id} className="mb-1 block text-xs font-medium text-ink-dim">{label}</label>
+									<label htmlFor={id} className={`mb-1 block text-xs font-medium ${ATTRIBUTE_COLOR[code]}`}>{label}</label>
 									<input
 										id={id}
 										type="number"
@@ -384,7 +381,7 @@ export function AdminPlayerDetailPage() {
 											setEditAttributes((edits) => ({ ...edits, [key]: value }));
 										}}
 										placeholder={placeholder}
-										className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+										className={`min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm tabular-nums placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live ${ATTRIBUTE_COLOR[code]}`}
 									/>
 								</div>
 							);

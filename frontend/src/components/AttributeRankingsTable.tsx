@@ -1,7 +1,8 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { AttributeRankingRow, AttributeSort } from "../api/rankingsApi";
-import { toAttributeScale } from "../utils/attributeScale";
+import { ATTRIBUTE_COLOR, toAttributeScale } from "../utils/attributeScale";
 import { PlayerEditLink } from "./PlayerEditLink";
+import { SkillRating } from "./SkillRating";
 
 const ATTRIBUTES: { key: AttributeSort; label: string }[] = [
   { key: "sho", label: "Shooting" },
@@ -40,16 +41,16 @@ export function AttributeRankingsTable({
                   key={key}
                   scope="col"
                   aria-sort={sort === key ? (order === "desc" ? "descending" : "ascending") : undefined}
-                  className="text-right"
+                  className={`text-right ${computedScores && key === "rating" ? "w-[18%] sm:w-auto" : ""}`}
                 >
                   <button
                     type="button"
                     aria-label={`Sort by ${label}`}
                     onClick={() => onSortChange(key, sort === key && order === "desc" ? "asc" : "desc")}
-                    className={`inline-flex min-h-11 w-full items-center justify-end gap-0.5 px-1 text-xs font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-live sm:px-3 ${sort === key ? "text-live" : "text-ink-dim hover:text-ink"}`}
+                    className={`inline-flex min-h-11 w-full items-center justify-end gap-0.5 px-0.5 text-xs font-bold hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-live sm:px-3 ${key === "rating" ? "text-ink-dim" : ATTRIBUTE_COLOR[key]}`}
                   >
                     {heading}
-                    {sort === key && (order === "desc" ? <ArrowDown className="h-3 w-3" aria-hidden /> : <ArrowUp className="h-3 w-3" aria-hidden />)}
+                    {sort === key && (order === "desc" ? <ArrowDown className="size-2.5 shrink-0 text-live sm:size-3" aria-hidden /> : <ArrowUp className="size-2.5 shrink-0 text-live sm:size-3" aria-hidden />)}
                   </button>
                 </th>
               ))}
@@ -68,7 +69,9 @@ export function AttributeRankingsTable({
                   return (
                     <td key={key} className="px-1 py-3 text-right font-bold tabular-nums sm:px-3">
                       {value == null ? <span className="text-ink-dim" aria-label="Insufficient data">—</span> : (
-                        key === "rating" ? value.toFixed(1) : toAttributeScale(value)
+                        key === "rating" ? <SkillRating score={value} /> : (
+                          <span className={ATTRIBUTE_COLOR[key]}>{toAttributeScale(value)}</span>
+                        )
                       )}
                     </td>
                   );
