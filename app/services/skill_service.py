@@ -231,7 +231,7 @@ async def refresh_match_skill_bonuses(db: AsyncSession) -> None:
             for user_id, metrics in stats.items():
                 match_bonus = (
                     0.30 * metrics["goals"]
-                    + 0.20 * metrics["assists"]
+                    + 0.15 * metrics["assists"]
                     + 0.10 * metrics["clean_sheets"]
                 )
                 bonuses[user_id] += min(0.60, match_bonus) * weight

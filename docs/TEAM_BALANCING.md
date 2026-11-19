@@ -63,7 +63,7 @@ stay unrated. [Skill calculation](../app/services/skill_service.py) ·
 | Event in a completed match | Bonus points |
 | --- | ---: |
 | Goal | +0.30 |
-| Assist | +0.20 |
+| Assist | +0.15 |
 | Clean sheet | +0.10 |
 
 Own goals and shootout kicks earn no bonus. A clean sheet follows the same

@@ -186,9 +186,9 @@ async def test_meetup_refresh_rewards_completed_matches_and_decays_absent_player
     weight = 0.5 ** (timedelta(hours=1) / timedelta(weeks=3))
     await send_rating_reminder_for_meetup(first_id)
     first_skills = await skills()
-    assert [skill for skill, _ in first_skills] == [3.1, 3.1, 3, 3, None]
+    assert [skill for skill, _ in first_skills] == [3.1, 3, 3, 3, None]
     assert [bonus for _, bonus in first_skills] == pytest.approx(
-        [points * weight / (3 + 2 * weight) for points in (0.6, 0.3, 0.1, 0, 0.1)]
+        [points * weight / (3 + 2 * weight) for points in (0.6, 0.25, 0.1, 0, 0.1)]
     )
     await send_rating_reminder_for_meetup(first_id)
     assert await skills() == first_skills
