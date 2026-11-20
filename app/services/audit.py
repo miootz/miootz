@@ -7,12 +7,13 @@ logged and swallowed — it must never block or fail the action being recorded.
 
 import asyncio
 import logging
+from datetime import datetime
 
 from fastapi import Request
 
 from app.core.audit_db import audit_session
 from app.core.timeutil import utcnow
-from app.models.audit import AuditLog
+from app.models.audit import AuditLog, RATING_AUDIT_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def log_action(
     description: str,
     *,
     meetup_id: int | None = None,
+    meetup_start_time: datetime | None = None,
 ) -> None:
     """Record an action; never raises, never blocks the caller."""
     user = getattr(request.state, "user", None)
@@ -56,8 +58,9 @@ def log_action(
             is_admin=bool(getattr(request.state, "is_admin", False)),
             category=category,
             action=action,
-            description=description,
+            description=RATING_AUDIT_DESCRIPTIONS.get(action, description),
             meetup_id=meetup_id,
+            meetup_start_time=meetup_start_time,
         )
     )
     _pending.add(task)

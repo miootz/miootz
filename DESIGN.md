@@ -307,6 +307,22 @@ Direct: buttons press 2% (`active:scale-[0.98]`), disabled is an opacity step
 - **Don't** use glass/blur anywhere but sticky bars and overlays.
 - **Don't** use emoji as icons (lucide only); chat reactions are content and stay emoji.
 
+## Surface textures
+
+Use one low-contrast, static texture per screen. Keep the artwork in the navy
+palette with a solid background color under it. Preserve solid fills for tables,
+stat tiles, timers, team colors, and controls. Keep decorative artwork out of
+the reading order and keep the text legible at the narrowest layout.
+
+- **Meetup History:** Crop football stitching toward the right of the winning
+  team's name band. For joint winners, use the texture once.
+- **Rankings:** Use painted steel on the Season Highlights heading strip, with
+  a solid leaderboard below.
+- **Live match:** Use painted steel behind the score digits. The clock and team
+  name bands retain their solid fills.
+- **Empty Meetup History:** Use a muted court marking at the edge of the
+  no-history message.
+
 ## Asset Provenance
 
 - **Goal Cut** is the Miootz mark. The off-white SVG is used beside the Archivo
@@ -314,8 +330,8 @@ Direct: buttons press 2% (`active:scale-[0.98]`), disabled is an opacity step
 - **`frontend/public/brand/`** contains Miootz artwork generated locally with
   ComfyUI and graded to the board palette. The portrait stitched-ball art and
   wide football-seam crop are used on the app splash. The court photograph is
-  sized for Pocket ID sign-in, and the painted-steel texture is available for
-  larger quiet surfaces.
+  sized for Pocket ID sign-in. `court-marking.webp` is a subdued crop of that
+  image for the empty History state.
 
 - **Archivo** (variable 100–900): self-hosted from Google Fonts —
   `frontend/src/assets/fonts/archivo-latin.woff2`, `archivo-latin-ext.woff2`,

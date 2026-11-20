@@ -8,7 +8,7 @@ import { SkillRating } from "./SkillRating";
 /*
  * Single source of UI truth for a team player row: avatar (spans both rows),
  * name on top, positions + computed rating below, lock toggle (spans rows).
- * DraggableTeams wraps this with dnd-kit wiring (dragProps/style/cardRef).
+ * Selection replaces the player edit link while substitution mode is open.
  */
 
 function formatPositions(player: User): string {
@@ -25,21 +25,19 @@ function formatPositions(player: User): string {
 
 export const TeamPlayerCard: React.FC<{
   player: User;
-  canDrag: boolean;
   onToggleLock?: (id: string) => void;
-  cardRef?: React.Ref<HTMLDivElement>;
-  style?: React.CSSProperties;
-  /** Spread of dnd-kit listeners/attributes (drag surface = whole card). */
-  dragProps?: React.HTMLAttributes<HTMLDivElement>;
+  onSelect?: () => void;
+  selected?: boolean;
+  selectionDisabled?: boolean;
   /** True for the signed-in player's own row — highlighted with a "You" chip. */
   isMe?: boolean;
   linkToPlayer?: boolean;
-}> = ({ player, canDrag, onToggleLock, cardRef, style, dragProps, isMe, linkToPlayer }) => {
+}> = ({ player, onToggleLock, onSelect, selected, selectionDisabled, isMe, linkToPlayer }) => {
   const positions = formatPositions(player);
   const nameClass = "text-sm font-medium text-ink truncate";
 
   const lockButton =
-    canDrag && onToggleLock ? (
+    onToggleLock ? (
       <button
         type="button"
         onClick={(e) => {
@@ -59,16 +57,13 @@ export const TeamPlayerCard: React.FC<{
 
   return (
     <div
-      ref={cardRef}
-      style={style}
-      {...dragProps}
       className={`group relative flex items-center gap-2.5 border px-3 py-2 transition-colors ${
-        isMe
+        selected || isMe
           ? "bg-live/10 border-live"
           : "bg-panel border-line"
       } ${
-        canDrag && !player.isLocked
-          ? "cursor-grab active:cursor-grabbing hover:border-live/60 [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]"
+        onSelect
+          ? "min-h-11 hover:border-live/60"
           : player.isLocked
             ? "opacity-60"
             : ""
@@ -86,7 +81,7 @@ export const TeamPlayerCard: React.FC<{
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 min-w-0">
-          {linkToPlayer ? (
+          {linkToPlayer && !onSelect ? (
             <PlayerEditLink playerId={player.id} className={nameClass} stretch>{player.name}</PlayerEditLink>
           ) : (
             <span className={nameClass}>{player.name}</span>
@@ -111,6 +106,16 @@ export const TeamPlayerCard: React.FC<{
 
       {/* Lock toggle — spans both rows */}
       {lockButton}
+      {onSelect && (
+        <button
+          type="button"
+          aria-label={player.name}
+          aria-pressed={Boolean(selected)}
+          disabled={selectionDisabled}
+          onClick={onSelect}
+          className="absolute inset-0"
+        />
+      )}
     </div>
   );
 };

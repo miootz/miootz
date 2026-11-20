@@ -40,7 +40,7 @@ function SeasonHighlights({
   if (entries.length === 0) return null;
   return (
     <section aria-labelledby="rankings-highlights" className="@container border border-line bg-panel">
-      <h2 id="rankings-highlights" className="border-b border-line px-4 py-3 text-lg font-bold text-ink">
+      <h2 id="rankings-highlights" className="texture-painted-steel border-b border-line px-4 py-3 text-lg font-bold text-ink">
         {allTime ? "All-time highlights" : "Season highlights"}
       </h2>
       <div className="grid gap-px bg-line @min-[18rem]:grid-cols-2 @min-[45rem]:grid-cols-4">

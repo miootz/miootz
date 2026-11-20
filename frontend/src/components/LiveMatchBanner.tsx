@@ -269,7 +269,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
 
       {/* Scoreboard — big numbers above, team slabs 50/50 below */}
       <div>
-        <p className="py-1.5 text-center text-4xl font-extrabold leading-none tabular-nums text-ink sm:text-5xl">
+        <p className="texture-painted-steel py-1.5 text-center text-4xl font-extrabold leading-none tabular-nums text-ink sm:text-5xl">
           {currentMatch.score_a}
           <span className="mx-2 text-xl font-bold text-ink-faint sm:text-2xl">—</span>
           {currentMatch.score_b}

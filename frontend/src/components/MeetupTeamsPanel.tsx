@@ -10,7 +10,8 @@ import {
 import { adminReshuffleTeams } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
-import { DraggableTeams } from "./DraggableTeams";
+import { TeamLineups } from "./TeamLineups";
+import { pickSubstitute, type SubstitutionPick } from "../utils/substitutionSelection";
 import { TeamReshapeSheet } from "./TeamReshapeSheet";
 
 function ratingOf(p: User): number {
@@ -42,7 +43,7 @@ function mapTeamPlayers(team: TeamsResponse["teams"][0]): User[] {
 }
 
 /**
- * Build the local, drag-editable team state that DraggableTeams consumes.
+ * Build the team display and its attendance metadata.
  * `isLocked` is sourced from the server team payload; attendance carries the
  * rest of the player info.
  */
@@ -89,6 +90,7 @@ export function MeetupTeamsPanel({
   detail,
   onChanged,
   live,
+  isPast = false,
 }: {
   meetupId: number;
   detail: MeetupDetail;
@@ -96,6 +98,7 @@ export function MeetupTeamsPanel({
   onChanged: () => void | Promise<void>;
   /** SSE subscription state, shown in the section header. */
   live?: boolean;
+  isPast?: boolean;
 }) {
   const { showToast } = useToast();
   const [teams, setTeams] = useState<TeamsResponse | null>(null);
@@ -198,46 +201,44 @@ export function MeetupTeamsPanel({
     });
   }, []);
 
-  const handleMovePlayer = useCallback(
-    async (playerId: string, sourceTeamId: string, destTeamId: string) => {
-      if (!teamMeetup) return;
-      const nextTeams = teamMeetup.teams.map((team) => {
-        if (team.id === sourceTeamId) {
-          return {
-            ...team,
-            players: team.players.filter((p) => p.id !== playerId),
-          };
-        }
-        if (team.id === destTeamId) {
-          const player = teamMeetup.attendance.find((p) => p.id === playerId);
-          return player ? { ...team, players: [...team.players, player] } : team;
-        }
-        return team;
-      });
-      setTeamMeetup({ ...teamMeetup, teams: nextTeams });
-      const payload = nextTeams.map((t) => t.players.map((p) => p.id));
-      try {
-        const res = await patchMeetupTeams(meetupId, payload);
-        setTeams(res);
-        setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, res, meetupId)));
-        void onChanged();
-      } catch (e) {
-        showToast(
-          e instanceof Error ? e.message : "Could not save team lineup",
-          "error",
-        );
-        void onChanged();
-      }
-    },
-    [meetupId, teamMeetup, detail, onChanged, showToast, withLocalLocks],
-  );
+  const [substitutionsOpen, setSubstitutionsOpen] = useState(false);
+  const [selected, setSelected] = useState<SubstitutionPick<string> | null>(null);
+  const [savingSwap, setSavingSwap] = useState(false);
+  const substitutionsActive = !isPast && substitutionsOpen;
+  const selectedPlayer = teamMeetup?.teams.find((team) => team.id === selected?.key)
+    ?.players.find((player) => player.id === selected?.id);
+  const currentPick = selectedPlayer ? selected : null;
+
+  async function swapPlayers(first: SubstitutionPick<string>, second: SubstitutionPick<string>) {
+    if (!teamMeetup) return;
+    setSavingSwap(true);
+    setSelected(null);
+    try {
+      const payload = teamMeetup.teams.map((team) => team.players.map((player) => {
+        if (team.id === first.key && player.id === first.id) return second.id;
+        if (team.id === second.key && player.id === second.id) return first.id;
+        return player.id;
+      }));
+      const res = await patchMeetupTeams(meetupId, payload);
+      setTeams(res);
+      setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, res, meetupId)));
+      hapticLight();
+      showToast("Players swapped.", "success");
+      void onChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not swap players.", "error");
+      void onChanged();
+    } finally {
+      setSavingSwap(false);
+    }
+  }
 
   return (
-    <section className="border border-line bg-panel overflow-hidden">
-      <header className="flex items-center gap-2 px-4 py-3 border-b border-line">
+    <section className={`border bg-panel overflow-hidden ${substitutionsActive ? "border-live" : "border-line"}`}>
+      <header className={`flex items-center gap-2 px-4 py-3 border-b border-line ${substitutionsActive ? "bg-live/10" : ""}`}>
         <LayoutGrid className="w-4 h-4 text-ink-faint" aria-hidden />
         <h2 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink">
-          Teams
+          {isPast ? "Starting Teams" : "Teams"}
         </h2>
         {live !== undefined && (
           <span
@@ -257,7 +258,7 @@ export function MeetupTeamsPanel({
       </header>
 
       <div className="space-y-3 p-4">
-        <div>
+        {!isPast && <div>
           <button
             type="button"
             onClick={() => setShowReshape(true)}
@@ -278,7 +279,7 @@ export function MeetupTeamsPanel({
             </span>
             <Settings className="h-5 w-5 shrink-0 text-ink-dim" aria-hidden />
           </button>
-        </div>
+        </div>}
 
         {teamsLoading ? (
           <div className="flex justify-center py-12 text-ink-dim">
@@ -293,20 +294,30 @@ export function MeetupTeamsPanel({
             </p>
           </div>
         ) : (
-          <DraggableTeams
+          <TeamLineups
             meetup={
               teamMeetup ?? { id: String(meetupId), date: "", attendance: [], teams: [] }
             }
-            onMovePlayer={handleMovePlayer}
-            onToggleLock={handleToggleLock}
-            canDragTeams={Boolean(teamMeetup)}
+            onToggleLock={isPast ? undefined : handleToggleLock}
+            substitutions={isPast ? undefined : {
+              active: substitutionsActive,
+              saving: savingSwap,
+              selectedId: currentPick?.id,
+              onToggle: () => {
+                setSelected(null);
+                setSubstitutionsOpen((open) => !open);
+              },
+              onPick: (id, key) => {
+                if (!savingSwap) pickSubstitute(currentPick, { id, key }, setSelected, swapPlayers);
+              },
+            }}
             linkToPlayers
-            onReshuffle={() => void reshuffleTeams()}
+            onReshuffle={isPast ? undefined : () => void reshuffleTeams()}
             reshuffling={reshuffling}
           />
         )}
       </div>
-      {showReshape && teams && (
+      {!isPast && showReshape && teams && (
         <TeamReshapeSheet
           key={meetupId}
           meetupId={meetupId}

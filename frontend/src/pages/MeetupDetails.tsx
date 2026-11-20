@@ -12,7 +12,7 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import type { Meetup } from "../types";
-import { DraggableTeams } from "../components/DraggableTeams";
+import { TeamLineups } from "../components/TeamLineups";
 import { MatchHistoryList } from "../components/MatchHistoryList";
 import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
@@ -564,9 +564,8 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 						<Users className="h-5 w-5 text-ink-dim" aria-hidden />
 						Teams
 					</h2>
-					<DraggableTeams
+					<TeamLineups
 						meetup={meetup}
-						canDragTeams={false}
 						linkToPlayers={me?.is_admin === true}
 						currentUserId={me ? String(me.user.id) : undefined}
 					/>

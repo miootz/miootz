@@ -5,6 +5,13 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+RATING_AUDIT_DESCRIPTIONS = {
+    "rating.submitted": "Submitted a rating",
+    "rating.updated": "Updated a rating",
+    "rating.cleared": "Cleared a rating",
+    "rating.score_reported": "Reported a score",
+}
+
 
 class AuditBase(DeclarativeBase):
     """Separate declarative base so audit tables land in the audit DB,
@@ -31,3 +38,4 @@ class AuditLog(AuditBase):
     #: Human-friendly description of the effect
     description: Mapped[str] = mapped_column(Text)
     meetup_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    meetup_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

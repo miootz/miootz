@@ -105,7 +105,7 @@ async def report_match_score(
         request,
         "rating",
         "rating.score_reported",
-        f"Reported {report.type} score {report.score}/5 for player {report.player_id}",
+        "Reported a score",
         meetup_id=report.meetup_id,
     )
     return {"status": "success", "message": "Score reported successfully"}

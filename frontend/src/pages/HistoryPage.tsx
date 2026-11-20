@@ -271,7 +271,7 @@ export const HistoryPage: React.FC = () => {
 
       {/* Meetup list */}
       {pastMeetups.length === 0 && !loadError ? (
-        <p className="text-center text-ink-dim py-12">
+        <p className="texture-court-marking border border-line px-4 py-12 text-sm text-ink-dim">
           No past meetups yet.
         </p>
       ) : sortedFiltered.length === 0 ? (

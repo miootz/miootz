@@ -481,7 +481,7 @@ async def start_matches(
         request,
         "match",
         "match.started",
-        f"Started match meetups at '{meetup.location}': "
+        "Started matches: "
         f"{match.team_a_name} vs {match.team_b_name}",
         meetup_id=meetup_id,
     )
