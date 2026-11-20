@@ -10,11 +10,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.api.main import app
-from app.core.audit_db import audit_engine, audit_session
+from app.core.audit_db import audit_engine, audit_session, init_audit_db
 from app.core.database import Base, engine, async_session
 from app.core.timeutil import utcnow
 from app.models.audit import AuditBase, AuditLog
+from app.models.meetup import Attendance, Meetup
 from app.models.user import User
+from app.services.rating_settings import RatingSettings
 
 ADMIN = {"Authorization": "Bearer admintoken"}
 USER = {"Authorization": "Bearer usertoken"}
@@ -120,6 +122,69 @@ async def test_user_action_is_logged_with_meetup_id():
         created = next(r for r in rows if r.action == "meetup.created")
         assert created.is_admin is True
         assert created.meetup_id == meetup_id
+        assert join.meetup_start_time == created.meetup_start_time
+        assert join.meetup_start_time > join.created_at
+        assert "Audit Pitch" not in join.description
+
+
+@pytest.mark.asyncio
+async def test_rating_audit_only_identifies_sender():
+    async with async_session() as db:
+        sender = User(pocket_id_sub="user-uuid", sso_display_name="Sender")
+        recipient = User(pocket_id_sub="recipient", sso_display_name="Private Recipient")
+        start = utcnow() - timedelta(hours=4)
+        meetup = Meetup(start_time=start, location="Private Pitch", max_players=10)
+        db.add_all([sender, recipient, meetup, RatingSettings(id=1, peer_rating_mode="everyone")])
+        await db.flush()
+        db.add_all(Attendance(meetup_id=meetup.id, user_id=u.id) for u in (sender, recipient))
+        await db.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        for review in ("excellent", "poorly", None):
+            response = await ac.post(
+                "/ratings/",
+                json={"meetup_id": meetup.id, "ratee_id": recipient.id, "review": review},
+                headers=USER,
+            )
+            assert response.status_code == 200, response.text
+
+        rows = await _wait_audit(lambda rows: len(rows) == 3)
+        assert rows is not None
+        assert {row.description for row in rows} == {
+            "Submitted a rating", "Updated a rating", "Cleared a rating",
+        }
+        assert all(row.user_id == sender.id and row.meetup_start_time == start for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_legacy_rating_redaction_and_deleted_meetup_date():
+    async with audit_engine.begin() as conn:
+        await conn.exec_driver_sql("ALTER TABLE audit_log DROP COLUMN meetup_start_time")
+        await conn.exec_driver_sql(
+            "INSERT INTO audit_log (created_at, username, is_admin, category, action, description, meetup_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("2026-11-19 19:00:00", "sender", 0, "rating", "rating.submitted",
+                 "Rated Private Recipient excellent for 'Old Pitch'", 42),
+                ("2026-11-20 09:00:00", "admin", 1, "meetup", "meetup.deleted",
+                 "Deleted meetup 'Old Pitch' (2026-11-19 17:30 UTC) and all its matches", 42),
+            ],
+        )
+    await init_audit_db()
+    await init_audit_db()
+    assert next(r for r in await _audit_rows() if r.category == "rating").description == "Submitted a rating"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # The date is recovered even when pagination leaves the deletion on another page.
+        response = await ac.get("/audit/logs", params={"category": "rating"}, headers=ADMIN)
+        row = response.json()["items"][0]
+        assert row["description"] == "Submitted a rating"
+        assert row["username"] == "sender"
+        assert row["meetup_start_time"] == "2026-11-19T17:30:00+00:00"
+        response = await ac.get("/audit/logs", params={"q": "Private Recipient"}, headers=ADMIN)
+        assert response.json()["total"] == 0
+        response = await ac.get("/audit/logs", params={"category": "meetup"}, headers=ADMIN)
+        assert response.json()["items"][0]["description"] == "Deleted meetup and all its matches"
 
 
 @pytest.mark.asyncio

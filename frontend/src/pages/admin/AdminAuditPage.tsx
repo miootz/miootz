@@ -428,6 +428,9 @@ export function AdminAuditPage() {
 								<ul className="divide-y divide-line">
 									{rows.map((row) => {
 										const d = parseMeetupStart(row.created_at);
+										const meetupDate = row.meetup_start_time
+											? parseMeetupStart(row.meetup_start_time)
+											: null;
 										const Icon = categoryIcon(row.category);
 										const expanded = expandedId === row.id;
 										const who =
@@ -464,13 +467,24 @@ export function AdminAuditPage() {
 															<span className="mt-0.5 block truncate text-xs text-ink-dim sm:line-clamp-2">
 																{row.description}
 															</span>
-															<span className="mt-1 flex items-center gap-1.5">
+															<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
 																<span className="truncate text-xs text-ink-dim">
 																	{who}
 																</span>
 																{row.is_admin && (
 																	<span className="shrink-0 bg-live/15 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-live">
 																		Admin
+																	</span>
+																)}
+																{meetupDate && (
+																	<span className="text-xs tabular-nums text-ink-dim">
+																		Meetup{" "}
+																		<time dateTime={meetupDate.toISOString()}>
+																			{meetupDate.toLocaleString([], {
+																				year: "numeric", month: "short", day: "numeric",
+																				hour: "2-digit", minute: "2-digit",
+																			})}
+																		</time>
 																	</span>
 																)}
 															</span>
@@ -481,12 +495,12 @@ export function AdminAuditPage() {
 													<div className="space-y-1 px-3 sm:px-4 pb-3 pl-9 text-xs text-ink-dim">
 														<p className="text-sm text-ink">{row.description}</p>
 														<p className="tabular-nums">
-															{exactTime(d)} (local)
+															Recorded {exactTime(d)} (local)
 														</p>
 														<p>
 															{categoryLabel(row.category)} ·{" "}
 															<code className="text-ink-faint">{row.action}</code>
-															{row.meetup_id != null &&
+															{!meetupDate && row.meetup_id != null &&
 																` · meetup ${row.meetup_id}`}
 														</p>
 													</div>

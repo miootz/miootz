@@ -24,6 +24,7 @@ export interface AuditLogRow {
 	action: string;
 	description: string;
 	meetup_id: number | null;
+	meetup_start_time: string | null;
 }
 
 export interface AuditPivotRow {

@@ -302,7 +302,7 @@ async def create_meetup(
         request,
         "meetup",
         "meetup.created",
-        f"Created meetup '{new_meetup.location}' for {new_meetup.start_time:%Y-%m-%d %H:%M} UTC "
+        "Created meetup "
         f"({new_meetup.min_players}-{new_meetup.max_players} players)",
         meetup_id=new_meetup.id,
     )
@@ -791,7 +791,7 @@ async def patch_meetup_teams(
         request,
         "teams",
         "teams.lineup_saved",
-        f"Saved team lineups for '{meetup.location}' "
+        f"Saved team lineups "
         f"({len(int_teams)} teams, {len(confirmed_ids)} players)",
         meetup_id=meetup_id,
     )
@@ -904,7 +904,7 @@ async def reshuffle_meetup_teams(
         request,
         "teams",
         "teams.reshuffled",
-        f"Reshuffled teams for '{meetup.location}' "
+        "Reshuffled teams "
         + ("(full redraw)"
            if not body or not body.teams
            else f"(rebalanced around {len(body.locked)} locked players)"),
@@ -953,7 +953,7 @@ async def adjust_meetup_teams(
         request,
         "teams",
         "teams.adjusted",
-        f"{'Expanded' if op == 'expand' else 'Contracted'} teams for '{meetup.location}' "
+        f"{'Expanded' if op == 'expand' else 'Contracted'} teams "
         f"by {body.num_teams} team(s)"
         + (f"; promoted: {', '.join(promoted)}" if promoted else "")
         + (f"; back to waitlist: {', '.join(returned)}" if returned else ""),
@@ -1096,7 +1096,7 @@ async def reshape_meetup_teams(
         request,
         "teams",
         "teams.reshaped",
-        f"Reshaped '{meetup.location}' into {body.team_count}×{body.team_size} "
+        f"Reshaped teams into {body.team_count}×{body.team_size} "
         f"({len(partition)} teams incl. bench, {len(leftover)} on bench)",
         meetup_id=meetup_id,
     )
@@ -1156,7 +1156,7 @@ async def update_meetup(
         request,
         "meetup",
         "meetup.updated",
-        f"Updated '{meetup.location}' — changed: {', '.join(sorted(data))}",
+        f"Updated meetup — changed: {', '.join(sorted(data))}",
         meetup_id=meetup_id,
     )
     if "start_time" in data or "duration_minutes" in data:
@@ -1202,7 +1202,7 @@ async def skip_meetup(
         request,
         "meetup",
         "meetup.skipped",
-        f"Skipped '{meetup.location}' ({meetup.start_time:%Y-%m-%d %H:%M} UTC); "
+        "Skipped meetup; "
         "hidden from listings"
         + ("; next occurrence materialized" if meetup.game_template_id else ""),
         meetup_id=meetup_id,
@@ -1291,7 +1291,7 @@ async def join_meetup(
                 request,
                 "attendance",
                 "attendance.joined",
-                f"Re-joined '{meetup.location}' as {attendance.status}",
+                f"Re-joined as {attendance.status}",
                 meetup_id=meetup_id,
             )
             return {"status": attendance.status, "attendance_id": attendance.id}
@@ -1312,7 +1312,7 @@ async def join_meetup(
         request,
         "attendance",
         "attendance.joined",
-        f"Joined '{meetup.location}' as {new_attendance.status}",
+        f"Joined as {new_attendance.status}",
         meetup_id=meetup_id,
     )
 
@@ -1364,7 +1364,7 @@ async def leave_meetup(
         request,
         "attendance",
         "attendance.left",
-        f"Cancelled attendance for '{meetup.location}' (was {prev})"
+        f"Cancelled attendance (was {prev})"
         + ("; a waitlisted player was promoted" if prev == "confirmed" else ""),
         meetup_id=meetup_id,
     )
@@ -1422,7 +1422,7 @@ async def grant_weather_hero(
         request,
         "attendance",
         "award.weather_hero_granted",
-        f"Granted Weather Hero to {granted} confirmed attendee(s) of '{meetup.location}'"
+        f"Granted Weather Hero to {granted} confirmed attendee(s)"
         + (" (all already held one)" if granted == 0 else ""),
         meetup_id=meetup_id,
     )
@@ -1539,7 +1539,7 @@ async def redeem_weather_hero(
         request,
         "attendance",
         "award.weather_hero_redeemed",
-        f"Redeemed Weather Hero for '{meetup.location}', upgraded to confirmed"
+        f"Redeemed Weather Hero, upgraded to confirmed"
         + (f"; demoted {demoted_name} to waitlist" if demoted_name else ""),
         meetup_id=meetup_id,
     )
@@ -1582,7 +1582,7 @@ async def add_attendance(
         request,
         "attendance",
         "attendance.joined",
-        f"Added {target.display_name} to '{meetup.location}' as {attendance.status}",
+        f"Added {target.display_name} as {attendance.status}",
         meetup_id=meetup_id,
     )
     return {"status": attendance.status}
@@ -1686,7 +1686,6 @@ async def delete_meetup(
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
-    del_location = meetup.location
     del_time = meetup.start_time
 
     await notify_meetup_cancelled_recipients(db, meetup)
@@ -1709,9 +1708,10 @@ async def delete_meetup(
         request,
         "meetup",
         "meetup.deleted",
-        f"Deleted meetup '{del_location}' ({del_time:%Y-%m-%d %H:%M} UTC) "
+        "Deleted meetup "
         "and all its matches, goals, ratings and chat",
         meetup_id=meetup_id,
+        meetup_start_time=del_time,
     )
     return {"status": "deleted"}
 
@@ -2021,7 +2021,7 @@ async def add_plus_one(
         request,
         "plus_one",
         "plus_one.added",
-        f"Reserved a plus-one for {first_name} {last_name} at '{meetup.location}' "
+        f"Reserved a plus-one for {first_name} {last_name} "
         f"(guest {attendance.status})",
         meetup_id=meetup_id,
     )

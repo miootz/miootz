@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuditPage } from './AdminAuditPage';
@@ -20,6 +20,7 @@ const row = (over: Partial<AuditLogRow>): AuditLogRow => ({
   action: 'meetup.created',
   description: "Created meetup 'Test Pitch' for 2026-11-11 19:00 UTC",
   meetup_id: 7,
+  meetup_start_time: '2026-11-11T19:00:00',
   ...over,
 });
 
@@ -69,6 +70,39 @@ describe('AdminAuditPage', () => {
     // The ADMIN badge (and the actor name) both render "Admin".
     expect(screen.getAllByText('Admin').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('User')).toBeInTheDocument();
+  });
+
+  it('shows the meetup time in local time and keeps the recorded time separate', async () => {
+    vi.mocked(adminAuditLogs).mockResolvedValue({
+      items: [row({ category: 'rating', action: 'rating.submitted', description: 'Submitted a rating' })],
+      total: 1,
+    });
+    renderPage();
+
+    const logRow = await screen.findByRole('button', { name: /Submitted a rating/ });
+    const meetupTime = within(logRow).getByText((_, element) => element?.tagName === 'TIME');
+    expect(meetupTime).toHaveAttribute('datetime', '2026-11-11T19:00:00.000Z');
+    expect(meetupTime.parentElement).toHaveTextContent('Meetup');
+    expect(meetupTime).toHaveTextContent(new Date('2026-11-11T19:00:00Z').toLocaleString([], {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    }));
+
+    fireEvent.click(logRow);
+    expect(screen.getByText(/^Recorded /)).toBeInTheDocument();
+    expect(screen.queryByText(/meetup 7/)).not.toBeInTheDocument();
+  });
+
+  it('shows the meetup ID in expanded details when its time is unavailable', async () => {
+    vi.mocked(adminAuditLogs).mockResolvedValue({
+      items: [row({ meetup_start_time: null })],
+      total: 1,
+    });
+    renderPage();
+
+    const logRow = await screen.findByRole('button', { name: /Created meetup/ });
+    expect(within(logRow).queryByText((_, element) => element?.tagName === 'TIME')).not.toBeInTheDocument();
+    fireEvent.click(logRow);
+    expect(screen.getByText(/meetup 7/)).toBeInTheDocument();
   });
 
   it('pivots by category and by user', async () => {

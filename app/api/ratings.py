@@ -114,8 +114,6 @@ async def upsert_rating(
         )
     )
     existing = result.scalar_one_or_none()
-    ratee = await db.get(User, rating_data.ratee_id)
-    ratee_name = ratee.display_name if ratee else str(rating_data.ratee_id)
     if clearing:
         if existing:
             await db.delete(existing)
@@ -128,8 +126,9 @@ async def upsert_rating(
                 request,
                 "rating",
                 "rating.cleared",
-                f"Cleared rating of {ratee_name} for '{meetup.location}'",
+                "Cleared a rating",
                 meetup_id=rating_data.meetup_id,
+                meetup_start_time=meetup.start_time,
             )
         return None
 
@@ -144,13 +143,13 @@ async def upsert_rating(
     await update_user_calculated_skill(db, user_id=rating_data.ratee_id, commit=False)
     await db.commit()
     await db.refresh(rating)
-    value = review if review else f"{score}/5"
     log_action(
         request,
         "rating",
         "rating.updated" if existing else "rating.submitted",
-        f"Rated {ratee_name} {value} for '{meetup.location}'",
+        "Updated a rating" if existing else "Submitted a rating",
         meetup_id=rating_data.meetup_id,
+        meetup_start_time=meetup.start_time,
     )
 
     return rating
