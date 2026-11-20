@@ -1593,6 +1593,49 @@ async def add_attendance(
     return {"status": attendance.status}
 
 
+@router.delete("/{meetup_id}/attendance/{user_id}")
+async def delete_historical_attendance(
+    meetup_id: int,
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    if not db.in_transaction():
+        await db.execute(text("BEGIN IMMEDIATE"))
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup or meetup.skipped:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    if meetup.start_time >= utcnow():
+        raise HTTPException(status_code=409, detail="Only past meetup attendance can be removed")
+    attendance = await db.scalar(
+        select(Attendance.id).where(
+            Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
+        )
+    )
+    if attendance is None:
+        raise HTTPException(status_code=404, detail="Attendance record not found")
+
+    target = await db.get(User, user_id)
+    from app.services.deletes import delete_meetup_player_data
+
+    await delete_meetup_player_data(db, meetup, user_id)
+    await refresh_player_skills(db)
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+    log_action(
+        request,
+        "attendance",
+        "attendance.deleted",
+        f"Removed {target.display_name if target else f'user {user_id}'} from meetup history",
+        meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
+    )
+    return {"status": "deleted"}
+
+
 @router.post("/{meetup_id}/admin/move")
 async def move_attendance(
     meetup_id: int,

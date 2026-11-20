@@ -305,6 +305,7 @@ export function AdminDashboard() {
           {/* ── Teams — full management surface ──────────── */}
           <div className="mb-4">
             <MeetupTeamsPanel
+              key={detail.id}
               meetupId={detail.id}
               detail={detail}
               onChanged={() => loadDetail(detail.id)}

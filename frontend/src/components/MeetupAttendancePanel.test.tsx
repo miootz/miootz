@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adminAddAttendance, adminListUsers } from "../api/adminApi";
+import { adminAddAttendance, adminListUsers, adminRemoveAttendance } from "../api/adminApi";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { MeetupAttendancePanel } from "./MeetupAttendancePanel";
 
@@ -8,8 +8,10 @@ vi.mock("../api/adminApi", () => ({
   adminAddAttendance: vi.fn(),
   adminListUsers: vi.fn(),
   adminMoveAttendance: vi.fn(),
+  adminRemoveAttendance: vi.fn(),
 }));
-vi.mock("../context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+const showToast = vi.hoisted(() => vi.fn());
+vi.mock("../context/ToastContext", () => ({ useToast: () => ({ showToast }) }));
 vi.mock("../utils/haptics", () => ({ hapticLight: vi.fn() }));
 
 const player = (id: number, display_name: string) => ({
@@ -101,5 +103,54 @@ describe("Add attendance", () => {
     expect(within(dialog).getByText("Morgan")).toBeInTheDocument();
     fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
     expect(screen.queryByRole("dialog", { name: "Add player" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Remove past attendance", () => {
+  it("requires two confirmations before removing a player and refreshing", async () => {
+    vi.mocked(adminRemoveAttendance).mockResolvedValue({ status: "deleted" });
+    const onChanged = vi.fn();
+    render(<MeetupAttendancePanel meetupId={7} detail={detail} onChanged={onChanged} isPast />);
+
+    for (const name of ["Alex", "Blair", "Casey"]) {
+      expect(screen.getByRole("button", { name: `Remove ${name}` })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("button", { name: "Waitlist" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Alex" }));
+    let dialog = screen.getByRole("dialog", { name: "Remove Alex?" });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(within(dialog).getByText(/assists on their goals/)).toHaveTextContent(/will not restore this data/);
+    expect(within(dialog).getByText(/Recorded match results stay the same/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(adminRemoveAttendance).not.toHaveBeenCalled();
+    dialog = screen.getByRole("dialog", { name: "Permanently remove Alex?" });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(adminRemoveAttendance).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Alex" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Continue" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Permanently remove" }));
+    await waitFor(() => expect(adminRemoveAttendance).toHaveBeenCalledWith(7, 1));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(showToast).toHaveBeenCalledWith("Alex removed from attendance.", "success");
+  });
+
+  it("refreshes after a failed removal and explains how to retry", async () => {
+    vi.mocked(adminRemoveAttendance).mockRejectedValue(new Error("Player not found."));
+    const onChanged = vi.fn();
+    render(<MeetupAttendancePanel meetupId={7} detail={detail} onChanged={onChanged} isPast />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Casey" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Continue" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Permanently remove" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(showToast).toHaveBeenCalledWith("Player not found. Refresh attendance and try again.", "error");
+  });
+
+  it("keeps waitlist actions for upcoming attendance", () => {
+    render(<MeetupAttendancePanel meetupId={7} detail={detail} onChanged={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Waitlist" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove (Alex|Blair|Casey)/ })).not.toBeInTheDocument();
   });
 });

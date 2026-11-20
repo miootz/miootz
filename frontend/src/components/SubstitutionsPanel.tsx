@@ -12,6 +12,7 @@ import {
 } from "../utils/lease";
 import { useToast } from "../context/ToastContext";
 import { Loader2 } from "lucide-react";
+import { pickSubstitute, type SubstitutionPick } from "../utils/substitutionSelection";
 
 export interface PanelTeamUser {
   id: number;
@@ -55,7 +56,7 @@ export function SubstitutionsPanel({
   extraTeams?: ExtraTeam[];
 }) {
   const { showToast } = useToast();
-  const [selected, setSelected] = useState<{ id: number; key: string } | null>(
+  const [selected, setSelected] = useState<SubstitutionPick<number> | null>(
     null,
   );
   const [saving, setSaving] = useState(false);
@@ -167,8 +168,8 @@ export function SubstitutionsPanel({
     rosters.find((r) => r.users.some((u) => u.id === id))?.key ?? null;
 
   const applySwap = async (
-    from: { id: number; key: string },
-    to: { id: number; key: string },
+    from: SubstitutionPick<number>,
+    to: SubstitutionPick<number>,
   ) => {
     setSaving(true);
     try {
@@ -204,21 +205,7 @@ export function SubstitutionsPanel({
     if (saving || !holding) return;
     const key = keyOf(id);
     if (!key) return;
-    if (!selected) {
-      setSelected({ id, key });
-      return;
-    }
-    if (selected.id === id) {
-      setSelected(null);
-      return;
-    }
-    if (selected.key === key) {
-      // Second pick on the same team — move the selection instead.
-      setSelected({ id, key });
-      return;
-    }
-    // Different team — perform the 1-for-1 swap.
-    void applySwap(selected, { id, key });
+    pickSubstitute(selected, { id, key }, setSelected, applySwap);
   };
 
   const renderTeam = (r: Roster) => (

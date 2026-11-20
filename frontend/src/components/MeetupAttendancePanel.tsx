@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { ClipboardList, Loader2, Plus, Search } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
-import { adminMoveAttendance } from "../api/adminApi";
+import { adminMoveAttendance, adminRemoveAttendance } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { AttendancePlayerCard } from "./AttendancePlayerCard";
 import { AddAttendanceDialog } from "./AddAttendanceDialog";
+import { RemoveAttendanceDialog } from "./RemoveAttendanceDialog";
 
 type AttFilter = "all" | "confirmed" | "waitlisted" | "cancelled";
 
@@ -15,17 +16,24 @@ export function MeetupAttendancePanel({
   meetupId,
   detail,
   onChanged,
+  isPast = false,
 }: {
   meetupId: number;
   detail: MeetupDetail;
   /** Parent refetch hook — called after every successful write. */
   onChanged: () => void | Promise<void>;
+  isPast?: boolean;
 }) {
   const { showToast } = useToast();
   const [attFilter, setAttFilter] = useState<AttFilter>("all");
   const [attSearch, setAttSearch] = useState("");
   const [movingKey, setMovingKey] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{
+    userId: number;
+    name: string;
+  } | null>(null);
 
   const attCounts = useMemo(() => {
     return {
@@ -58,6 +66,30 @@ export function MeetupAttendancePanel({
       showToast(e instanceof Error ? e.message : "Move failed", "error");
     } finally {
       setMovingKey(null);
+    }
+  }
+
+  async function removeUser() {
+    if (!confirmRemove) return;
+    const { userId, name } = confirmRemove;
+    setConfirmRemove(null);
+    setRemovingId(userId);
+    try {
+      await adminRemoveAttendance(meetupId, userId);
+      hapticLight();
+      showToast(`${name} removed from attendance.`, "success");
+    } catch (error) {
+      showToast(
+        `${error instanceof Error ? error.message : "Could not remove player."} Refresh attendance and try again.`,
+        "error",
+      );
+    }
+    try {
+      await onChanged();
+    } catch {
+      showToast("Could not refresh attendance. Reload the page.", "error");
+    } finally {
+      setRemovingId(null);
     }
   }
 
@@ -144,7 +176,17 @@ export function MeetupAttendancePanel({
                 status={a.status}
                 calculatedSkill={a.calculated_skill}
                 action={
-                  canMove ? (
+                  isPast ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${a.display_name}`}
+                      disabled={removingId !== null}
+                      onClick={() => setConfirmRemove({ userId: a.user_id, name: a.display_name })}
+                      className="min-h-11 shrink-0 border border-danger/40 px-2.5 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+                    >
+                      {removingId === a.user_id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Remove"}
+                    </button>
+                  ) : canMove ? (
                     <div className="flex gap-1.5 shrink-0">
                       {a.status !== "confirmed" && (
                         <button
@@ -192,6 +234,13 @@ export function MeetupAttendancePanel({
           attendees={detail.attendees}
           onChanged={onChanged}
           onClose={() => setAdding(false)}
+        />
+      )}
+      {confirmRemove && (
+        <RemoveAttendanceDialog
+          name={confirmRemove.name}
+          onCancel={() => setConfirmRemove(null)}
+          onConfirm={() => void removeUser()}
         />
       )}
     </section>

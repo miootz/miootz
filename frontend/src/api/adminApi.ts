@@ -161,6 +161,16 @@ export async function adminMoveAttendance(
   return jsonOrThrow(r);
 }
 
+export async function adminRemoveAttendance(
+  meetupId: number,
+  userId: number
+): Promise<{ status: string }> {
+  const r = await apiFetch(`/meetups/${meetupId}/attendance/${userId}`, {
+    method: 'DELETE',
+  });
+  return jsonOrThrow(r);
+}
+
 export async function adminAddAttendance(
   meetupId: number,
   userId: number

@@ -168,6 +168,7 @@ export function AdminMeetupDetailPage() {
   if (!detail) return null;
 
   const startDate = parseMeetupStart(detail.start_time);
+  const isPast = startDate.getTime() < Date.now();
   const kickoffFuture = startDate.getTime() > Date.now();
   const countdown = kickoffFuture
     ? formatDistanceToNow(startDate, { addSuffix: true })
@@ -628,6 +629,7 @@ export function AdminMeetupDetailPage() {
             meetupId={id}
             detail={detail}
             onChanged={load}
+            isPast={isPast}
           />
         </div>
       )}
@@ -636,9 +638,11 @@ export function AdminMeetupDetailPage() {
 
       {tab === "teams" && (
         <MeetupTeamsPanel
+          key={id}
           meetupId={id}
           detail={detail}
           onChanged={load}
+          isPast={isPast}
         />
       )}
 
