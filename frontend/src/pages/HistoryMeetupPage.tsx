@@ -29,15 +29,15 @@ function KpiTile({ label, value }: { label: string; value: number }) {
 
 function MeetupWinnerCard({ teams }: { teams: TeamNightRecord[] }) {
   return (
-    <article className="@container mt-3 border border-live/35 bg-panel">
-      <h3 className="flex items-center gap-2 border-b border-live/20 bg-live/10 px-4 py-2.5 text-sm font-semibold text-live">
+    <article className="@container mt-3 border border-line bg-panel">
+      <h3 className="flex items-center gap-2 border-b border-line px-4 py-2.5 text-sm font-semibold text-ink-dim">
         <Trophy className="size-4 shrink-0" aria-hidden="true" />
         {teams.length === 1 ? "Meetup winner" : "Joint meetup winners"}
       </h3>
       <div className="divide-y divide-line">
-        {teams.map((team) => (
-          <div key={team.name} className="p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        {teams.map((team, index) => (
+          <div key={team.name}>
+            <div className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3 ${index === 0 ? "texture-football-seam" : ""}`}>
               <h4 className="min-w-0 text-xl leading-tight font-bold text-ink [overflow-wrap:anywhere]">
                 {team.name}
               </h4>
@@ -45,7 +45,7 @@ function MeetupWinnerCard({ teams }: { teams: TeamNightRecord[] }) {
                 {team.matches} {team.matches === 1 ? "match" : "matches"} played
               </span>
             </div>
-            <dl className="mt-3 grid grid-cols-2 gap-px border border-line bg-line @min-[22rem]:grid-cols-4">
+            <dl className="mx-4 mt-2 mb-4 grid grid-cols-2 gap-px border border-line bg-line @min-[22rem]:grid-cols-4">
               {([
                 ["Wins", team.wins],
                 ["Goals", team.goals_for],

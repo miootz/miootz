@@ -80,6 +80,20 @@
   color-scheme: dark;
   background-color: #0b1220; /* board */
 }
+
+@layer components {
+  .texture-painted-steel {
+    background: var(--color-panel) url("/brand/painted-steel.webp") center / cover no-repeat;
+  }
+
+  .texture-football-seam {
+    background: var(--color-board) url("/brand/football-seam.webp") right center / min(100%, 28rem) auto no-repeat;
+  }
+
+  .texture-court-marking {
+    background: var(--color-board) url("/brand/court-marking.webp") right center / auto 100% no-repeat;
+  }
+}
 html.dark {
   color-scheme: dark;
   background-color: #0b1220;
