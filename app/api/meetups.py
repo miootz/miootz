@@ -305,6 +305,7 @@ async def create_meetup(
         "Created meetup "
         f"({new_meetup.min_players}-{new_meetup.max_players} players)",
         meetup_id=new_meetup.id,
+        meetup_start_time=new_meetup.start_time,
     )
 
     if meetup_data.send_push_notifications:
@@ -1158,6 +1159,7 @@ async def update_meetup(
         "meetup.updated",
         f"Updated meetup — changed: {', '.join(sorted(data))}",
         meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
     )
     if "start_time" in data or "duration_minutes" in data:
         # Re-point the durable rating-reminder job at the new end time
@@ -1206,6 +1208,7 @@ async def skip_meetup(
         "hidden from listings"
         + ("; next occurrence materialized" if meetup.game_template_id else ""),
         meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
     )
     return {"status": "skipped"}
 
@@ -1293,6 +1296,7 @@ async def join_meetup(
                 "attendance.joined",
                 f"Re-joined as {attendance.status}",
                 meetup_id=meetup_id,
+                meetup_start_time=meetup.start_time,
             )
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined meetup")
@@ -1314,6 +1318,7 @@ async def join_meetup(
         "attendance.joined",
         f"Joined as {new_attendance.status}",
         meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
     )
 
     return {"status": new_attendance.status, "attendance_id": new_attendance.id}
