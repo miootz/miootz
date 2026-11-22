@@ -156,6 +156,50 @@ async def test_member_join_and_admin_add_cannot_duplicate_attendance():
 
 
 @pytest.mark.asyncio
+async def test_admin_cancels_or_removes_an_attendance_entry():
+    async with AsyncSession(engine) as db:
+        users = {u.pocket_id_sub: u.id for u in await db.scalars(select(User))}
+        meetup = await db.scalar(select(Meetup))
+        meetup.max_players = 1
+        meetup_id = meetup.id
+        player, waiting = users["p1-uuid"], users["p2-uuid"]
+        db.add_all([
+            Attendance(meetup_id=meetup_id, user_id=player, status="confirmed"),
+            Attendance(meetup_id=meetup_id, user_id=waiting, status="waitlisted"),
+            MatchScore(meetup_id=meetup_id, player_id=waiting, score=1, type="goals"),
+        ])
+        await db.commit()
+
+    admin = {"Authorization": "Bearer admin"}
+    url = f"/meetups/{meetup_id}/admin/attendance/{waiting}"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/meetups/{meetup_id}/admin/move",
+            params={"user_id": player, "new_status": "cancelled"},
+            headers=admin,
+        )
+        assert response.status_code == 200
+        async with AsyncSession(engine) as db:
+            rows = {row.user_id: row for row in await db.scalars(select(Attendance))}
+            assert rows[player].status == "cancelled"
+            assert rows[player].previous_status == "confirmed"
+            assert rows[waiting].status == "confirmed"
+
+        response = await client.delete(url, headers={"Authorization": "Bearer user"})
+        assert response.status_code == 403
+        response = await client.delete(url, headers=admin)
+        assert response.json() == {"status": "deleted"}
+        async with AsyncSession(engine) as db:
+            rows = {row.user_id: row.status for row in await db.scalars(select(Attendance))}
+            assert rows == {player: "cancelled"}
+            assert await db.scalar(select(MatchScore.player_id)) == waiting
+        response = await client.post(
+            f"/meetups/{meetup_id}/admin/attendance", params={"user_id": waiting}, headers=admin
+        )
+        assert response.json() == {"status": "confirmed"}
+
+
+@pytest.mark.asyncio
 async def test_remove_historical_attendance_preserves_other_players_and_results():
     now = datetime.now(UTC).replace(tzinfo=None)
     async with AsyncSession(engine) as db:

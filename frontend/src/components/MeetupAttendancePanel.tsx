@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { ClipboardList, Loader2, Plus, Search } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
-import { adminMoveAttendance, adminRemoveAttendance } from "../api/adminApi";
+import { adminMoveAttendance, adminRemoveAttendance, adminRemoveAttendanceEntry } from "../api/adminApi";
 import { useToast } from "../context/ToastContext";
 import { hapticLight } from "../utils/haptics";
 import { AttendancePlayerCard } from "./AttendancePlayerCard";
+import { AttendanceActionsMenu, type AttendanceAction } from "./AttendanceActionsMenu";
 import { AddAttendanceDialog } from "./AddAttendanceDialog";
 import { RemoveAttendanceDialog } from "./RemoveAttendanceDialog";
 
@@ -27,7 +28,7 @@ export function MeetupAttendancePanel({
   const { showToast } = useToast();
   const [attFilter, setAttFilter] = useState<AttFilter>("all");
   const [attSearch, setAttSearch] = useState("");
-  const [movingKey, setMovingKey] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<{
@@ -56,16 +57,21 @@ export function MeetupAttendancePanel({
     });
   }, [detail, attFilter, attSearch]);
 
-  async function moveUser(userId: number, next: "confirmed" | "waitlisted") {
-    setMovingKey(`${userId}-${next}`);
+  async function changeAttendance(userId: number, name: string, action: AttendanceAction) {
+    setActingId(userId);
     try {
-      await adminMoveAttendance(meetupId, userId, next);
+      if (action === "remove") {
+        await adminRemoveAttendanceEntry(meetupId, userId);
+        showToast(`${name} removed from attendance.`, "success");
+      } else {
+        await adminMoveAttendance(meetupId, userId, action);
+      }
       hapticLight();
       await onChanged();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Move failed", "error");
+      showToast(e instanceof Error ? e.message : "Could not update attendance.", "error");
     } finally {
-      setMovingKey(null);
+      setActingId(null);
     }
   }
 
@@ -158,74 +164,40 @@ export function MeetupAttendancePanel({
             No matching players.
           </p>
         ) : (
-          filteredAttendees.map((a) => {
-            const canMove =
-              a.status === "confirmed" || a.status === "waitlisted";
-            const busy =
-              movingKey === `${a.user_id}-confirmed` ||
-              movingKey === `${a.user_id}-waitlisted`;
-            return (
-              <AttendancePlayerCard
-                key={a.attendance_id ?? `${a.user_id}:${a.status}`}
-                name={a.display_name}
-                avatarUrl={a.avatar_url}
-                skill={a.skill}
-                primary={a.primary_specialty}
-                secondary={a.secondary_specialty}
-                isPlusOne={a.is_plus_one}
-                status={a.status}
-                calculatedSkill={a.calculated_skill}
-                action={
-                  isPast ? (
-                    <button
-                      type="button"
-                      aria-label={`Remove ${a.display_name}`}
-                      disabled={removingId !== null}
-                      onClick={() => setConfirmRemove({ userId: a.user_id, name: a.display_name })}
-                      className="min-h-11 shrink-0 border border-danger/40 px-2.5 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
-                    >
-                      {removingId === a.user_id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Remove"}
-                    </button>
-                  ) : canMove ? (
-                    <div className="flex gap-1.5 shrink-0">
-                      {a.status !== "confirmed" && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void moveUser(a.user_id, "confirmed")
-                          }
-                          className="min-h-[36px] px-2.5 border border-team-a/40 text-team-a text-xs font-medium bg-team-a/15 hover:bg-team-a/25 disabled:opacity-50"
-                        >
-                          {movingKey === `${a.user_id}-confirmed` ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            "Confirm"
-                          )}
-                        </button>
-                      )}
-                      {a.status !== "waitlisted" && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void moveUser(a.user_id, "waitlisted")
-                          }
-                          className="min-h-[36px] px-2.5 border border-live/40 text-live text-xs font-medium bg-live/15 hover:bg-live/25 disabled:opacity-50"
-                        >
-                          {movingKey === `${a.user_id}-waitlisted` ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            "Waitlist"
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ) : undefined
-                }
-              />
-            );
-          })
+          filteredAttendees.map((a) => (
+            <AttendancePlayerCard
+              key={a.attendance_id ?? `${a.user_id}:${a.status}`}
+              name={a.display_name}
+              avatarUrl={a.avatar_url}
+              skill={a.skill}
+              primary={a.primary_specialty}
+              secondary={a.secondary_specialty}
+              isPlusOne={a.is_plus_one}
+              status={a.status}
+              calculatedSkill={a.calculated_skill}
+              action={
+                isPast ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${a.display_name}`}
+                    disabled={removingId !== null}
+                    onClick={() => setConfirmRemove({ userId: a.user_id, name: a.display_name })}
+                    className="min-h-11 shrink-0 border border-danger/40 px-2.5 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+                  >
+                    {removingId === a.user_id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Remove"}
+                  </button>
+                ) : (
+                  <AttendanceActionsMenu
+                    name={a.display_name}
+                    status={a.status}
+                    busy={actingId === a.user_id}
+                    disabled={actingId !== null}
+                    onAction={(action) => void changeAttendance(a.user_id, a.display_name, action)}
+                  />
+                )
+              }
+            />
+          ))
         )}
       </div>
       {adding && (

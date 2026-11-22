@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adminAddAttendance, adminListUsers, adminRemoveAttendance } from "../api/adminApi";
+import { adminAddAttendance, adminListUsers, adminMoveAttendance, adminRemoveAttendance, adminRemoveAttendanceEntry } from "../api/adminApi";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { MeetupAttendancePanel } from "./MeetupAttendancePanel";
 
@@ -9,6 +9,7 @@ vi.mock("../api/adminApi", () => ({
   adminListUsers: vi.fn(),
   adminMoveAttendance: vi.fn(),
   adminRemoveAttendance: vi.fn(),
+  adminRemoveAttendanceEntry: vi.fn(),
 }));
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock("../context/ToastContext", () => ({ useToast: () => ({ showToast }) }));
@@ -147,10 +148,44 @@ describe("Remove past attendance", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
     expect(showToast).toHaveBeenCalledWith("Player not found. Refresh attendance and try again.", "error");
   });
+});
 
-  it("keeps waitlist actions for upcoming attendance", () => {
+describe("Attendance actions", () => {
+  it("offers the applicable actions and returns keyboard focus on dismissal", () => {
     render(<MeetupAttendancePanel meetupId={7} detail={detail} onChanged={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Waitlist" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Remove (Alex|Blair|Casey)/ })).not.toBeInTheDocument();
+    for (const [name, actions] of [
+      ["Alex", ["Waitlist", "Cancel", "Remove"]],
+      ["Blair", ["Confirm", "Cancel", "Remove"]],
+      ["Casey", ["Confirm", "Waitlist", "Remove"]],
+    ] as const) {
+      const button = screen.getByRole("button", { name: `Attendance actions for ${name}` });
+      button.focus();
+      fireEvent.keyDown(button, { key: "ArrowDown" });
+      const menu = screen.getByRole("menu");
+      const items = within(menu).getAllByRole("menuitem");
+      expect(items.map((item) => item.textContent)).toEqual(actions);
+      expect(items[0]).toHaveFocus();
+      fireEvent.keyDown(items[0], { key: "End" });
+      expect(items[2]).toHaveFocus();
+      fireEvent.keyDown(items[2], { key: "Escape" });
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(button).toHaveFocus();
+    }
+  });
+
+  it("uses different operations for cancel and remove", async () => {
+    vi.mocked(adminMoveAttendance).mockResolvedValue({ status: "moved" });
+    vi.mocked(adminRemoveAttendanceEntry).mockResolvedValue({ status: "deleted" });
+    const onChanged = vi.fn();
+    render(<MeetupAttendancePanel meetupId={7} detail={detail} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "Attendance actions for Alex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(adminMoveAttendance).toHaveBeenCalledWith(7, 1, "cancelled");
+    fireEvent.click(screen.getByRole("button", { name: "Attendance actions for Casey" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+    expect(adminRemoveAttendanceEntry).toHaveBeenCalledWith(7, 3);
+    expect(adminRemoveAttendance).not.toHaveBeenCalled();
   });
 });

@@ -146,10 +146,12 @@ export async function adminAdjustTeams(
   return jsonOrThrow(r);
 }
 
+export type AdminAttendanceStatus = 'confirmed' | 'waitlisted' | 'cancelled';
+
 export async function adminMoveAttendance(
   meetupId: number,
   userId: number,
-  newStatus: 'confirmed' | 'waitlisted'
+  newStatus: AdminAttendanceStatus
 ): Promise<{ status: string }> {
   const q = new URLSearchParams({
     user_id: String(userId),
@@ -166,6 +168,16 @@ export async function adminRemoveAttendance(
   userId: number
 ): Promise<{ status: string }> {
   const r = await apiFetch(`/meetups/${meetupId}/attendance/${userId}`, {
+    method: 'DELETE',
+  });
+  return jsonOrThrow(r);
+}
+
+export async function adminRemoveAttendanceEntry(
+  meetupId: number,
+  userId: number
+): Promise<{ status: string }> {
+  const r = await apiFetch(`/meetups/${meetupId}/admin/attendance/${userId}`, {
     method: 'DELETE',
   });
   return jsonOrThrow(r);
