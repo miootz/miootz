@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
@@ -40,6 +40,7 @@ from app.core.chat_manager import chat_manager
 from app.services.skill_service import (
     recalculate_skills_for_attendance_change,
     refresh_player_skills,
+    update_user_calculated_skill,
 )
 from app.core.meetup_data_manager import meetup_data_manager
 from app.services.meetup_promotion import handle_leave_or_cancel
@@ -1593,6 +1594,53 @@ async def add_attendance(
     return {"status": attendance.status}
 
 
+@router.delete("/{meetup_id}/admin/attendance/{user_id}")
+async def remove_attendance_entry(
+    meetup_id: int,
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup or meetup.skipped:
+        raise HTTPException(status_code=404, detail="Meetup not found")
+    previous_status = await db.scalar(
+        delete(Attendance)
+        .where(Attendance.meetup_id == meetup_id, Attendance.user_id == user_id)
+        .returning(Attendance.status)
+    )
+    if previous_status is None:
+        raise HTTPException(status_code=404, detail="Attendance record not found")
+
+    # Re-adding the guest must not reactivate the old claim link.
+    await db.execute(
+        update(GuestPlusOne)
+        .where(
+            GuestPlusOne.meetup_id == meetup_id,
+            GuestPlusOne.guest_user_id == user_id,
+            GuestPlusOne.status == "pending",
+        )
+        .values(status="cancelled")
+    )
+    rev = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    if rev is not None:
+        await notify_meetup_data_changed(meetup_id, rev)
+    await handle_leave_or_cancel(db, meetup, previous_status)
+    await update_user_calculated_skill(db, user_id)
+    target = await db.get(User, user_id)
+    log_action(
+        request,
+        "attendance",
+        "attendance.deleted",
+        f"Removed {target.display_name if target else f'user {user_id}'} from attendance",
+        meetup_id=meetup_id,
+        meetup_start_time=meetup.start_time,
+    )
+    return {"status": "deleted"}
+
+
 @router.delete("/{meetup_id}/attendance/{user_id}")
 async def delete_historical_attendance(
     meetup_id: int,
@@ -1645,7 +1693,7 @@ async def move_attendance(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    if new_status not in ["confirmed", "waitlisted"]:
+    if new_status not in ["confirmed", "waitlisted", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status")
 
     result_attendance = await db.execute(
@@ -1659,11 +1707,9 @@ async def move_attendance(
 
     prev = attendance.status
     attendance.status = new_status
-    attendance.previous_status = None
-    if prev == "confirmed" and new_status == "waitlisted":
-        # A demoted player re-enters the waitlist *now*, not with their old
-        # join time — otherwise the promotion below would promote them right
-        # back into the spot the admin just freed.
+    attendance.previous_status = prev if new_status == "cancelled" else None
+    if new_status == "waitlisted" and prev != "waitlisted":
+        # A player newly entering the waitlist goes to the back of the queue.
         attendance.joined_at = utcnow()
     if new_status == "confirmed":
         meetup = await db.get(Meetup, meetup_id)
@@ -1674,8 +1720,8 @@ async def move_attendance(
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
     await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
-    if prev == "confirmed" and new_status == "waitlisted":
-        # Same rule as leave/cancel: demoting a confirmed player opens the spot.
+    if prev == "confirmed" and new_status != "confirmed":
+        # Moving or cancelling a confirmed entry opens the spot.
         meetup_res = await db.execute(
             select(Meetup).where(Meetup.id == meetup_id)
         )
