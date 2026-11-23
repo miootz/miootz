@@ -65,6 +65,28 @@ function openProfile() {
   fireEvent.click(screen.getByRole("button", { name: "Push notifications" }));
 }
 
+it("groups position controls and account settings with the player", async () => {
+  getRegistration.mockResolvedValue(undefined);
+  fetchPushSubscriptions.mockResolvedValue([]);
+  await act(async () => {
+    render(<MemoryRouter><ProfilePage /></MemoryRouter>);
+  });
+
+  const playerCard = screen.getByRole("heading", { name: "Alex" }).closest("section")!;
+  const card = within(playerCard);
+  expect(card.getByRole("heading", { name: "Edit profile" })).toBeInTheDocument();
+  expect(card.getByLabelText("Primary position")).toBeInTheDocument();
+  expect(card.getByLabelText("Secondary position")).toBeInTheDocument();
+  expect(card.queryByRole("heading", { name: "Your attendance history" })).not.toBeInTheDocument();
+
+  const accountSettings = card.getByRole("link", { name: /Account settings/ });
+  expect(accountSettings).toHaveTextContent("Account settings");
+  expect(accountSettings).toHaveAttribute("href", "https://auth.example.test/settings/account");
+  expect(accountSettings).toHaveAttribute("target", "_blank");
+  expect(accountSettings).toHaveAttribute("rel", "noopener noreferrer");
+  expect(accountSettings.parentElement).not.toContainElement(card.getByLabelText("Primary position"));
+});
+
 it("finishes a local-only registration even when another device shares its push host", async () => {
   getRegistration.mockResolvedValue({ pushManager: { getSubscription: vi.fn().mockResolvedValue({ endpoint: localEndpoint }) } });
   fetchPushSubscriptions

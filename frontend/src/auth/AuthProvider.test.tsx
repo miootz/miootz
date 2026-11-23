@@ -149,21 +149,21 @@ it('keeps the profile header and positions in sync with successful saves', async
   const header = within(heading.closest('section')!);
   const primary = screen.getByLabelText('Primary position');
   const secondary = screen.getByLabelText('Secondary position');
-  expect(header.getByText('Defender')).toBeInTheDocument();
+  expect(header.getByText('Defender', { selector: 'span' })).toBeInTheDocument();
 
   fireEvent.change(primary, { target: { value: 'ATT' } });
-  expect(await header.findByText('Attacker')).toBeInTheDocument();
+  expect(await header.findByText('Attacker', { selector: 'span' })).toBeInTheDocument();
   expect(primary).toHaveValue('ATT');
   fireEvent.change(primary, { target: { value: 'DEF' } });
-  expect(await header.findByText('Defender')).toBeInTheDocument();
+  expect(await header.findByText('Defender', { selector: 'span' })).toBeInTheDocument();
   expect(primary).toHaveValue('DEF');
 
   fireEvent.change(secondary, { target: { value: '' } });
-  await waitFor(() => expect(header.queryByText('Midfielder')).not.toBeInTheDocument());
+  await waitFor(() => expect(header.queryByText('Midfielder', { selector: 'span' })).not.toBeInTheDocument());
   expect(secondary).toHaveValue('');
 
   fireEvent.change(primary, { target: { value: 'GK' } });
   expect(await screen.findByText('Position could not be saved')).toBeInTheDocument();
-  expect(header.getByText('Defender')).toBeInTheDocument();
+  expect(header.getByText('Defender', { selector: 'span' })).toBeInTheDocument();
   expect(primary).toHaveValue('DEF');
 });

@@ -434,3 +434,63 @@ async def test_concurrent_historical_removals_keep_lineups_and_offsets_consisten
         assert (match.score_a, match.score_offset_a) == (2, 2)
         assert list(await db.scalars(select(MatchGoal))) == []
         assert list(await db.scalars(select(Attendance))) == []
+
+
+@pytest.mark.parametrize("match_status", [None, "pending", "active"])
+async def test_remove_promotes_and_balances_pace_before_first_match(match_status):
+    async with AsyncSession(engine) as db:
+        players = {u.pocket_id_sub: u for u in await db.scalars(select(User))}
+        fast, removed, other_a, other_b, waiting = (
+            players[name] for name in ("p1-uuid", "p2-uuid", "p3-uuid", "p4-uuid", "user-uuid")
+        )
+        fast.pac = waiting.pac = 4.2
+        meetup = await db.scalar(select(Meetup))
+        meetup_id = meetup.id
+        removed_id = removed.id
+        waiting_id = waiting.id
+        pace_ids = {fast.id, waiting.id}
+        old_a, old_b = [fast.id, removed.id], [other_a.id, other_b.id]
+        meetup.max_players = 4
+        meetup.max_teams = 2
+        meetup.team_size = 2
+        meetup.team_assignment_mode = "auto-balanced"
+        meetup.team_names_json = json.dumps(["First", "Second"])
+        meetup.manual_teams_json = json.dumps([old_a, old_b])
+        db.add_all([
+            Attendance(meetup_id=meetup_id, user_id=user_id, status="confirmed")
+            for user_id in old_a + old_b
+        ])
+        if match_status:
+            # The referee selected the teams in reverse order.
+            db.add(MeetupMatch(
+                meetup_id=meetup_id, match_number=1, status=match_status,
+                team_a_name="Second", team_b_name="First",
+                team_a_users=json.dumps(old_b), team_b_users=json.dumps(old_a),
+            ))
+        await db.commit()
+
+    admin = {"Authorization": "Bearer admin"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        url = f"/meetups/{meetup_id}/admin/attendance"
+        added = await client.post(url, headers=admin, params={"user_id": waiting_id})
+        assert added.json() == {"status": "waitlisted"}
+        removed_response = await client.delete(f"{url}/{removed_id}", headers=admin)
+        assert removed_response.json() == {"status": "deleted"}
+        response = await client.get(f"/meetups/{meetup_id}/teams", headers=admin)
+        assert response.status_code == 200
+        lineup = [{int(p["id"]) for p in team["players"]} for team in response.json()["teams"]]
+        assert set.union(*lineup) == (set(old_a + old_b) - {removed_id}) | {waiting_id}
+        assert [len(team & pace_ids) for team in lineup] == (
+            [2, 0] if match_status == "active" else [1, 1]
+        )
+
+    if match_status:
+        async with AsyncSession(engine) as db:
+            match = await db.scalar(select(MeetupMatch))
+            assert (match.team_a_name, match.team_b_name) == ("Second", "First")
+            assert set(json.loads(match.team_a_users)) == (
+                set(old_b) if match_status == "active" else lineup[1]
+            )
+            assert set(json.loads(match.team_b_users)) == (
+                set(old_a) if match_status == "active" else lineup[0]
+            )
