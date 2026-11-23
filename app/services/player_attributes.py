@@ -68,7 +68,6 @@ async def load_player_attributes(
     if not meetups:
         return {}
 
-    as_of = max(meetup_end_time(meetup) for meetup in meetups.values())
     matches = list(
         await db.scalars(
             select(MeetupMatch).where(
@@ -96,24 +95,27 @@ async def load_player_attributes(
         )
     )
 
-    result: dict[int, dict] = {}
-    meetup_ids = defaultdict(lambda: {key: set() for key in ("sho", "pas", "def")})
-    weighted = defaultdict(Counter)
+    return combine_attribute_evidence(
+        meetups,
+        attribute_evidence_by_meetup(matches, goals_by_match, subbed),
+    )
+
+
+def attribute_evidence_by_meetup(
+    matches: list[MeetupMatch], goals_by_match: dict[int, list[MatchGoal]], subbed: set[int]
+) -> dict[int, dict]:
+    """Unweighted match evidence, reusable across scopes and as-of dates."""
+    evidence: dict[int, dict] = defaultdict(dict)
     for match in matches:
         if match.id in subbed:
             continue
-        goals = goals_by_match[match.id]
+        goals = goals_by_match.get(match.id, [])
         totals = Counter(goal.team for goal in goals)
         reconciled = (
             totals["a"] == match.score_a
             and totals["b"] == match.score_b
             and len(goals) == match.score_a + match.score_b
         )
-        age_days = (
-            as_of - meetup_end_time(meetups[match.meetup_id])
-        ).total_seconds() / 86400
-        weight = 0.5 ** (age_days / 21)
-        pass_weight = 0.5 ** (age_days / 42)
         for side in ("a", "b"):
             roster = set(
                 loads_int_list(
@@ -132,36 +134,48 @@ async def load_player_attributes(
             )
             known_goals = sum(assisters.values())
             for user_id in roster:
-                attrs = result.setdefault(user_id, empty_player_attributes())
-                weights = weighted[user_id]
+                attrs = evidence[match.meetup_id].setdefault(str(user_id), empty_player_attributes())
                 defence = attrs["def"]
                 defence["sample"] += 1
                 defence["count"] += int(conceded == 0)
-                weights["def_sample"] += weight
-                weights["def_count"] += weight * (conceded == 0)
-                meetup_ids[user_id]["def"].add(match.meetup_id)
                 if not reconciled:
                     continue
                 shooting = attrs["sho"]
                 shooting["sample"] += 1
                 shooting["count"] += scorers[user_id]
-                weights["sho_sample"] += weight
-                weights["sho_count"] += weight * scorers[user_id]
-                meetup_ids[user_id]["sho"].add(match.meetup_id)
 
                 passing = attrs["pas"]
                 passing["sample"] += known_goals
                 passing["count"] += assisters[user_id]
                 passing["total_goals"] += len(open_play)
-                weights["pas_sample"] += pass_weight * known_goals
-                weights["pas_count"] += pass_weight * assisters[user_id]
-                if known_goals:
-                    meetup_ids[user_id]["pas"].add(match.meetup_id)
+
+    return evidence
+
+
+def combine_attribute_evidence(meetups: dict[int, Meetup], evidence: dict[int, dict]) -> dict[int, dict]:
+    if not meetups:
+        return {}
+    as_of = max(meetup_end_time(meetup) for meetup in meetups.values())
+    result: dict[int, dict] = {}
+    weighted = defaultdict(Counter)
+    for meetup_id, players in evidence.items():
+        age_days = (as_of - meetup_end_time(meetups[meetup_id])).total_seconds() / 86400
+        weight = 0.5 ** (age_days / 21)
+        pass_weight = 0.5 ** (age_days / 42)
+        for user_id, row in players.items():
+            uid = int(user_id)
+            attrs = result.setdefault(uid, empty_player_attributes())
+            weights = weighted[uid]
+            for key, unit_weight in (("sho", weight), ("pas", pass_weight), ("def", weight)):
+                evidence_row = row[key]
+                for field in ("sample", "count"):
+                    attrs[key][field] += evidence_row[field]
+                    weights[f"{key}_{field}"] += unit_weight * evidence_row[field]
+                attrs[key]["meetups"] += int(evidence_row["sample"] > 0)
+            attrs["pas"]["total_goals"] += row["pas"]["total_goals"]
 
     for user_id, attrs in result.items():
         weights = weighted[user_id]
-        for key in ("sho", "pas", "def"):
-            attrs[key]["meetups"] = len(meetup_ids[user_id][key])
         sho, pas, defence = attrs["sho"], attrs["pas"], attrs["def"]
         if sho["sample"] >= 8 and sho["meetups"] >= 3:
             sho["score"] = _score(

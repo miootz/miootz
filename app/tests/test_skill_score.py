@@ -285,8 +285,9 @@ async def test_disabling_computation_uses_base_everywhere_without_loading_attrib
         ).status_code == 403
 
         with monkeypatch.context() as patches:
-            for module in (rankings, users_stats, skill_service):
-                patches.setattr(module, "load_player_attributes", unavailable)
+            patches.setattr(rankings.rankings_service, "load_cached_attributes", unavailable)
+            patches.setattr(users_stats, "load_cached_attributes", unavailable)
+            patches.setattr(skill_service, "load_player_attributes", unavailable)
             response = await client.patch(
                 "/rating-settings", headers=admin, json=settings
             )

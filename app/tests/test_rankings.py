@@ -7,7 +7,7 @@ meetup-scoped endpoint (incl. 404 without completed matches).
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -16,12 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
+from app.core.timeutil import utcnow
 from app.models.match import MatchPenalty, MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
+from app.models.meetup_analytics import MeetupAnalytics, MeetupRatingSnapshot
 from app.models.rating import Rating
 from app.models.user import User
 from app.services.rating_settings import RatingSettings
+from app.services import rankings_service
+from app.services.player_progress import record_due_rating_snapshots
 
 TOKENS = ["p1", "p2", "p3", "tp1"]
 
@@ -562,3 +566,75 @@ async def test_highlights():
         j = (await ac.get("/rankings?year=2020", headers=hdr("p1"))).json()
         assert j["rows"] == []
         assert all(v == [] for v in j["highlights"].values())
+
+
+async def test_analytics_cache_matches_raw_results_and_refreshes_only_edited_meetup():
+    async with await client() as ac:
+        await seed(ac)
+    async with AsyncSession(engine) as db:
+        # A completed match can count in a different season from attendance.
+        match = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == 1))
+        match_id = match.id
+        match.completed_at = datetime(2026, 1, 1, 0, 5)
+        await db.commit()
+
+        for year in (None, 2025, 2026):
+            for own_goals in (False, True):
+                bounds = rankings_service._year_bounds(year) if year else None
+                source = await rankings_service._load_scope(db, bounds)
+                raw = await rankings_service.rank_player_metrics(db, *source, include_own_goals=own_goals)
+                cached = await rankings_service.scoped_player_counts(db, year, own_goals)
+                assert {uid: row for uid, row in cached.items() if row["attendances"]} == {
+                    uid: row for uid, row in raw.items() if row["attendances"]
+                }
+
+        before = await db.get(MeetupAnalytics, 2)
+        assert before is not None
+        goal = await db.scalar(select(MatchGoal).where(MatchGoal.match_id == match_id))
+        goal.deleted_at = utcnow()
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        assert await db.get(MeetupAnalytics, 1) is None
+        assert await db.get(MeetupAnalytics, 2) is not None
+        source = await rankings_service._load_scope(db, None)
+        raw = await rankings_service.rank_player_metrics(db, *source)
+        cached = await rankings_service.scoped_player_counts(db, None, False)
+        assert cached == raw
+        assert await db.get(MeetupAnalytics, 1) is not None
+
+
+async def test_profile_progress_returns_played_meetups_and_prospective_ratings():
+    async with await client() as ac:
+        ids = await seed(ac)
+        response = await ac.get("/users/me/progress", headers=hdr("p1"))
+        assert response.status_code == 200
+        points = response.json()["meetups"]
+        assert [row["meetup_id"] for row in points] == [1, 2]
+        assert all(row["base_rating"] is None for row in points)
+
+        async with AsyncSession(engine) as db:
+            latest = await db.get(Meetup, 3)
+            now = utcnow()
+            latest.start_time = now - timedelta(hours=4)
+            db.add(Meetup(
+                id=4, start_time=now + timedelta(hours=4), location="Pitch",
+                min_players=1, max_players=10,
+            ))
+            player = await db.get(User, ids["p1"])
+            player.seed_skill = 3.5
+            player.calculated_skill = 4
+            await db.commit()
+
+        await record_due_rating_snapshots()
+        async with AsyncSession(engine) as db:
+            pending = await db.get(MeetupRatingSnapshot, 3)
+            assert pending is not None and pending.ratings is None
+            (await db.get(Meetup, 4)).start_time = now - timedelta(minutes=1)
+            await db.commit()
+
+        await record_due_rating_snapshots()
+        async with AsyncSession(engine) as db:
+            snapshot = await db.get(MeetupRatingSnapshot, 3)
+            assert snapshot.ratings[str(ids["p1"])] == {"base": 3.5, "adjusted": 4}
+            assert await db.get(MeetupRatingSnapshot, 2) is None

@@ -15,6 +15,7 @@ from app.models.guest_plus_one import GuestPlusOne
 from app.models.match import MeetupMatch
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
+from app.models.meetup_analytics import MeetupRatingSnapshot
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
@@ -260,6 +261,19 @@ async def seed_demo(db: AsyncSession, *, anchor: datetime, scenario: str) -> dic
     db.add(ChatMessage(meetup_id=2, user_id=1, message='Great games today. Results are up—remember to rate your teammates.', created_at=anchor - timedelta(hours=1)))
     await db.flush()
     await refresh_player_skills(db)
+
+    # Fictional historical ratings for the two locked demo meetups.
+    for meetup_id, offset in ((3, 0.2), (4, -0.3)):
+        db.add(MeetupRatingSnapshot(
+            meetup_id=meetup_id,
+            ratings={
+                str(user.id): {
+                    "base": user.seed_skill,
+                    "adjusted": min(5.0, max(1.0, (user.calculated_skill or 3.0) + offset)),
+                }
+                for user in members[:15]
+            },
+        ))
 
     computed_scores = (await get_rating_settings(db)).computed_scores
     players = [

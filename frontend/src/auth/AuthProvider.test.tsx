@@ -135,6 +135,9 @@ it('keeps the profile header and positions in sync with successful saves', async
     if (url === '/api/users/1/history?limit=25&offset=0') {
       return Response.json({ history: { items: [], total: 0 } });
     }
+    if (url === '/api/users/me/progress') {
+      return Response.json({ computed_scores: true, meetups: [] });
+    }
     return url.endsWith('/stats')
       ? new Response(null, { status: 503 })
       : Response.json({ items: [] });

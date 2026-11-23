@@ -166,7 +166,9 @@ async def test_export_preserves_dataset_and_omits_capabilities():
     assert response.headers["cache-control"] == "no-store"
 
     with ZipFile(io.BytesIO(response.content)) as archive:
-        expected_tables = set(Base.metadata.tables) - {"chat_messages"}
+        expected_tables = set(Base.metadata.tables) - {
+            "chat_messages", "meetup_analytics", "meetup_rating_snapshots",
+        }
         assert set(archive.namelist()) == {
             f"{table}.csv" for table in expected_tables
         } | {"foreign_keys.csv", "README.txt"}
@@ -231,7 +233,7 @@ async def test_export_preserves_dataset_and_omits_capabilities():
         assert foreign_keys == {
             (table.name, key.parent.name, key.column.table.name, key.column.name)
             for table in Base.metadata.tables.values()
-            if table.name != "chat_messages"
+            if table.name in expected_tables
             for key in table.foreign_keys
         }
         for table, omitted in {

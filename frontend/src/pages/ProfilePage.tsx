@@ -20,6 +20,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
+import { ProfileProgress } from "../components/ProfileProgress";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import { SkillRating } from "../components/SkillRating";
@@ -407,6 +408,7 @@ export function ProfilePage() {
         )}
 
         <ProfileScoreboard stats={stats} error={statsError} />
+        <ProfileProgress />
 
         <section className="border border-line bg-panel p-5 space-y-5">
           {/* Attendance history (paginated) */}

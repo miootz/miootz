@@ -13,3 +13,5 @@ from app.models.guest_plus_one import GuestPlusOne  # noqa: F401
 from app.models.match import MeetupMatch, MatchSubstitution, MatchPenalty  # noqa: F401
 from app.models.award import WeatherHeroAward  # noqa: F401
 from app.models.job_queue import JobQueue  # noqa: F401
+from app.models.match_goal import MatchGoal  # noqa: F401
+from app.models.meetup_analytics import MeetupAnalytics, MeetupRatingSnapshot  # noqa: F401

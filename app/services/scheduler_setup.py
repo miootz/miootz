@@ -32,6 +32,14 @@ def start_scheduler() -> AsyncIOScheduler | None:
         id="job_queue_poll",
         replace_existing=True,
     )
+    from app.services.player_progress import record_due_rating_snapshots
+
+    scheduler.add_job(
+        record_due_rating_snapshots,
+        IntervalTrigger(minutes=1),
+        id="capture_meetup_ratings",
+        replace_existing=True,
+    )
     from app.services.audit import prune_audit_log
 
     scheduler.add_job(
