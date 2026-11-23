@@ -227,7 +227,7 @@ In Pocket ID admin UI → **Groups**:
 
 1. Create `members` group → note the UUID
 2. Create `admins` group → note the UUID
-3. Set `POCKET_ID_MEMBERS_GROUP_ID` in `.env` to the `members` group UUID
+3. Set `POCKET_ID_MEMBERS_GROUP_ID` in `.env` if you use a custom group for new signups. With no ID set, Miootz looks for a group named `members`.
 
 New signup tokens auto-assign users to the `members` group. Admin status is assigned
 manually in Pocket ID.
@@ -279,7 +279,10 @@ After initial setup, new users join via **invites**:
 1. Open **Admin → Players** and create or select the player to invite.
 2. Open the player's page and choose **Invite to Pocket ID**, then copy the signup link.
 3. Send the link to the invitee (out-of-band: messenger, email you send yourself, etc.)
-4. The invitee opens the link, creates a passkey, and is auto-assigned to `members`
+4. The invitee opens the single-use link, creates a passkey, and is assigned to the signup group.
+5. On the first Miootz sign-in, the app verifies the redeemed token in Pocket ID's account-creation audit event and links the account to the selected player. The Pocket ID API key needs access to users, signup tokens, and the global audit log. If no group ID is configured, it also needs to list groups.
+
+Miootz imports the Pocket ID display name when the player links their account. For later changes, the next authenticated request after five minutes starts a background refresh. Reload the page after the refresh to see the new name.
 
 The invite link is a Pocket ID signup URL: `https://${AUTH_DOMAIN}/st/<token>`.
 
@@ -314,7 +317,7 @@ Notifications are **Web Push only** (VAPID). There is no mail delivery in this s
 | `ACME_EMAIL` | Let's Encrypt account contact email (production only) | Set in `.env` |
 | `POCKET_ID_STATIC_API_KEY` | Admin API key for bootstrap and backend | ✅ by bootstrap |
 | `POCKET_ID_API_KEY` | Backend fallback if the static key is empty | Optional |
-| `POCKET_ID_MEMBERS_GROUP_ID` | Group UUID for new signups | ✅ by bootstrap |
+| `POCKET_ID_MEMBERS_GROUP_ID` | Group UUID for new signups. Defaults to the Pocket ID group named `members` | ✅ by bootstrap |
 | `POCKET_ID_OIDC_ISSUER` | Pocket ID OIDC issuer URL | ✅ by bootstrap |
 | `POCKET_ID_OIDC_CLIENT_ID` | OIDC client ID | Fixed: `miootz-app` |
 | `POCKET_ID_INTERNAL_URL` | Internal Pocket ID URL | Fixed in compose |

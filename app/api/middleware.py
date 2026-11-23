@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -13,7 +13,11 @@ from app.core.timeutil import utcnow
 from app.models.invite import InviteToken
 from app.models.user import User
 from app.services.pocket_id_jwt import validate_pocket_id_token
-from app.services.pocket_id_client import get_user_by_id
+from app.services.pocket_id_client import (
+    SignupAuditUnavailable,
+    get_redeemed_signup_token,
+    get_user_by_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,24 +69,18 @@ async def _sync_sso_data(user: User, pocket_id_sub: str) -> None:
 _pending_sso_syncs: set[asyncio.Task] = set()
 _syncing_sso_subjects: set[str] = set()
 
-#: Minimum interval between Pocket ID admin-API refreshes per user.
-_SSO_SYNC_INTERVAL_SECONDS = 6 * 3600
-#: Admin-flagged accounts poll tighter: Pocket ID has no webhook, so a group
-#: removal (demotion) propagates within one poll. Small user count, cheap call.
-_SSO_SYNC_ADMIN_INTERVAL_SECONDS = 5 * 60
+#: Minimum interval between Pocket ID admin-API refreshes per active user.
+_SSO_SYNC_INTERVAL_SECONDS = 5 * 60
 
 
 def _background_sync_sso(user: User, pocket_id_sub: str) -> None:
     """Fire-and-forget throttled background SSO refresh (for existing users)."""
     if pocket_id_sub in _syncing_sso_subjects:
         return
-    interval = _SSO_SYNC_INTERVAL_SECONDS
-    if "admins" in (user.sso_groups or []) or user.is_admin:
-        interval = _SSO_SYNC_ADMIN_INTERVAL_SECONDS
     last = user.sso_synced_at
     if last is not None:
         try:
-            if (utcnow() - last).total_seconds() < interval:
+            if (utcnow() - last).total_seconds() < _SSO_SYNC_INTERVAL_SECONDS:
                 return
         except TypeError:
             pass  # unexpected tz-aware legacy value — refresh instead of stalling
@@ -105,82 +103,58 @@ async def _resolve_user_by_pocket_id_sub(
     return result.scalar_one_or_none()
 
 
-async def _link_existing_user_via_invite(db: AsyncSession, claims: dict) -> User | None:
-    """Try to link a Pocket ID account to an existing miootz user via invite token.
-
-    Checks the JWT for a signup_token claim, then falls back to querying
-    Pocket ID's admin API. If a matching InviteToken with user_id is found,
-    links the existing User row and returns it.
-    """
-    pocket_id_sub = claims.get("sub", "")
-
-    # Strategy 1: JWT contains signup_token claim
-    signup_token = claims.get("signup_token")
-
-    # Strategy 2: Query Pocket ID admin API for signup token
-    if not signup_token:
-        try:
-            sso_user = await get_user_by_id(pocket_id_sub)
-            if sso_user:
-                signup_token = sso_user.get("signupToken") or sso_user.get(
-                    "signup_token"
-                )
-        except Exception:
-            logger.debug(
-                "Could not fetch Pocket ID user for invite linking (sub=%r)",
-                pocket_id_sub,
-            )
-
-    if not signup_token:
-        return None
-
-    # Look up the invite token
-    result = await db.execute(
-        select(InviteToken).where(InviteToken.token == signup_token)
+async def _link_existing_user_via_invite(db: AsyncSession, pocket_id_sub: str) -> User | None:
+    """Link the player recorded for a signup token Pocket ID issued to this subject."""
+    pending = select(InviteToken.token).where(
+        InviteToken.user_id.is_not(None), InviteToken.used.is_(False)
     )
-    invite = result.scalar_one_or_none()
-    if not invite or not invite.user_id:
+    if await db.scalar(pending.limit(1)) is None:
         return None
 
-    # Link to existing user
-    existing_user = await db.get(User, invite.user_id)
-    if not existing_user or existing_user.pocket_id_sub:
+    signup_token = await get_redeemed_signup_token(pocket_id_sub)
+    if not signup_token:
+        return None
+    invite = await db.get(InviteToken, signup_token)
+    if not invite or invite.user_id is None:
         return None
 
-    existing_user.pocket_id_sub = pocket_id_sub
-    invite.used = True
+    sso_user = await get_user_by_id(pocket_id_sub)
+    if sso_user is None:
+        raise SignupAuditUnavailable
+    if sso_user.get("disabled"):
+        raise ValueError("This Pocket ID account is disabled.")
 
-    # Sync SSO data
-    try:
-        sso_user = await get_user_by_id(pocket_id_sub)
-        if sso_user:
-            user_groups = sso_user.get("userGroups", [])
-            groups = [
-                g["name"]
-                for g in user_groups
-                if isinstance(g, dict) and isinstance(g.get("name"), str)
-            ]
-            existing_user.sso_display_name = (
-                sso_user.get("displayName") or existing_user.sso_display_name
+    # Competing sign-ins or outstanding invites must never replace an existing link.
+    player = None
+    if not invite.used:
+        player = await db.scalar(
+            update(User)
+            .where(User.id == invite.user_id, User.pocket_id_sub.is_(None))
+            .values(
+                pocket_id_sub=pocket_id_sub,
+                sso_display_name=sso_user.get("displayName") or User.sso_display_name,
+                sso_preferred_username=(
+                    sso_user.get("preferredUsername") or sso_user.get("username")
+                    or User.sso_preferred_username
+                ),
+                sso_groups=[
+                    group["name"] for group in sso_user.get("userGroups", [])
+                    if isinstance(group, dict) and isinstance(group.get("name"), str)
+                ],
+                sso_synced_at=utcnow(),
             )
-            existing_user.sso_preferred_username = (
-                sso_user.get("preferredUsername")
-                or sso_user.get("username")
-                or existing_user.sso_preferred_username
-            )
-            existing_user.sso_groups = groups if groups else None
-    except Exception:
-        logger.exception(
-            "SSO sync failed during invite linking for sub=%s", pocket_id_sub
+            .returning(User)
         )
+    if player is None:
+        player = await _resolve_user_by_pocket_id_sub(db, pocket_id_sub)
+        if player is None:
+            raise ValueError("This invite has already been claimed. Contact a Miootz admin.")
+        return player
 
-    logger.info(
-        "Linked existing user (id=%d) to Pocket ID (sub=%r) via invite token %r",
-        existing_user.id,
-        pocket_id_sub,
-        signup_token,
-    )
-    return existing_user
+    invite.used = True
+    invite.pocket_id_user_id = pocket_id_sub
+    logger.info("Linked existing player %d through a redeemed Pocket ID invite", player.id)
+    return player
 
 
 async def _jit_provision_user(db: AsyncSession, claims: dict) -> User:
@@ -256,7 +230,7 @@ async def _resolve_or_create_user(db: AsyncSession, claims: dict) -> User:
         return user
 
     # 2. Link existing user via invite
-    linked_user = await _link_existing_user_via_invite(db, claims)
+    linked_user = await _link_existing_user_via_invite(db, pocket_id_sub)
     if linked_user:
         return linked_user
 
@@ -333,6 +307,12 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
                 user = await _resolve_or_create_user(db, claims)
                 await db.commit()
                 await db.refresh(user)
+            except SignupAuditUnavailable:
+                logger.warning("Pocket ID signup verification unavailable")
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Could not verify your Pocket ID signup. Try again shortly."},
+                )
             except ValueError as e:
                 # JIT provisioning rejected (no groups)
                 logger.info("Auth rejected: %s", e)

@@ -60,7 +60,7 @@ async def test_background_sync_deduplicates_each_subject(monkeypatch):
     assert started.count("subject-a") == 2
 
 
-async def test_background_sync_preserves_admin_refresh_interval(monkeypatch):
+async def test_background_sync_applies_five_minute_interval_to_everyone(monkeypatch):
     started = []
 
     async def sync(user, pocket_id_sub):
@@ -78,10 +78,11 @@ async def test_background_sync_preserves_admin_refresh_interval(monkeypatch):
         User(is_admin=True, sso_synced_at=last_sync), "local-admin"
     )
     middleware._background_sync_sso(
-        User(sso_groups=["admins"], sso_synced_at=utcnow()), "fresh-admin"
+        User(sso_groups=["members"], sso_synced_at=utcnow() - timedelta(minutes=4)),
+        "recent-member",
     )
     await asyncio.gather(*middleware._pending_sso_syncs)
-    assert sorted(started) == ["group-admin", "local-admin"]
+    assert sorted(started) == ["group-admin", "local-admin", "member"]
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

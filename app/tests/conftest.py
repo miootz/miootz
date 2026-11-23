@@ -231,7 +231,6 @@ _TOKEN_MAP = {
         "preferred_username": "new_sso_user",
         "name": "New SSO User",
         "groups": ["members"],
-        "signup_token": "test-signup-token",
     },
     "noinvitetoken": {
         "sub": "no-invite-uuid",
@@ -279,6 +278,14 @@ def pytest_configure(config):
 
     app.services.pocket_id_jwt.validate_pocket_id_token = _default_mock_validate
     app.services.pocket_id_client.get_user_by_id = _default_mock_get_user_by_id
+
+
+@pytest.fixture(autouse=True)
+def _mock_pocket_id_signup_audit(monkeypatch):
+    async def no_redeemed_token(_subject):
+        return None
+
+    monkeypatch.setattr("app.api.middleware.get_redeemed_signup_token", no_redeemed_token)
 
 
 @pytest.fixture(autouse=True)
