@@ -19,6 +19,20 @@ and run live matches with timer, score, and post-match peer ratings. Notificatio
 Stack: FastAPI backend (`app/`), React + Vite frontend (`frontend/`), Docker Compose
 with Traefik + Pocket ID.
 
+## Meetup signups
+
+An open Overview updates when the next meetup is created. Players can join as
+soon as it appears. A scheduled push notification may arrive later.
+
+Tapping the new-meetup push or its **Join** action holds the player's place for
+two minutes or until kickoff, whichever comes first. Sign in with the account
+that received the notification to keep the original signup time. Unclaimed
+holds expire automatically. Players who sign in later can join at the current
+position. Holds affect signup order and capacity while they are active. They
+count toward attendance and teams only after the player signs in. An expired
+hold stops reserving capacity immediately. Automatic waitlist promotion runs
+on the next scheduled job poll, normally within 30 seconds.
+
 ## Team balancing
 
 **Auto-balanced** is the default for new meetups and templates. It redrafts the

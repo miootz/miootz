@@ -12,9 +12,10 @@
  * optional onLiveChange callback (mirrors the old per-page
  * `es.onopen/onerror → setRosterChannelLive` plumbing). On a gap the next
  * snapshot refetch heals state — we never replay missed events here; callers
- * refetch by id when they receive an event or when the link comes back.
+ * refetch when they receive an event or when the link comes back. The separate
+ * meetup-list channel uses the same hub for overviews with no active meetup.
  */
-import { meetupDataEventsUrl } from "../api/meetupsApi";
+import { meetupDataEventsUrl, meetupListEventsUrl } from "../api/meetupsApi";
 
 export type MeetupDataMessage = Record<string, unknown>;
 export type MeetupDataHandler = (data: MeetupDataMessage) => void;
@@ -29,11 +30,14 @@ interface Channel {
   attached: boolean; // window online/offline listeners wired
 }
 
-const channels = new Map<number, Channel>();
+const channels = new Map<number | null, Channel>();
 
-function connect(ch: Channel, meetupId: number): void {
+function connect(ch: Channel, meetupId: number | null): void {
   if (ch.es) return;
-  const es = new EventSource(meetupDataEventsUrl(meetupId, ch.token));
+  const url = meetupId === null
+    ? meetupListEventsUrl(ch.token)
+    : meetupDataEventsUrl(meetupId, ch.token);
+  const es = new EventSource(url);
   ch.es = es;
   es.onopen = () => setLive(ch, true);
   es.onerror = () => setLive(ch, false);
@@ -67,7 +71,7 @@ function setLive(ch: Channel, live: boolean): void {
   }
 }
 
-function forceReconnect(ch: Channel, meetupId: number): void {
+function forceReconnect(ch: Channel, meetupId: number | null): void {
   // EventSource does not always recover after the network flaps (e.g.
   // DevTools Offline Mode); when the browser comes back, rebuild the link.
   if (ch.es) {
@@ -90,7 +94,23 @@ export function subscribeMeetupData(
   onLiveChange?: MeetupLiveHandler,
 ): () => void {
   if (!Number.isFinite(meetupId)) return () => {};
+  return subscribe(meetupId, accessToken, onMessage, onLiveChange);
+}
 
+export function subscribeMeetupList(
+  accessToken: string | undefined,
+  onMessage: MeetupDataHandler,
+  onLiveChange?: MeetupLiveHandler,
+): () => void {
+  return subscribe(null, accessToken, onMessage, onLiveChange);
+}
+
+function subscribe(
+  meetupId: number | null,
+  accessToken: string | undefined,
+  onMessage: MeetupDataHandler,
+  onLiveChange?: MeetupLiveHandler,
+): () => void {
   let ch = channels.get(meetupId);
   if (!ch) {
     ch = {

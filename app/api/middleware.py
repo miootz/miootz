@@ -240,9 +240,7 @@ async def _resolve_or_create_user(db: AsyncSession, claims: dict) -> User:
 
 #: Routes reachable without any authentication. Everything else is denied by
 #: default (401) unless a valid Pocket ID token resolves a user. Keep this
-#: list minimal — the plus-one routes carry their own capability tokens.
-#: (The old signed magic-link API was removed entirely: nothing issued the
-#: irrevocable tokens anymore and push links now go through authed SPA routes.)
+#: list minimal — guest claim and signup hold routes validate their own tokens.
 _PUBLIC_EXACT_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 _PUBLIC_PATH_PREFIXES = (
     "/meetups/plus-one/",  # guest claim preview — claim_token is the capability
@@ -281,10 +279,11 @@ class PocketIdAuthMiddleware(BaseHTTPMiddleware):
         is_public = (
             path in _PUBLIC_EXACT_PATHS
             or path.startswith(_PUBLIC_PATH_PREFIXES)
+            or (request.method == "POST" and path == "/meetups/signup-hold")
         )
 
         # Extract the token: Authorization header first; `access_token` query
-        # param is honored only on the two SSE paths (never elsewhere, so
+        # param is honored only on SSE paths (never elsewhere, so
         # tokens don't leak into logs for regular API calls).
         token = ""
         auth_header = request.headers.get("Authorization", "")

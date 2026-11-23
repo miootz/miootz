@@ -35,7 +35,8 @@ appear as empty cells. JSON values use their stored JSON representation.
 The manual lineups in meetups and team lists in meetup_matches and
 match_substitutions contain users.id values. The penalty scorer_id and
 substitution recorded_by also reference users.id. For rating_reminder jobs,
-job_queue.ref_id references meetups.id.
+job_queue.ref_id references meetups.id. For signup_hold_expiry jobs, it
+references meetup_signup_holds.id.
 
 For spreadsheet safety, text beginning with a formula character (=, +, -, @,
 or their full-width variants), tab, carriage return, or newline is prefixed

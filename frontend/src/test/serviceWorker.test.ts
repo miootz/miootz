@@ -65,4 +65,33 @@ describe('service worker API requests', () => {
     listeners.notificationclick({ waitUntil });
     expect(waitUntil).not.toHaveBeenCalled();
   });
+
+  it.each(['', 'action-0'])('reserves a signup immediately for notification action %s', async (action) => {
+    const listeners: Record<string, (event: unknown) => void> = {};
+    const openWindow = vi.fn();
+    const fetch = vi.fn().mockResolvedValue({ ok: true });
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+      URL, URLSearchParams, fetch,
+      self: {
+        location: { origin: 'https://miootz.test' },
+        clients: { matchAll: async () => [], openWindow },
+        addEventListener: (name: string, listener: (event: unknown) => void) => { listeners[name] = listener; },
+      },
+    });
+    const waitUntil = vi.fn();
+    listeners.notificationclick({
+      action, waitUntil,
+      notification: {
+        close: vi.fn(), data: {
+          url: '/meetup-reservation#hold=abc',
+          actionMap: { 'action-0': 'https://miootz.test/meetup-reservation#hold=abc' },
+        },
+      },
+    });
+    await waitUntil.mock.calls[0][0];
+    expect(fetch).toHaveBeenCalledWith('/api/meetups/signup-hold', expect.objectContaining({
+      method: 'POST', credentials: 'omit', body: '{"token":"abc"}',
+    }));
+    expect(openWindow).toHaveBeenCalledWith('/meetup-reservation#hold=abc');
+  });
 });

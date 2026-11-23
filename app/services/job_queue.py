@@ -33,9 +33,16 @@ def _rating_reminder_handler() -> JobHandler:
     return send_rating_reminder_for_meetup
 
 
+def _signup_hold_handler() -> JobHandler:
+    from app.services.meetup_signup import expire_signup_hold
+
+    return expire_signup_hold
+
+
 # job_type -> lazy handler factory
 _HANDLERS: dict[str, Callable[[], JobHandler]] = {
     "rating_reminder": _rating_reminder_handler,
+    "signup_hold_expiry": _signup_hold_handler,
 }
 
 

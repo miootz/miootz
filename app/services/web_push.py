@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from pywebpush import WebPushException, webpush
@@ -12,6 +13,7 @@ from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
+from app.services.meetup_signup import signup_hold_token
 from app.services.peer_rating_policy import teammate_pairs
 from app.services.rating_settings import get_rating_settings
 
@@ -96,7 +98,7 @@ def _format_meetup_summary(meetup: Meetup) -> str:
 async def _send_push_to_users(
     db: AsyncSession,
     user_ids: set[int],
-    data: str,
+    data: str | Callable[[int], str],
     category: str | None = None,
 ) -> dict[str, int]:
     """Send push notification to users, optionally filtering by preference category."""
@@ -121,7 +123,7 @@ async def _send_push_to_users(
         for sub in remaining:
             try:
                 await asyncio.get_running_loop().run_in_executor(
-                    _push_executor, _send_one, sub, data
+                    _push_executor, _send_one, sub, data(sub.user_id) if callable(data) else data
                 )
                 counts["sent"] += 1
             except WebPushException as e:
@@ -177,16 +179,19 @@ async def notify_new_meetup_invites(
         return
 
     loc = (meetup.location or "Meetup")[:80]
-    data = _payload(
-        title="Miootz: new meetup",
-        body=f"{loc} — {summary}",
-        url=f"/meetup-action?mid={meetup.id}&act=join",
-        actions=[
-            _action("join", "Join", meetup),
-            _action("ignore", "Ignore", meetup),
-        ],
-    )
-    await _send_push_to_users(db, user_ids, data, category="meetup_invite")
+    def payload(user_id: int) -> str:
+        token = signup_hold_token(meetup, user_id)
+        path = f"/meetup-reservation#hold={token}"
+        return _payload(
+            title="Miootz: new meetup",
+            body=f"{loc} — {summary}",
+            url=path,
+            actions=[
+                {"action": "join", "title": "Join", "url": f"{settings.PUBLIC_APP_URL.rstrip('/')}{path}"},
+                _action("ignore", "Ignore", meetup),
+            ],
+        )
+    await _send_push_to_users(db, user_ids, payload, category="meetup_invite")
 
 
 async def notify_broadcast_spot_open(

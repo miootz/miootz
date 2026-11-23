@@ -21,6 +21,11 @@ export function meetupDataEventsUrl(
     : base;
 }
 
+export function meetupListEventsUrl(accessToken: string | undefined): string {
+  const base = `${apiBase()}/meetups/data/events`;
+  return accessToken ? `${base}?access_token=${encodeURIComponent(accessToken)}` : base;
+}
+
 export function meetupChatEventsUrl(
   meetupId: string | number,
   accessToken: string | undefined,
@@ -281,11 +286,24 @@ export async function reshapeMeetupTeams(
   return r.json();
 }
 
-export async function joinMeetup(id: number): Promise<{
+export async function reserveMeetupSignup(token: string, signal?: AbortSignal): Promise<{
+  meetup_id: number;
+  hold_id: number;
+}> {
+  const r = await apiFetch("/meetups/signup-hold", {
+    method: "POST", body: JSON.stringify({ token }), skipAuth: true, signal,
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function joinMeetup(id: number, reservationId?: number): Promise<{
   status: string;
   attendance_id?: number;
 }> {
-  const r = await apiFetch(`/meetups/${id}/join`, { method: "POST" });
+  const query = reservationId === undefined ? "" : `?reservation_id=${reservationId}`;
+  const r = await apiFetch(`/meetups/${id}/join${query}`, { method: "POST" });
+  if (reservationId !== undefined && r.status === 409) return { status: "reservation_expired" };
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json() as Promise<{ status: string; attendance_id?: number }>;
 }

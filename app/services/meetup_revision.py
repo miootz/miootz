@@ -38,6 +38,11 @@ async def notify_meetup_data_changed(meetup_id: int, revision: int) -> None:
     )
 
 
+async def notify_meetup_list_changed() -> None:
+    """Prompt open overviews to reload the list of available meetups."""
+    await meetup_data_manager.broadcast(None, {"type": "meetup_list_changed"})
+
+
 async def notify_meetup_deleted(meetup_id: int) -> None:
     await meetup_data_manager.broadcast(
         meetup_id,
