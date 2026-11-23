@@ -121,6 +121,7 @@ class GoalCreate(BaseModel):
     #: Keeper who was in goal for the *conceding* team (must be an opposing
     #: player). Optional — nobody should be blocked on an unknown/rotated keeper.
     goalkeeper_id: int | None = None
+    clock_minute: int | None = Field(default=None, ge=1, le=600)
     #: Own goal: the scorer is on the conceding team (still counts toward
     #: ``team``'s score).
     is_own_goal: bool = False
@@ -2436,11 +2437,16 @@ async def create_goal(
     if lease.holder_id != user.id:
         return await _lease_busy_response(db, match_id, now)
 
-    # Timer clock is authoritative for the minute mark.
+    # Use the confirmed minute when supplied. Older clients use the live clock.
     remaining = _compute_timer_remaining(match)
     elapsed = max((match.timer_total_seconds or 0) - remaining, 0)
-    clock_minute = elapsed // 60 + 1
-    after_whistle = remaining <= 0 or match.status in ("time_up", "completed")
+    live_minute = elapsed // 60 + 1
+    clock_minute = body.clock_minute if body.clock_minute is not None else live_minute
+    after_whistle = (
+        remaining <= 0
+        or match.status in ("time_up", "completed")
+        or clock_minute * 60 > match.timer_total_seconds
+    )
 
     # Duplicate backstop: the same (team, scorer, minute) inside 90 s.
     res = await db.execute(
@@ -2451,6 +2457,8 @@ async def create_goal(
             MatchGoal.scorer_id == body.scorer_id,
             MatchGoal.deleted_at.is_(None),
         )
+        .order_by(MatchGoal.created_at.desc(), MatchGoal.id.desc())
+        .limit(1)
     )
     duplicate = res.scalar_one_or_none()
     if duplicate is not None and not body.force:
@@ -2487,7 +2495,9 @@ async def create_goal(
         scorer_id=body.scorer_id,
         assist_id=body.assist_id,
         goalkeeper_id=body.goalkeeper_id,
-        clock_secs=remaining,
+        clock_secs=remaining if clock_minute == live_minute else max(
+            match.timer_total_seconds - (clock_minute - 1) * 60, 0
+        ),
         clock_minute=clock_minute,
         after_whistle=after_whistle,
         is_own_goal=body.is_own_goal,
@@ -2771,6 +2781,7 @@ async def update_goal(
     goal.scorer_id = body.scorer_id
     goal.assist_id = body.assist_id
     goal.goalkeeper_id = body.goalkeeper_id
+    goal.is_own_goal = body.is_own_goal
     goal.clock_minute = body.clock_minute
     goal.clock_secs = max(
         (match.timer_total_seconds or 0) - (body.clock_minute - 1) * 60, 0

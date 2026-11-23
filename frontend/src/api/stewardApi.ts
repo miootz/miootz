@@ -252,6 +252,7 @@ export interface GoalCreateBody {
   assist_id?: number | null;
   /** Must be on the conceding (opposing) team; omit when unknown. */
   goalkeeper_id?: number | null;
+  clock_minute?: number;
   intent_id: string;
   force?: boolean;
   /** Own goal: the scorer is on the conceding team. */
@@ -272,7 +273,7 @@ export interface HistoricalGoalResult {
 export async function saveHistoricalGoal(
   meetupId: number,
   matchId: number,
-  body: Omit<GoalCreateBody, "force"> & { goal_id?: number; add_to_score?: boolean },
+  body: Omit<GoalCreateBody, "force" | "clock_minute"> & { goal_id?: number; add_to_score?: boolean },
 ): Promise<HistoricalGoalResult> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goal-attribution`, {
     method: "PUT",
