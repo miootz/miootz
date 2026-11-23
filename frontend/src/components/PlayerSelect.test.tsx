@@ -8,7 +8,7 @@ const players: SelectablePlayer[] = [
 ];
 
 const openList = () => {
-  fireEvent.click(screen.getByRole("button", { name: "Open list" }));
+  fireEvent.click(screen.getByRole("button", { name: "Scorer Select player" }));
 };
 
 it("selects an option on click (the touch path — phones fire click, not mousedown)", () => {
@@ -17,10 +17,13 @@ it("selects an option on click (the touch path — phones fire click, not moused
     <PlayerSelect label="Scorer" players={players} selected={null} onSelect={onSelect} />,
   );
   openList();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("listitem")).toHaveLength(players.length);
   fireEvent.click(screen.getByText("Demo Player 03"));
   expect(onSelect).toHaveBeenCalledWith(players[0]);
   // List collapses: options gone (the parent echoes the pick into `selected`).
   expect(container.querySelector("ul")).toBeNull();
+  expect(screen.getByRole("button", { name: "Scorer Select player" })).toHaveFocus();
 });
 
 it("keeps the list open on press so a scroll gesture does not pick a player", () => {

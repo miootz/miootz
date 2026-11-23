@@ -126,6 +126,54 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
 TOKENS = ["p1", "p2", "p3", "tp1"]
 
 
+async def test_historical_tap_swap_switches_players_between_match_teams():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            await db.commit()
+        url = f"/meetups/{sid}/matches/{mid}/substitutions"
+        body = {"team": "a", "player_off": ids["p2"], "player_on": ids["tp1"]}
+        assert (await ac.post(url, headers=hdr("admin"), json=body)).status_code == 409
+        result = await ac.post(url, headers=hdr("admin"), json={**body, "swap_teams": True})
+        assert result.status_code == 200, result.text
+        assert len(result.json()["substitutions"]) == 1
+        assert {p["id"] for p in result.json()["match"]["team_a"]["users"]} == {ids["p1"], ids["tp1"]}
+        assert {p["id"] for p in result.json()["match"]["team_b"]["users"]} == {ids["p3"], ids["p2"]}
+
+
+async def test_new_historical_goal_increases_score_once_and_preserves_unassigned_goals():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_b = 1
+            await db.commit()
+
+        url = f"/meetups/{sid}/matches/{mid}/goal-attribution"
+        body = {"team": "a", "scorer_id": ids["p1"], "intent_id": "new-historical", "add_to_score": True}
+
+        async def save(payload):
+            return await ac.put(url, headers=hdr("admin"), json=payload)
+
+        first, retry = await gather(save(body), save(body))
+        assert first.status_code == retry.status_code == 200
+        result = first.json()
+        assert result == retry.json()
+        assert (result["score_a"], result["score_b"]) == (1, 1)
+        assert (await save({**body, "goal_id": result["goal"]["id"]})).status_code == 400
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            assert (match.score_offset_a, match.score_offset_b) == (0, 1)
+            match.penalty_winner = "b"
+            await db.commit()
+        blocked = await save({**body, "intent_id": "would-invalidate-shootout"})
+        assert blocked.status_code == 409
+        assert "shootout" in blocked.json()["detail"]
+
+
 async def test_admin_can_correct_kickoff_and_insert_substitution_before_a_saved_one():
     async with await client() as ac:
         sid, mid, ids = await make_live_setup(ac, TOKENS)
