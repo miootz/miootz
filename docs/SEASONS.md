@@ -54,7 +54,9 @@ after combining the selected meetups.
 Profile → Progress defaults to the last eight played meetups. The season
 view groups the current year's meetups by kickoff date. Attack shows goals and recorded assists.
 Results shows wins and clean sheets against matches played. The Rating view
-starts collecting history after deployment. The scheduler observes open review
-windows and captures the saved ratings after the next kickoff closes the
-window. Older meetups with no captured rating appear without a rating point.
+shows the player's current ratings at their latest played meetup in the recent
+or current-season view until a saved rating is available. Adjusted Rating
+includes match attributes even without peer votes. The scheduler captures
+ratings after the next kickoff closes the review window. Earlier meetups
+without a saved rating have no rating point.
 The demo includes fictional rating points so the chart can be tested locally.

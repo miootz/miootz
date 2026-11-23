@@ -611,7 +611,7 @@ async def test_profile_progress_returns_played_meetups_and_prospective_ratings()
         assert response.status_code == 200
         points = response.json()["meetups"]
         assert [row["meetup_id"] for row in points] == [1, 2]
-        assert all(row["base_rating"] is None for row in points)
+        assert points[0]["base_rating"] is None
 
         async with AsyncSession(engine) as db:
             latest = await db.get(Meetup, 3)
@@ -627,6 +627,10 @@ async def test_profile_progress_returns_played_meetups_and_prospective_ratings()
             await db.commit()
 
         await record_due_rating_snapshots()
+        points = (await ac.get("/users/me/progress", headers=hdr("p1"))).json()["meetups"]
+        assert points[0]["adjusted_rating"] is None
+        assert points[-1]["base_rating"] == 3.5
+        assert points[-1]["adjusted_rating"] == 4
         async with AsyncSession(engine) as db:
             pending = await db.get(MeetupRatingSnapshot, 3)
             assert pending is not None and pending.ratings is None

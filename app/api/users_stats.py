@@ -44,7 +44,7 @@ async def get_my_progress(
     current_user: User = Depends(get_current_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_player_progress(db, current_user.id, year)
+    return await get_player_progress(db, current_user, year)
 
 
 @router.post("/report-score")

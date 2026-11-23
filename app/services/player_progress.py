@@ -61,7 +61,7 @@ async def record_due_rating_snapshots() -> None:
         await db.commit()
 
 
-async def get_player_progress(db: AsyncSession, user_id: int, year: int | None) -> dict:
+async def get_player_progress(db: AsyncSession, player: User, year: int | None) -> dict:
     query = select(Meetup).where(Meetup.skipped.is_(False), Meetup.start_time <= utcnow())
     if year is not None:
         query = query.where(Meetup.start_time.between(datetime(year, 1, 1), datetime(year, 12, 31, 23, 59, 59, 999999)))
@@ -71,7 +71,7 @@ async def get_player_progress(db: AsyncSession, user_id: int, year: int | None) 
         if meetup_end_time(meetup) <= now
     ]
     summaries = await load_meetup_analytics(db, meetups)
-    user_key = str(user_id)
+    user_key = str(player.id)
     played = []
     for meetup in meetups:
         summary = summaries.get(meetup.id)
@@ -82,13 +82,19 @@ async def get_player_progress(db: AsyncSession, user_id: int, year: int | None) 
         played = played[-8:]
 
     snapshots = {
-        row.meetup_id: (row.ratings or {}).get(user_key, {})
+        row.meetup_id: row.ratings[user_key]
         for row in await db.scalars(
             select(MeetupRatingSnapshot).where(
                 MeetupRatingSnapshot.meetup_id.in_([meetup.id for meetup, _ in played])
             )
         )
+        if row.ratings is not None and user_key in row.ratings
     }
+    if played and (year is None or year == now.year):
+        snapshots.setdefault(played[-1][0].id, {
+            "base": player.seed_skill,
+            "adjusted": player.calculated_skill,
+        })
     computed_scores = (await get_rating_settings(db)).computed_scores
     return {
         "computed_scores": computed_scores,
