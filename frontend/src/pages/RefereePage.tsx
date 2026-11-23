@@ -30,7 +30,7 @@ import { GoalList } from "../components/GoalList";
 import { GoalEntrySheet } from "../components/GoalEntrySheet";
 import { leaseBusyLabel } from "../utils/lease";
 import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
-import { playFinalWhistle, playHalfTimeWhistle } from "../utils/whistle";
+import { playFinalWhistle, playHalfTimeWhistle, unlockWhistles } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
 import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
@@ -762,6 +762,7 @@ export function RefereePage() {
 
   const handleStartTimer = async () => {
     if (!currentMatch) return;
+    unlockWhistles();
     await run("Starting timer...", async () => {
       const res = await startTimer(sid, currentMatch.id);
       setTimerSeconds(res.seconds_remaining);
@@ -779,6 +780,7 @@ export function RefereePage() {
 
   const handleResumeTimer = async () => {
     if (!currentMatch) return;
+    unlockWhistles();
     await run("Resuming...", async () => {
       const res = await resumeTimer(sid, currentMatch.id);
       setTimerSeconds(res.seconds_remaining);
