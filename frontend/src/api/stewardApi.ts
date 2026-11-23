@@ -212,14 +212,38 @@ export async function fetchGoals(
   meetupId: number,
   matchId: number,
 ): Promise<GoalRow[]> {
-  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goals`);
+  return (await fetchGoalLog(meetupId, matchId, false)).goals;
+}
+
+export interface HistoricalGoalLog {
+  goals: GoalRow[];
+  rosters: Record<"a" | "b", GoalPerson[]>;
+}
+
+export async function fetchHistoricalGoals(
+  meetupId: number,
+  matchId: number,
+): Promise<HistoricalGoalLog> {
+  return fetchGoalLog(meetupId, matchId, true);
+}
+
+async function fetchGoalLog(
+  meetupId: number,
+  matchId: number,
+  history: boolean,
+): Promise<HistoricalGoalLog> {
+  const query = history ? "?include_history_rosters=true" : "";
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goals${query}`);
   if (!r.ok) throw new Error(await parseApiError(r));
-  const j = (await r.json()) as { goals?: unknown[] } | unknown[];
+  const j = (await r.json()) as { goals?: unknown[]; rosters?: HistoricalGoalLog["rosters"] } | unknown[];
   const arr = Array.isArray(j) ? j : Array.isArray(j?.goals) ? j.goals : [];
-  return arr
-    .map(normalizeGoal)
-    .filter((g): g is GoalRow => g != null)
-    .sort((a, b) => a.clock_minute - b.clock_minute || a.id - b.id);
+  return {
+    goals: arr
+      .map(normalizeGoal)
+      .filter((g): g is GoalRow => g != null)
+      .sort((a, b) => a.clock_minute - b.clock_minute || a.id - b.id),
+    rosters: (!Array.isArray(j) && j.rosters) || { a: [], b: [] },
+  };
 }
 
 export interface GoalCreateBody {
@@ -237,6 +261,22 @@ export interface GoalCreateBody {
 export type GoalUpdateBody = Omit<GoalCreateBody, "intent_id" | "force"> & {
   clock_minute: number;
 };
+
+export async function saveHistoricalGoal(
+  meetupId: number,
+  matchId: number,
+  body: Omit<GoalCreateBody, "force"> & { goal_id?: number },
+): Promise<GoalRow> {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goal-attribution`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  const { goal } = await r.json();
+  const row = normalizeGoal(goal);
+  if (!row) throw new Error("Goal details could not be loaded.");
+  return row;
+}
 
 /**
  * Submit one goal (idempotent via intent_id). The server recomputes the

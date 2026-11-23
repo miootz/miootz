@@ -9,20 +9,25 @@ import {
   type MatchSummary,
   type MatchSubstitution,
 } from "../api/matchesApi";
-import { ChevronDown, Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, Flag, Loader2, Pencil, Plus, Trash2, Trophy } from "lucide-react";
+import type { MeetupDetail } from "../api/meetupsApi";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
 import { fetchGoals, type GoalRow } from "../api/stewardApi";
 import { GoalList } from "./GoalList";
+import { HistoricalMatchGoals } from "./HistoricalMatchGoals";
+import { HistoricalLineupForm } from "./HistoricalLineupForm";
 import { PlayerEditLink } from "./PlayerEditLink";
 
 export function MatchHistoryList({
   meetupId,
   editable = false,
+  attendees,
 }: {
   meetupId: number;
-  /** When true, scores are clickable and editable by admins. */
+  /** When true, admins can edit scores and match details. */
   editable?: boolean;
+  attendees?: MeetupDetail["attendees"];
 }) {
   const { showToast } = useToast();
   const auth = useContext(AuthContext);
@@ -195,6 +200,10 @@ export function MatchHistoryList({
             onEditCancel={() => setEditingId(null)}
             onEditSubmit={handleScoreSubmit}
             onDelete={() => void handleDeleteMatch(m.id)}
+            attendees={attendees}
+            onRosterSaved={(updated) => setMatches((previous) =>
+              previous.map((row) => row.id === updated.id ? updated : row),
+            )}
           />
         ))}
       </div>
@@ -213,6 +222,8 @@ function MatchResultRow({
   onEditCancel,
   onEditSubmit,
   onDelete,
+  attendees,
+  onRosterSaved,
 }: {
   meetupId: number;
   match: MatchSummary;
@@ -222,32 +233,39 @@ function MatchResultRow({
   onEditCancel: () => void;
   onEditSubmit: (match: MatchSummary, scoreA: string, scoreB: string) => void;
   onDelete: () => void;
+  attendees?: MeetupDetail["attendees"];
+  onRosterSaved: (match: MatchSummary) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // null = not fetched yet; lazy-load on first expand
   const [subs, setSubs] = useState<MatchSubstitution[] | null>(null);
   const [goals, setGoals] = useState<GoalRow[] | null>(null);
+  const [subLoadError, setSubLoadError] = useState(false);
+  const [editingRoster, setEditingRoster] = useState(false);
+  const [rosterRevision, setRosterRevision] = useState(0);
+  const editRosterButton = useRef<HTMLButtonElement>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
-    if (!expanded || subs !== null) return;
+    if (!expanded || subs !== null || subLoadError) return;
     fetchMatchSubstitutions(meetupId, match.id)
       .then((r) => setSubs(r.substitutions))
-      .catch(() => setSubs([]));
-  }, [expanded, meetupId, match.id, subs]);
+      .catch(() => setSubLoadError(true));
+  }, [expanded, meetupId, match.id, subs, subLoadError]);
 
   useEffect(() => {
-    if (!expanded || goals !== null) return;
+    if (!expanded || canEdit || goals !== null) return;
     fetchGoals(meetupId, match.id)
       .then(setGoals)
       .catch(() => setGoals([]));
-  }, [expanded, meetupId, match.id, goals]);
+  }, [expanded, canEdit, meetupId, match.id, goals]);
 
   const nameById = useMemo(() => {
-    const m = new Map<number, string>();
+    const m = new Map(attendees?.map((attendee) => [attendee.user_id, attendee.display_name]));
     for (const u of match.team_a.users) m.set(u.id, u.display_name);
     for (const u of match.team_b.users) m.set(u.id, u.display_name);
     return m;
-  }, [match]);
+  }, [match, attendees]);
 
   const movesFor = (s: MatchSubstitution): string[] => {
     const oldA = new Set(s.old_team_a_users);
@@ -259,8 +277,17 @@ function MatchResultRow({
     for (const id of s.new_team_a_users)
       if (!oldA.has(id))
         out.push(`${nameById.get(id) ?? "?"} → ${match.team_a.name}`);
+    const onPitch = new Set([...s.new_team_a_users, ...s.new_team_b_users]);
+    for (const id of [...oldA, ...oldB])
+      if (!onPitch.has(id))
+        out.push(`${nameById.get(id) ?? "?"} → Bench`);
     return out;
   };
+
+  function closeLineupForm() {
+    setEditingRoster(false);
+    editRosterButton.current?.focus();
+  }
 
   const winner =
     match.score_a > match.score_b
@@ -434,7 +461,8 @@ function MatchResultRow({
         {/* Expanded: scorers, final rosters + substitution log */}
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
-            {goals && goals.length > 0 && (
+            {canEdit && <HistoricalMatchGoals key={rosterRevision} meetupId={meetupId} match={match} />}
+            {!canEdit && goals && goals.length > 0 && (
               <div className="bg-raised px-3 py-1">
                 <GoalList
                   goals={goals}
@@ -472,20 +500,44 @@ function MatchResultRow({
                 </div>
               ))}
             </div>
+            {canEdit && attendees && (
+              <>
+                <button type="button" ref={editRosterButton} aria-expanded={editingRoster}
+                  disabled={!subs} onClick={() => setEditingRoster((open) => !open)}
+                  className="inline-flex min-h-12 items-center gap-2 border border-line px-3 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-60">
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Edit lineup / record substitution
+                </button>
+                {subLoadError && (
+                  <p className="text-sm text-danger" role="alert">
+                    Couldn’t load substitutions.{" "}
+                    <button type="button" onClick={() => setSubLoadError(false)} className="min-h-12 underline">Retry</button>
+                  </p>
+                )}
+                {editingRoster && subs && (
+                  <HistoricalLineupForm meetupId={meetupId} match={match} substitutions={subs}
+                    attendees={attendees} onCancel={closeLineupForm}
+                    onSaved={(updated, substitutions) => {
+                      setSubs(substitutions);
+                      onRosterSaved(updated);
+                      setRosterRevision((revision) => revision + 1);
+                      closeLineupForm();
+                      showToast("Match lineup updated", "success");
+                    }} />
+                )}
+              </>
+            )}
             {subs && subs.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                   Substitutions
                 </p>
-                {subs.map((s) => (
+                {[...subs].sort((a, b) => (a.clock_secs ?? -1) - (b.clock_secs ?? -1)).map((s) => (
                   <div key={s.id} className="flex gap-2 text-xs">
                     <span className="tabular-nums text-ink-faint shrink-0">
-                      {s.created_at
-                        ? new Date(s.created_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""}
+                      {s.clock_secs == null
+                        ? "Before kickoff"
+                        : `${Math.floor(s.clock_secs / 60)}:${String(s.clock_secs % 60).padStart(2, "0")}`}
                     </span>
                     <span className="text-ink-dim">
                       {movesFor(s).join(" · ")}

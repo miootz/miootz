@@ -650,7 +650,7 @@ export function AdminMeetupDetailPage() {
 
       {tab === "scores" && (
         <section className="space-y-3">
-          <MatchHistoryList meetupId={id} editable />
+          <MatchHistoryList meetupId={id} editable attendees={detail.attendees} />
         </section>
       )}
 

@@ -346,7 +346,7 @@ export function GoalEntrySheet({
       aria-modal="true"
       aria-label={isEdit ? "Edit goal" : "Log a goal"}
     >
-      <div className="w-full max-w-md bg-panel border border-line shadow-xl flex flex-col max-h-[92vh]">
+      <div className="w-full max-w-md bg-panel border border-line shadow-xl flex flex-col max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh]">
         {/* Header + lease status — pinned; only the content below scrolls */}
         <div className="flex items-center justify-between shrink-0 p-4 pb-2">
           <h3 className="text-lg font-bold text-ink">
@@ -375,7 +375,7 @@ export function GoalEntrySheet({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 px-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain space-y-4 px-4 pb-4">
         {/* Team chooser */}
         <div>
           <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">

@@ -1,4 +1,4 @@
-import { Volleyball } from "lucide-react";
+import { Pencil, Volleyball } from "lucide-react";
 import type { GoalRow } from "../api/stewardApi";
 
 interface GoalListProps {
@@ -7,6 +7,7 @@ interface GoalListProps {
   canEdit: boolean;
   onEdit: (goal: GoalRow) => void;
   emptyLabel?: string;
+  showKeeper?: boolean;
 }
 
 /**
@@ -20,6 +21,7 @@ export function GoalList({
   canEdit,
   onEdit,
   emptyLabel = "No goals logged yet.",
+  showKeeper = false,
 }: GoalListProps) {
   if (goals.length === 0) {
     return <p className="text-sm text-ink-faint italic">{emptyLabel}</p>;
@@ -29,6 +31,10 @@ export function GoalList({
     <ul className="divide-y divide-line">
       {goals.map((g) => {
         const sideA = g.team === "a";
+        const minute = g.clock_minute > 0 ? `${g.clock_minute}′` : "";
+        const minuteLabel = minute && (
+          <span className="shrink-0 text-xs font-bold tabular-nums text-ink-faint">{minute}</span>
+        );
         return (
           <li key={g.id}>
             <button
@@ -37,10 +43,10 @@ export function GoalList({
               onClick={() => onEdit(g)}
               className={`w-full py-2.5 text-left transition-colors active:scale-[0.99] disabled:cursor-default ${
                 canEdit ? "hover:bg-raised" : ""
-              }`}
+              } ${showKeeper ? "min-h-12 px-2" : ""}`}
               aria-label={
                 canEdit
-                  ? `Edit goal: ${g.clock_minute}' ${g.scorer.display_name}`
+                  ? `Edit goal: ${g.scorer.display_name}${minute ? ` at ${minute}` : ""}`
                   : undefined
               }
             >
@@ -52,9 +58,7 @@ export function GoalList({
                 {sideA ? (
                   <>
                     <Volleyball className="h-3.5 w-3.5 shrink-0 self-center text-ink-faint" aria-hidden />
-                    <span className="text-xs font-bold tabular-nums text-ink-faint shrink-0">
-                      {g.clock_minute}&prime;
-                    </span>
+                    {minuteLabel}
                     <span
                       className={`text-sm font-bold truncate ${
                         sideA ? "text-team-a" : "text-team-b"
@@ -76,12 +80,11 @@ export function GoalList({
                       {g.scorer.display_name}
                       {g.is_own_goal ? " (OG)" : ""}
                     </span>
-                    <span className="text-xs font-bold tabular-nums text-ink-faint shrink-0">
-                      {g.clock_minute}&prime;
-                    </span>
+                    {minuteLabel}
                     <Volleyball className="h-3.5 w-3.5 shrink-0 self-center text-ink-faint" aria-hidden />
                   </>
                 )}
+                {showKeeper && canEdit && <Pencil className="h-3.5 w-3.5 shrink-0 self-center text-ink-dim" aria-hidden />}
               </span>
               {g.assist && (
                 <span
@@ -96,6 +99,11 @@ export function GoalList({
                   >
                     assist: {g.assist.display_name}
                   </span>
+                </span>
+              )}
+              {showKeeper && g.goalkeeper && (
+                <span className={`block text-xs text-ink-dim ${sideA ? "text-left" : "text-right"}`}>
+                  Keeper: {g.goalkeeper.display_name}
                 </span>
               )}
             </button>

@@ -19,6 +19,7 @@ from typing import cast
 
 from app.api.deps import (
     presence_for_meetup,
+    require_admin,
     require_admin_or_present_member,
 )
 from app.core.database import get_db
@@ -36,7 +37,11 @@ from app.services.manual_teams import (
     get_team_names,
     resolve_meetup_teams_nested,
 )
-from app.services.meetup_revision import bump_and_notify
+from app.services.meetup_revision import (
+    bump_and_notify,
+    bump_meetup_revision,
+    notify_meetup_data_changed,
+)
 from app.services.audit import log_action
 from app.services.skill_service import refresh_skills_after_meetup
 from app.services.team_assignment import draft_skill
@@ -55,6 +60,13 @@ class MatchTeamSwap(BaseModel):
     team_a_users: list[int] = Field(min_length=1)
     team_b_users: list[int] = Field(min_length=1)
     add_sideline_player: bool = False
+
+
+class HistoricalLineupChange(BaseModel):
+    team: str = Field(pattern=r"^[ab]$")
+    player_off: int | None = None
+    player_on: int | None = None
+    elapsed_seconds: int | None = Field(default=None, gt=0)
 
 
 class MatchEndBody(BaseModel):
@@ -128,18 +140,28 @@ class GoalUpdate(BaseModel):
     is_own_goal: bool = False
 
 
+class HistoricalGoalAttribution(BaseModel):
+    goal_id: int | None = None
+    intent_id: str = Field(min_length=1, max_length=64)
+    team: str = Field(pattern=r"^[ab]$")
+    scorer_id: int
+    assist_id: int | None = None
+    goalkeeper_id: int | None = None
+    is_own_goal: bool = False
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 
-def _compute_timer_remaining(match: MeetupMatch) -> int:
+def _compute_timer_remaining(match: MeetupMatch, *, at: datetime | None = None) -> int:
     """Compute server-authoritative remaining seconds."""
     if match.timer_started_at is None:
         return match.timer_total_seconds
-    if match.status in ("completed",):
+    if match.status == "completed" and at is None:
         return 0
 
     started = match.timer_started_at.replace(tzinfo=UTC)
-    now = datetime.now(UTC)
+    now = at.replace(tzinfo=UTC) if at is not None else datetime.now(UTC)
     elapsed = (now - started).total_seconds()
 
     # Subtract pause intervals
@@ -1009,6 +1031,10 @@ async def list_match_substitutions(
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    return {"substitutions": await _match_substitution_log(db, match_id)}
+
+
+async def _match_substitution_log(db: AsyncSession, match_id: int) -> list[dict]:
     rows = (
         await db.execute(
             select(MatchSubstitution)
@@ -1020,23 +1046,126 @@ async def list_match_substitutions(
         )
     ).scalars().all()
     by_id = {s.recorded_by: await db.get(User, s.recorded_by) for s in rows}
-    return {
-        "substitutions": [
-            {
-                "id": s.id,
-                "recorded_by": by_id[s.recorded_by].display_name
-                if by_id[s.recorded_by]
-                else None,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-                "clock_secs": s.clock_secs,
-                "old_team_a_users": _loads_int_list(s.old_team_a_users),
-                "old_team_b_users": _loads_int_list(s.old_team_b_users),
-                "new_team_a_users": _loads_int_list(s.new_team_a_users),
-                "new_team_b_users": _loads_int_list(s.new_team_b_users),
-            }
-            for s in rows
-        ]
+    return [
+        {
+            "id": s.id,
+            "recorded_by": by_id[s.recorded_by].display_name
+            if by_id[s.recorded_by]
+            else None,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "clock_secs": s.clock_secs,
+            "old_team_a_users": _loads_int_list(s.old_team_a_users),
+            "old_team_b_users": _loads_int_list(s.old_team_b_users),
+            "new_team_a_users": _loads_int_list(s.new_team_a_users),
+            "new_team_b_users": _loads_int_list(s.new_team_b_users),
+        }
+        for s in rows
+    ]
+
+
+@router.post("/{meetup_id}/matches/{match_id}/substitutions")
+async def record_historical_substitution(
+    meetup_id: int,
+    match_id: int,
+    body: HistoricalLineupChange,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Correct a kickoff lineup or insert a timed substitution in one completed match."""
+    await db.execute(text("BEGIN IMMEDIATE"))
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if match.status != "completed":
+        raise HTTPException(status_code=409, detail="Only completed matches can be edited here")
+    lease = await db.get(MatchEditorLease, match_id)
+    if lease and lease.holder_id is not None and lease.expires_at > utcnow():
+        raise HTTPException(status_code=409, detail="A referee is editing this match. Try again shortly.")
+
+    elapsed = body.elapsed_seconds
+    if elapsed is not None:
+        if not match.timer_total_seconds:
+            meetup = await db.get(Meetup, meetup_id)
+            match.timer_total_seconds = (meetup.match_duration_minutes or 10) * 60
+        if match.timer_seconds_remaining != 0 and match.timer_started_at and match.completed_at:
+            # An early finish may have left the last pause or kickoff value in the timer.
+            match.timer_seconds_remaining = _compute_timer_remaining(match, at=match.completed_at)
+        duration = match.timer_total_seconds - (match.timer_seconds_remaining or 0)
+        if elapsed >= duration:
+            raise HTTPException(status_code=400, detail="Enter an elapsed time before the match ended.")
+
+    timed = list(await db.scalars(
+        select(MatchSubstitution).where(
+            MatchSubstitution.match_id == match.id,
+            MatchSubstitution.clock_secs.is_not(None),
+        ).order_by(MatchSubstitution.clock_secs, MatchSubstitution.id)
+    ))
+    earlier = [row for row in timed if elapsed is not None and row.clock_secs <= elapsed]
+    if earlier:
+        old = [_loads_int_list(earlier[-1].new_team_a_users), _loads_int_list(earlier[-1].new_team_b_users)]
+    elif timed:
+        old = [_loads_int_list(timed[0].old_team_a_users), _loads_int_list(timed[0].old_team_b_users)]
+    else:
+        old = [_loads_int_list(match.team_a_users), _loads_int_list(match.team_b_users)]
+
+    side = 0 if body.team == "a" else 1
+    if body.player_off == body.player_on:
+        raise HTTPException(status_code=400, detail="Select a player to take off or put on.")
+    if body.player_off is not None and body.player_off not in old[side]:
+        raise HTTPException(status_code=409, detail="That player was not on this team at the selected time.")
+    if body.player_on is not None:
+        if body.player_on in old[0] or body.player_on in old[1]:
+            raise HTTPException(status_code=409, detail="That player was already on the pitch at the selected time.")
+        attendance = await db.scalar(select(Attendance.id).where(
+            Attendance.user_id == body.player_on,
+            Attendance.meetup_id == meetup_id,
+            Attendance.status == "confirmed",
+        ))
+        if attendance is None:
+            raise HTTPException(status_code=400, detail="The incoming player must be a confirmed attendee.")
+
+    current = [team.copy() for team in old]
+    if body.player_off is not None:
+        current[side].remove(body.player_off)
+    if body.player_on is not None:
+        current[side].append(body.player_on)
+    db.add(MatchSubstitution(
+        meetup_id=meetup_id, match_id=match_id, recorded_by=user.id, clock_secs=elapsed,
+        old_team_a_users=json.dumps(old[0]), old_team_b_users=json.dumps(old[1]),
+        new_team_a_users=json.dumps(current[0]), new_team_b_users=json.dumps(current[1]),
+    ))
+
+    # Preserve later substitutions by applying their original moves to the corrected lineup.
+    for row in timed[len(earlier):]:
+        row_before = [_loads_int_list(row.old_team_a_users), _loads_int_list(row.old_team_b_users)]
+        row_after = [_loads_int_list(row.new_team_a_users), _loads_int_list(row.new_team_b_users)]
+        updated = []
+        for team, before, after in zip(current, row_before, row_after, strict=True):
+            removed = set(before) - set(after)
+            added = [uid for uid in after if uid not in before]
+            if not removed <= set(team) or any(uid in team for uid in added):
+                raise HTTPException(status_code=409, detail="This change conflicts with a later substitution.")
+            updated.append([uid for uid in team if uid not in removed] + added)
+        if set(updated[0]).intersection(updated[1]):
+            raise HTTPException(status_code=409, detail="This change conflicts with a later substitution.")
+        row.old_team_a_users, row.old_team_b_users = map(json.dumps, current)
+        row.new_team_a_users, row.new_team_b_users = map(json.dumps, updated)
+        current = updated
+
+    match.team_a_users, match.team_b_users = map(json.dumps, current)
+    await refresh_skills_after_meetup(db, meetup_id)
+    result = {
+        "match": _match_json(match, await _load_users_for_meetup(db, meetup_id)),
+        "substitutions": await _match_substitution_log(db, match_id),
     }
+    await bump_and_notify(db, meetup_id)
+    log_action(
+        request, "match", "match.historical_lineup_updated",
+        f"Updated the lineup for match #{match.match_number}",
+        meetup_id=meetup_id,
+    )
+    return result
 
 
 # ── Penalty shootout (tied first match) ────────────────────────────
@@ -1682,6 +1811,7 @@ async def set_score(
     _user: User = Depends(require_admin_or_present_member),
 ):
     """Set scores directly (bulk correction)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -2401,13 +2531,58 @@ async def create_goal(
     }
 
 
+async def _historical_goal_rosters(
+    db: AsyncSession, match: MeetupMatch, users_by_id: dict[int, dict]
+) -> dict[str, list[dict]]:
+    team_ids = {
+        "a": set(_loads_int_list(match.team_a_users)),
+        "b": set(_loads_int_list(match.team_b_users)),
+    }
+    subs = await db.scalars(
+        select(MatchSubstitution).where(
+            MatchSubstitution.match_id == match.id,
+            MatchSubstitution.clock_secs.is_not(None),
+        )
+    )
+    for sub in subs:
+        team_ids["a"].update(_loads_int_list(sub.old_team_a_users))
+        team_ids["a"].update(_loads_int_list(sub.new_team_a_users))
+        team_ids["b"].update(_loads_int_list(sub.old_team_b_users))
+        team_ids["b"].update(_loads_int_list(sub.new_team_b_users))
+
+    if not all(team_ids.values()):
+        confirmed = set(await db.scalars(
+            select(Attendance.user_id).where(
+                Attendance.meetup_id == match.meetup_id,
+                Attendance.status == "confirmed",
+            )
+        ))
+        # Score-only matches entered by hand may not have stored lineups.
+        team_ids = {
+            "a": team_ids["a"] or confirmed - team_ids["b"],
+            "b": team_ids["b"] or confirmed - team_ids["a"],
+        }
+
+    return {
+        side: sorted(
+            (users_by_id[uid] for uid in ids if uid in users_by_id),
+            key=lambda user: (user["display_name"].casefold(), user["id"]),
+        )
+        for side, ids in team_ids.items()
+    }
+
+
 @router.get("/{meetup_id}/matches/{match_id}/goals")
 async def list_goals(
     meetup_id: int,
     match_id: int,
+    request: Request,
+    include_history_rosters: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     """Live goal log for one match (authenticated, ordered by minute)."""
+    if include_history_rosters:
+        require_admin(request)
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -2418,11 +2593,106 @@ async def list_goals(
     )
     goals = list(res.scalars().all())
     users_by_id = await _load_users_for_meetup(db, meetup_id)
-    return {
+    result = {
         "goals": [_goal_json(g, users_by_id) for g in goals],
         "score_a": match.score_a,
         "score_b": match.score_b,
     }
+    if include_history_rosters:
+        result["rosters"] = await _historical_goal_rosters(db, match, users_by_id)
+    return result
+
+
+@router.put("/{meetup_id}/matches/{match_id}/goal-attribution")
+async def save_historical_goal(
+    meetup_id: int,
+    match_id: int,
+    body: HistoricalGoalAttribution,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Credit a goal in a completed match without changing its result."""
+    await db.execute(text("BEGIN IMMEDIATE"))
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if match.status != "completed":
+        raise HTTPException(status_code=409, detail="Only completed matches can be edited here")
+
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    goal = None
+    if body.goal_id is not None:
+        goal = await db.get(MatchGoal, body.goal_id)
+        if goal is None or goal.match_id != match_id or goal.deleted_at:
+            raise HTTPException(status_code=404, detail="Goal not found")
+        if goal.team != body.team:
+            raise HTTPException(status_code=400, detail="The scoring team is fixed for this goal")
+    else:
+        replayed = await db.scalar(select(MatchGoal).where(MatchGoal.intent_id == body.intent_id))
+        if replayed:
+            if replayed.match_id != match_id or replayed.team != body.team or replayed.deleted_at:
+                raise HTTPException(status_code=409, detail="This goal entry is no longer available")
+            return {"goal": _goal_json(replayed, users_by_id)}
+
+    lease = await db.get(MatchEditorLease, match.id)
+    if lease and lease.holder_id is not None and lease.expires_at > utcnow():
+        raise HTTPException(status_code=409, detail="A referee is editing goals for this match. Try again shortly.")
+
+    rosters = await _historical_goal_rosters(db, match, users_by_id)
+    scoring = {p["id"] for p in rosters[body.team]}
+    conceding = {p["id"] for p in rosters["b" if body.team == "a" else "a"]}
+    scorer_team = conceding if body.is_own_goal else scoring
+    if body.scorer_id not in scorer_team and not (
+        goal and goal.scorer_id == body.scorer_id and goal.is_own_goal == body.is_own_goal
+    ):
+        raise HTTPException(status_code=400, detail="Select a scorer from the correct team")
+    if body.assist_id is not None and (
+        body.assist_id == body.scorer_id
+        or (body.assist_id not in scoring and not (goal and goal.assist_id == body.assist_id))
+    ):
+        raise HTTPException(status_code=400, detail="Select a different player from the scoring team as the assist")
+    if body.goalkeeper_id is not None and (
+        body.goalkeeper_id in (body.scorer_id, body.assist_id)
+        or (body.goalkeeper_id not in conceding and not (goal and goal.goalkeeper_id == body.goalkeeper_id))
+    ):
+        raise HTTPException(status_code=400, detail="Select a different player from the conceding team as the keeper")
+
+    if goal is None:
+        count_a, count_b = await _goal_counts(db, match)
+        count, score = (count_a, match.score_a) if body.team == "a" else (count_b, match.score_b)
+        if count >= score:
+            raise HTTPException(status_code=409, detail="Every goal for this team already has a scorer")
+        goal = MatchGoal(
+            match_id=match_id,
+            team=body.team,
+            recorded_by=user.id,
+            intent_id=body.intent_id,
+            clock_minute=0,
+            clock_secs=0,
+        )
+        db.add(goal)
+        # Convert a score-only goal to a logged goal, including legacy manual scores.
+        match.score_offset_a = match.score_a - count_a - int(body.team == "a")
+        match.score_offset_b = match.score_b - count_b - int(body.team == "b")
+
+    goal.scorer_id = body.scorer_id
+    goal.assist_id = body.assist_id
+    goal.goalkeeper_id = body.goalkeeper_id
+    goal.is_own_goal = body.is_own_goal
+    await refresh_skills_after_meetup(db, meetup_id)
+    revision = await bump_meetup_revision(db, meetup_id)
+    await db.commit()
+    log_action(
+        request,
+        "match",
+        "match.goal_attributed",
+        f"Updated goal details in match #{match.match_number}",
+        meetup_id=meetup_id,
+    )
+    if revision is not None:
+        await notify_meetup_data_changed(meetup_id, revision)
+    return {"goal": _goal_json(goal, users_by_id)}
 
 
 @router.patch("/{meetup_id}/matches/{match_id}/goals/{goal_id}")

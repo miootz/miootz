@@ -23,13 +23,17 @@ it("selects an option on click (the touch path — phones fire click, not moused
   expect(container.querySelector("ul")).toBeNull();
 });
 
-it("still selects on mousedown (desktop path that beats click-outside)", () => {
+it("keeps the list open on press so a scroll gesture does not pick a player", () => {
   const onSelect = vi.fn();
   const { container } = render(
     <PlayerSelect label="Scorer" players={players} selected={null} onSelect={onSelect} />,
   );
   openList();
-  fireEvent.mouseDown(screen.getByText("Demo Player 10"));
+  const option = screen.getByRole("button", { name: /Demo Player 10/ });
+  fireEvent.mouseDown(option);
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(option).toBeInTheDocument();
+  fireEvent.click(option);
   expect(onSelect).toHaveBeenCalledTimes(1);
   expect(container.querySelector("ul")).toBeNull();
 });

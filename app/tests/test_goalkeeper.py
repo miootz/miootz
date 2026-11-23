@@ -8,6 +8,9 @@ Covers the optional ``goalkeeper_id`` surface:
 - replay of the same intent keeps the same keeper
 """
 
+from asyncio import gather
+from datetime import datetime, timedelta, UTC
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, text
@@ -16,8 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.core.migrations import run_sqlite_migrations
+from app.models.match import MeetupMatch, MatchSubstitution
 from app.models.match_goal import MatchGoal
+from app.models.meetup import Meetup
+from app.models.meetup_analytics import MeetupAnalytics
 from app.models.user import User
+from app.services.rankings_service import ANALYTICS_VERSION, _aggregate
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -117,6 +124,140 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
 
 # Team A: p1, p2 · Team B: p3, tp1 — A scores, B's keeper (p3) is beaten.
 TOKENS = ["p1", "p2", "p3", "tp1"]
+
+
+async def test_admin_can_correct_kickoff_and_insert_substitution_before_a_saved_one():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        base = f"/meetups/{sid}/matches/{mid}"
+        url = f"{base}/substitutions"
+        p1, p2, p3, tp1 = (ids[token] for token in TOKENS)
+        later = {"team": "b", "player_off": p3, "player_on": tp1, "elapsed_seconds": 240}
+        assert (await ac.post(url, json=later, headers=hdr("p1"))).status_code == 403
+        assert (await ac.post(url, json=later, headers=hdr("admin"))).status_code == 409
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_a, match.score_b = 1, 0
+            match.team_b_users = f"[{p3}]"
+            # A six-minute early finish with the old kickoff remaining value still stored.
+            match.completed_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3)
+            match.timer_started_at = match.completed_at - timedelta(minutes=6)
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = match.timer_started_at
+            await db.flush()
+            db.add(MeetupAnalytics(meetup_id=sid, version=ANALYTICS_VERSION, totals={}))
+            await db.commit()
+
+        async def save(change):
+            return await ac.post(url, json=change, headers=hdr("admin"))
+
+        assert (await save({**later, "elapsed_seconds": 360})).status_code == 400
+        result = await save(later)
+        assert result.status_code == 200, result.text
+        late_id = result.json()["substitutions"][0]["id"]
+
+        correction = await save({"team": "a", "player_off": p2})
+        assert correction.status_code == 200, correction.text
+        early = {"team": "a", "player_off": p1, "player_on": p2, "elapsed_seconds": 180}
+        result = await save(early)
+        assert result.status_code == 200, result.text
+        result = result.json()
+        late_row = next(row for row in result["substitutions"] if row["id"] == late_id)
+        assert late_row["old_team_a_users"] == late_row["new_team_a_users"] == [p2]
+        assert late_row["old_team_b_users"] == [p3]
+        assert late_row["new_team_b_users"] == [tp1]
+        assert (result["match"]["score_a"], result["match"]["score_b"]) == (1, 0)
+
+        assert (await save(early)).status_code == 409
+        conflict = await save({"team": "b", "player_off": p3, "elapsed_seconds": 120})
+        assert conflict.status_code == 409
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            substitutions = list(await db.scalars(select(MatchSubstitution).where(
+                MatchSubstitution.match_id == match.id,
+            )))
+            assert len(substitutions) == 3
+            assert await db.get(MeetupAnalytics, sid) is None
+            metrics = _aggregate({uid: 1 for uid in ids.values()}, [match], [], False, substitutions)
+            assert {uid: row["matches"] for uid, row in metrics.items()} == {p1: 1, p2: 1, p3: 1, tp1: 0}
+            assert all(metrics[uid]["wins"] == metrics[uid]["clean_sheets"] == 1 for uid in (p1, p2))
+
+
+async def test_admin_can_backfill_and_edit_historical_goal_without_changing_result():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        base = f"/meetups/{sid}/matches/{mid}"
+        url = f"{base}/goal-attribution"
+        admin = hdr("admin")
+        p1, p2, p3, keeper = (ids[token] for token in TOKENS)
+        body = {
+            "team": "a", "scorer_id": p2, "assist_id": p1,
+            "goalkeeper_id": keeper, "intent_id": "history-a1",
+        }
+        assert (await ac.put(url, json=body, headers=hdr("p1"))).status_code == 403
+        assert (await ac.put(url, json=body, headers=admin)).status_code == 409
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_a = match.score_b = 1
+            match.was_draw = True
+            match.penalty_winner = "b"
+            match.team_b_users = f"[{p3}]"
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3)
+            db.add(MatchSubstitution(
+                meetup_id=sid, match_id=mid, recorded_by=p1, clock_secs=300,
+                old_team_a_users=match.team_a_users, new_team_a_users=match.team_a_users,
+                old_team_b_users=f"[{p3},{keeper}]", new_team_b_users=match.team_b_users,
+            ))
+            await db.flush()
+            db.add(MeetupAnalytics(meetup_id=sid, version=1, totals={}))
+            await db.commit()
+
+        history_url = f"{base}/goals?include_history_rosters=true"
+        assert (await ac.get(history_url, headers=hdr("p1"))).status_code == 403
+        log = (await ac.get(history_url, headers=admin)).json()
+        assert {player["id"] for player in log["rosters"]["b"]} == {p3, keeper}
+        for invalid in ({"assist_id": p3}, {"goalkeeper_id": p1}):
+            result = await ac.put(url, json={**body, **invalid}, headers=admin)
+            assert result.status_code == 400, result.text
+
+        async def save(data):
+            return await ac.put(url, json=data, headers=admin)
+
+        lease_url = f"/meetups/{sid}/matches/lease"
+        lease = await ac.post(f"{lease_url}/acquire?match_id={mid}", headers=admin)
+        assert lease.status_code == 200, lease.text
+        assert (await save(body)).status_code == 409
+        release = await ac.post(
+            f"{lease_url}/release?match_id={mid}",
+            headers=admin, json={"lease_token": lease.json()["lease_token"]},
+        )
+        assert release.status_code == 200, release.text
+
+        results = await gather(save(body), save(body), save({**body, "intent_id": "other"}))
+        # Either request may win the race, but only one goal can fill the slot.
+        accepted = [response.json()["goal"] for response in results if response.status_code == 200]
+        assert accepted and len({goal["id"] for goal in accepted}) == 1
+        assert all(response.status_code in (200, 409) for response in results)
+        goal = accepted[0]
+        assert goal["clock_minute"] == 0
+        assert goal["assist"]["id"] == p1
+        assert goal["goalkeeper"]["id"] == keeper
+
+        edited = await save({**body, "goal_id": goal["id"], "assist_id": None, "goalkeeper_id": p3})
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["goal"]["assist"] is None
+        assert edited.json()["goal"]["goalkeeper"]["id"] == p3
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            assert (match.score_a, match.score_b, match.penalty_winner) == (1, 1, "b")
+            assert (match.score_offset_a, match.score_offset_b) == (0, 1)
+            assert await db.get(MeetupAnalytics, sid) is None
 
 
 @pytest.mark.asyncio

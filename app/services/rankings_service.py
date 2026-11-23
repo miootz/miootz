@@ -190,20 +190,36 @@ def _aggregate(
     # the keeper).
     winner_side = {m.id: _match_winner_side(m) for m in matches}
     for m in matches:
-        eligible = _eligible_players(m, subs_by_match.get(m.id, []))
-        for side in ("a", "b"):
-            roster = json.loads((m.team_a_users if side == "a" else m.team_b_users) or "[]")
+        substitutions = subs_by_match.get(m.id, [])
+        eligible = _eligible_players(m, substitutions)
+        sides = {
+            uid: side
+            for side, roster in (("a", m.team_a_users), ("b", m.team_b_users))
+            for uid in json.loads(roster or "[]")
+        }
+        if eligible is not None:
+            # A qualifying player who went off keeps credit for their last side.
+            outgoing = eligible - sides.keys()
+            for sub in sorted(
+                (s for s in substitutions if s.clock_secs is not None),
+                key=lambda s: (s.clock_secs, s.id), reverse=True,
+            ):
+                if not outgoing:
+                    break
+                for side, roster in (("a", sub.old_team_a_users), ("b", sub.old_team_b_users)):
+                    for uid in outgoing.intersection(json.loads(roster)):
+                        sides[uid] = side
+                        outgoing.remove(uid)
+        for uid, side in sides.items():
+            if eligible is not None and uid not in eligible:
+                continue
             conceded = m.score_b if side == "a" else m.score_a
-            is_winner = winner_side[m.id] == side
-            for uid in roster:
-                if eligible is not None and uid not in eligible:
-                    continue
-                s = stats.setdefault(uid, _zero())
-                s["matches"] += 1
-                if is_winner:
-                    s["wins"] += 1
-                if not conceded:
-                    s["clean_sheets"] += 1
+            s = stats.setdefault(uid, _zero())
+            s["matches"] += 1
+            if winner_side[m.id] == side:
+                s["wins"] += 1
+            if not conceded:
+                s["clean_sheets"] += 1
     return stats
 
 
@@ -259,7 +275,7 @@ def _rank_metrics(
 
 
 COUNT_KEYS = (*METRIC_KEYS, "own_goals", "penalties_taken", "penalties_scored")
-ANALYTICS_VERSION = 1
+ANALYTICS_VERSION = 2
 
 
 def _with_rates(metrics: dict) -> dict[str, int | float]:
