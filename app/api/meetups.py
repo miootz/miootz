@@ -60,7 +60,7 @@ from app.services.manual_teams import (
 from app.services.team_adjustment import (
     expand_teams,
     contract_teams,
-    fill_empty_pending_matches,
+    refresh_after_confirmed_roster_change,
 )
 from app.services.team_assignment import draft_skill, rebalance_around_locked
 from app.services.rating_settings import get_rating_settings, selected_rating
@@ -1284,7 +1284,8 @@ async def join_meetup(
                 },
             )
             await db.refresh(attendance)
-            await fill_empty_pending_matches(db, meetup)
+            if attendance.status == "confirmed":
+                await refresh_after_confirmed_roster_change(db, meetup)
             rev = await bump_meetup_revision(db, meetup_id)
             await db.commit()
             if rev is not None:
@@ -1306,7 +1307,8 @@ async def join_meetup(
     if new_attendance is None:
         raise HTTPException(status_code=400, detail="Already joined meetup")
     await db.refresh(meetup)
-    await fill_empty_pending_matches(db, meetup)
+    if new_attendance.status == "confirmed":
+        await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -1526,6 +1528,7 @@ async def redeem_weather_hero(
             demoted.joined_at = now
             demoted.previous_status = "confirmed"
 
+    await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -1578,7 +1581,7 @@ async def add_attendance(
 
     await db.refresh(meetup)
     if attendance.status == "confirmed":
-        await fill_empty_pending_matches(db, meetup)
+        await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -1711,10 +1714,10 @@ async def move_attendance(
     if new_status == "waitlisted" and prev != "waitlisted":
         # A player newly entering the waitlist goes to the back of the queue.
         attendance.joined_at = utcnow()
-    if new_status == "confirmed":
+    if new_status == "confirmed" and prev != "confirmed":
         meetup = await db.get(Meetup, meetup_id)
         if meetup:
-            await fill_empty_pending_matches(db, meetup)
+            await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -2106,7 +2109,8 @@ async def add_plus_one(
         )
         await db.refresh(attendance)
 
-    await fill_empty_pending_matches(db, meetup)
+    if attendance.status == "confirmed":
+        await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:

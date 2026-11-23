@@ -273,8 +273,9 @@ async def test_capacity_updates_waitlist_and_preserves_shape_after_join():
         assert joined.json()["status"] == "confirmed"
         updated = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
         assert sorted(len(t["players"]) for t in updated) == [3, 3, 3, 4]
-        for old, new in zip(shaped["teams"], updated, strict=True):
-            assert {p["id"] for p in old["players"]} <= {p["id"] for p in new["players"]}
+        original_ids = {p["id"] for team in shaped["teams"] for p in team["players"]}
+        updated_ids = {p["id"] for team in updated for p in team["players"]}
+        assert original_ids < updated_ids and len(updated_ids) == 13
         again = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
         assert updated == again
 
@@ -319,14 +320,21 @@ async def test_auto_balanced_redrafts_when_players_join_after_shape():
         repeated = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
         assert repeated == teams
 
-        # Preparing the first match freezes existing teams for later signups.
+        # A prepared match is still adjustable until its timer starts.
         started = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admint"))
         assert started.status_code == 201, started.text
         response = await ac.post(f"/meetups/{sid}/join", headers=hdr("p7"))
         assert response.status_code == 200
         updated = (await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))).json()["teams"]
-        for old, new in zip(teams, updated, strict=True):
-            assert {p["id"] for p in old["players"]} <= {p["id"] for p in new["players"]}
+        assert sorted(len(team["players"]) for team in updated) == [3, 4]
+        assert any(
+            {p["id"] for p in old["players"]} - {p["id"] for p in new["players"]}
+            for old, new in zip(teams, updated, strict=True)
+        )
+        async with AsyncSession(engine) as db:
+            pending = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == sid))
+            assert set(json.loads(pending.team_a_users)) == {int(p["id"]) for p in updated[0]["players"]}
+            assert set(json.loads(pending.team_b_users)) == {int(p["id"]) for p in updated[1]["players"]}
 
 
 @pytest.mark.asyncio

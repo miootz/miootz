@@ -32,9 +32,8 @@ dealing. Existing templates and meetups keep their selected mode.
    while preserving the pace and dribbling distribution. It repeats until no
    single swap improves the difference. The bench does not participate.
 
-Auto-balanced repeats the draft when confirmed attendance changes and there
-is no saved lineup. An automatic waitlist promotion before the first match
-starts also redrafts a saved lineup and updates any pending match. The
+Auto-balanced redrafts when the confirmed roster changes before the first
+match starts. It applies the new lineup to any pending match. The
 team-capacity control saves the shape without freezing an automatic lineup
 before matches exist. Once play starts, automatic promotions retain the
 existing placements and match lineups.
@@ -172,7 +171,7 @@ Attributes use eligible recorded or imported match history.
 | **Team capacity** | Use the cog in Admin Overview or on the Referee page to choose the number of teams and players per team. Before kickoff, increasing capacity confirms the earliest waitlisted players and shrinking it returns the latest excess signups to the waitlist. After a match starts, excess confirmed players stay on the bench. Pending matches receive the new first two teams. Live and completed matches keep their recorded lineups. |
 
 When an admin has set team capacity, later attendance changes keep that team
-shape. A pre-match waitlist promotion can redraft an existing lineup.
+shape. A pre-match change to the confirmed roster can redraft an existing lineup.
 A pre-start
 substitution updates the lineup for future rounds. A substitution during play
 updates that match.

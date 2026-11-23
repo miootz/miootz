@@ -494,3 +494,37 @@ async def test_remove_promotes_and_balances_pace_before_first_match(match_status
             assert set(json.loads(match.team_b_users)) == (
                 set(old_a) if match_status == "active" else lineup[0]
             )
+
+
+@pytest.mark.parametrize("action", ["add", "confirm", "remove", "cancel", "waitlist", "waitlisted_add"])
+async def test_confirmed_roster_changes_invalidate_prematch_draft(action):
+    async with AsyncSession(engine) as db:
+        ids = {user.pocket_id_sub: user.id for user in await db.scalars(select(User))}
+        meetup = await db.scalar(select(Meetup))
+        meetup_id = meetup.id
+        meetup.max_players = 2 if action == "waitlisted_add" else 3
+        meetup.waitlist_mode = "broadcast"
+        meetup.team_assignment_mode = "auto-balanced"
+        confirmed = [ids["p1-uuid"], ids["p2-uuid"]]
+        waiting = ids["p3-uuid"]
+        meetup.manual_teams_json = json.dumps([[confirmed[0]], [confirmed[1]]])
+        db.add_all(Attendance(meetup_id=meetup_id, user_id=uid, status="confirmed") for uid in confirmed)
+        if action == "confirm":
+            db.add(Attendance(meetup_id=meetup_id, user_id=waiting, status="waitlisted"))
+        await db.commit()
+
+    admin = {"Authorization": "Bearer admin"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        url = f"/meetups/{meetup_id}/admin"
+        if action in ("add", "waitlisted_add"):
+            result = await client.post(f"{url}/attendance", headers=admin, params={"user_id": waiting})
+        elif action == "remove":
+            result = await client.delete(f"{url}/attendance/{confirmed[0]}", headers=admin)
+        else:
+            status = {"confirm": "confirmed", "cancel": "cancelled", "waitlist": "waitlisted"}[action]
+            source = waiting if action == "confirm" else confirmed[0]
+            result = await client.post(f"{url}/move", headers=admin, params={"user_id": source, "new_status": status})
+        assert result.status_code == 200, result.text
+    async with AsyncSession(engine) as db:
+        meetup = await db.get(Meetup, meetup_id)
+        assert (meetup.manual_teams_json is not None) == (action == "waitlisted_add")
