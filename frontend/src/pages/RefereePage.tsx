@@ -446,52 +446,106 @@ export function RefereePage() {
     return () => clearInterval(iv);
   }, [deadline]);
 
-  const loadMatches = useCallback(async () => {
-    try {
-      const res = await fetchMeetupMatches(sid);
-      setMatches(res.matches);
-      // Rosters change with substitutions — refresh so the non-playing
-      // (bench) teams derived from teamsData stay correct.
-      fetchMeetupTeams(sid).then((t) => setTeamsData(t.teams)).catch(() => {});
-      const active = res.matches.find(
-        (m) => m.status === "active" || m.status === "time_up",
-      );
-      const pending = res.matches.find((m) => m.status === "pending");
-      if (active) {
-        setCurrentMatch(active);
-        setTimerSeconds(active.timer_seconds_remaining);
-        setIsPaused(active.timer_paused);
-        setTimerEndsAt(
-          active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
-        );
-      } else if (pending) {
-        setCurrentMatch(pending);
-        setTimerSeconds(pending.timer_total_seconds);
-        setIsPaused(false);
-      } else {
-        setCurrentMatch(null);
-        setTimerSeconds(0);
-        setIsPaused(false);
-      }
-      // Resume an interrupted shootout: completed tied first match with no
-      // locked winner.
-      const shoot = res.matches.find(
-        (m) =>
-          m.status === "completed" &&
-          m.match_number === 1 &&
-          m.score_a === m.score_b &&
-          m.penalty_winner == null,
-      );
-      setPenaltyMatch(shoot ?? null);
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Failed to load matches",
-        "error",
-      );
-    } finally {
-      setLoading(false);
+  const matchLoadRef = useRef<{
+    sid: number;
+    pending: boolean;
+    running: Promise<void> | null;
+    teamVersion: number;
+  } | null>(null);
+  const loadMatches = useCallback(() => {
+    let load = matchLoadRef.current;
+    if (!load || load.sid !== sid) {
+      load = { sid, pending: false, running: null, teamVersion: 0 };
+      matchLoadRef.current = load;
     }
+    if (load.running) {
+      load.pending = true;
+      return load.running;
+    }
+
+    const current = load;
+    current.running = (async () => {
+      try {
+        do {
+          current.pending = false;
+          // Rosters can change independently of the matches during substitutions.
+          const teamVersion = ++current.teamVersion;
+          void fetchMeetupTeams(sid).then((teams) => {
+            if (matchLoadRef.current === current && teamVersion === current.teamVersion) {
+              setTeamsData(teams.teams);
+            }
+          }).catch(() => {});
+          try {
+            const res = await fetchMeetupMatches(sid);
+            if (matchLoadRef.current !== current) return;
+            setMatches(res.matches);
+            setEditingMatch((editing) =>
+              editing ? res.matches.find((m) => m.id === editing.id) ?? editing : null,
+            );
+            const active = res.matches.find(
+              (m) => m.status === "active" || m.status === "time_up",
+            );
+            const pending = res.matches.find((m) => m.status === "pending");
+            if (active) {
+              setCurrentMatch(active);
+              setTimerSeconds(active.timer_seconds_remaining);
+              setIsPaused(active.timer_paused);
+              setTimerEndsAt(
+                active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
+              );
+            } else if (pending) {
+              setCurrentMatch(pending);
+              setTimerSeconds(pending.timer_total_seconds);
+              setIsPaused(false);
+            } else {
+              setCurrentMatch(null);
+              setTimerSeconds(0);
+              setIsPaused(false);
+            }
+            // Resume an interrupted shootout with no locked winner.
+            const shoot = res.matches.find(
+              (m) =>
+                m.status === "completed" &&
+                m.match_number === 1 &&
+                m.score_a === m.score_b &&
+                m.penalty_winner == null,
+            );
+            setPenaltyMatch(shoot ?? null);
+          } catch (e) {
+            if (matchLoadRef.current === current) {
+              showToast(
+                e instanceof Error ? e.message : "Failed to load matches",
+                "error",
+              );
+            }
+          } finally {
+            if (matchLoadRef.current === current) setLoading(false);
+          }
+        } while (current.pending && matchLoadRef.current === current);
+      } finally {
+        current.running = null;
+      }
+    })();
+    return current.running;
   }, [sid, showToast]);
+
+  const liveRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleLiveRefresh = useCallback(() => {
+    if (liveRefreshRef.current !== null) return;
+    liveRefreshRef.current = setTimeout(() => {
+      liveRefreshRef.current = null;
+      void loadMatches();
+    }, 100);
+  }, [loadMatches]);
+
+  useEffect(() => () => {
+    if (liveRefreshRef.current) clearTimeout(liveRefreshRef.current);
+    liveRefreshRef.current = null;
+  }, [loadMatches]);
+
+  useEffect(() => () => {
+    if (matchLoadRef.current?.sid === sid) matchLoadRef.current = null;
+  }, [sid]);
 
   useEffect(() => {
     void loadMatches();
@@ -502,10 +556,12 @@ export function RefereePage() {
     fetchMeetupDetail(sid)
       .then(setMeetupDetail)
       .catch(() => {});
-    fetchMeetupTeams(sid)
-      .then((r) => setTeamsData(r.teams))
-      .catch(() => {});
   }, [sid]);
+
+  const stewardEvents = useRef({ applyEvent, refreshGoals });
+  useEffect(() => {
+    stewardEvents.current = { applyEvent, refreshGoals };
+  }, [applyEvent, refreshGoals]);
 
   // SSE — rides the ONE existing meetup-data connection through the shared
   // hub (utils/meetupDataBus); no second EventSource here anymore.
@@ -518,10 +574,10 @@ export function RefereePage() {
       sid,
       tokens?.accessToken,
       (data) => {
-        if (applyEvent(data)) {
-          // goal_added / goal_removed / lease_acquired / lease_released —
-          // rows + lease refreshed via the hook; pull the new score in too.
-          void loadMatches();
+        if (stewardEvents.current.applyEvent(data)) {
+          if (data.type === "goal_added" || data.type === "goal_removed" || data.type === "goal_updated") {
+            scheduleLiveRefresh();
+          }
           return;
         }
         const secs =
@@ -536,10 +592,10 @@ export function RefereePage() {
             setIsPaused(false);
             prevRatioRef.current = null;
             setTimerEndsAt(Number.isFinite(endsAt) ? endsAt : null);
-            void loadMatches();
+            scheduleLiveRefresh();
             break;
           case "meetup_updated":
-            void loadMatches();
+            scheduleLiveRefresh();
             void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             break;
           case "match_timer_paused":
@@ -556,7 +612,7 @@ export function RefereePage() {
             setTimerSeconds(0);
             setIsPaused(false);
             setTimerEndsAt(null);
-            void loadMatches();
+            scheduleLiveRefresh();
             break;
           case "match_ended":
           case "match_created":
@@ -564,20 +620,22 @@ export function RefereePage() {
           case "match_score_updated":
           case "match_penalty_shots":
           case "match_penalty_finished":
-            void loadMatches();
+            scheduleLiveRefresh();
             break;
         }
       },
       (live) => {
         if (live && !wasLive) {
           // (Re)connected after a gap — refetch snapshots, never replay.
+          if (liveRefreshRef.current) clearTimeout(liveRefreshRef.current);
+          liveRefreshRef.current = null;
           void loadMatches();
-          void refreshGoals();
+          void stewardEvents.current.refreshGoals();
         }
         wasLive = live;
       },
     );
-  }, [sid, loadMatches, applyEvent, refreshGoals, tokens?.accessToken]);
+  }, [sid, loadMatches, scheduleLiveRefresh, tokens?.accessToken]);
 
   // Timer tick
   useEffect(() => {
@@ -819,13 +877,8 @@ export function RefereePage() {
   // match is open in the result form — its snapshot so score + scorers stay
   // truthful.
   const handleGoalSaved = () => {
-    void loadMatches();
-    if (editingMatch) {
-      void fetchMeetupMatches(sid).then((res) => {
-        const fresh = res.matches.find((m) => m.id === editingMatch.id);
-        if (fresh) setEditingMatch(fresh);
-      });
-    }
+    scheduleLiveRefresh();
+    void refreshGoals();
   };
 
   const handleGoalDeleted = async (g: GoalRow) => {

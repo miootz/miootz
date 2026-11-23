@@ -112,6 +112,7 @@ export function RankingsPage() {
   const [attributeError, setAttributeError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const statsPage = view === "stats" ? page : 1;
+  const attributeYear = yearSel ?? seasonYear;
   // Restore scroll after a rubric change re-renders the table with a new row
   // order (year/page changes intentionally scroll to the top).
   const restoreScroll = useRef<number | null>(null);
@@ -126,8 +127,7 @@ export function RankingsPage() {
       );
       if (signal.aborted) return;
       setData(res);
-      setYearSel((cur) => cur ?? (res.year === null ? "all" : res.year));
-      setSeasonYear((cur) => cur ?? (res.year === null ? null : res.year));
+      if (yearSel === null) setSeasonYear(res.year);
     } catch (e) {
       if (signal.aborted) return;
       setError(e instanceof Error ? e.message : "Failed to load rankings");
@@ -144,12 +144,12 @@ export function RankingsPage() {
   }, [load]);
 
   useEffect(() => {
-    if (view !== "attributes" || yearSel === null) return;
+    if (view !== "attributes" || attributeYear === null) return;
     const controller = new AbortController();
     setAttributeLoading(true);
     setAttributeError(null);
     void fetchAttributeRankings({
-      year: yearSel, sort: attributeSort, order: attributeOrder, page, perPage: PER_PAGE,
+      year: attributeYear, sort: attributeSort, order: attributeOrder, page, perPage: PER_PAGE,
     }, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) {
@@ -170,7 +170,7 @@ export function RankingsPage() {
         if (!controller.signal.aborted) setAttributeLoading(false);
       });
     return () => controller.abort();
-  }, [view, yearSel, attributeSort, attributeOrder, page]);
+  }, [view, attributeYear, attributeSort, attributeOrder, page]);
 
   useEffect(() => {
     if (!loading && restoreScroll.current != null) {
@@ -180,7 +180,7 @@ export function RankingsPage() {
   }, [loading]);
 
   const years = data?.available_years ?? [];
-  const selected = yearSel === null ? (data?.year ?? new Date().getFullYear()) : yearSel;
+  const selected = attributeYear ?? new Date().getUTCFullYear();
   const prevYear =
     selected === "all"
       ? null
@@ -190,7 +190,7 @@ export function RankingsPage() {
 
   const total = view === "stats" ? (data?.total ?? 0) : (attributeData?.total ?? 0);
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-  const busy = loading || (view === "attributes" && (attributeLoading || yearSel === null));
+  const busy = loading || (view === "attributes" && (attributeLoading || attributeYear === null));
 
   return (
     <div className="p-3 sm:p-4 max-w-6xl mx-auto space-y-4">
@@ -232,7 +232,7 @@ export function RankingsPage() {
           aria-pressed={selected === "all"}
           // Toggling off returns to the current season.
           onClick={() => {
-            setYearSel(selected === "all" ? (seasonYear ?? new Date().getFullYear()) : "all");
+            setYearSel(selected === "all" ? null : "all");
             setPage(1);
           }}
           className={`border px-3 py-2 text-xs font-medium transition-colors ${

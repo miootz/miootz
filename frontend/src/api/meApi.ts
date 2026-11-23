@@ -89,9 +89,7 @@ export interface UserHistoryItem {
     };
 }
 
-export interface UserHistoryResponse {
-    user: MeUser;
-    stats: UserStats;
+interface UserHistoryResponse {
     history: { items: UserHistoryItem[]; total: number };
 }
 
@@ -102,6 +100,7 @@ export async function fetchMyHistory(
     const q = new URLSearchParams();
     q.set("limit", String(params.limit ?? 25));
     q.set("offset", String(params.offset ?? 0));
+    q.set("history_only", "1");
     const r = await apiFetch(`/users/${userId}/history?${q.toString()}`);
     if (!r.ok) throw new Error(await parseApiError(r));
     return r.json() as Promise<UserHistoryResponse>;

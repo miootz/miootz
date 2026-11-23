@@ -22,6 +22,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         return r.scalar_one_or_none() is not None
 
+    if await has_table("job_queue") and not await has_column("job_queue", "claimed_until"):
+        await conn.exec_driver_sql("ALTER TABLE job_queue ADD COLUMN claimed_until DATETIME")
+
     if not await has_column("meetups", "min_players"):
         await conn.execute(
             text("ALTER TABLE meetups ADD COLUMN min_players INTEGER DEFAULT 10")

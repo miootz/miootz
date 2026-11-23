@@ -132,7 +132,7 @@ it('keeps the profile header and positions in sync with successful saves', async
         ? Response.json({ detail: 'Position could not be saved' }, { status: 500 })
         : Response.json({ message: 'Profile updated successfully' });
     }
-    if (url === '/api/users/1/history?limit=25&offset=0') {
+    if (url === '/api/users/1/history?limit=25&offset=0&history_only=1') {
       return Response.json({ history: { items: [], total: 0 } });
     }
     if (url === '/api/users/me/progress') {

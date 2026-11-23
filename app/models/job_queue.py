@@ -22,3 +22,4 @@ class JobQueue(Base):
     ref_id: Mapped[int] = mapped_column(Integer, nullable=False)
     run_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
