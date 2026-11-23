@@ -7,9 +7,18 @@ import pytest
 from app.services import pocket_id_client
 
 
+@pytest.fixture(autouse=True)
+def mock_pocket_id_settings(monkeypatch):
+    monkeypatch.setattr(pocket_id_client.settings, "POCKET_ID_INTERNAL_URL", "https://pocket-id.test")
+    monkeypatch.setattr(pocket_id_client.settings, "POCKET_ID_STATIC_API_KEY", "test-key")
+
+
 @pytest.mark.parametrize("assigned_group", [True, False])
 async def test_create_signup_token_verifies_discovered_members_group(monkeypatch, assigned_group):
+    requested_paths = []
+
     def pocket_id(request):
+        requested_paths.append(request.url.path)
         if request.url.path == "/api/user-groups":
             assert request.url.params["search"] == "members"
             return httpx.Response(200, json={"data": [{"name": "members", "id": "members-id"}]})
@@ -23,6 +32,7 @@ async def test_create_signup_token_verifies_discovered_members_group(monkeypatch
     monkeypatch.setattr(pocket_id_client.settings, "POCKET_ID_MEMBERS_GROUP_ID", "")
     monkeypatch.setattr(httpx, "AsyncClient", partial(httpx.AsyncClient, transport=httpx.MockTransport(pocket_id)))
     invite = await pocket_id_client.create_signup_token()
+    assert requested_paths == ["/api/user-groups", "/api/signup-tokens"]
     assert bool(invite) is assigned_group
 
 
