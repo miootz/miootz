@@ -25,6 +25,7 @@ describe("RankingsPage attributes", () => {
   it("keeps highlights and requests the selected attribute, order, scope, and page", async () => {
     render(<RankingsPage />);
     expect(await screen.findByText("Season highlights")).toBeTruthy();
+    expect(fetchRankings).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Ratings" }));
     const passing = await screen.findByRole("button", { name: "Sort by Passing" });
     const table = screen.getByRole("table", { name: "Player attribute rankings" });

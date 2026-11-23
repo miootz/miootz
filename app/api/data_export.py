@@ -16,7 +16,7 @@ from app.core.database import Base, engine
 
 router = APIRouter()
 
-_EXCLUDED_TABLES = {"chat_messages"}
+_EXCLUDED_TABLES = {"chat_messages", "meetup_analytics", "meetup_rating_snapshots"}
 _EXCLUDED_COLUMNS = {
     "users": {"calculated_skill"},
     "invite_tokens": {"token"},

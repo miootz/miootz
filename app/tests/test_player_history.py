@@ -71,7 +71,7 @@ async def test_admin_list_players_requires_admin():
 
 
 @pytest.mark.asyncio
-async def test_admin_player_history():
+async def test_admin_player_history(monkeypatch):
     """GET /users/{id}/history returns profile + stats + paginated history."""
     from datetime import timedelta
 
@@ -199,6 +199,21 @@ async def test_admin_player_history():
         assert d2["history"]["total"] == 2
         assert len(d2["history"]["items"]) == 1
         assert d2["history"]["items"][0]["meetup_id"] == m1_id
+
+        async def unexpected_work(*args, **kwargs):
+            pytest.fail("Attendance-only requests must not load aggregate stats or Pocket ID data")
+
+        from app.api import users as users_api
+
+        monkeypatch.setattr(users_api, "get_user_statistics", unexpected_work)
+        monkeypatch.setattr(users_api, "_enrich", unexpected_work)
+        compact = await ac.get(
+            f"/users/{user_id}/history?limit=1&offset=1&history_only=1",
+            headers={"Authorization": "Bearer admintoken"},
+        )
+        assert compact.status_code == 200
+        assert set(compact.json()) == {"history"}
+        assert compact.json()["history"]["items"][0]["rating_avg"] == 4.0
 
 
 @pytest.mark.asyncio

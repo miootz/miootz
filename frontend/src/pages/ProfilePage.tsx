@@ -20,6 +20,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { getPocketIdUrl } from "../auth/pocketIdOidc";
 import { PlayerAvatarFace } from "../components/PlayerAvatar";
+import { ProfileProgress } from "../components/ProfileProgress";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import { SkillRating } from "../components/SkillRating";
@@ -356,32 +357,97 @@ export function ProfilePage() {
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 mt-4">
-            {u.primary_specialty && (
-              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                {SPECIALTY_LABEL[u.primary_specialty]}
-              </span>
-            )}
-            {u.secondary_specialty && (
-              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                {SPECIALTY_LABEL[u.secondary_specialty]}
-              </span>
-            )}
-            {me.is_admin && (
-              <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                Admin
-              </span>
-            )}
+          {(u.primary_specialty || u.secondary_specialty || me.is_admin) && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {u.primary_specialty && (
+                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                  {SPECIALTY_LABEL[u.primary_specialty]}
+                </span>
+              )}
+              {u.secondary_specialty && (
+                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                  {SPECIALTY_LABEL[u.secondary_specialty]}
+                </span>
+              )}
+              {me.is_admin && (
+                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                  Admin
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Positions editor */}
+          <div className="mt-4 space-y-4 border-t border-line pt-4">
+            <h2 className="text-lg font-bold text-ink">
+              Edit profile
+            </h2>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor="profile-primary-position" className="block text-xs text-ink-dim">
+                  Primary position
+                </label>
+                <select
+                  id="profile-primary-position"
+                  value={u.primary_specialty ?? ""}
+                  disabled={saving}
+                  onChange={(e) => {
+                    void saveSpecialty(
+                      "primary_specialty",
+                      (e.target.value || null) as Specialty | null,
+                    );
+                  }}
+                  className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
+                >
+                  <option value="">— Select —</option>
+                  {SPECIALTY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="profile-secondary-position" className="block text-xs text-ink-dim">
+                  Secondary position
+                </label>
+                <select
+                  id="profile-secondary-position"
+                  value={u.secondary_specialty ?? ""}
+                  disabled={saving}
+                  onChange={(e) => {
+                    void saveSpecialty(
+                      "secondary_specialty",
+                      (e.target.value || null) as Specialty | null,
+                    );
+                  }}
+                  className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
+                >
+                  <option value="">— Select —</option>
+                  {SPECIALTY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+          </div>
+
+          <div className="mt-4 border-t border-line pt-2">
             <a
               href={pocketIdSettingsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1 border border-line px-3 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
-              aria-label="Edit account in Pocket ID"
+              className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
+              aria-label="Account settings in Pocket ID (opens in a new tab)"
             >
-              <User className="w-3.5 h-3.5" />
-              Edit
-              <ExternalLink className="w-3 h-3" />
+              <User className="h-4 w-4" aria-hidden />
+              Account settings
+              <ExternalLink className="ml-auto h-4 w-4" aria-hidden />
             </a>
           </div>
         </section>
@@ -407,69 +473,11 @@ export function ProfilePage() {
         )}
 
         <ProfileScoreboard stats={stats} error={statsError} />
+        <ProfileProgress />
 
-        <section className="border border-line bg-panel p-5 space-y-5">
+        <section className="border border-line bg-panel p-5">
           {/* Attendance history (paginated) */}
           <AttendanceHistory userId={u.id} />
-
-          {/* Positions editor */}
-          <div className="space-y-4 pt-2 border-t border-line">
-            <h2 className="text-lg font-bold text-ink">
-              Edit profile
-            </h2>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label htmlFor="profile-primary-position" className="block text-xs text-ink-dim">
-                  Primary position
-                </label>
-                <select
-                  id="profile-primary-position"
-                  value={u.primary_specialty ?? ""}
-                  disabled={saving}
-                  onChange={(e) => {
-                    void saveSpecialty(
-                      "primary_specialty",
-                      (e.target.value || null) as Specialty | null,
-                    );
-                  }}
-                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
-                >
-                  <option value="">— Select —</option>
-                  {SPECIALTY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="profile-secondary-position" className="block text-xs text-ink-dim">
-                  Secondary position
-                </label>
-                <select
-                  id="profile-secondary-position"
-                  value={u.secondary_specialty ?? ""}
-                  disabled={saving}
-                  onChange={(e) => {
-                    void saveSpecialty(
-                      "secondary_specialty",
-                      (e.target.value || null) as Specialty | null,
-                    );
-                  }}
-                  className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
-                >
-                  <option value="">— Select —</option>
-                  {SPECIALTY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
         </section>
 
         {/* ── Zone 3: Preferences (collapsible) ─────────────────── */}
@@ -732,10 +740,6 @@ export function ProfilePage() {
 
         {/* ── Zone 4: Account footer ────────────────────────────── */}
 
-        {error && (
-          <p className="text-sm text-danger">{error}</p>
-        )}
-
         <div className="pt-2 pb-6">
           <button
             type="button"
@@ -788,7 +792,7 @@ function AttendanceHistory({ userId }: { userId: number }) {
   const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
 
   return (
-    <div className="space-y-3 pt-2 border-t border-line">
+    <div className="space-y-3">
       <h2 className="text-lg font-bold text-ink">
         Your attendance history
       </h2>

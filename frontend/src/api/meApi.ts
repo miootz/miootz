@@ -89,9 +89,7 @@ export interface UserHistoryItem {
     };
 }
 
-export interface UserHistoryResponse {
-    user: MeUser;
-    stats: UserStats;
+interface UserHistoryResponse {
     history: { items: UserHistoryItem[]; total: number };
 }
 
@@ -102,6 +100,7 @@ export async function fetchMyHistory(
     const q = new URLSearchParams();
     q.set("limit", String(params.limit ?? 25));
     q.set("offset", String(params.offset ?? 0));
+    q.set("history_only", "1");
     const r = await apiFetch(`/users/${userId}/history?${q.toString()}`);
     if (!r.ok) throw new Error(await parseApiError(r));
     return r.json() as Promise<UserHistoryResponse>;
@@ -191,4 +190,28 @@ export function mediaUrl(path: string | null | undefined): string | undefined {
     if (path.startsWith("http://") || path.startsWith("https://")) return path;
     if (path.startsWith("/api/")) return roomPath(path);
     return path;
+}
+
+export interface PlayerProgressPoint {
+    meetup_id: number;
+    start_time: string;
+    matches: number;
+    goals: number;
+    assists: number;
+    wins: number;
+    clean_sheets: number;
+    base_rating: number | null;
+    adjusted_rating: number | null;
+}
+
+export interface PlayerProgress {
+    computed_scores: boolean;
+    meetups: PlayerProgressPoint[];
+}
+
+export async function fetchPlayerProgress(year: number | undefined, signal: AbortSignal): Promise<PlayerProgress> {
+    const query = year === undefined ? "" : `?year=${year}`;
+    const r = await apiFetch(`/users/me/progress${query}`, { signal });
+    if (!r.ok) throw new Error(await parseApiError(r));
+    return r.json() as Promise<PlayerProgress>;
 }

@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { fetchPlayerProgress } from "../api/meApi";
 import { ProfilePage } from "./ProfilePage";
 import { PUSH_REGISTRATION_CHANGED } from "../utils/pushSubscription";
 
@@ -25,6 +26,7 @@ vi.mock("../api/meApi", () => ({
   fetchNotificationPreferences: vi.fn().mockResolvedValue({ items: [] }),
   fetchGameTemplateSubscriptions: vi.fn().mockResolvedValue({ items: [] }),
   fetchMyHistory: vi.fn().mockResolvedValue({ history: { items: [], total: 0 } }),
+  fetchPlayerProgress: vi.fn().mockResolvedValue({ computed_scores: true, meetups: [] }),
   fetchMyStats: vi.fn().mockRejectedValue(new Error("Stats unavailable")),
   patchGameTemplateSubscription: vi.fn(),
   patchNotificationPreference: vi.fn(),
@@ -62,6 +64,28 @@ function openProfile() {
   render(<MemoryRouter><ProfilePage /></MemoryRouter>);
   fireEvent.click(screen.getByRole("button", { name: "Push notifications" }));
 }
+
+it("groups position controls and account settings with the player", async () => {
+  getRegistration.mockResolvedValue(undefined);
+  fetchPushSubscriptions.mockResolvedValue([]);
+  await act(async () => {
+    render(<MemoryRouter><ProfilePage /></MemoryRouter>);
+  });
+
+  const playerCard = screen.getByRole("heading", { name: "Alex" }).closest("section")!;
+  const card = within(playerCard);
+  expect(card.getByRole("heading", { name: "Edit profile" })).toBeInTheDocument();
+  expect(card.getByLabelText("Primary position")).toBeInTheDocument();
+  expect(card.getByLabelText("Secondary position")).toBeInTheDocument();
+  expect(card.queryByRole("heading", { name: "Your attendance history" })).not.toBeInTheDocument();
+
+  const accountSettings = card.getByRole("link", { name: /Account settings/ });
+  expect(accountSettings).toHaveTextContent("Account settings");
+  expect(accountSettings).toHaveAttribute("href", "https://auth.example.test/settings/account");
+  expect(accountSettings).toHaveAttribute("target", "_blank");
+  expect(accountSettings).toHaveAttribute("rel", "noopener noreferrer");
+  expect(accountSettings.parentElement).not.toContainElement(card.getByLabelText("Primary position"));
+});
 
 it("finishes a local-only registration even when another device shares its push host", async () => {
   getRegistration.mockResolvedValue({ pushManager: { getSubscription: vi.fn().mockResolvedValue({ endpoint: localEndpoint }) } });
@@ -131,4 +155,37 @@ it("shows the reason when registering a device fails", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Register this device" }));
   expect(await screen.findByText("Network unavailable")).toHaveAttribute("role", "alert");
   expect(screen.getByRole("button", { name: "Register this device" })).toBeEnabled();
+});
+
+it("switches progress metrics and shows exact meetup values", async () => {
+  vi.mocked(fetchPlayerProgress).mockResolvedValue({
+    computed_scores: true,
+    meetups: [
+      {
+        meetup_id: 9, start_time: "2026-11-16T19:00:00Z", matches: 4, goals: 2,
+        assists: 1, wins: 3, clean_sheets: 2, base_rating: 3.5, adjusted_rating: 4.1,
+      },
+    ],
+  });
+  render(<MemoryRouter><ProfilePage /></MemoryRouter>);
+  const progress = screen.getByRole("region", { name: "Progress" });
+
+  const metrics = within(within(progress).getByRole("group", { name: "Progress metric" }));
+  const rating = metrics.getByRole("button", { name: "Rating" });
+  expect(metrics.getAllByRole("button")[0]).toBe(rating);
+  expect(rating).toHaveAttribute("aria-pressed", "true");
+  expect(await within(progress).findByText("Adjusted Rating", { selector: "span" })).toBeInTheDocument();
+  fireEvent.click(within(progress).getByText("View meetup values"));
+  expect(within(progress).getByRole("cell", { name: "4.1" })).toBeInTheDocument();
+
+  fireEvent.click(metrics.getByRole("button", { name: "Attack" }));
+  expect(within(progress).getByText("Recorded assists", { selector: "span" })).toBeInTheDocument();
+  fireEvent.click(within(progress).getByText("View meetup values"));
+  expect(within(progress).getByRole("link", { name: /16 Nov 2026/ })).toHaveAttribute("href", "/history/9");
+
+  fireEvent.click(within(progress).getByRole("button", { name: "Results" }));
+  expect(within(progress).getByText("Matches played")).toBeInTheDocument();
+
+  fireEvent.change(within(progress).getByRole("combobox", { name: "Progress range" }), { target: { value: "season" } });
+  await waitFor(() => expect(fetchPlayerProgress).toHaveBeenLastCalledWith(new Date().getUTCFullYear(), expect.any(AbortSignal)));
 });

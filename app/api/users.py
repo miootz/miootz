@@ -638,6 +638,7 @@ async def admin_get_player_history(
     request: Request,
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    history_only: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -649,8 +650,6 @@ async def admin_get_player_history(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    stats = await get_user_statistics(db, user_id)
 
     total = (
         await db.execute(
@@ -674,7 +673,7 @@ async def admin_get_player_history(
     meetup_ids = [m.id for _, m in att_rows]
     score_map: dict[tuple[int, str], int] = {}
     rating_map: dict[int, float] = {}
-    if meetup_ids:
+    if meetup_ids and not history_only:
         scores = await db.execute(
             select(MatchScore).where(
                 MatchScore.meetup_id.in_(meetup_ids),
@@ -684,6 +683,7 @@ async def admin_get_player_history(
         score_map = {
             (s.meetup_id, s.type): s.score for s in scores.scalars().all()
         }
+    if meetup_ids:
         ratings = await db.execute(
             select(Rating.meetup_id, func.avg(Rating.score))
             .where(
@@ -723,10 +723,15 @@ async def admin_get_player_history(
             }
         )
 
+    history = {"items": items, "total": total}
+    if history_only:
+        return {"history": history}
+
+    stats = await get_user_statistics(db, user_id)
     return {
         "user": (await _enrich([user], stats["computed_scores"]))[0],
         "stats": stats,
-        "history": {"items": items, "total": total},
+        "history": history,
     }
 
 

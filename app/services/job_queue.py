@@ -1,16 +1,19 @@
 """Durable one-shot job queue backed by the SQLite ``job_queue`` table.
 
-Replaces in-memory APScheduler one-shot jobs: rows survive restarts, a
-scheduler poll runs every due job and deletes it.
+Rows survive restarts. Each poll commits its claim before invoking the
+handler, and another poll can recover a job whose claim has expired.
 """
 
 from __future__ import annotations
 
 import logging
+import sqlite3
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
@@ -20,6 +23,7 @@ from app.models.job_queue import JobQueue
 logger = logging.getLogger(__name__)
 
 JobHandler = Callable[[int], Awaitable[None]]
+_CLAIM_DURATION = timedelta(minutes=10)
 
 
 def _rating_reminder_handler() -> JobHandler:
@@ -39,22 +43,14 @@ async def upsert_job(
     db: AsyncSession, job_type: str, ref_id: int, run_at: datetime
 ) -> None:
     """Insert the job, or re-point its run_at if one already exists."""
-    existing = (
-        await db.execute(
-            select(JobQueue).where(
-                JobQueue.job_type == job_type, JobQueue.ref_id == ref_id
-            )
+    await db.execute(
+        insert(JobQueue)
+        .values(job_type=job_type, ref_id=ref_id, run_at=run_at, created_at=utcnow())
+        .on_conflict_do_update(
+            index_elements=[JobQueue.job_type, JobQueue.ref_id],
+            set_={"run_at": run_at},
         )
-    ).scalar_one_or_none()
-    if existing:
-        existing.run_at = run_at
-    else:
-        db.add(
-            JobQueue(
-                job_type=job_type, ref_id=ref_id, run_at=run_at, created_at=utcnow()
-            )
-        )
-    await db.flush()
+    )
 
 
 async def remove_job(db: AsyncSession, job_type: str, ref_id: int) -> None:
@@ -67,28 +63,54 @@ async def remove_job(db: AsyncSession, job_type: str, ref_id: int) -> None:
 
 
 async def run_due_jobs() -> int:
-    """Run every queued job whose run_at has passed, then delete it.
-
-    Returns the number of jobs processed. A failed handler is logged and the
-    job is dropped (one-shot semantics, same as the old misfire_grace jobs).
-    """
+    """Run due jobs after committing each claim, so handlers can write independently."""
+    cutoff = utcnow()
+    available = or_(JobQueue.claimed_until.is_(None), JobQueue.claimed_until <= cutoff)
     async with async_session() as db:
         due = (
-            (await db.execute(select(JobQueue).where(JobQueue.run_at <= utcnow())))
-            .scalars()
-            .all()
-        )
-        for job in due:
-            factory = _HANDLERS.get(job.job_type)
-            if factory is None:
-                logger.warning("Unknown job type %r — dropping", job.job_type)
-            else:
-                try:
-                    await factory()(job.ref_id)
-                except Exception:
-                    logger.exception("Job %s/%s failed", job.job_type, job.ref_id)
-            await db.delete(job)
-            await db.flush()
-        if due:
+            await db.scalars(
+                select(JobQueue.id)
+                .where(JobQueue.run_at <= cutoff, available)
+                .order_by(JobQueue.run_at, JobQueue.id)
+            )
+        ).all()
+
+    processed = 0
+    for job_id in due:
+        claim = utcnow() + _CLAIM_DURATION
+        async with async_session() as db:
+            job = (
+                await db.execute(
+                    update(JobQueue)
+                    .where(JobQueue.id == job_id, JobQueue.run_at <= cutoff, available)
+                    .values(claimed_until=claim)
+                    .returning(JobQueue.job_type, JobQueue.ref_id, JobQueue.run_at)
+                )
+            ).one_or_none()
             await db.commit()
-    return len(due)
+        if job is None:
+            continue
+
+        job_type, ref_id, run_at = job
+        factory = _HANDLERS.get(job_type)
+        retry = False
+        if factory is None:
+            logger.warning("Unknown job type %r — dropping", job_type)
+        else:
+            try:
+                await factory()(ref_id)
+            except Exception as error:
+                logger.exception("Job %s/%s failed", job_type, ref_id)
+                if isinstance(error, OperationalError):
+                    code = getattr(error.orig, "sqlite_errorcode", 0) or 0
+                    retry = (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+
+        async with async_session() as db:
+            owned = (JobQueue.id == job_id, JobQueue.claimed_until == claim)
+            if not retry:
+                await db.execute(delete(JobQueue).where(*owned, JobQueue.run_at == run_at))
+                processed += 1
+            # An admin can reschedule a claimed job while its handler is running.
+            await db.execute(update(JobQueue).where(*owned).values(claimed_until=None))
+            await db.commit()
+    return processed

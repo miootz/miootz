@@ -36,3 +36,25 @@ Authenticated clients can request:
 
 See `app/services/rankings_service.py` for the calculation rules and
 `app/api/rankings.py` for accepted request parameters.
+
+## Stored summaries and player progress
+
+Miootz builds SQLite summaries for finished meetups when Rankings or Profile
+needs them. Each summary contains additive player counts and unweighted
+shooting, passing and defending evidence. A score correction, attendance
+change, import or other edit to the source rows clears the affected summary.
+The next read rebuilds it. Upcoming and in-progress meetups keep using current
+records, and Rankings use the current Base or Adjusted Rating for sorting.
+
+Season totals use the meetup kickoff year for attendance and the match
+completion year for match statistics. Rates are calculated from the summed
+counts. Attributes apply the existing recency weights and evidence thresholds
+after combining the selected meetups.
+
+Profile → Progress defaults to the last eight played meetups. The season
+view groups the current year's meetups by kickoff date. Attack shows goals and recorded assists.
+Results shows wins and clean sheets against matches played. The Rating view
+starts collecting history after deployment. The scheduler observes open review
+windows and captures the saved ratings after the next kickoff closes the
+window. Older meetups with no captured rating appear without a rating point.
+The demo includes fictional rating points so the chart can be tested locally.

@@ -21,8 +21,13 @@ with Traefik + Pocket ID.
 
 ## Team balancing
 
-Miootz can draft confirmed players by skill or assign them in random order.
-Admins can review and adjust the lineups. The balanced draft uses overall skill.
+**Auto-balanced** is the default for new meetups and templates. It redrafts the
+teams whenever the confirmed roster changes before the first match starts,
+including when attendance changes promote a waitlisted player. It keeps the
+chosen team sizes and updates any pending match. Once play starts, automatic
+promotions preserve existing team placements and match lineups. Admins can
+also choose a skill-based or random snake draft.
+
 With every attribute available, skill combines an admin or imported seed (80%),
 shooting (6%), passing (5%), defending (5%), pace (2%), and dribbling (2%).
 Peer emoji reviews add 25% of their weighted adjustment.

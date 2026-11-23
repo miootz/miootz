@@ -1,13 +1,18 @@
 """Tests for Pocket ID JWT auth middleware."""
 
+import asyncio
+from datetime import UTC, timedelta
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
+from app.api import middleware
 from app.api.main import app
 from app.core.database import async_session, engine, Base
+from app.core.timeutil import utcnow
 
 from app.models.user import User
-from datetime import UTC
 
 
 @pytest.fixture(scope="function")
@@ -74,6 +79,24 @@ async def test_admin_token_grants_admin(setup_user):
     assert r.status_code == 200
     body = r.json()
     assert body.get("is_admin") is True
+
+
+async def test_background_sync_removes_revoked_admin_group(setup_user, monkeypatch):
+    async with async_session() as db:
+        user = (await db.execute(select(User).where(User.pocket_id_sub == "admin-uuid"))).scalar_one()
+        user.sso_synced_at = utcnow() - timedelta(minutes=6)
+        await db.commit()
+
+    async def demoted_user(subject):
+        assert subject == "admin-uuid"
+        return {"userGroups": [{"name": "members"}]}
+
+    monkeypatch.setattr(middleware, "get_user_by_id", demoted_user)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer admintoken"}
+        assert (await ac.get("/me", headers=headers)).json()["is_admin"] is True
+        await asyncio.gather(*middleware._pending_sso_syncs)
+        assert (await ac.get("/me", headers=headers)).json()["is_admin"] is False
 
 
 @pytest.mark.asyncio

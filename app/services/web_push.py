@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from pywebpush import WebPushException, webpush
 from sqlalchemy import delete, select
@@ -15,6 +16,11 @@ from app.services.peer_rating_policy import teammate_pairs
 from app.services.rating_settings import get_rating_settings
 
 logger = logging.getLogger(__name__)
+
+_MAX_CONCURRENT_PUSH_SENDS = 10
+_push_executor = ThreadPoolExecutor(
+    max_workers=_MAX_CONCURRENT_PUSH_SENDS, thread_name_prefix="web-push"
+)
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -87,54 +93,6 @@ def _format_meetup_summary(meetup: Meetup) -> str:
     return f"{when} @ {meetup.location} (fee: {meetup.fee_text or meetup.fee})"
 
 
-async def user_wants_notification(
-    db: AsyncSession,
-    user_id: int,
-    category: str,
-) -> bool:
-    """Check if a user has a specific notification category enabled (default True)."""
-    r = await db.execute(
-        select(UserNotificationPreference.enabled).where(
-            UserNotificationPreference.user_id == user_id,
-            UserNotificationPreference.category == category,
-        )
-    )
-    row = r.scalar_one_or_none()
-    if row is None:
-        return True
-    return bool(row)
-
-
-async def _get_user_subs_with_filter(
-    db: AsyncSession,
-    user_ids: set[int],
-    category: str,
-) -> dict[int, list[WebPushSubscription]]:
-    """Fetch push subscriptions for users who want this notification category."""
-    allowed: dict[int, bool] = {}
-    for uid in user_ids:
-        allowed[uid] = await user_wants_notification(db, uid, category)
-
-    result: dict[int, list[WebPushSubscription]] = {}
-    for uid, wants in allowed.items():
-        if not wants:
-            continue
-        subs = (
-            (
-                await db.execute(
-                    select(WebPushSubscription).where(
-                        WebPushSubscription.user_id == uid
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if subs:
-            result[uid] = list(subs)
-    return result
-
-
 async def _send_push_to_users(
     db: AsyncSession,
     user_ids: set[int],
@@ -146,41 +104,40 @@ async def _send_push_to_users(
     if not user_ids:
         return counts
 
+    query = select(WebPushSubscription).where(WebPushSubscription.user_id.in_(user_ids))
     if category:
-        uid_to_subs = await _get_user_subs_with_filter(db, user_ids, category)
-    else:
-        uid_to_subs: dict[int, list[WebPushSubscription]] = {}
-        for uid in user_ids:
-            subs = (
-                (
-                    await db.execute(
-                        select(WebPushSubscription).where(
-                            WebPushSubscription.user_id == uid
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if subs:
-                uid_to_subs[uid] = list(subs)
+        opted_out = select(UserNotificationPreference.id).where(
+            UserNotificationPreference.user_id == WebPushSubscription.user_id,
+            UserNotificationPreference.category == category,
+            UserNotificationPreference.enabled.is_(False),
+        )
+        query = query.where(~opted_out.exists())
+    subs = (await db.execute(query)).scalars().all()
 
     dead_ids: list[int] = []
-    for uid, subs in uid_to_subs.items():
-        for sub in subs:
+    remaining = iter(subs)
+
+    async def send_remaining() -> None:
+        for sub in remaining:
             try:
-                await asyncio.to_thread(_send_one, sub, data)
+                await asyncio.get_running_loop().run_in_executor(
+                    _push_executor, _send_one, sub, data
+                )
                 counts["sent"] += 1
             except WebPushException as e:
-                logger.debug("webpush fail uid=%s sub=%s: %s", uid, sub.id, e)
+                logger.debug("webpush fail uid=%s sub=%s: %s", sub.user_id, sub.id, e)
                 if _is_subscription_gone(e):
                     dead_ids.append(sub.id)
                     counts["expired"] += 1
                 else:
                     counts["failed"] += 1
             except Exception as e:
-                logger.warning("webpush error uid=%s sub=%s: %s", uid, sub.id, e)
+                logger.warning("webpush error uid=%s sub=%s: %s", sub.user_id, sub.id, e)
                 counts["failed"] += 1
+
+    await asyncio.gather(
+        *(send_remaining() for _ in range(min(len(subs), _MAX_CONCURRENT_PUSH_SENDS)))
+    )
 
     if dead_ids:
         await db.execute(

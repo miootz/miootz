@@ -16,6 +16,7 @@ from app.services.manual_teams import (
     ensure_team_names,
     format_teams_api_payload,
     get_team_names,
+    parse_manual_teams_json,
     resolve_meetup_teams_nested,
 )
 from app.services.meetup_revision import (
@@ -101,6 +102,57 @@ async def fill_empty_pending_matches(db: AsyncSession, meetup: Meetup) -> None:
         match.team_b_users = json.dumps([p["user_id"] for p in b])
         match.team_a_name = names[a_idx] if a_idx < len(names) else f"Team {a_idx + 1}"
         match.team_b_name = names[b_idx] if b_idx < len(names) else f"Team {b_idx + 1}"
+
+
+async def refresh_after_confirmed_roster_change(db: AsyncSession, meetup: Meetup) -> None:
+    if not await redraft_before_first_match(db, meetup):
+        await fill_empty_pending_matches(db, meetup)
+
+
+async def redraft_before_first_match(db: AsyncSession, meetup: Meetup) -> bool:
+    """Redraft an auto-balanced lineup before the first match starts."""
+    if meetup.team_assignment_mode != "auto-balanced":
+        return False
+
+    matches = (await db.scalars(
+        select(MeetupMatch).where(MeetupMatch.meetup_id == meetup.id)
+    )).all()
+    if any(match.status != "pending" for match in matches):
+        return False
+    if not matches and meetup.manual_teams_json is None:
+        return False
+
+    saved = parse_manual_teams_json(meetup.manual_teams_json)
+    meetup.manual_teams_json = None
+    if not matches:
+        return True  # The Teams endpoint drafts from the new confirmed roster.
+
+    players, _ = await _load_meetup_players(db, meetup.id)
+    teams = resolve_meetup_teams_nested(
+        None, meetup.team_assignment_mode, players,
+        max_teams=meetup.max_teams, team_size=meetup.team_size,
+    )
+    lineup = [[player["user_id"] for player in team] for team in teams]
+    meetup.manual_teams_json = json.dumps(lineup)
+    names = get_team_names(meetup) or []
+    slots = lineup + [[] for _ in range(max(len(names), len(saved or [])) - len(lineup))]
+    by_name = {
+        names[index] if index < len(names) else f"Team {index + 1}": team
+        for index, team in enumerate(slots)
+    }
+    by_previous_roster = {
+        frozenset(previous): team for previous, team in zip(saved or [], slots)
+    }
+    for match in matches:
+        for side in ("a", "b"):
+            roster_field = f"team_{side}_users"
+            team = by_name.get(getattr(match, f"team_{side}_name"))
+            if team is None:
+                previous = frozenset(loads_int_list(getattr(match, roster_field)))
+                team = by_previous_roster.get(previous)
+            if team is not None:
+                setattr(match, roster_field, json.dumps(team))
+    return True
 
 
 async def expand_teams(

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, UTC
 from collections import defaultdict
+from collections.abc import Iterable
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +70,11 @@ async def _get_locked_meetup_ids(db: AsyncSession, limit: int = 20) -> list[int]
 
 
 async def get_consecutive_miss_streak(
-    db: AsyncSession, user_id: int, *, locked_ids: list[int] | None = None
+    db: AsyncSession,
+    user_id: int,
+    *,
+    locked_ids: list[int] | None = None,
+    confirmed_ids: set[int] | None = None,
 ) -> int:
     """Count of consecutive locked past meetups where the player has no
     confirmed attendance.  A miss is simply the absence of a confirmed
@@ -79,14 +84,15 @@ async def get_consecutive_miss_streak(
     if not locked_ids:
         return 0
 
-    result = await db.execute(
-        select(Attendance.meetup_id).where(
-            Attendance.user_id == user_id,
-            Attendance.status == "confirmed",
-            Attendance.meetup_id.in_(locked_ids),
+    if confirmed_ids is None:
+        result = await db.execute(
+            select(Attendance.meetup_id).where(
+                Attendance.user_id == user_id,
+                Attendance.status == "confirmed",
+                Attendance.meetup_id.in_(locked_ids),
+            )
         )
-    )
-    confirmed_ids = {row[0] for row in result.fetchall()}
+        confirmed_ids = {row[0] for row in result.fetchall()}
 
     streak = 0
     for sid in locked_ids:
@@ -115,19 +121,21 @@ async def _get_weighted_peer_average(
     pairs: dict[int, set[tuple[int, int]]] | None,
     positions: dict[int, int],
     anchor: float = 3.0,
+    *,
+    votes: Iterable[Rating] | None = None,
 ) -> tuple[float | None, float | None]:
     """Return a legacy star average or a relative adjustment across meetups."""
     if not positions:
         return None, None
 
-    votes = await db.scalars(
-        select(Rating)
-        .where(
-            Rating.ratee_id == user_id,
-            Rating.rater_id != user_id,
-            Rating.score.between(1, 5),
+    if votes is None:
+        votes = await db.scalars(
+            select(Rating).where(
+                Rating.ratee_id == user_id,
+                Rating.rater_id != user_id,
+                Rating.score.between(1, 5),
+            )
         )
-    )
     by_meetup: dict[int, dict[int, Rating]] = defaultdict(dict)
     for vote in votes:
         if vote.meetup_id not in positions:
@@ -195,11 +203,18 @@ async def _update_skill(
     pairs: dict[int, set[tuple[int, int]]] | None,
     positions: dict[int, int],
     locked_ids: list[int] | None = None,
+    *,
+    votes: Iterable[Rating] | None = None,
+    confirmed_ids: set[int] | None = None,
 ) -> None:
     anchor = user.seed_skill if user.seed_skill is not None else 3.0
-    peer, adjustment = await _get_weighted_peer_average(db, user.id, pairs, positions, anchor)
+    peer, adjustment = await _get_weighted_peer_average(
+        db, user.id, pairs, positions, anchor, votes=votes
+    )
     streak = (
-        await get_consecutive_miss_streak(db, user.id, locked_ids=locked_ids)
+        await get_consecutive_miss_streak(
+            db, user.id, locked_ids=locked_ids, confirmed_ids=confirmed_ids
+        )
         if peer is not None or adjustment is not None
         else 0
     )
@@ -261,6 +276,27 @@ async def refresh_player_skills(db: AsyncSession) -> None:
             )
         )
     )
+    votes_by_player: dict[int, list[Rating]] = defaultdict(list)
+    confirmed_by_player: dict[int, set[int]] = defaultdict(set)
+    if positions:
+        votes = await db.scalars(
+            select(Rating).where(
+                Rating.rater_id != Rating.ratee_id,
+                Rating.score.between(1, 5),
+            )
+        )
+        for vote in votes:
+            if vote.meetup_id in positions:
+                votes_by_player[vote.ratee_id].append(vote)
+        if votes_by_player and locked_ids:
+            confirmed = await db.execute(
+                select(Attendance.user_id, Attendance.meetup_id).where(
+                    Attendance.status == "confirmed",
+                    Attendance.meetup_id.in_(locked_ids),
+                )
+            )
+            for user_id, meetup_id in confirmed:
+                confirmed_by_player[user_id].add(meetup_id)
     for user in users:
         await _update_skill(
             db,
@@ -269,6 +305,8 @@ async def refresh_player_skills(db: AsyncSession) -> None:
             pairs,
             positions,
             locked_ids,
+            votes=votes_by_player[user.id],
+            confirmed_ids=confirmed_by_player[user.id],
         )
 
 

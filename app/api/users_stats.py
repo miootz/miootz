@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -8,10 +8,11 @@ from app.schemas.stats import UserStats, MatchScoreReport
 from app.services.stats_service import get_user_statistics
 from app.services.player_attributes import (
     effective_player_attributes,
-    load_player_attributes,
     pace_and_dribbling,
 )
 from app.services.audit import log_action
+from app.services.rankings_service import load_cached_attributes
+from app.services.player_progress import get_player_progress
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -29,12 +30,21 @@ async def get_my_stats(
 ):
     stats = await get_user_statistics(db, current_user.id)
     if stats["computed_scores"]:
-        attributes = (await load_player_attributes(db)).get(current_user.id)
+        attributes = (await load_cached_attributes(db)).get(current_user.id)
         stats["attributes"] = {
             **effective_player_attributes(current_user, attributes),
             **pace_and_dribbling(current_user),
         }
     return stats
+
+
+@router.get("/me/progress")
+async def get_my_progress(
+    year: int | None = Query(default=None, ge=1900, le=2999),
+    current_user: User = Depends(get_current_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_player_progress(db, current_user.id, year)
 
 
 @router.post("/report-score")

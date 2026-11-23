@@ -63,6 +63,7 @@ async def _sync_sso_data(user: User, pocket_id_sub: str) -> None:
 #: Strong references to in-flight background SSO sync tasks so they are not
 #: garbage-collected mid-flight (asyncio only keeps weak refs to tasks).
 _pending_sso_syncs: set[asyncio.Task] = set()
+_syncing_sso_subjects: set[str] = set()
 
 #: Minimum interval between Pocket ID admin-API refreshes per user.
 _SSO_SYNC_INTERVAL_SECONDS = 6 * 3600
@@ -73,6 +74,8 @@ _SSO_SYNC_ADMIN_INTERVAL_SECONDS = 5 * 60
 
 def _background_sync_sso(user: User, pocket_id_sub: str) -> None:
     """Fire-and-forget throttled background SSO refresh (for existing users)."""
+    if pocket_id_sub in _syncing_sso_subjects:
+        return
     interval = _SSO_SYNC_INTERVAL_SECONDS
     if "admins" in (user.sso_groups or []) or user.is_admin:
         interval = _SSO_SYNC_ADMIN_INTERVAL_SECONDS
@@ -85,7 +88,13 @@ def _background_sync_sso(user: User, pocket_id_sub: str) -> None:
             pass  # unexpected tz-aware legacy value — refresh instead of stalling
     task = asyncio.create_task(_sync_sso_data(user, pocket_id_sub))
     _pending_sso_syncs.add(task)
-    task.add_done_callback(_pending_sso_syncs.discard)
+    _syncing_sso_subjects.add(pocket_id_sub)
+
+    def finished(task: asyncio.Task) -> None:
+        _pending_sso_syncs.discard(task)
+        _syncing_sso_subjects.discard(pocket_id_sub)
+
+    task.add_done_callback(finished)
 
 
 async def _resolve_user_by_pocket_id_sub(
