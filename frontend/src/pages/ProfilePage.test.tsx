@@ -170,15 +170,21 @@ it("switches progress metrics and shows exact meetup values", async () => {
   render(<MemoryRouter><ProfilePage /></MemoryRouter>);
   const progress = screen.getByRole("region", { name: "Progress" });
 
-  expect(await within(progress).findByText("Recorded assists", { selector: "span" })).toBeInTheDocument();
+  const metrics = within(within(progress).getByRole("group", { name: "Progress metric" }));
+  const rating = metrics.getByRole("button", { name: "Rating" });
+  expect(metrics.getAllByRole("button")[0]).toBe(rating);
+  expect(rating).toHaveAttribute("aria-pressed", "true");
+  expect(await within(progress).findByText("Adjusted Rating", { selector: "span" })).toBeInTheDocument();
+  fireEvent.click(within(progress).getByText("View meetup values"));
+  expect(within(progress).getByRole("cell", { name: "4.1" })).toBeInTheDocument();
+
+  fireEvent.click(metrics.getByRole("button", { name: "Attack" }));
+  expect(within(progress).getByText("Recorded assists", { selector: "span" })).toBeInTheDocument();
   fireEvent.click(within(progress).getByText("View meetup values"));
   expect(within(progress).getByRole("link", { name: /16 Nov 2026/ })).toHaveAttribute("href", "/history/9");
 
   fireEvent.click(within(progress).getByRole("button", { name: "Results" }));
   expect(within(progress).getByText("Matches played")).toBeInTheDocument();
-  fireEvent.click(within(progress).getByRole("button", { name: "Rating" }));
-  fireEvent.click(within(progress).getByText("View meetup values"));
-  expect(within(progress).getByRole("cell", { name: "4.1" })).toBeInTheDocument();
 
   fireEvent.change(within(progress).getByRole("combobox", { name: "Progress range" }), { target: { value: "season" } });
   await waitFor(() => expect(fetchPlayerProgress).toHaveBeenLastCalledWith(new Date().getUTCFullYear(), expect.any(AbortSignal)));

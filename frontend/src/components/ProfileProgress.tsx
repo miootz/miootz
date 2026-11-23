@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { fetchPlayerProgress, type PlayerProgress, type PlayerProgressPoint } from "../api/meApi";
 
-const VIEWS = ["Attack", "Results", "Rating"] as const;
+const VIEWS = ["Rating", "Attack", "Results"] as const;
 type View = typeof VIEWS[number];
 
 const SERIES = {
@@ -160,7 +160,7 @@ function ProgressChart({ points, view, computed }: {
 }
 
 export function ProfileProgress() {
-  const [view, setView] = useState<View>("Attack");
+  const [view, setView] = useState<View>(VIEWS[0]);
   const [season, setSeason] = useState(false);
   const [result, setResult] = useState<{ season: boolean; data?: PlayerProgress; error?: string } | null>(null);
   const year = new Date().getUTCFullYear();
