@@ -260,12 +260,13 @@ async function penaltyFetch<T>(
   meetupId: number,
   matchId: number,
   path: string,
+  method: "GET" | "POST",
   body?: unknown,
 ): Promise<T> {
   const r = await apiFetch(
     `/meetups/${meetupId}/matches/${matchId}/penalty${path}`,
     {
-      method: body === undefined ? "GET" : "POST",
+      method,
       body: body === undefined ? undefined : JSON.stringify(body),
     },
   );
@@ -277,7 +278,7 @@ export function fetchPenalty(
   meetupId: number,
   matchId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "");
+  return penaltyFetch(meetupId, matchId, "", "GET");
 }
 
 export function addPenaltyShot(
@@ -287,7 +288,7 @@ export function addPenaltyShot(
   scored: boolean,
   scorerId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "/shots", {
+  return penaltyFetch(meetupId, matchId, "/shots", "POST", {
     team,
     scored,
     scorer_id: scorerId,
@@ -298,7 +299,7 @@ export function undoPenaltyShot(
   meetupId: number,
   matchId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "/undo");
+  return penaltyFetch(meetupId, matchId, "/undo", "POST");
 }
 
 export function finishPenaltyShootout(
@@ -309,5 +310,5 @@ export function finishPenaltyShootout(
   match: MatchSummary;
   next_match?: MatchSummary;
 }> {
-  return penaltyFetch(meetupId, matchId, "/finish");
+  return penaltyFetch(meetupId, matchId, "/finish", "POST");
 }
