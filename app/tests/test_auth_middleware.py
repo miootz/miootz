@@ -99,6 +99,24 @@ async def test_background_sync_removes_revoked_admin_group(setup_user, monkeypat
         assert (await ac.get("/me", headers=headers)).json()["is_admin"] is False
 
 
+async def test_background_sync_refreshes_member_name_after_five_minutes(setup_user, monkeypatch):
+    async with async_session() as db:
+        user = await db.scalar(select(User).where(User.pocket_id_sub == "user-uuid"))
+        user.sso_synced_at = utcnow() - timedelta(minutes=6)
+        await db.commit()
+
+    async def renamed_user(subject):
+        assert subject == "user-uuid"
+        return {"displayName": "Updated Name", "userGroups": [{"name": "members"}]}
+
+    monkeypatch.setattr(middleware, "get_user_by_id", renamed_user)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer usertoken"}
+        assert (await ac.get("/me", headers=headers)).json()["user"]["display_name"] == "User"
+        await asyncio.gather(*middleware._pending_sso_syncs)
+        assert (await ac.get("/me", headers=headers)).json()["user"]["display_name"] == "Updated Name"
+
+
 @pytest.mark.asyncio
 async def test_jit_provisions_new_user_with_groups(setup_user):
     """New Pocket ID user with groups should get provisioned."""
@@ -202,14 +220,24 @@ async def test_query_token_only_accepted_on_sse_paths(setup_user):
         assert r.status_code == 401
 
 
-@pytest.mark.asyncio
-async def test_existing_user_linked_via_invite_token(setup_user, monkeypatch):
+@pytest.mark.parametrize("groups,is_admin", [([{"name": "members"}], False), ([], True)])
+async def test_existing_user_linked_via_invite_token(setup_user, monkeypatch, groups, is_admin):
     """Existing user with invite token should be linked to Pocket ID on first auth."""
     from app.models.invite import InviteToken
 
+    async def redeemed_token(subject):
+        assert subject == "new-sso-user-uuid"
+        return "test-signup-token"
+
+    async def invited_user(subject):
+        assert subject == "new-sso-user-uuid"
+        return {"displayName": "New SSO User", "userGroups": groups}
+
+    monkeypatch.setattr(middleware, "get_user_by_id", invited_user)
+
     # Create an existing user without pocket_id_sub
     async with async_session() as db:
-        user = User(sso_display_name="Pre-Existing Player")
+        user = User(sso_display_name="Pre-Existing Player", is_admin=is_admin, seed_skill=4.0)
         db.add(user)
         await db.flush()
         user_id = user.id
@@ -230,13 +258,18 @@ async def test_existing_user_linked_via_invite_token(setup_user, monkeypatch):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        # 'newusertoken' is the signup-token test user (see conftest)
-        r = await ac.get(
-            "/me",
-            headers={"Authorization": "Bearer newusertoken"},
-        )
+        async def unavailable(_subject):
+            raise middleware.SignupAuditUnavailable
+
+        headers = {"Authorization": "Bearer newusertoken"}
+        monkeypatch.setattr(middleware, "get_redeemed_signup_token", unavailable)
+        assert (await ac.get("/me", headers=headers)).status_code == 503
+
+        monkeypatch.setattr(middleware, "get_redeemed_signup_token", redeemed_token)
+        r = await ac.get("/me", headers=headers)
     assert r.status_code == 200, r.text
     body = r.json()
+    assert body["is_admin"] is is_admin
     # Should be the existing user, not a new JIT user
     assert body["user"]["id"] == user_id
     assert body["user"]["display_name"] == "New SSO User"  # SSO data synced
@@ -252,3 +285,5 @@ async def test_existing_user_linked_via_invite_token(setup_user, monkeypatch):
         invite = result.scalar_one_or_none()
         assert invite is not None
         assert invite.used is True
+        assert invite.pocket_id_user_id == "new-sso-user-uuid"
+        assert (await db.get(User, user_id)).seed_skill == 4.0

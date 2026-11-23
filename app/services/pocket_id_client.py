@@ -41,42 +41,59 @@ def _base_url() -> str:
     return settings.POCKET_ID_INTERNAL_URL.rstrip("/")
 
 
-async def create_signup_token(
-    email: str = "",
-    ttl: str = "168h",
-    usage_limit: int = 1,
-    user_group_ids: list[str] | None = None,
-) -> dict[str, Any] | None:
-    """
-    Create a signup token in Pocket ID.
-
-    Args:
-        email: Synthetic email for Pocket ID (never shown to user)
-        ttl: Time-to-live string (e.g. "168h" for 7 days)
-        usage_limit: How many times the token can be used (1 for single-use invites)
-        user_group_ids: List of group UUIDs to assign to the new user
-
-    Returns:
-        Response dict with keys: token, expiresAt, etc.
-    """
+async def create_signup_token() -> dict[str, Any] | None:
+    """Create a seven-day, single-use invite with the configured members group."""
     url = f"{_base_url()}/api/signup-tokens"
-    body: dict[str, Any] = {
-        "ttl": ttl,
-        "usageLimit": usage_limit,
-    }
-    if email:
-        body["email"] = email
-    if user_group_ids:
-        body["userGroupIds"] = user_group_ids
-
     try:
         async with httpx.AsyncClient(timeout=10) as client:
+            group_id = settings.POCKET_ID_MEMBERS_GROUP_ID
+            if not group_id:
+                groups = await client.get(
+                    f"{_base_url()}/api/user-groups",
+                    headers=_headers(),
+                    params={"search": "members"},
+                )
+                groups.raise_for_status()
+                group_id = next((
+                    group["id"] for group in groups.json()["data"] if group["name"] == "members"
+                ), None)
+            if not group_id:
+                logger.error("Pocket ID has no members group for signup invites")
+                return None
+            body = {"ttl": "168h", "usageLimit": 1, "userGroupIds": [group_id]}
             r = await client.post(url, headers=_headers(), json=body)
             r.raise_for_status()
-            return r.json()
+            invite = r.json()
+            assigned_groups = {group["id"] for group in invite.get("userGroups", [])}
+            if not invite.get("token") or group_id not in assigned_groups:
+                logger.error("Pocket ID did not return a signup invite with the required group")
+                return None
+            return invite
     except Exception as e:
         logger.error("Failed to create signup token: %s", e)
         return None
+
+
+class SignupAuditUnavailable(Exception):
+    """Pocket ID could not verify whether an account redeemed an invite."""
+
+
+async def get_redeemed_signup_token(user_id: str) -> str | None:
+    """Read the signup token from Pocket ID's account creation event for this subject."""
+    params = {"filters[userID]": user_id, "filters[event]": "ACCOUNT_CREATED"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                f"{_base_url()}/api/audit-logs/all", headers=_headers(), params=params
+            )
+            response.raise_for_status()
+            events = response.json()["data"]
+            for event in events:
+                if event["userID"] == user_id and event["event"] == "ACCOUNT_CREATED":
+                    return (event.get("data") or {}).get("signupToken")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise SignupAuditUnavailable from exc
+    return None
 
 
 async def list_signup_tokens() -> list[dict[str, Any]]:

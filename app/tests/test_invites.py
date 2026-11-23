@@ -108,12 +108,7 @@ async def test_admin_create_user_requires_admin(monkeypatch):
 @pytest.mark.asyncio
 async def test_admin_generate_invite_for_user(monkeypatch):
     """Admin can generate a Pocket ID invite for an existing user."""
-    async def _mock_create_signup_token(
-        email: str,
-        ttl: str = "168h",
-        usage_limit: int = 1,
-        user_group_ids: list[str] | None = None,
-    ) -> dict:
+    async def _mock_create_signup_token() -> dict:
         return {
             "token": "pocket-id-test-token-123",
             "expiresAt": "2025-01-01T00:00:00",
@@ -174,12 +169,7 @@ async def test_admin_generate_invite_404_for_missing_user(monkeypatch):
 @pytest.mark.asyncio
 async def test_admin_list_invites(monkeypatch):
     """Admin can list invites."""
-    async def _mock_create_signup_token(
-        email: str,
-        ttl: str = "168h",
-        usage_limit: int = 1,
-        user_group_ids: list[str] | None = None,
-    ) -> dict:
+    async def _mock_create_signup_token() -> dict:
         return {
             "token": "pocket-id-test-token-123",
             "expiresAt": "2025-01-01T00:00:00",

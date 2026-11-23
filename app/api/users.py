@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -37,26 +36,11 @@ from app.services.audit import log_action
 from pydantic import BaseModel, ConfigDict, Field
 from app.core.timeutil import utcnow
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/users", tags=["users"])
 
 # Avatars are managed via Pocket ID — users set their profile picture at
 # {POCKET_ID_APP_URL}/settings/account.  The avatar URL is computed from
 # the user's pocket_id_sub: {POCKET_ID_APP_URL}/api/users/{sub}/profile-picture.png
-
-
-def _slugify(s: str) -> str:
-    return "".join(c.lower() for c in s if c.isalnum())
-
-
-def _synthetic_email(first_name: str, last_name: str) -> str:
-    """Generate a synthetic email for Pocket ID (never shown to the user)."""
-    slug = _slugify(f"{first_name} {last_name}") or "player"
-    import secrets
-
-    suffix = secrets.token_hex(4)
-    return f"{slug}.{suffix}@passkey.internal"
 
 
 class AdminUserCreate(BaseModel):
@@ -134,28 +118,13 @@ async def admin_generate_invite(
     first_name = parts[0] if len(parts) else "player"
     last_name = parts[1] if len(parts) > 1 else ""
 
-    synthetic_email = _synthetic_email(first_name, last_name)
-
-    try:
-        pocket_token = await create_signup_token(
-            email=synthetic_email,
-            ttl="168h",  # 7 days
-            usage_limit=1,
-            user_group_ids=(
-                [settings.POCKET_ID_MEMBERS_GROUP_ID]
-                if settings.POCKET_ID_MEMBERS_GROUP_ID
-                else None
-            ),
-        )
-    except Exception as e:
-        logger.exception("Failed to create Pocket ID signup token: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to create invite. Pocket ID may not be available.",
-        ) from e
+    pocket_token = await create_signup_token()
 
     if not pocket_token:
-        raise HTTPException(status_code=502, detail="Failed to create invite.")
+        raise HTTPException(
+            status_code=502,
+            detail="Could not create a Pocket ID invite with the members group. Check Pocket ID configuration.",
+        )
 
     token = pocket_token.get("token", "")
     expires_at = (
