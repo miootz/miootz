@@ -19,6 +19,7 @@ export interface PanelTeamUser {
   display_name: string;
   pac?: number | null;
   dri?: number | null;
+  inAnotherMatch?: boolean;
 }
 
 export interface ExtraTeam {
@@ -35,9 +36,7 @@ interface Roster {
 }
 
 /**
- * Pre-start substitutions (admin only). Shows ALL of the meetup's teams —
- * the two playing teams plus the non-playing team(s) — and allows a 1-for-1
- * swap between any two of them, so the bench team is a free pool as well.
+ * Admin substitutions before kickoff and while the clock is paused.
  *
  * One-writer: the panel holds the match editor lease while open
  * (acquire on open, renew every 20 s, release on close) — the same
@@ -52,7 +51,7 @@ export function SubstitutionsPanel({
 }: {
   meetupId: number;
   match: MatchSummary;
-  onSaved: () => void;
+  onSaved: () => Promise<void>;
   extraTeams?: ExtraTeam[];
 }) {
   const { showToast } = useToast();
@@ -167,38 +166,44 @@ export function SubstitutionsPanel({
   const keyOf = (id: number): string | null =>
     rosters.find((r) => r.users.some((u) => u.id === id))?.key ?? null;
 
-  const applySwap = async (
-    from: SubstitutionPick<number>,
-    to: SubstitutionPick<number>,
-  ) => {
+  const saveTeams = async (body: Parameters<typeof swapMatchTeams>[2], message: string) => {
     setSaving(true);
     try {
-      // 1-for-1 across any two rosters; only the match teams go on the wire.
-      const next = rosters.map((r) =>
-        r.key === from.key
-          ? r.users.map((u) => u.id).filter((id) => id !== from.id).concat(to.id)
-          : r.key === to.key
-            ? r.users.map((u) => u.id).filter((id) => id !== to.id).concat(from.id)
-            : r.users.map((u) => u.id),
-      );
-      const newA = next[0];
-      const newB = next[1];
-      await swapMatchTeams(meetupId, match.id, {
-        team_a_users: newA,
-        team_b_users: newB,
-      });
-      const nameOf = (id: number) =>
-        rosters.flatMap((r) => r.users).find((u) => u.id === id)?.display_name ??
-        "?";
-      showToast(`${nameOf(from.id)} ↔ ${nameOf(to.id)}`, "success");
-      onSaved();
+      await swapMatchTeams(meetupId, match.id, body);
+      setSelected(null);
+      showToast(message, "success");
+      await onSaved();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Swap failed", "error");
+      showToast(e instanceof Error ? e.message : "Could not update the lineup", "error");
       // Lease may have lapsed mid-swap — retry acquisition.
       if (!tokenRef.current) void tryAcquire();
     } finally {
       setSaving(false);
     }
+  };
+
+  const applySwap = (from: SubstitutionPick<number>, to: SubstitutionPick<number>) => {
+    const swap = (team: Roster) => {
+      const ids = team.users.map(({ id }) => id);
+      if (team.key === from.key) return ids.filter((id) => id !== from.id).concat(to.id);
+      if (team.key === to.key) return ids.filter((id) => id !== to.id).concat(from.id);
+      return ids;
+    };
+    const nameOf = (id: number) => rosters.flatMap((r) => r.users).find((u) => u.id === id)?.display_name;
+    return saveTeams(
+      { team_a_users: swap(rosters[0]), team_b_users: swap(rosters[1]) },
+      `${nameOf(from.id)} ↔ ${nameOf(to.id)}`,
+    );
+  };
+
+  const addPlayer = (player: PanelTeamUser, side: "a" | "b", teamName: string) => {
+    const teamA = match.team_a.users.map(({ id }) => id);
+    const teamB = match.team_b.users.map(({ id }) => id);
+    (side === "a" ? teamA : teamB).push(player.id);
+    return saveTeams(
+      { team_a_users: teamA, team_b_users: teamB, add_sideline_player: true },
+      `${player.display_name} added to ${teamName}`,
+    );
   };
 
   const tapPlayer = (id: number) => {
@@ -209,7 +214,7 @@ export function SubstitutionsPanel({
   };
 
   const renderTeam = (r: Roster) => (
-    <div className="space-y-1.5">
+    <div key={r.key} className={`min-w-0 space-y-1.5 ${r.matchSide === null ? "col-span-2" : ""}`}>
       <div
         className={`flex items-center justify-between px-3 py-2 ${
           r.matchSide === "a"
@@ -246,6 +251,22 @@ export function SubstitutionsPanel({
                 {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-pac">PAC</span>}
                 {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-dri">DRI</span>}
               </button>
+              {isSelected && r.matchSide === null && !u.inAnotherMatch && (
+                <div className="grid grid-cols-2 gap-2 px-2 pb-2">
+                  {(["a", "b"] as const).map((side, index) => (
+                    <button
+                      key={side}
+                      type="button"
+                      disabled={saving || !holding}
+                      aria-label={`Add ${u.display_name} to ${rosters[index].name}`}
+                      onClick={() => void addPlayer(u, side, rosters[index].name)}
+                      className="min-h-[44px] min-w-0 break-words border border-line px-2 py-2 text-sm font-semibold text-ink hover:bg-raised disabled:opacity-50"
+                    >
+                      Add to {rosters[index].name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </li>
           );
         })}

@@ -972,19 +972,21 @@ export function RefereePage() {
             ...currentMatch.team_a.users,
             ...currentMatch.team_b.users,
           ].map((u) => u.id));
+          const inAnotherMatch = new Set(matches
+            .filter((m) => m.id !== currentMatch.id && m.status !== "completed")
+            .flatMap((m) => [...m.team_a.users, ...m.team_b.users].map((u) => u.id)));
           return teamsData
-            .filter(
-              (t) => !t.players.some((p) => inMatch.has(Number(p.id))),
-            )
             .map((t) => ({
               name: t.name,
-              users: t.players.map((p) => ({
+              users: t.players.filter((p) => !inMatch.has(Number(p.id))).map((p) => ({
                 id: Number(p.id),
                 display_name: p.name,
                 pac: p.pac,
                 dri: p.dri,
+                inAnotherMatch: inAnotherMatch.has(Number(p.id)),
               })),
-            }));
+            }))
+            .filter((t) => t.users.length > 0);
         })()
       : [];
   const allComplete =
@@ -1491,7 +1493,7 @@ export function RefereePage() {
                     meetupId={sid}
                     match={currentMatch}
                     extraTeams={extraTeams}
-                    onSaved={() => void loadMatches()}
+                    onSaved={loadMatches}
                   />
                 )}
               </div>

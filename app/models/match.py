@@ -92,6 +92,7 @@ class MatchSubstitution(Base):
     #: Match-clock seconds when a mid-match (timer-paused) swap happened;
     #: NULL for pre-start swaps. Drives ≥50%-played credit in rankings.
     clock_secs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_sideline_addition: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

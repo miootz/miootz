@@ -95,7 +95,7 @@ export async function createNewPendingMatch(
 export async function swapMatchTeams(
   meetupId: number,
   matchId: number,
-  body: { team_a_users: number[]; team_b_users: number[] },
+  body: { team_a_users: number[]; team_b_users: number[]; add_sideline_player?: boolean },
 ): Promise<MatchSummary> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/teams`, {
     method: "PATCH",

@@ -834,6 +834,11 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             text("ALTER TABLE match_substitutions ADD COLUMN clock_secs INTEGER")
         )
 
+    if not await has_column("match_substitutions", "is_sideline_addition"):
+        await conn.execute(text(
+            "ALTER TABLE match_substitutions ADD COLUMN is_sideline_addition BOOLEAN NOT NULL DEFAULT 0"
+        ))
+
     # ── Weather Hero award (stacking spot guarantee) ──
     if not await has_table("weather_hero_awards"):
         await conn.execute(

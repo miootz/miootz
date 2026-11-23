@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from collections.abc import Sequence
 from datetime import datetime, timedelta, UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -53,6 +54,7 @@ router = APIRouter(prefix="/meetups", tags=["matches"])
 class MatchTeamSwap(BaseModel):
     team_a_users: list[int] = Field(min_length=1)
     team_b_users: list[int] = Field(min_length=1)
+    add_sideline_player: bool = False
 
 
 class MatchEndBody(BaseModel):
@@ -501,6 +503,40 @@ async def start_matches(
     return {"status": "started", "match": _match_json(match, users_by_id)}
 
 
+async def _sideline_additions(db: AsyncSession, match_ids: list[int]) -> dict[int, set[int]]:
+    additions: dict[int, set[int]] = {}
+    rows = await db.scalars(select(MatchSubstitution).where(
+        MatchSubstitution.match_id.in_(match_ids), MatchSubstitution.is_sideline_addition.is_(True),
+    ))
+    for row in rows:
+        before = set(_loads_int_list(row.old_team_a_users) + _loads_int_list(row.old_team_b_users))
+        after = set(_loads_int_list(row.new_team_a_users) + _loads_int_list(row.new_team_b_users))
+        additions.setdefault(row.match_id, set()).update(after - before)
+    return additions
+
+
+async def _rotation_teams(
+    db: AsyncSession, matches: Sequence[MeetupMatch],
+    teams: list[list[dict]], names: list[str] | None,
+) -> tuple[dict[int, set[int]], set[int]]:
+    """Identify teams that played without carrying borrowed players forward."""
+    additions = await _sideline_additions(db, [match.id for match in matches])
+    used = set()
+    for match in matches:
+        borrowed = additions.get(match.id, set())
+        played = (
+            set(_loads_int_list(match.team_a_users)) - borrowed,
+            set(_loads_int_list(match.team_b_users)) - borrowed,
+        )
+        for idx, team in enumerate(teams):
+            name = names[idx] if names and idx < len(names) else f"Team {idx + 1}"
+            if {p["user_id"] for p in team} in played or (
+                borrowed and name in (match.team_a_name, match.team_b_name)
+            ):
+                used.add(idx)
+    return additions, used
+
+
 @router.post("/{meetup_id}/matches/new", status_code=201)
 async def create_new_pending_match(
     meetup_id: int,
@@ -620,14 +656,8 @@ async def create_new_pending_match(
         )
         played_matches = all_matches.scalars().all()
 
-        used_team_indices: set[int] = set()
-        for m in played_matches:
-            ma_users = set(_loads_int_list(m.team_a_users))
-            mb_users = set(_loads_int_list(m.team_b_users))
-            for idx, team in enumerate(teams_nested):
-                team_user_ids = set(p["user_id"] for p in team)
-                if team_user_ids == ma_users or team_user_ids == mb_users:
-                    used_team_indices.add(idx)
+        borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams_nested, team_names)
+        winner_users = [uid for uid in winner_users if uid not in borrowed.get(last_match.id, ())]
 
         import random as _random
 
@@ -803,14 +833,17 @@ async def swap_match_teams(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin_or_present_member),
 ):
-    """Substitute players between teams — before start, or mid-match while
-    the timer is paused (admin).
+    """Swap players or borrow a confirmed sideline player while play is stopped.
 
     Records a before/after snapshot in match_substitutions (for rankings);
     pre-start swaps are also persisted to meetup.manual_teams_json so future
     rounds inherit them (mid-match swaps are match-local). Mid-match rows
     carry the match clock, which drives ≥50%-played credit in rankings.
+    A sideline addition applies to this match only.
     """
+    if body.add_sideline_player and not request.state.is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can add a sideline player.")
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -827,12 +860,25 @@ async def swap_match_teams(
     old_a = _loads_int_list(match.team_a_users)
     old_b = _loads_int_list(match.team_b_users)
     new_a, new_b = list(body.team_a_users), list(body.team_b_users)
-    # 1-for-1 between ANY two rosters (including the meetup's non-playing
-    # teams): each match team keeps its size, players may not duplicate,
-    # and every substitute must be a confirmed attendee.
-    if len(new_a) != len(old_a) or len(new_b) != len(old_b) or (
-        len(set(new_a)) != len(new_a) or len(set(new_b)) != len(new_b)
-    ):
+    old_a_ids, old_b_ids = set(old_a), set(old_b)
+    new_a_ids, new_b_ids = set(new_a), set(new_b)
+    if len(new_a_ids | new_b_ids) != len(new_a) + len(new_b):
+        raise HTTPException(status_code=400, detail="A player can only be on one side of the match.")
+    if body.add_sideline_player:
+        valid_addition = (
+            old_a_ids < new_a_ids and old_b_ids == new_b_ids
+            or old_b_ids < new_b_ids and old_a_ids == new_a_ids
+        )
+        if not valid_addition or len(new_a) + len(new_b) != len(old_a) + len(old_b) + 1:
+            raise HTTPException(status_code=400, detail="Add one sideline player without moving anyone else.")
+        added = (new_a_ids | new_b_ids) - (old_a_ids | old_b_ids)
+        other_matches = await db.execute(select(MeetupMatch.team_a_users, MeetupMatch.team_b_users).where(
+            MeetupMatch.meetup_id == meetup_id, MeetupMatch.id != match.id,
+            MeetupMatch.status.in_(("pending", "active", "time_up")),
+        ))
+        if any(added.intersection(_loads_int_list(a) + _loads_int_list(b)) for a, b in other_matches):
+            raise HTTPException(status_code=409, detail="That player is already in another match.")
+    elif len(new_a) != len(old_a) or len(new_b) != len(old_b):
         raise HTTPException(
             status_code=400,
             detail="Substitutions must be 1-for-1 swaps: keep each team's size.",
@@ -878,24 +924,25 @@ async def swap_match_teams(
             new_team_b_users=json.dumps(new_b),
             recorded_by=_user.id,
             clock_secs=clock_secs,
+            is_sideline_addition=body.add_sideline_player,
         )
     )
     match.team_a_users = json.dumps(new_a)
     match.team_b_users = json.dumps(new_b)
 
-    if match.status == "pending":
+    if match.status == "pending" and not body.add_sideline_player and not await _sideline_additions(db, [match.id]):
         # Propagate the swap to the meetup-level partition (future rounds).
         await _propagate_swap_to_meetup(db, meetup_id, old_a, old_b, new_a, new_b)
 
-    moved = len((set(new_a) ^ set(old_a)))
+    description = "Added a sideline player to" if body.add_sideline_player else "Substituted players in"
     await bump_and_notify(db, meetup_id)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     log_action(
         request,
         "match",
         "match.teams_swapped",
-        f"Substituted players in match #{match.match_number} "
-        f"({match.team_a_name} vs {match.team_b_name}, {moved} player change(s))"
+        f"{description} match #{match.match_number} "
+        f"({match.team_a_name} vs {match.team_b_name})"
         + ("; mid-match" if match.status == "active" else "; pre-start"),
         meetup_id=meetup_id,
     )
@@ -1205,6 +1252,8 @@ async def finish_penalty_shootout(
         winner_users = _loads_int_list(
             match.team_a_users if winner == "a" else match.team_b_users
         )
+        borrowed = await _sideline_additions(db, [match.id])
+        winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
         if winner_users != _loads_int_list(next_match.team_a_users):
             next_match.team_a_users, next_match.team_b_users = (
                 next_match.team_b_users,
@@ -1777,15 +1826,8 @@ async def end_match(
     )
     played_matches = all_matches.scalars().all()
 
-    # Track which team indices have entered
-    used_team_indices: set[int] = set()
-    for m in played_matches:
-        ma_users = set(_loads_int_list(m.team_a_users))
-        mb_users = set(_loads_int_list(m.team_b_users))
-        for idx, team in enumerate(teams):
-            team_user_ids = set(p["user_id"] for p in team)
-            if team_user_ids == ma_users or team_user_ids == mb_users:
-                used_team_indices.add(idx)
+    borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams, team_names)
+    winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
 
     # Find next unplayed team (a bench team — partition larger than
     # max_teams — is only a substitution pool, never a playing candidate)

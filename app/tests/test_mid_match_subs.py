@@ -31,20 +31,21 @@ async def client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
-async def make_running_match(ac: AsyncClient):
+async def make_running_match(ac: AsyncClient, *, with_sidelines: bool = False):
     """Meetup with two teams + a bench player; match 1 started.
 
     Future start so joins are pre-meetup; start is shifted into the
     presence window after joins, before match ops."""
     start = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
+    tokens = tuple(f"p{i}" for i in range(1, 13)) + ("tp1", "tp2") if with_sidelines else ("p1", "p2", "p3", "p4")
     r = await ac.post(
         "/meetups/",
         json={
             "start_time": start.isoformat(),
             "location": "Pitch",
             "min_players": 1,
-            "max_players": 4,
-            "max_teams": 2,
+            "max_players": len(tokens),
+            "max_teams": 3 if with_sidelines else 2,
             "send_push_notifications": False,
         },
         headers=hdr("admin"),
@@ -52,7 +53,7 @@ async def make_running_match(ac: AsyncClient):
     assert r.status_code == 201, r.text
     sid = r.json()["id"]
 
-    for token in ("p1", "p2", "p3", "p4"):
+    for token in tokens:
         rj = await ac.post(f"/meetups/{sid}/join", headers=hdr(token))
         assert rj.status_code == 200, rj.text
 
@@ -63,7 +64,7 @@ async def make_running_match(ac: AsyncClient):
                     select(User).where(User.pocket_id_sub == f"{token}-uuid")
                 )
             ).scalar_one().id
-            for token in ("p1", "p2", "p3", "p4")
+            for token in tokens
         }
         await db.execute(
             update(Meetup)
@@ -79,10 +80,11 @@ async def make_running_match(ac: AsyncClient):
     )
     assert r.status_code == 200, r.text
 
-    teams = [
-        [str(ids["p1"]), str(ids["p2"])],
-        [str(ids["p3"]), str(ids["p4"])],
-    ]
+    if with_sidelines:
+        groups = (tokens[:4], tokens[4:9], tokens[9:])
+    else:
+        groups = (tokens[:2], tokens[2:])
+    teams = [[str(ids[token]) for token in group] for group in groups]
     rt = await ac.patch(
         f"/meetups/{sid}/teams", json={"teams": teams}, headers=hdr("admin")
     )
@@ -172,3 +174,47 @@ async def test_swap_mid_match_records_clock_and_stays_match_local():
         )
         assert r.status_code == 200
         assert r.json()["substitutions"][0]["clock_secs"] == subs[0].clock_secs
+
+
+async def test_add_sideline_player_returns_them_to_original_team_for_next_match():
+    async with await client() as ac:
+        sid, mid, ids, partition = await make_running_match(ac, with_sidelines=True)
+        url = f"/meetups/{sid}/matches/{mid}"
+        headers = hdr("p1")
+        team_a = [ids[f"p{i}"] for i in range(1, 5)]
+        team_b = [ids[f"p{i}"] for i in range(5, 10)]
+        team_c = [ids[token] for token in ("p10", "p11", "p12", "tp1", "tp2")]
+        extra = team_c[0]
+        body = {"team_a_users": [*team_a, extra], "team_b_users": team_b, "add_sideline_player": True}
+
+        assert (await ac.patch(f"{url}/teams", json=body, headers=headers)).status_code == 409
+        assert (await ac.post(f"{url}/timer/pause", headers=headers)).status_code == 200
+        invalid = {**body, "team_a_users": [*team_a, team_b[0]]}
+        assert (await ac.patch(f"{url}/teams", json=invalid, headers=headers)).status_code == 400
+        assert (await ac.patch(f"{url}/teams", json=body, headers=hdr("p2"))).status_code == 403
+        response = await ac.patch(f"{url}/teams", json=body, headers=headers)
+        assert response.status_code == 200, response.text
+        assert [u["id"] for u in response.json()["team_a"]["users"]] == [*team_a, extra]
+
+        async with AsyncSession(engine) as db:
+            substitution = await db.scalar(select(MatchSubstitution).where(MatchSubstitution.match_id == mid))
+            assert substitution.is_sideline_addition and substitution.clock_secs is not None
+            assert (await db.get(Meetup, sid)).manual_teams_json == partition
+
+        assert (await ac.patch(f"{url}/score", json={"score_a": 1, "score_b": 0}, headers=headers)).status_code == 200
+        result = await ac.post(f"{url}/end", json={}, headers=headers)
+        assert result.status_code == 200, result.text
+        next_match = result.json()["next_match"]
+        assert [u["id"] for u in next_match["team_a"]["users"]] == team_a
+        assert [u["id"] for u in next_match["team_b"]["users"]] == team_c
+
+        next_id = next_match["id"]
+        lease = await ac.post(f"/meetups/{sid}/matches/lease/acquire?match_id={next_id}", headers=headers)
+        assert lease.status_code == 200, lease.text
+        next_body = {"team_a_users": [*team_a, team_b[0]], "team_b_users": team_c, "add_sideline_player": True}
+        response = await ac.patch(f"/meetups/{sid}/matches/{next_id}/teams", json=next_body, headers=headers)
+        assert response.status_code == 200, response.text
+        assert len(response.json()["team_a"]["users"]) == 5
+        assert len(response.json()["team_b"]["users"]) == 5
+        async with AsyncSession(engine) as db:
+            assert (await db.get(Meetup, sid)).manual_teams_json == partition
