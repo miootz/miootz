@@ -46,6 +46,9 @@ const RefereePage = lazy(() =>
 const MeetupActionPage = lazy(() =>
   import('./pages/MeetupActionPage').then(({ MeetupActionPage }) => ({ default: MeetupActionPage })),
 );
+const MeetupReservationPage = lazy(() =>
+  import('./pages/MeetupActionPage').then(({ MeetupReservationPage }) => ({ default: MeetupReservationPage })),
+);
 const PlusOneClaimPage = lazy(() =>
   import('./pages/PlusOneClaimPage').then(({ PlusOneClaimPage }) => ({ default: PlusOneClaimPage })),
 );
@@ -104,6 +107,7 @@ export default function App() {
         <Suspense fallback={<AppSplash status="Loading page…" />}>
           <Routes>
             <Route path="/plus-one/:token" element={<PlusOneClaimPage />} />
+            <Route path="/meetup-reservation" element={<MeetupReservationPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route element={<RequireAuth />}>
               <Route path="/meetup-action" element={<MeetupActionPage />} />

@@ -44,10 +44,18 @@ from app.services.skill_service import (
 )
 from app.core.meetup_data_manager import meetup_data_manager
 from app.services.meetup_promotion import handle_leave_or_cancel
+from app.services.meetup_signup import (
+    active_hold_times,
+    find_signup_hold,
+    open_signup_hold,
+    read_signup_hold_token,
+    signup_status,
+)
 from app.services.meetup_revision import (
     bump_meetup_revision,
     notify_meetup_data_changed,
     notify_meetup_deleted,
+    notify_meetup_list_changed,
 )
 from app.services.manual_teams import (
     ensure_team_names,
@@ -223,42 +231,27 @@ def _name_color(name: str) -> str:
     return f"#{(r ^ 0x40):02x}{(g ^ 0x30):02x}{(b ^ 0x50):02x}"
 
 
-async def _confirmed_count(db: AsyncSession, meetup_id: int) -> int:
-    """Scalar COUNT of confirmed attendees (avoids hydrating ORM rows)."""
-    count = await db.scalar(
-        select(func.count())
-        .select_from(Attendance)
-        .where(Attendance.meetup_id == meetup_id, Attendance.status == "confirmed")
-    )
-    return count or 0
-
-
-async def _insert_attendance_if_missing(
-    db: AsyncSession, meetup_id: int, user_id: int
-) -> Attendance | None:
-    # SQLite serializes writes, so the capacity check and signup use one snapshot.
-    result = await db.execute(
-        text(
-            """
-            INSERT INTO attendance (meetup_id, user_id, status, joined_at)
-            SELECT m.id, :user_id, CASE WHEN (
-                SELECT COUNT(*) FROM attendance
-                WHERE meetup_id = m.id AND status = 'confirmed'
-            ) < m.max_players THEN 'confirmed' ELSE 'waitlisted' END, :joined_at
-            FROM meetups m
-            WHERE m.id = :meetup_id AND NOT EXISTS (
-                SELECT 1 FROM attendance
-                WHERE meetup_id = :meetup_id AND user_id = :user_id
-            )
-            """
-        ),
-        {
-            "meetup_id": meetup_id,
-            "user_id": user_id,
-            "joined_at": utcnow(),
-        },
-    )
-    return await db.get(Attendance, result.lastrowid) if result.rowcount == 1 else None
+async def _signup_attendance(
+    db: AsyncSession, meetup: Meetup, user_id: int, attendance: Attendance | None,
+    *, reservation_id: int | None = None, respect_waitlist: bool = True,
+) -> Attendance:
+    now = utcnow()
+    hold = await find_signup_hold(db, meetup.id, user_id)
+    active = hold is not None and not hold.settled and hold.expires_at > now
+    if reservation_id is not None and (not active or hold.id != reservation_id):
+        raise HTTPException(status_code=409, detail="Your signup hold expired or belongs to another account.")
+    joined_at = hold.started_at if active else now
+    status = await signup_status(db, meetup, joined_at, now, respect_waitlist=respect_waitlist)
+    if attendance is None:
+        attendance = Attendance(meetup_id=meetup.id, user_id=user_id)
+        db.add(attendance)
+    attendance.status = status
+    attendance.previous_status = None
+    attendance.joined_at = joined_at
+    if active:
+        hold.settled = True
+    await db.flush()
+    return attendance
 
 
 def _game_template_json(t: GameTemplate | None) -> dict | None:
@@ -299,6 +292,7 @@ async def create_meetup(
     await db.flush()
     await db.commit()
     await db.refresh(new_meetup)
+    await notify_meetup_list_changed()
     log_action(
         request,
         "meetup",
@@ -464,7 +458,7 @@ async def get_meetup(
         select(Attendance, User)
         .join(User, Attendance.user_id == User.id)
         .where(Attendance.meetup_id == meetup_id)
-        .order_by(Attendance.joined_at.asc())
+        .order_by(Attendance.joined_at, Attendance.id)
     )
     rows = result.all()
     computed_scores = (await get_rating_settings(db)).computed_scores
@@ -511,9 +505,15 @@ async def get_meetup(
                 my_attendance = att.status
                 break
         if my_attendance == "waitlisted":
-            waitlist = [u.id for att, u in rows if att.status == "waitlisted"]
-            if user.id in waitlist:
-                my_waitlist_position = waitlist.index(user.id) + 1
+            waitlist = [att.user_id for att, _ in rows if att.status == "waitlisted"]
+            my_waitlist_position = waitlist.index(user.id) + 1
+            holds = await active_hold_times(db, meetup_id, utcnow())
+            if holds:
+                earlier_holds = sum(at < att.joined_at for at in holds)
+                confirmed = sum(row.status == "confirmed" for row, _ in rows)
+                vacancies = max(0, meetup.max_players - confirmed)
+                if earlier_holds:
+                    my_waitlist_position = max(1, my_waitlist_position + earlier_holds - vacancies)
         my_weather_hero_unused = (
             await db.execute(
                 select(func.count(WeatherHeroAward.id)).where(
@@ -928,6 +928,7 @@ async def adjust_meetup_teams(
     - **expand**: adds *num_teams* teams and promotes waitlisted players (FIFO by joined_at).
     - **contract**: removes *num_teams* teams and returns excess confirmed players to waitlist (LIFO).
     """
+    await db.execute(text("BEGIN IMMEDIATE"))
     result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
     meetup = result.scalar_one_or_none()
     if not meetup:
@@ -973,6 +974,7 @@ async def reshape_meetup_teams(
     _: User = Depends(require_admin),
 ):
     """Set signup capacity and reshape teams while preserving match history."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
     meetup = result.scalar_one_or_none()
     if not meetup:
@@ -1013,10 +1015,13 @@ async def reshape_meetup_teams(
             att.status = "waitlisted"
         confirmed = confirmed[:signup_capacity]
     else:
-        promoted = waitlisted[:max(0, signup_capacity - len(confirmed))]
-        for att, _ in promoted:
+        holds = await active_hold_times(db, meetup_id, utcnow())
+        for att, user in waitlisted:
+            earlier_holds = sum(at < att.joined_at for at in holds)
+            if len(confirmed) + earlier_holds >= signup_capacity:
+                break
             att.status = "confirmed"
-        confirmed.extend(promoted)
+            confirmed.append((att, user))
 
     computed_scores = (await get_rating_settings(db)).computed_scores
     players = [
@@ -1195,6 +1200,7 @@ async def skip_meetup(
             await db.flush()
             await refresh_player_skills(db)
         await db.commit()
+        await notify_meetup_list_changed()
     # The overview must always have a next meetup: pull the upcoming
     # occurrence forward (normally created at end-of-meetup-day) so the admin
     # can manage signups right away. No push — invites go out on the
@@ -1231,100 +1237,83 @@ def _require_pre_start_or_admin(meetup: Meetup, request: Request) -> None:
         )
 
 
+class SignupHoldBody(BaseModel):
+    token: str = Field(min_length=1, max_length=150)
+
+
+@router.post("/signup-hold")
+@limiter.limit(LIMIT_PUBLIC)
+async def reserve_signup(
+    request: Request, body: SignupHoldBody, db: AsyncSession = Depends(get_db),
+):
+    identities = read_signup_hold_token(body.token, utcnow())
+    if identities is None:
+        raise HTTPException(status_code=404, detail="This notification link is no longer valid.")
+
+    meetup_id, user_id = identities
+    await db.execute(text("BEGIN IMMEDIATE"))
+    now = utcnow()
+    meetup = await db.get(Meetup, meetup_id)
+    if meetup is None or meetup.skipped or _meetup_started(meetup) or not await db.get(User, user_id):
+        raise HTTPException(status_code=404, detail="This notification link is no longer valid.")
+    signed_up = await db.scalar(select(Attendance.id).where(
+        Attendance.meetup_id == meetup_id, Attendance.user_id == user_id,
+        Attendance.status.in_(["confirmed", "waitlisted"]),
+    ))
+    if signed_up is None:
+        hold = await open_signup_hold(db, meetup, user_id, now)
+        if hold.settled or hold.expires_at <= now:
+            return {"meetup_id": meetup_id, "hold_id": hold.id, "reserved": False}
+        hold_id = hold.id
+    else:
+        hold_id = 0
+    await db.commit()
+    return {"meetup_id": meetup_id, "hold_id": hold_id, "reserved": True}
+
+
 @router.post("/{meetup_id}/join")
 async def join_meetup(
-    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db)
+    meetup_id: int, request: Request, db: AsyncSession = Depends(get_db),
+    reservation_id: int | None = Query(default=None, ge=0),
 ):
     if not request.state.user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user_id = request.state.user.id
-
-    result_meetup = await db.execute(
-        select(Meetup).where(Meetup.id == meetup_id)
-    )
-    meetup = result_meetup.scalar_one_or_none()
-    if not meetup:
+    await db.execute(text("BEGIN IMMEDIATE"))
+    meetup = await db.get(Meetup, meetup_id)
+    if not meetup or meetup.skipped:
         raise HTTPException(status_code=404, detail="Meetup not found")
     _require_pre_start_or_admin(meetup, request)
 
-    result_attendance = await db.execute(
-        select(Attendance).where(
-            Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
-        )
-    )
-    attendance = result_attendance.scalar_one_or_none()
-
-    if attendance:
-        if attendance.status == "cancelled":
-            # Atomic reactivation: the CASE subquery sees the latest committed
-            # state at statement time, so a concurrent join cannot silently
-            # over-fill the meetup (SQLite serializes writers).
-            await db.execute(
-                text(
-                    """
-                    UPDATE attendance
-                       SET status = CASE WHEN (
-                               SELECT COUNT(*) FROM attendance a2
-                                WHERE a2.meetup_id = :sid
-                                  AND a2.status = 'confirmed'
-                                  AND a2.id <> :aid
-                           ) < :maxp
-                           THEN 'confirmed' ELSE 'waitlisted' END,
-                           joined_at = :now,
-                           previous_status = NULL
-                     WHERE id = :aid AND meetup_id = :sid
-                    """
-                ),
-                {
-                    "sid": meetup_id,
-                    "aid": attendance.id,
-                    "maxp": meetup.max_players,
-                    "now": utcnow(),
-                },
-            )
-            await db.refresh(attendance)
-            if attendance.status == "confirmed":
-                await refresh_after_confirmed_roster_change(db, meetup)
-            rev = await bump_meetup_revision(db, meetup_id)
-            await db.commit()
-            if rev is not None:
-                await notify_meetup_data_changed(meetup_id, rev)
-            await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
-            await db.refresh(attendance)
-            log_action(
-                request,
-                "attendance",
-                "attendance.joined",
-                f"Re-joined as {attendance.status}",
-                meetup_id=meetup_id,
-                meetup_start_time=meetup.start_time,
-            )
+    attendance = await db.scalar(select(Attendance).where(
+        Attendance.meetup_id == meetup_id, Attendance.user_id == user_id,
+    ))
+    if attendance and attendance.status != "cancelled":
+        if reservation_id is not None:
             return {"status": attendance.status, "attendance_id": attendance.id}
         raise HTTPException(status_code=400, detail="Already joined meetup")
 
-    new_attendance = await _insert_attendance_if_missing(db, meetup_id, user_id)
-    if new_attendance is None:
-        raise HTTPException(status_code=400, detail="Already joined meetup")
-    await db.refresh(meetup)
-    if new_attendance.status == "confirmed":
+    attendance = await _signup_attendance(
+        db, meetup, user_id, attendance, reservation_id=reservation_id,
+    )
+    if attendance.status == "confirmed":
         await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
         await notify_meetup_data_changed(meetup_id, rev)
     await recalculate_skills_for_attendance_change(db, meetup_id, user_id)
-    await db.refresh(new_attendance)
+    await db.refresh(attendance)
     log_action(
         request,
         "attendance",
         "attendance.joined",
-        f"Joined as {new_attendance.status}",
+        f"Joined as {attendance.status}",
         meetup_id=meetup_id,
         meetup_start_time=meetup.start_time,
     )
-
-    return {"status": new_attendance.status, "attendance_id": new_attendance.id}
+    return {"status": attendance.status, "attendance_id": attendance.id}
 
 
 @router.delete("/{meetup_id}/leave")
@@ -1450,6 +1439,7 @@ async def redeem_weather_hero(
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+    await db.execute(text("BEGIN IMMEDIATE"))
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -1506,7 +1496,8 @@ async def redeem_weather_hero(
             )
         )
     ).scalar_one()
-    if confirmed_others >= meetup.max_players:
+    held_spots = len(await active_hold_times(db, meetup_id, now))
+    if confirmed_others + held_spots >= meetup.max_players:
         demoted = (
             (
                 await db.execute(
@@ -1527,6 +1518,8 @@ async def redeem_weather_hero(
             demoted.status = "waitlisted"
             demoted.joined_at = now
             demoted.previous_status = "confirmed"
+        elif held_spots:
+            raise HTTPException(status_code=409, detail="A player is holding this spot while signing in.")
 
     await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
@@ -1566,6 +1559,7 @@ async def add_attendance(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    await db.execute(text("BEGIN IMMEDIATE"))
     meetup = await db.get(Meetup, meetup_id)
     if not meetup or meetup.skipped:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -1573,13 +1567,15 @@ async def add_attendance(
     if not target:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    attendance = await _insert_attendance_if_missing(db, meetup_id, user_id)
-    if attendance is None:
+    existing = await db.scalar(select(Attendance.id).where(
+        Attendance.meetup_id == meetup_id, Attendance.user_id == user_id,
+    ))
+    if existing is not None:
         raise HTTPException(
             status_code=409, detail="Player already has attendance for this meetup"
         )
 
-    await db.refresh(meetup)
+    attendance = await _signup_attendance(db, meetup, user_id, None, respect_waitlist=False)
     if attendance.status == "confirmed":
         await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
@@ -1699,6 +1695,7 @@ async def move_attendance(
     if new_status not in ["confirmed", "waitlisted", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status")
 
+    await db.execute(text("BEGIN IMMEDIATE"))
     result_attendance = await db.execute(
         select(Attendance).where(
             Attendance.meetup_id == meetup_id, Attendance.user_id == user_id
@@ -1709,15 +1706,27 @@ async def move_attendance(
         raise HTTPException(status_code=404, detail="Attendance record not found")
 
     prev = attendance.status
+    meetup = None
+    if new_status == "confirmed" and prev != "confirmed":
+        meetup = await db.get(Meetup, meetup_id)
+        if meetup and not _meetup_started(meetup):
+            now = utcnow()
+            hold = await find_signup_hold(db, meetup_id, user_id)
+            joined_at = now
+            if hold and not hold.settled and hold.expires_at > now:
+                joined_at = hold.started_at
+                hold.settled = True
+                await db.flush()
+            holds = await active_hold_times(db, meetup_id, now)
+            if holds and await signup_status(db, meetup, joined_at, now, respect_waitlist=False) != "confirmed":
+                raise HTTPException(status_code=409, detail="A player is holding this spot while signing in.")
     attendance.status = new_status
     attendance.previous_status = prev if new_status == "cancelled" else None
     if new_status == "waitlisted" and prev != "waitlisted":
         # A player newly entering the waitlist goes to the back of the queue.
         attendance.joined_at = utcnow()
-    if new_status == "confirmed" and prev != "confirmed":
-        meetup = await db.get(Meetup, meetup_id)
-        if meetup:
-            await refresh_after_confirmed_roster_change(db, meetup)
+    if meetup:
+        await refresh_after_confirmed_roster_change(db, meetup)
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()
     if rev is not None:
@@ -1801,6 +1810,7 @@ async def delete_meetup(
         await db.flush()
         await refresh_player_skills(db)
     await db.commit()
+    await notify_meetup_list_changed()
     log_action(
         request,
         "meetup",
@@ -1813,11 +1823,7 @@ async def delete_meetup(
     return {"status": "deleted"}
 
 
-@router.get("/{meetup_id}/data/events")
-@limiter.limit(LIMIT_SSE)
-async def meetup_data_events(meetup_id: int, request: Request):
-    """SSE: roster/meetup field changes (`meetup_updated` / `meetup_deleted`)."""
-
+def _meetup_events_stream(meetup_id: int | None, request: Request):
     async def event_generator():
         queue = await meetup_data_manager.subscribe(meetup_id)
         try:
@@ -1841,6 +1847,20 @@ async def meetup_data_events(meetup_id: int, request: Request):
             "X-Accel-Buffering": "no",  # nginx: don't buffer this stream
         },
     )
+
+
+@router.get("/data/events")
+@limiter.limit(LIMIT_SSE)
+async def meetup_list_events(request: Request):
+    """Notify open overviews when available meetups change."""
+    return _meetup_events_stream(None, request)
+
+
+@router.get("/{meetup_id}/data/events")
+@limiter.limit(LIMIT_SSE)
+async def meetup_data_events(meetup_id: int, request: Request):
+    """SSE: roster/meetup field changes (`meetup_updated` / `meetup_deleted`)."""
+    return _meetup_events_stream(meetup_id, request)
 
 
 @router.get("/{meetup_id}/chat/events")
@@ -2014,6 +2034,7 @@ async def add_plus_one(
 
     inviter = request.state.user
 
+    await db.execute(text("BEGIN IMMEDIATE"))
     # Verify meetup exists
     result = await db.execute(select(Meetup).where(Meetup.id == meetup_id))
     meetup = result.scalar_one_or_none()
@@ -2064,16 +2085,7 @@ async def add_plus_one(
     db.add(guest_user)
     await db.flush()
 
-    # Create Attendance for the guest
-    confirmed_count = await _confirmed_count(db, meetup_id)
-    att_status = "confirmed" if confirmed_count < meetup.max_players else "waitlisted"
-
-    attendance = Attendance(
-        meetup_id=meetup_id,
-        user_id=guest_user.id,
-        status=att_status,
-    )
-    db.add(attendance)
+    attendance = await _signup_attendance(db, meetup, guest_user.id, None)
 
     # Create GuestPlusOne record
     claim_token = _generate_claim_token()
@@ -2089,25 +2101,6 @@ async def add_plus_one(
     )
     db.add(plus_one)
     await db.flush()
-
-    if att_status == "confirmed":
-        # Same self-demote backstop as join_meetup: a concurrent join may have
-        # filled the last spot between the COUNT above and this INSERT.
-        await db.execute(
-            text(
-                """
-                UPDATE attendance
-                   SET status = 'waitlisted'
-                 WHERE id = :aid
-                   AND status = 'confirmed'
-                   AND (SELECT COUNT(*) FROM attendance a2
-                         WHERE a2.meetup_id = :sid
-                           AND a2.status = 'confirmed') > :maxp
-                """
-            ),
-            {"aid": attendance.id, "sid": meetup_id, "maxp": meetup.max_players},
-        )
-        await db.refresh(attendance)
 
     if attendance.status == "confirmed":
         await refresh_after_confirmed_roster_change(db, meetup)

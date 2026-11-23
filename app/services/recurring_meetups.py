@@ -16,6 +16,7 @@ from app.models.meetup import Meetup
 from app.models.user import User
 from app.services.template_subscriptions import filter_users_by_template_subscription
 from app.services.web_push import notify_new_meetup_invites
+from app.services.meetup_revision import notify_meetup_list_changed
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ async def _create_template_meetup(
         await db.rollback()
         return None
     await db.refresh(meetup)
+    await notify_meetup_list_changed()
 
     # Queue rating reminder at meetup end time (durable job queue)
     from app.services.rating_reminder_scheduler import register_rating_reminder

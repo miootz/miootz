@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { MeetupDetails } from "./MeetupDetails";
 import type { Meetup, User, Team } from "../types";
@@ -16,7 +16,7 @@ import {
   saveMeetupSnapshot,
 } from "../offline/meetupSnapshot";
 import { parseMeetupStart } from "../utils/datetime";
-import { subscribeMeetupData } from "../utils/meetupDataBus";
+import { subscribeMeetupData, subscribeMeetupList } from "../utils/meetupDataBus";
 import { useMemberShell } from "../context/MemberShellContext";
 import { MeetupDetailsSkeleton } from "../components/MeetupDetailsSkeleton";
 import { OnboardingCard } from "../components/OnboardingCard";
@@ -83,8 +83,10 @@ export function PlayerApp() {
   const [offlineDataUpdatedAt, setOfflineDataUpdatedAt] = useState<Date | null>(
     null,
   );
+  const listRequest = useRef(0);
+  const activeMeetupId = useRef<number | null>(null);
 
-  const loadMeetup = useCallback(async (meetupId: number) => {
+  const loadMeetup = useCallback(async (meetupId: number, shouldApply: () => boolean = () => true) => {
     const [detail, teamsRes] = await Promise.all([
       fetchMeetupDetail(meetupId),
       fetchMeetupTeams(meetupId),
@@ -105,7 +107,9 @@ export function PlayerApp() {
         secondarySpecialty: p.secondarySpecialty ?? null,
       })),
     }));
+    if (!shouldApply()) return;
     const mapped = mapDetailToMeetup(detail, t);
+    activeMeetupId.current = meetupId;
     setMeetup(mapped);
     setActiveMeetupNumericId(meetupId);
     setLastRosterSync(new Date());
@@ -113,8 +117,10 @@ export function PlayerApp() {
     void saveMeetupSnapshot(mapped);
   }, []);
 
-  const loadInitialData = useCallback(async () => {
-    setLoading(true);
+  const loadInitialData = useCallback(async (background = false) => {
+    const request = ++listRequest.current;
+    const isCurrent = () => request === listRequest.current;
+    if (!background) setLoading(true);
     setError(null);
     try {
       const upcomingRes = await fetchMeetups({
@@ -123,16 +129,17 @@ export function PlayerApp() {
         limit: 50,
       });
       const upcoming = upcomingRes.items;
+      if (!isCurrent()) return;
       if (upcoming.length === 0) {
         // A meetup from start −15 min onward is still home, not history —
-        // through the match and until the NEXT signup opens (the template
-        // announce that materializes the following meetup). Without a
+        // through the match and until the next signup opens. Without a
         // template, fall back to end +30 min.
         const anyRes = await fetchMeetups({
           status: "all",
           order: "desc",
           limit: 5,
         });
+        if (!isCurrent()) return;
         const now = Date.now();
         const current = anyRes.items.find((m) => {
           const start = parseMeetupStart(m.start_time).getTime();
@@ -148,11 +155,13 @@ export function PlayerApp() {
           return start - 15 * 60_000 <= now && now <= until;
         });
         if (current) {
-          await loadMeetup(current.id);
+          await loadMeetup(current.id, isCurrent);
           recordMeetupView();
           return;
         }
         await clearMeetupChatCache();
+        if (!isCurrent()) return;
+        activeMeetupId.current = null;
         setMeetup(null);
         setActiveMeetupNumericId(null);
         setOfflineDataUpdatedAt(null);
@@ -168,13 +177,16 @@ export function PlayerApp() {
         }
         return;
       }
-      await loadMeetup(upcoming[0].id);
+      await loadMeetup(upcoming[0].id, isCurrent);
       recordMeetupView();
     } catch (e) {
+      if (!isCurrent()) return;
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
       if (offline) {
         const snap = await loadMeetupSnapshot();
+        if (!isCurrent()) return;
         if (snap) {
+          activeMeetupId.current = Number.parseInt(snap.meetup.id, 10);
           setMeetup(snap.meetup);
           setActiveMeetupNumericId(Number.parseInt(snap.meetup.id, 10));
           setOfflineDataUpdatedAt(new Date(snap.updatedAt));
@@ -186,13 +198,26 @@ export function PlayerApp() {
         setError(e instanceof Error ? e.message : "Failed to load");
       }
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [loadMeetup]);
 
   useEffect(() => {
     void loadInitialData();
   }, [loadInitialData]);
+
+  useEffect(() => {
+    if (!tokens?.accessToken) return;
+    return subscribeMeetupList(
+      tokens.accessToken,
+      (data) => {
+        if (data.type === "meetup_list_changed") void loadInitialData(true);
+      },
+      (live) => {
+        if (live) void loadInitialData(true);
+      },
+    );
+  }, [loadInitialData, tokens?.accessToken]);
 
   // Existing meetup-data SSE plumbing, now behind the shared hub
   // (utils/meetupDataBus): LiveMatchBanner (scoreboard/goals) subscribes
@@ -210,7 +235,10 @@ export function PlayerApp() {
           data.type === "meetup_updated" &&
           data.meetup_id === activeMeetupNumericId
         ) {
-          void loadMeetup(activeMeetupNumericId);
+          void loadMeetup(
+            activeMeetupNumericId,
+            () => activeMeetupId.current === activeMeetupNumericId,
+          );
         }
         if (
           data.type === "meetup_deleted" &&
@@ -284,6 +312,7 @@ export function PlayerApp() {
             )}
           </div>
           <MeetupDetails
+            key={meetup.id}
             meetup={meetup}
             rosterChannelLive={rosterChannelLive}
             lastRosterSync={lastRosterSync}

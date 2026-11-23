@@ -122,9 +122,9 @@ self.addEventListener('notificationclick', (event) => {
     urlPath = data.url || '/';
     // If the user tapped an action button, resolve its URL
     if (event.action && data.actionMap && data.actionMap[event.action]) {
-      // actionMap stores full URLs — extract just the pathname
+      // A signup hold lives in the fragment so the server never sees it in the URL.
       const fullUrl = new URL(data.actionMap[event.action], self.location.origin);
-      urlPath = fullUrl.pathname + fullUrl.search;
+      urlPath = fullUrl.pathname + fullUrl.search + fullUrl.hash;
     }
   } catch {
     /* ignore */
@@ -137,7 +137,17 @@ self.addEventListener('notificationclick', (event) => {
     } catch { /* ignore */ }
   }
 
-  event.waitUntil(
+  const target = new URL(urlPath, self.location.origin);
+  const token = target.origin === self.location.origin && target.pathname === '/meetup-reservation'
+    ? new URLSearchParams(target.hash.slice(1)).get('hold') : null;
+  // Start reserving immediately. The page retries the same idempotent request
+  // in case the worker could not reach the API.
+  const reserve = token ? fetch('/api/meetups/signup-hold', {
+    method: 'POST', credentials: 'omit',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+  }).catch(() => {}) : Promise.resolve();
+  event.waitUntil(Promise.all([
+    reserve,
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       if (clientList.length) {
         const client = clientList[0];
@@ -148,8 +158,8 @@ self.addEventListener('notificationclick', (event) => {
         return client.focus();
       }
       return self.clients.openWindow(urlPath);
-    })
-  );
+    }),
+  ]));
 });
 
 const OFFLINE_DB_NAME = 'miootz-offline';

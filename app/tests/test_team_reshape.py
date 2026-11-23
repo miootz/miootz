@@ -21,7 +21,9 @@ TOKENS = [f"p{i}" for i in range(1, 13)]
 
 
 @pytest.fixture(scope="function", autouse=True)
-async def setup_db():
+async def setup_db(monkeypatch):
+    # Keep the roster names fixed while comparing repeated team payloads.
+    monkeypatch.setattr("app.api.middleware._background_sync_sso", lambda *_: None)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

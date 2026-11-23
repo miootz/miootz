@@ -12,6 +12,7 @@ from app.models.meetup import Attendance, Meetup
 from app.models.match import MeetupMatch
 from app.models.user import User
 from app.core.json_column import loads_int_list
+from app.core.timeutil import utcnow
 from app.services.manual_teams import (
     ensure_team_names,
     format_teams_api_payload,
@@ -23,6 +24,7 @@ from app.services.meetup_revision import (
     bump_meetup_revision,
     notify_meetup_data_changed,
 )
+from app.services.meetup_signup import active_hold_times
 from app.services.team_assignment import DEFAULT_TEAM_SIZE, MIN_TEAMS, draft_skill, team_counts
 from app.services.rating_settings import get_rating_settings, selected_rating
 
@@ -185,9 +187,10 @@ async def expand_teams(
 
     # Promote waitlisted players (FIFO by joined_at — already sorted)
     promoted_ids: list[int] = []
-    to_promote = min(spots_open, len(waitlisted))
-    for i in range(to_promote):
-        att, _user = waitlisted[i]
+    holds = await active_hold_times(db, meetup.id, utcnow())
+    for att, _user in waitlisted:
+        if len(promoted_ids) + sum(at < att.joined_at for at in holds) >= spots_open:
+            break
         att.status = "confirmed"
         promoted_ids.append(att.user_id)
 
