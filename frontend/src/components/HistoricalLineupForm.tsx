@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   recordHistoricalSubstitution,
   type MatchSubstitution,
   type MatchSummary,
 } from "../api/matchesApi";
 import type { MeetupDetail } from "../api/meetupsApi";
+import { pickSubstitute, type SubstitutionPick } from "../utils/substitutionSelection";
+import { SubstitutionRoster, type SubstitutionPlayer } from "./SubstitutionRoster";
 
 export function HistoricalLineupForm({ meetupId, match, substitutions, attendees, onSaved, onCancel }: {
   meetupId: number;
@@ -16,14 +18,13 @@ export function HistoricalLineupForm({ meetupId, match, substitutions, attendees
 }) {
   const id = useId();
   const timeField = useRef<HTMLInputElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const [time, setTime] = useState("");
-  const [side, setSide] = useState<"a" | "b">("a");
-  const [off, setOff] = useState("");
-  const [on, setOn] = useState("");
+  const [selected, setSelected] = useState<SubstitutionPick<number> | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => { timeField.current?.focus(); }, []);
+  useEffect(() => { heading.current?.focus(); }, []);
 
   const parts = time.match(/^([0-9]{1,3}):([0-5][0-9])$/);
   const seconds = parts ? Number(parts[1]) * 60 + Number(parts[2]) : 0;
@@ -40,90 +41,82 @@ export function HistoricalLineupForm({ meetupId, match, substitutions, attendees
     teamA = timed[0].old_team_a_users;
     teamB = timed[0].old_team_b_users;
   }
-  const names = new Map(attendees.map((attendee) => [attendee.user_id, attendee.display_name]));
+  const players = new Map<number, SubstitutionPlayer>(
+    attendees.map((attendee) => [attendee.user_id, { ...attendee, id: attendee.user_id }]),
+  );
   for (const player of [...match.team_a.users, ...match.team_b.users]) {
-    names.set(player.id, player.display_name);
+    players.set(player.id, player);
   }
   const onPitch = new Set([...teamA, ...teamB]);
   const incoming = attendees
     .filter((attendee) => attendee.status === "confirmed" && !onPitch.has(attendee.user_id))
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const rosters = [
+    { key: "a", side: "a", name: match.team_a.name, ids: teamA },
+    { key: "b", side: "b", name: match.team_b.name, ids: teamB },
+    { key: "bench", side: null, name: "Bench", ids: incoming.map((player) => player.user_id) },
+  ] as const;
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!off && !on) {
-      setError("Select a player to take off or put on.");
-      return;
-    }
+  async function save(side: "a" | "b", off: number | null, on: number | null, swapTeams = false) {
+    if (saving || !timeField.current?.reportValidity()) return;
     setSaving(true);
     setError("");
     try {
       const result = await recordHistoricalSubstitution(meetupId, match.id, {
         team: side, elapsed_seconds: seconds || null,
-        player_off: off ? Number(off) : null, player_on: on ? Number(on) : null,
+        player_off: off, player_on: on, swap_teams: swapTeams,
       });
+      setSelected(null);
       onSaved(result.match, result.substitutions);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Couldn’t save the lineup change.");
+    } finally {
       setSaving(false);
     }
   }
 
-  const control = "block min-h-12 w-full border border-line bg-raised px-3 py-2 text-base text-ink";
+  function swap(first: SubstitutionPick<number>, second: SubstitutionPick<number>) {
+    const [onPitch, other] = first.key === "bench" ? [second, first] : [first, second];
+    void save(onPitch.key === "a" ? "a" : "b", onPitch.id, other.id, other.key !== "bench");
+  }
+  const actionClass = "min-h-12 min-w-0 break-words border border-line px-2 py-2 text-sm font-medium text-ink hover:bg-raised disabled:opacity-60";
   return (
-    <form method="post" onSubmit={submit} aria-labelledby={id} className="border-t border-line pt-3">
-      <h4 id={id} className="font-semibold text-ink">Edit match lineup</h4>
-      <fieldset disabled={saving} className="mt-3 grid min-w-0 gap-3 disabled:opacity-60 sm:grid-cols-2">
-        <legend className="sr-only">Lineup change</legend>
-        <div className="min-w-0">
-          <label htmlFor={`${id}-time`} className="mb-1 block text-sm text-ink">Elapsed match time</label>
-          <input id={`${id}-time`} name="time" type="text" ref={timeField} pattern="[0-9]{1,3}:[0-5][0-9]"
-            placeholder="mm:ss" aria-describedby={`${id}-hint`} value={time} className={`${control} tabular-nums`}
-            onChange={(event) => { setTime(event.target.value); setOff(""); setOn(""); setError(""); }} />
-          <p id={`${id}-hint`} className="mt-1 text-xs text-ink-dim">Use mm:ss, or leave blank to correct the kickoff lineup.</p>
-        </div>
-        <div className="min-w-0">
-          <label htmlFor={`${id}-team`} className="mb-1 block text-sm text-ink">Team</label>
-          <select id={`${id}-team`} name="team" value={side} className={control} onChange={(event) => {
-            setSide(event.target.value === "b" ? "b" : "a");
-            setOff("");
-            setError("");
-          }}>
-            <option value="a">{match.team_a.name}</option>
-            <option value="b">{match.team_b.name}</option>
-          </select>
-        </div>
-        <div className="min-w-0">
-          <label htmlFor={`${id}-off`} className="mb-1 block text-sm text-ink">Player off</label>
-          <select id={`${id}-off`} name="player_off" value={off} className={control}
-            onChange={(event) => { setOff(event.target.value); setError(""); }}>
-            <option value="">No outgoing player</option>
-            {(side === "a" ? teamA : teamB).map((uid) => (
-              <option key={uid} value={uid}>{names.get(uid) ?? `Player ${uid}`}</option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-0">
-          <label htmlFor={`${id}-on`} className="mb-1 block text-sm text-ink">Player on</label>
-          <select id={`${id}-on`} name="player_on" value={on} className={control}
-            onChange={(event) => { setOn(event.target.value); setError(""); }}>
-            <option value="">No incoming player</option>
-            {incoming.map((player) => (
-              <option key={player.user_id} value={player.user_id}>{player.display_name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-2 sm:col-span-2">
-          <button type="submit" className="min-h-12 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90">
-            {saving ? "Saving…" : seconds ? "Save substitution" : "Save lineup correction"}
-          </button>
-          <button type="button" onClick={onCancel}
-            className="min-h-12 border border-line px-4 py-2 text-sm text-ink-dim hover:bg-raised hover:text-ink">
-            Cancel
-          </button>
-        </div>
-      </fieldset>
-      {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
-    </form>
+    <section aria-labelledby={id} className="space-y-3 border border-live/40 bg-panel p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 ref={heading} id={id} tabIndex={-1} className="font-semibold text-ink">Edit match lineup</h4>
+        <button type="button" onClick={onCancel} disabled={saving} className={actionClass}>Done</button>
+      </div>
+      <div>
+        <label htmlFor={`${id}-time`} className="mb-1 block text-sm text-ink">Elapsed match time</label>
+        <input id={`${id}-time`} type="text" ref={timeField} pattern="[0-9]{1,3}:[0-5][0-9]"
+          placeholder="mm:ss" aria-describedby={`${id}-hint`} value={time} disabled={saving}
+          className="block min-h-12 w-full max-w-40 border border-line bg-raised px-3 py-2 text-base tabular-nums text-ink"
+          onChange={(event) => { setTime(event.target.value); setSelected(null); setError(""); }} />
+        <p id={`${id}-hint`} className="mt-1 text-xs text-ink-dim">Use mm:ss, or leave blank to correct the kickoff lineup.</p>
+      </div>
+      <p role="status" className="text-sm text-ink-dim">
+        {saving ? "Saving lineup…" : selected ? "Tap a player on another team or the bench to swap." : "Tap two players on different teams or the bench to swap them."}
+      </p>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="grid grid-cols-2 gap-3">
+        {rosters.map(({ key, name, side, ids }) => (
+          <SubstitutionRoster key={key} name={name} side={side}
+            players={ids.map((uid) => players.get(uid) ?? { id: uid, display_name: `Player ${uid}` })}
+            selectedId={selected?.id} disabled={saving}
+            onPick={(uid) => pickSubstitute(selected, { key, id: uid }, setSelected, swap)}
+            actions={(player) => side ? (
+              <button type="button" disabled={saving} className={`w-full ${actionClass}`}
+                onClick={() => void save(side, player.id, null)}>Move to bench</button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 p-2">
+                <button type="button" disabled={saving} className={actionClass}
+                  onClick={() => void save("a", null, player.id)}>Add to {match.team_a.name}</button>
+                <button type="button" disabled={saving} className={actionClass}
+                  onClick={() => void save("b", null, player.id)}>Add to {match.team_b.name}</button>
+              </div>
+            )} />
+        ))}
+      </div>
+    </section>
   );
 }

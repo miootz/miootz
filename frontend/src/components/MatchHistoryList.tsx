@@ -201,8 +201,8 @@ export function MatchHistoryList({
             onEditSubmit={handleScoreSubmit}
             onDelete={() => void handleDeleteMatch(m.id)}
             attendees={attendees}
-            onRosterSaved={(updated) => setMatches((previous) =>
-              previous.map((row) => row.id === updated.id ? updated : row),
+            onMatchSaved={(updated) => setMatches((previous) =>
+              previous.map((row) => row.id === m.id ? { ...row, ...updated } : row),
             )}
           />
         ))}
@@ -223,7 +223,7 @@ function MatchResultRow({
   onEditSubmit,
   onDelete,
   attendees,
-  onRosterSaved,
+  onMatchSaved,
 }: {
   meetupId: number;
   match: MatchSummary;
@@ -234,7 +234,7 @@ function MatchResultRow({
   onEditSubmit: (match: MatchSummary, scoreA: string, scoreB: string) => void;
   onDelete: () => void;
   attendees?: MeetupDetail["attendees"];
-  onRosterSaved: (match: MatchSummary) => void;
+  onMatchSaved: (updates: Partial<MatchSummary>) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // null = not fetched yet; lazy-load on first expand
@@ -461,7 +461,8 @@ function MatchResultRow({
         {/* Expanded: scorers, final rosters + substitution log */}
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
-            {canEdit && <HistoricalMatchGoals key={rosterRevision} meetupId={meetupId} match={match} />}
+            {canEdit && <HistoricalMatchGoals key={rosterRevision} meetupId={meetupId} match={match}
+              onScoreSaved={onMatchSaved} />}
             {!canEdit && goals && goals.length > 0 && (
               <div className="bg-raised px-3 py-1">
                 <GoalList
@@ -519,9 +520,8 @@ function MatchResultRow({
                     attendees={attendees} onCancel={closeLineupForm}
                     onSaved={(updated, substitutions) => {
                       setSubs(substitutions);
-                      onRosterSaved(updated);
+                      onMatchSaved(updated);
                       setRosterRevision((revision) => revision + 1);
-                      closeLineupForm();
                       showToast("Match lineup updated", "success");
                     }} />
                 )}

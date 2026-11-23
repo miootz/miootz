@@ -262,20 +262,27 @@ export type GoalUpdateBody = Omit<GoalCreateBody, "intent_id" | "force"> & {
   clock_minute: number;
 };
 
+export interface HistoricalGoalResult {
+  goal: GoalRow;
+  score_a: number;
+  score_b: number;
+  was_draw: boolean;
+}
+
 export async function saveHistoricalGoal(
   meetupId: number,
   matchId: number,
-  body: Omit<GoalCreateBody, "force"> & { goal_id?: number },
-): Promise<GoalRow> {
+  body: Omit<GoalCreateBody, "force"> & { goal_id?: number; add_to_score?: boolean },
+): Promise<HistoricalGoalResult> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goal-attribution`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
-  const { goal } = await r.json();
+  const { goal, score_a, score_b, was_draw } = await r.json();
   const row = normalizeGoal(goal);
   if (!row) throw new Error("Goal details could not be loaded.");
-  return row;
+  return { goal: row, score_a, score_b, was_draw };
 }
 
 /**

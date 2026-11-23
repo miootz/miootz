@@ -33,12 +33,12 @@ interface GoalEntrySheetProps {
 }
 
 /**
- * Goal entry sheet (plan §6): team → scorer (searchable) → ONE assist
- * (searchable, skippable) → conceding goalkeeper (searchable, skippable) →
+ * Goal entry sheet: team → scorer → one assist (optional) →
+ * conceding goalkeeper (optional) →
  * minute (pre-filled from the server clock, editable) → Confirm.
  *
  * - All three player fields are `PlayerSelect` dropdowns: profile pic +
- *   name per option, type-to-filter, pick-to-collapse.
+ *   name per option, pick-to-collapse.
  * - Holds the lease for the sheet's lifetime (renewed on a timer).
  * - One `intent_id` minted when the sheet opens, reused on every retry —
  *   a network-retry returns the original goal, never a second one.
@@ -470,7 +470,6 @@ export function GoalEntrySheet({
               setAssist(p);
               if (goalkeeper?.id === p.id) setGoalkeeper(null);
             }}
-            allowClear
             onClear={() => setAssist(null)}
           />
         )}
@@ -483,7 +482,6 @@ export function GoalEntrySheet({
           players={keeperOptions}
           selected={goalkeeper}
           onSelect={setGoalkeeper}
-          allowClear
           onClear={() => setGoalkeeper(null)}
         />
 

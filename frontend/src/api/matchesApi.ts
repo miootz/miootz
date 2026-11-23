@@ -131,7 +131,13 @@ export async function fetchMatchSubstitutions(
 export async function recordHistoricalSubstitution(
   meetupId: number,
   matchId: number,
-  body: { team: "a" | "b"; player_off: number | null; player_on: number | null; elapsed_seconds: number | null },
+  body: {
+    team: "a" | "b";
+    player_off: number | null;
+    player_on: number | null;
+    elapsed_seconds: number | null;
+    swap_teams?: boolean;
+  },
 ): Promise<{ match: MatchSummary; substitutions: MatchSubstitution[] }> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/substitutions`, {
     method: "POST",

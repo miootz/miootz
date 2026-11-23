@@ -8,16 +8,18 @@ import {
   type GoalPerson,
   type GoalRow,
   type HistoricalGoalLog,
+  type HistoricalGoalResult,
 } from "../api/stewardApi";
 import { useToast } from "../context/ToastContext";
 import { GoalList } from "./GoalList";
 
 type GoalSide = GoalRow["team"];
-type GoalDraft = { side: GoalSide; goal?: GoalRow; intent: string };
+type GoalDraft = { side: GoalSide; goal?: GoalRow; intent: string; addToScore?: boolean };
 
-export function HistoricalMatchGoals({ meetupId, match }: {
+export function HistoricalMatchGoals({ meetupId, match, onScoreSaved }: {
   meetupId: number;
   match: MatchSummary;
+  onScoreSaved: (score: Omit<HistoricalGoalResult, "goal">) => void;
 }) {
   const [log, setLog] = useState<HistoricalGoalLog | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -35,8 +37,8 @@ export function HistoricalMatchGoals({ meetupId, match }: {
     return () => { current = false; };
   }, [meetupId, match.id, attempt]);
 
-  function openEditor(side: GoalSide, goal?: GoalRow) {
-    setDraft({ side, goal, intent: crypto.randomUUID() });
+  function openEditor(side: GoalSide, goal?: GoalRow, addToScore = false) {
+    setDraft({ side, goal, intent: crypto.randomUUID(), addToScore });
   }
 
   function closeEditor() {
@@ -44,14 +46,15 @@ export function HistoricalMatchGoals({ meetupId, match }: {
     heading.current?.focus();
   }
 
-  function onSaved(goal: GoalRow) {
+  function onSaved({ goal, ...score }: HistoricalGoalResult) {
     setLog((previous) => previous && ({
       ...previous,
       goals: [...previous.goals.filter((row) => row.id !== goal.id), goal]
         .sort((a, b) => a.clock_minute - b.clock_minute || a.id - b.id),
     }));
+    onScoreSaved(score);
+    showToast(draft?.addToScore ? "Goal recorded" : "Goal details saved", "success");
     closeEditor();
-    showToast("Goal details saved", "success");
   }
 
   const teams = { a: match.team_a.name, b: match.team_b.name };
@@ -63,7 +66,16 @@ export function HistoricalMatchGoals({ meetupId, match }: {
 
   return (
     <section className="space-y-2">
-      <h3 ref={heading} tabIndex={-1} className="text-sm font-bold text-ink">Goals</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 ref={heading} tabIndex={-1} className="text-sm font-bold text-ink">Goals</h3>
+        {log && !draft && (
+          <button type="button" onClick={() => openEditor("a", undefined, true)}
+            className="inline-flex min-h-12 items-center gap-2 border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-raised">
+            <Plus className="h-4 w-4 shrink-0" aria-hidden />
+            New goal
+          </button>
+        )}
+      </div>
       {loadError && (
         <div className="flex items-center gap-3">
           <p role="alert" className="text-sm text-danger">Couldn’t load goal details.</p>
@@ -91,7 +103,7 @@ export function HistoricalMatchGoals({ meetupId, match }: {
           )}
           {draft && (
             <GoalAttributionForm key={draft.intent} meetupId={meetupId} matchId={match.id}
-              teamName={teams[draft.side]} rosters={log.rosters} draft={draft}
+              teams={teams} rosters={log.rosters} draft={draft}
               onCancel={closeEditor} onSaved={onSaved} />
           )}
         </>
@@ -100,18 +112,20 @@ export function HistoricalMatchGoals({ meetupId, match }: {
   );
 }
 
-function GoalAttributionForm({ meetupId, matchId, teamName, rosters, draft, onCancel, onSaved }: {
+function GoalAttributionForm({ meetupId, matchId, teams, rosters, draft, onCancel, onSaved }: {
   meetupId: number;
   matchId: number;
-  teamName: string;
+  teams: Record<GoalSide, string>;
   rosters: HistoricalGoalLog["rosters"];
   draft: GoalDraft;
   onCancel: () => void;
-  onSaved: (goal: GoalRow) => void;
+  onSaved: (result: HistoricalGoalResult) => void;
 }) {
-  const { side, goal, intent } = draft;
+  const { goal, intent, addToScore } = draft;
   const headingId = useId();
   const scorerSelect = useRef<HTMLSelectElement>(null);
+  const scoringTeamSelect = useRef<HTMLSelectElement>(null);
+  const [side, setSide] = useState(draft.side);
   const [ownGoal, setOwnGoal] = useState(goal?.is_own_goal ?? false);
   const [scorer, setScorer] = useState(goal ? String(goal.scorer.id) : "");
   const [assist, setAssist] = useState(goal?.assist ? String(goal.assist.id) : "");
@@ -121,7 +135,9 @@ function GoalAttributionForm({ meetupId, matchId, teamName, rosters, draft, onCa
   const scoring = rosters[side];
   const conceding = rosters[side === "a" ? "b" : "a"];
 
-  useEffect(() => { scorerSelect.current?.focus(); }, []);
+  useEffect(() => {
+    (addToScore ? scoringTeamSelect : scorerSelect).current?.focus();
+  }, [addToScore]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -130,6 +146,7 @@ function GoalAttributionForm({ meetupId, matchId, teamName, rosters, draft, onCa
     try {
       const saved = await saveHistoricalGoal(meetupId, matchId, {
         goal_id: goal?.id, intent_id: intent, team: side, is_own_goal: ownGoal,
+        add_to_score: addToScore,
         scorer_id: Number(scorer), assist_id: assist ? Number(assist) : null,
         goalkeeper_id: keeper ? Number(keeper) : null,
       });
@@ -148,9 +165,28 @@ function GoalAttributionForm({ meetupId, matchId, teamName, rosters, draft, onCa
 
   return (
     <form method="post" aria-labelledby={headingId} onSubmit={submit} className="border-t border-line pt-3">
-      <h4 id={headingId} className="font-semibold text-ink">{goal ? "Edit goal" : "Add scorer"} · {teamName}</h4>
+      <h4 id={headingId} className="font-semibold text-ink">
+        {addToScore ? "Record a new goal" : `${goal ? "Edit goal" : "Add scorer"} · ${teams[side]}`}
+      </h4>
       <fieldset disabled={saving} className="mt-2 grid min-w-0 gap-3 disabled:opacity-60 sm:grid-cols-3">
         <legend className="sr-only">Goal details</legend>
+        {addToScore && (
+          <div className="min-w-0 sm:col-span-3">
+            <label htmlFor={`${headingId}-team`} className="mb-1 block text-sm text-ink">Scoring team</label>
+            <select id={`${headingId}-team`} ref={scoringTeamSelect} name="team" value={side} className={selectClass}
+              onChange={(event) => {
+                setSide(event.target.value === "b" ? "b" : "a");
+                setScorer("");
+                setAssist("");
+                setKeeper("");
+                setError("");
+              }}>
+              <option value="a">{teams.a}</option>
+              <option value="b">{teams.b}</option>
+            </select>
+            <p className="mt-1 text-sm text-ink-dim">Adds one goal to the recorded score.</p>
+          </div>
+        )}
         <div className="flex min-h-12 items-center gap-2 sm:col-span-3">
           <input id={`${headingId}-own`} name="is_own_goal" type="checkbox" checked={ownGoal} onChange={(event) => {
             setOwnGoal(event.target.checked);
@@ -184,7 +220,7 @@ function GoalAttributionForm({ meetupId, matchId, teamName, rosters, draft, onCa
         </div>
         <div className="flex flex-wrap gap-2 sm:col-span-3">
           <button type="submit" className="min-h-12 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90">
-            {saving ? "Saving…" : "Save goal details"}
+            {saving ? "Saving…" : addToScore ? "Record goal" : "Save goal details"}
           </button>
           <button type="button" onClick={onCancel}
             className="min-h-12 border border-line px-4 py-2 text-sm text-ink-dim hover:bg-raised hover:text-ink">

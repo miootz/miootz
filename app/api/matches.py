@@ -67,6 +67,7 @@ class HistoricalLineupChange(BaseModel):
     player_off: int | None = None
     player_on: int | None = None
     elapsed_seconds: int | None = Field(default=None, gt=0)
+    swap_teams: bool = False
 
 
 class MatchEndBody(BaseModel):
@@ -148,6 +149,7 @@ class HistoricalGoalAttribution(BaseModel):
     assist_id: int | None = None
     goalkeeper_id: int | None = None
     is_own_goal: bool = False
+    add_to_score: bool = False
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -1114,7 +1116,10 @@ async def record_historical_substitution(
         raise HTTPException(status_code=400, detail="Select a player to take off or put on.")
     if body.player_off is not None and body.player_off not in old[side]:
         raise HTTPException(status_code=409, detail="That player was not on this team at the selected time.")
-    if body.player_on is not None:
+    if body.swap_teams:
+        if body.player_off is None or body.player_on not in old[1 - side]:
+            raise HTTPException(status_code=409, detail="Select one player from each team at this match time.")
+    elif body.player_on is not None:
         if body.player_on in old[0] or body.player_on in old[1]:
             raise HTTPException(status_code=409, detail="That player was already on the pitch at the selected time.")
         attendance = await db.scalar(select(Attendance.id).where(
@@ -1130,6 +1135,9 @@ async def record_historical_substitution(
         current[side].remove(body.player_off)
     if body.player_on is not None:
         current[side].append(body.player_on)
+    if body.swap_teams:
+        current[1 - side].remove(body.player_on)
+        current[1 - side].append(body.player_off)
     db.add(MatchSubstitution(
         meetup_id=meetup_id, match_id=match_id, recorded_by=user.id, clock_secs=elapsed,
         old_team_a_users=json.dumps(old[0]), old_team_b_users=json.dumps(old[1]),
@@ -2612,7 +2620,7 @@ async def save_historical_goal(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_admin),
 ):
-    """Credit a goal in a completed match without changing its result."""
+    """Attribute an existing goal or add a missed goal to a completed match."""
     await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
@@ -2623,6 +2631,8 @@ async def save_historical_goal(
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     goal = None
     if body.goal_id is not None:
+        if body.add_to_score:
+            raise HTTPException(status_code=400, detail="An existing goal already counts toward the score.")
         goal = await db.get(MatchGoal, body.goal_id)
         if goal is None or goal.match_id != match_id or goal.deleted_at:
             raise HTTPException(status_code=404, detail="Goal not found")
@@ -2633,7 +2643,10 @@ async def save_historical_goal(
         if replayed:
             if replayed.match_id != match_id or replayed.team != body.team or replayed.deleted_at:
                 raise HTTPException(status_code=409, detail="This goal entry is no longer available")
-            return {"goal": _goal_json(replayed, users_by_id)}
+            return {
+                "goal": _goal_json(replayed, users_by_id),
+                "score_a": match.score_a, "score_b": match.score_b, "was_draw": match.was_draw,
+            }
 
     lease = await db.get(MatchEditorLease, match.id)
     if lease and lease.holder_id is not None and lease.expires_at > utcnow():
@@ -2661,7 +2674,26 @@ async def save_historical_goal(
     if goal is None:
         count_a, count_b = await _goal_counts(db, match)
         count, score = (count_a, match.score_a) if body.team == "a" else (count_b, match.score_b)
-        if count >= score:
+        if body.add_to_score:
+            has_shootout = (
+                match.penalty_winner is not None
+                or match.penalty_score_a is not None
+                or match.penalty_score_b is not None
+                or await db.scalar(select(MatchPenalty.id).where(MatchPenalty.match_id == match.id).limit(1)) is not None
+            )
+            if has_shootout:
+                raise HTTPException(
+                    status_code=409, detail="This match has a recorded shootout. You can still assign scorers to its existing goals."
+                )
+            match.score_a += int(body.team == "a")
+            match.score_b += int(body.team == "b")
+            match.was_draw = False
+            if match.score_a == match.score_b:
+                meetup = await db.scalar(
+                    select(Meetup).options(selectinload(Meetup.game_template)).where(Meetup.id == meetup_id)
+                )
+                match.was_draw = bool(meetup and meetup.game_template and meetup.game_template.allows_draws)
+        elif count >= score:
             raise HTTPException(status_code=409, detail="Every goal for this team already has a scorer")
         goal = MatchGoal(
             match_id=match_id,
@@ -2672,7 +2704,7 @@ async def save_historical_goal(
             clock_secs=0,
         )
         db.add(goal)
-        # Convert a score-only goal to a logged goal, including legacy manual scores.
+        # Keep any other unattributed goals in the score, including legacy manual scores.
         match.score_offset_a = match.score_a - count_a - int(body.team == "a")
         match.score_offset_b = match.score_b - count_b - int(body.team == "b")
 
@@ -2686,13 +2718,17 @@ async def save_historical_goal(
     log_action(
         request,
         "match",
-        "match.goal_attributed",
-        f"Updated goal details in match #{match.match_number}",
+        "match.goal_added" if body.add_to_score else "match.goal_attributed",
+        f"Added a goal to match #{match.match_number}" if body.add_to_score
+        else f"Updated goal details in match #{match.match_number}",
         meetup_id=meetup_id,
     )
     if revision is not None:
         await notify_meetup_data_changed(meetup_id, revision)
-    return {"goal": _goal_json(goal, users_by_id)}
+    return {
+        "goal": _goal_json(goal, users_by_id),
+        "score_a": match.score_a, "score_b": match.score_b, "was_draw": match.was_draw,
+    }
 
 
 @router.patch("/{meetup_id}/matches/{match_id}/goals/{goal_id}")
