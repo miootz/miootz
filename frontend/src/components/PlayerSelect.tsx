@@ -1,9 +1,9 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -49,25 +49,20 @@ export function PlayerSelect({
 }: PlayerSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // Focus the search box whenever the list opens (so typing just works).
-  useEffect(() => {
-    if (open) {
-      // The input inside the trigger is the same element; only re-focus if needed.
-      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
-    }
-  }, [open]);
+  const listId = useId();
 
   // Click-outside closes the list.
   useEffect(() => {
     if (!open) return;
-    const onDocDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    const onOutsideClick = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
     };
-    document.addEventListener("mousedown", onDocDown);
-    return () => document.removeEventListener("mousedown", onDocDown);
+    document.addEventListener("click", onOutsideClick);
+    return () => document.removeEventListener("click", onOutsideClick);
   }, [open]);
 
   const filtered = useMemo(() => {
@@ -89,7 +84,12 @@ export function PlayerSelect({
   }, [open, selected, filtered]);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} onBlur={(event) => {
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }}>
       <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
         {label}
       </p>
@@ -100,27 +100,28 @@ export function PlayerSelect({
         <button
           type="button"
           tabIndex={-1}
+          disabled={disabled}
           onClick={() => {
-            setOpen((v) => {
-              if (v) setQuery("");
-              return !v;
-            });
+            setOpen(!open);
+            setQuery("");
           }}
           className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink-faint hover:text-ink"
           aria-label={open ? "Close list" : "Open list"}
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
         >
           <ChevronDown
             className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
           />
         </button>
         <input
-          ref={inputRef}
           value={open ? query : selected?.name ?? ""}
           onChange={(e) => {
             if (!open) setOpen(true);
             setQuery(e.target.value);
           }}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
           disabled={disabled}
           placeholder={placeholder}
           className="w-full pl-9 pr-9 py-2.5 border border-line bg-raised text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
@@ -128,33 +129,25 @@ export function PlayerSelect({
         />
       </div>
 
-      {/* Dropdown list (only while open) */}
+      {/* The sheet scrolls through the options as part of the form. */}
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto border border-line bg-panel shadow-lg">
+        <div id={listId} className="mt-1 border border-line bg-panel">
           {shown.length === 0 ? (
             <p className="p-3 text-xs text-ink-faint">No players found.</p>
           ) : (
-            <ul>
+            <ul className="divide-y divide-line">
               {shown.map((p) => {
                 const isSel = selected?.id === p.id;
-                // onMouseDown beats the document click-outside handler on
-                // desktop; onClick is the touch path — phones fire click (the
-                // tap-tick checkbox overlay eats the synthetic mousedown), so
-                // both. The first to fire closes the list, so the other
-                // cannot double-fire.
-                const pick = (e: ReactMouseEvent) => {
-                  e.preventDefault();
-                  onSelect(p);
-                  setOpen(false);
-                  setQuery("");
-                };
                 return (
                   <li key={p.id}>
                     <button
                       type="button"
-                      onMouseDown={pick}
-                      onClick={pick}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                      onClick={() => {
+                        onSelect(p);
+                        setOpen(false);
+                        setQuery("");
+                      }}
+                      className={`w-full flex min-h-12 items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                         isSel
                           ? "bg-live/15 text-live font-semibold"
                           : "hover:bg-raised text-ink"
@@ -180,18 +173,12 @@ export function PlayerSelect({
             <div className="border-t border-line p-2">
               <button
                 type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onClear?.();
-                  setOpen(false);
-                  setQuery("");
-                }}
                 onClick={() => {
                   onClear?.();
                   setOpen(false);
                   setQuery("");
                 }}
-                className="w-full text-center text-xs text-ink-faint py-1 hover:text-ink"
+                className="min-h-12 w-full text-center text-sm text-ink-dim hover:text-ink"
               >
                 Clear selection
               </button>

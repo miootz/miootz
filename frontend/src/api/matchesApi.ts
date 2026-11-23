@@ -128,6 +128,19 @@ export async function fetchMatchSubstitutions(
   return r.json();
 }
 
+export async function recordHistoricalSubstitution(
+  meetupId: number,
+  matchId: number,
+  body: { team: "a" | "b"; player_off: number | null; player_on: number | null; elapsed_seconds: number | null },
+): Promise<{ match: MatchSummary; substitutions: MatchSubstitution[] }> {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/substitutions`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
 export async function startTimer(
   meetupId: number,
   matchId: number,
