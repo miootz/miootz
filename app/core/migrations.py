@@ -586,84 +586,12 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             """
         )
     )
-    import random as _random
+    from app.services.team_names import generate_team_names as _generate
 
-    _pool = [
-        "Red Devils",
-        "Blue Stars",
-        "Golden Boot",
-        "Iron Leg",
-        "Thunder FC",
-        "Lightning United",
-        "Phoenix Rising",
-        "Eagles Soar",
-        "Crimson Tide",
-        "Silver Arrows",
-        "Wildcats",
-        "Panthers",
-        "Raptors",
-        "Hawks",
-        "Vipers",
-        "Cobras",
-        "Tigers",
-        "Lions",
-        "Sharks",
-        "Wolves",
-        "Galacticos",
-        "Night Owls",
-        "Fire Storm",
-        "Ice Breakers",
-        "Diamondbacks",
-        "Steel City",
-        "Rough Riders",
-        "Storm Chasers",
-        "Blaze",
-        "Vendetta",
-        "Renegades",
-        "Warriors",
-        "Gladiators",
-        "Spartans",
-        "Crusaders",
-        "Titans",
-        "Vikings",
-        "Samurai",
-        "Ninjas",
-        "Phantoms",
-        "Spectres",
-        "Rebels",
-        "Outlaws",
-        "Bandits",
-        "Corsairs",
-        "Marauders",
-        "Conquerors",
-        "Legion",
-        "Dynasty",
-    ]
-    _used_names: set[str] = set()
-    # Collect already-used names to avoid repeats
-    _existing = await conn.execute(
-        text(
-            "SELECT team_names_json FROM meetups WHERE team_names_json IS NOT NULL"
-        )
-    )
-    for _erow in _existing.fetchall():
-        try:
-            for _en in _json.loads(_erow[0]):
-                _used_names.add(_en)
-        except Exception:
-            pass
     for _nrow in _needs_names.fetchall():
         _nsid, _nmp = _nrow
         _nteam_count = 3 if _nmp >= 13 else 2
-        _available = [n for n in _pool if n not in _used_names]
-        if len(_available) >= _nteam_count:
-            _picked = _random.sample(_available, _nteam_count)
-        else:
-            _picked = list(_available)
-            while len(_picked) < _nteam_count:
-                _picked.append(f"Team {len(_picked) + 1}")
-        for _p in _picked:
-            _used_names.add(_p)
+        _picked = _generate(_nteam_count)
         await conn.execute(
             text("UPDATE meetups SET team_names_json = :val WHERE id = :sid"),
             {"val": _json.dumps(_picked), "sid": _nsid},

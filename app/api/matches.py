@@ -37,6 +37,7 @@ from app.services.manual_teams import (
     get_team_names,
     resolve_meetup_teams_nested,
 )
+from app.services.team_names import team_name as _team_name
 from app.services.meetup_revision import (
     bump_and_notify,
     bump_meetup_revision,
@@ -394,7 +395,7 @@ async def start_matches(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin_or_present_member),
 ):
-    """Start the match meetup. Creates the first match (Team 1 vs Team 2 by default,
+    """Start the match meetup. Creates the first match (Team A vs Team B by default,
     or the given team indices when provided)."""
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
@@ -489,11 +490,11 @@ async def start_matches(
         match_number=1,
         team_a_users=json.dumps([p["user_id"] for p in team_a]),
         team_b_users=json.dumps([p["user_id"] for p in team_b]),
-        team_a_name=team_names[team_a_idx] if team_names else "Team 1",
+        team_a_name=team_names[team_a_idx] if team_names else _team_name(1),
         team_b_name=(
             team_names[team_b_idx]
             if team_names and len(team_names) > team_b_idx
-            else "Team 2"
+            else _team_name(2)
         ),
         score_a=0,
         score_b=0,
@@ -554,7 +555,7 @@ async def _rotation_teams(
             set(_loads_int_list(match.team_b_users)) - borrowed,
         )
         for idx, team in enumerate(teams):
-            name = names[idx] if names and idx < len(names) else f"Team {idx + 1}"
+            name = names[idx] if names and idx < len(names) else _team_name(idx + 1)
             if {p["user_id"] for p in team} in played or (
                 borrowed and name in (match.team_a_name, match.team_b_name)
             ):
@@ -651,12 +652,12 @@ async def create_new_pending_match(
         team_a_name = (
             team_names[body.team_a_idx]
             if team_names and body.team_a_idx < len(team_names)
-            else f"Team {body.team_a_idx + 1}"
+            else _team_name(body.team_a_idx + 1)
         )
         team_b_name = (
             team_names[body.team_b_idx]
             if team_names and body.team_b_idx < len(team_names)
-            else f"Team {body.team_b_idx + 1}"
+            else _team_name(body.team_b_idx + 1)
         )
         team_a_users_list = [p["user_id"] for p in team_a]
         team_b_users_list = [p["user_id"] for p in team_b]
@@ -720,7 +721,7 @@ async def create_new_pending_match(
         team_b_name = (
             team_names[next_team_idx]
             if team_names and next_team_idx < len(team_names)
-            else f"Team {next_team_idx + 1}"
+            else _team_name(next_team_idx + 1)
         )
         team_b_users_list = [p["user_id"] for p in team_b]
 
@@ -1989,7 +1990,7 @@ async def end_match(
         next_team_name = (
             team_names[next_team_idx]
             if team_names and next_team_idx < len(team_names)
-            else f"Team {next_team_idx + 1}"
+            else _team_name(next_team_idx + 1)
         )
         next_match = MeetupMatch(
             meetup_id=meetup_id,

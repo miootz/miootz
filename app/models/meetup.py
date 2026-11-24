@@ -67,7 +67,7 @@ class Meetup(Base):
     )
     #: Match duration in minutes for live team-vs-team matches (copied from template).
     match_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: JSON array of team names generated at meetup creation (e.g. ["Red Devils", "Blue Stars"]).
+    #: JSON array of team names generated at meetup creation (e.g. ["Team A", "Team B"]).
     team_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Upper bound on number of teams. When None, team count is purely algorithmic (≤10→2, 11–15→3).
     #: When set, the admin can expand/contract teams and waitlisted players are auto-promoted/returned.

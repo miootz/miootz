@@ -20,6 +20,7 @@ from app.services.manual_teams import (
     parse_manual_teams_json,
     resolve_meetup_teams_nested,
 )
+from app.services.team_names import team_name as _team_name
 from app.services.meetup_revision import (
     bump_meetup_revision,
     notify_meetup_data_changed,
@@ -102,8 +103,8 @@ async def fill_empty_pending_matches(db: AsyncSession, meetup: Meetup) -> None:
     for match in empty:
         match.team_a_users = json.dumps([p["user_id"] for p in a])
         match.team_b_users = json.dumps([p["user_id"] for p in b])
-        match.team_a_name = names[a_idx] if a_idx < len(names) else f"Team {a_idx + 1}"
-        match.team_b_name = names[b_idx] if b_idx < len(names) else f"Team {b_idx + 1}"
+        match.team_a_name = names[a_idx] if a_idx < len(names) else _team_name(a_idx + 1)
+        match.team_b_name = names[b_idx] if b_idx < len(names) else _team_name(b_idx + 1)
 
 
 async def refresh_after_confirmed_roster_change(db: AsyncSession, meetup: Meetup) -> None:
@@ -139,7 +140,7 @@ async def redraft_before_first_match(db: AsyncSession, meetup: Meetup) -> bool:
     names = get_team_names(meetup) or []
     slots = lineup + [[] for _ in range(max(len(names), len(saved or [])) - len(lineup))]
     by_name = {
-        names[index] if index < len(names) else f"Team {index + 1}": team
+        names[index] if index < len(names) else _team_name(index + 1): team
         for index, team in enumerate(slots)
     }
     by_previous_roster = {

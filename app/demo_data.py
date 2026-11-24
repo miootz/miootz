@@ -64,7 +64,7 @@ PLAYERS = (
     DemoPlayer('Marco van Basten', 'ATT', 91, 84, 92, 74, 87, 37),
 )
 NAMES = tuple(player.name for player in PLAYERS)
-TEAM_NAMES = ['Violet FC', 'Mint United', 'Amber Athletic', 'Blue Rovers']
+TEAM_NAMES = ['Team A', 'Team B', 'Team C', 'Team D']
 
 
 def _stars(value: int) -> float:

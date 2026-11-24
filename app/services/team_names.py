@@ -1,68 +1,18 @@
-"""Random team name generation for meetups."""
+"""Sequential team names for meetups."""
 
 from __future__ import annotations
 
-import random
-from typing import Final
 
-#: Pool of fun football-themed team names.
-_TEAM_NAME_POOL: Final[list[str]] = [
-    "Red Devils",
-    "Blue Stars",
-    "Golden Boot",
-    "Iron Leg",
-    "Thunder FC",
-    "Lightning United",
-    "Phoenix Rising",
-    "Eagles Soar",
-    "Crimson Tide",
-    "Silver Arrows",
-    "Wildcats",
-    "Panthers",
-    "Raptors",
-    "Hawks",
-    "Vipers",
-    "Cobras",
-    "Tigers",
-    "Lions",
-    "Sharks",
-    "Wolves",
-    "Galacticos",
-    "Night Owls",
-    "Fire Storm",
-    "Ice Breakers",
-    "Diamondbacks",
-    "Steel City",
-    "Rough Riders",
-    "Storm Chasers",
-    "Blaze",
-    "Vendetta",
-    "Renegades",
-    "Warriors",
-    "Gladiators",
-    "Spartans",
-    "Crusaders",
-    "Titans",
-    "Vikings",
-    "Samurai",
-    "Ninjas",
-    "Phantoms",
-    "Spectres",
-    "Rebels",
-    "Outlaws",
-    "Bandits",
-    "Corsairs",
-    "Marauders",
-    "Conquerors",
-    "Legion",
-    "Dynasty",
-]
+def team_name(index: int) -> str:
+    """1-based sequential name: Team A, Team B, ..., Team Z, Team AA, ..."""
+    n = index
+    label = ""
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        label = chr(ord("A") + remainder) + label
+    return f"Team {label}"
 
 
 def generate_team_names(count: int = 2) -> list[str]:
-    """Pick *count* unique random team names from the pool.
-
-    Falls back to sequential indexing if the pool is exhausted.
-    """
-    count = max(1, min(count, len(_TEAM_NAME_POOL)))
-    return random.sample(_TEAM_NAME_POOL, count)
+    """Return *count* sequential team names: Team A, Team B, ..."""
+    return [team_name(i) for i in range(1, max(1, count) + 1)]
