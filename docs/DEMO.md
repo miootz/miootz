@@ -2,7 +2,7 @@
 
 ## Hosted demo
 
-Open the demo home page, choose a scenario, then choose a sample account.
+Open the demo home page, choose a room, then choose a sample account.
 Both rooms run at the same time and keep separate game data.
 
 | Room | Starting point | Try this together |
@@ -51,15 +51,13 @@ Stop with Ctrl+C. Selecting an account resets the selected scenario to its initi
 
 ## In a container
 
-The same entrypoint can be served from a container behind the dev stack's Traefik + mkcert TLS (no Pocket ID; the API stays same-origin under `/api` via Vite's proxy):
+The same two rooms run in a self-contained stack behind the dev stack's Traefik + mkcert TLS (no Pocket ID):
 
 ```sh
 docker compose --env-file .env.dev -f docker-compose.demo.yml up -d --build
-# pick a scenario:
-DEMO_SCENARIO=live docker compose --env-file .env.dev -f docker-compose.demo.yml up -d
 ```
 
-App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — account menu at `/api/demo`. `DEMO_BIND_HOST`, `DEMO_TRUSTED_HOSTS` and `DEMO_PUBLIC_APP_URL` let the entrypoint bind beyond loopback and trust the proxy `Host` header (defaults keep the loopback behavior). It is mutually exclusive with the dev stack: both own `:8443`. `docker compose down` (same flags) stops it; restarting the container resets the scenario.
+App: [https://app.miootz.local:8443](https://app.miootz.local:8443) — room picker at `/api/demo`. Each room has its own account chooser (`/squad/api/demo`, `/matchday/api/demo`); the rooms share the app host and the frontend. `DEMO_TRUSTED_HOSTS` lets the API trust the proxy `Host` header (defaults keep the loopback behavior). It is mutually exclusive with the dev stack: both own `:8443`. `docker compose down` (same flags) stops the stack; restarting a room's API resets that room.
 
 ## Local scenarios
 
