@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { fetchMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
 import type { MatchSummary } from "../api/matchesApi";
@@ -11,6 +11,7 @@ import {
 import { useToast } from "../context/ToastContext";
 import { GoalsSection } from "./GoalsSection";
 import { HistoricalLineupForm } from "./HistoricalLineupForm";
+import { MobileSheet } from "./MobileSheet";
 
 interface MatchDialogProps {
   meetupId: number;
@@ -111,97 +112,76 @@ export function MatchDialog({
       : "Add match result";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={mode === "add" && !createdMatch ? "Add match result" : "Edit match"}
+    <MobileSheet
+      onClose={onClose}
+      title={title}
+      maxWidth="max-w-lg"
+      footer={
+        activeMatch ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmDelete) onDelete(activeMatch.id);
+                else setConfirmDelete(true);
+              }}
+              className="flex min-h-12 items-center gap-1.5 border border-danger/40 px-3 py-3 text-sm font-semibold text-danger hover:bg-danger/10 active:scale-[0.98]"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+              {confirmDelete ? "Confirm delete" : "Delete"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-12 flex-1 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98]"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-12 flex-1 border border-line px-4 py-3 text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={creating || !teams || teams.length < 2 || !teamA || !teamB || !!teamsError}
+              onClick={() => void handleCreate()}
+              className="flex min-h-12 flex-1 items-center justify-center gap-1.5 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+            >
+              {creating ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden />
+              )}
+              Create match
+            </button>
+          </div>
+        )
+      }
     >
-      <div className="flex max-h-[94dvh] w-full flex-col border border-line bg-panel shadow-xl sm:max-h-[88vh] sm:max-w-lg">
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="text-base font-bold text-ink">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-11 w-11 shrink-0 place-items-center text-ink-dim hover:bg-raised hover:text-ink"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-          {activeMatch ? (
-            <EditMatchBody
-              meetupId={meetupId}
-              attendees={attendees ?? []}
-              match={activeMatch}
-              onSaved={handleSaved}
-            />
-          ) : (
-            <AddMatchBody
-              teams={teams}
-              teamsError={teamsError}
-              teamA={teamA}
-              teamB={teamB}
-              onTeamA={setTeamA}
-              onTeamB={setTeamB}
-            />
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
-          {activeMatch ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirmDelete) onDelete(activeMatch.id);
-                  else setConfirmDelete(true);
-                }}
-                className="flex items-center gap-1.5 border border-danger/40 px-3 py-3 text-sm font-semibold text-danger hover:bg-danger/10 active:scale-[0.98]"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-                {confirmDelete ? "Confirm delete" : "Delete"}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-3 bg-ink text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98]"
-              >
-                Done
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-3 border border-line text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={creating || !teams || teams.length < 2 || !teamA || !teamB || !!teamsError}
-                onClick={() => void handleCreate()}
-                className="flex flex-1 items-center justify-center gap-1.5 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
-              >
-                {creating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Plus className="h-4 w-4" aria-hidden />
-                )}
-                Create match
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+      {activeMatch ? (
+        <EditMatchBody
+          meetupId={meetupId}
+          attendees={attendees ?? []}
+          match={activeMatch}
+          onSaved={handleSaved}
+        />
+      ) : (
+        <AddMatchBody
+          teams={teams}
+          teamsError={teamsError}
+          teamA={teamA}
+          teamB={teamB}
+          onTeamA={setTeamA}
+          onTeamB={setTeamB}
+        />
+      )}
+    </MobileSheet>
   );
 }
 

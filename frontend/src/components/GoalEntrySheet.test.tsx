@@ -26,6 +26,8 @@ const match: MatchSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   vi.mocked(acquireLease).mockResolvedValue({ ok: true, lease: { lease_token: "test", expires_in: 45 } });
   vi.mocked(createGoal).mockResolvedValue({ goal: null });
 });
@@ -39,9 +41,12 @@ it("shows both rosters first and saves the confirmed minute with the scorer's te
   fireEvent.click(screen.getByRole("button", { name: "Skip assist" }));
   fireEvent.click(within(screen.getByRole("list", { name: "Violet FC" })).getByRole("button", { name: "Andrea Pirlo" }));
   expect(screen.getByText("Goal for Mint United")).toBeInTheDocument();
-  const minute = screen.getByRole("spinbutton", { name: "Goal minute" });
-  expect(minute).toHaveValue(4);
-  fireEvent.change(minute, { target: { value: "7" } });
+  expect(screen.getByText("4′")).toBeInTheDocument();
+  const increase = screen.getByRole("button", { name: "Increase minute" });
+  fireEvent.click(increase);
+  fireEvent.click(increase);
+  fireEvent.click(increase);
+  expect(screen.getByText("7′")).toBeInTheDocument();
   const confirm = screen.getByRole("button", { name: "Confirm goal" });
   await waitFor(() => expect(confirm).toBeEnabled());
   fireEvent.click(confirm);

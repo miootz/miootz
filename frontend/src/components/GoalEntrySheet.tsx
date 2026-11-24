@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import {
   acquireLease,
@@ -16,6 +15,7 @@ import {
   leaseFromExpiresIn,
   type LeaseInfo,
 } from "../utils/lease";
+import { MobileSheet } from "./MobileSheet";
 import {
   GoalEntryFlow,
   type GoalSubmitInput,
@@ -134,53 +134,33 @@ export function GoalEntrySheet({
     [editGoal, holding, isEdit, match.id, meetupId, onLogged, tryAcquire],
   );
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-3"
-      role="dialog"
-      aria-modal="true"
-      aria-label={isEdit ? "Edit goal" : "Log a goal"}
-    >
-      <div className="w-full max-w-md bg-panel border border-line shadow-xl flex flex-col max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh]">
-        {/* Header + lease status — pinned; only the content below scrolls */}
-        <div className="flex items-center justify-between shrink-0 p-4 pb-2">
-          <h3 className="shrink-0 text-lg font-bold text-ink">
-            {isEdit ? "Edit goal" : "Log a goal"}
-          </h3>
-          <div className="flex min-w-0 items-center justify-end gap-2">
-            {holding ? (
-              <span className="text-xs font-semibold text-team-a tabular-nums">
-                Your turn
-              </span>
-            ) : lease ? (
-              <span className="text-right text-xs font-semibold text-live tabular-nums">
-                {leaseBusyLabel(lease.holderName, leaseCountdown(lease))}
-              </span>
-            ) : (
-              <span className="text-xs text-ink-faint">No lease</span>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-ink-dim hover:bg-raised focus:outline-hidden focus:ring-2 focus:ring-live"
-              aria-label="Close goal entry"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+  const leaseChip = holding ? (
+    <span className="text-xs font-semibold text-team-a tabular-nums">
+      Your turn
+    </span>
+  ) : lease ? (
+    <span className="max-w-40 truncate text-right text-xs font-semibold text-live tabular-nums">
+      {leaseBusyLabel(lease.holderName, leaseCountdown(lease))}
+    </span>
+  ) : (
+    <span className="text-xs text-ink-faint">No lease</span>
+  );
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain px-4 pb-4">
-          <GoalEntryFlow
-            match={match}
-            editGoal={editGoal}
-            canSubmit={!acquiring && (holding || lease === null)}
-            onSubmit={submitGoal}
-            onClose={onClose}
-            onDeleteGoal={onDeleteGoal}
-          />
-        </div>
-      </div>
-    </div>
+  return (
+    <MobileSheet
+      onClose={onClose}
+      title={isEdit ? "Edit goal" : "Log a goal"}
+      headerExtra={leaseChip}
+      bodyClassName="overflow-hidden px-0 py-0"
+    >
+      <GoalEntryFlow
+        match={match}
+        editGoal={editGoal}
+        canSubmit={!acquiring && (holding || lease === null)}
+        onSubmit={submitGoal}
+        onClose={onClose}
+        onDeleteGoal={onDeleteGoal}
+      />
+    </MobileSheet>
   );
 }

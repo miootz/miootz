@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Minus, Plus, Trash2 } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import type { MatchSummary } from "../api/matchesApi";
 import type { GoalPerson, GoalRow } from "../api/stewardApi";
@@ -61,7 +61,10 @@ export interface GoalSubmitInput {
  * The goal-entry picker — scorer → assist → goalkeeper → review, shared by
  * the referee live sheet and the admin history dialog. The caller owns the
  * save path (live lease or historical attribution) and the modal/inline
- * presentation; this owns the step flow and validation.
+ * presentation; this owns the step flow, validation, and a sticky footer
+ * with the confirm/delete actions at the review step.
+ *
+ * No keyboard-opening inputs: the minute is a tap-driven stepper.
  */
 export function GoalEntryFlow({
   match,
@@ -93,12 +96,12 @@ export function GoalEntryFlow({
   } : null);
   const [assist, setAssist] = useState(editGoal?.assist ? toPlayer(editGoal.assist) : null);
   const [goalkeeper, setGoalkeeper] = useState(editGoal?.goalkeeper ? toPlayer(editGoal.goalkeeper) : null);
-  const [minute, setMinute] = useState<number | "">(() => editGoal?.clock_minute || liveMinute(match));
+  const [minute, setMinute] = useState<number>(() => editGoal?.clock_minute || liveMinute(match));
   const [submitting, setSubmitting] = useState(false);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const stepHeading = useRef<HTMLHeadingElement>(null);
-  const minuteId = useId();
+  const minuteLabelId = useId();
 
   useEffect(() => { stepHeading.current?.focus(); }, [step]);
 
@@ -108,6 +111,7 @@ export function GoalEntryFlow({
   const steps: GoalStep[] = isOwnGoal ? ["scorer", "keeper", "review"] : ["scorer", "assist", "keeper", "review"];
   const stepIndex = steps.indexOf(step);
   const previous = steps[stepIndex - 1];
+  const maxMinute = Math.min(600, Math.ceil(match.timer_total_seconds / 60) + 10);
 
   function goTo(next: GoalStep) {
     setConfirmDuplicate(false);
@@ -122,11 +126,11 @@ export function GoalEntryFlow({
     goTo(isOwnGoal ? "keeper" : "assist");
   }
 
-  const afterWhistle = showMinute && minute !== "" && isAfterWhistle(minute, match.timer_total_seconds);
+  const afterWhistle = showMinute && isAfterWhistle(minute, match.timer_total_seconds);
 
   const postGoal = useCallback(
     async (force: boolean) => {
-      if (!scorer || minute === "" || submitting) return;
+      if (!scorer || submitting) return;
       setSubmitting(true);
       setConfirmDuplicate(false);
       try {
@@ -193,133 +197,147 @@ export function GoalEntryFlow({
     </button>
   );
 
+  const submitButton = (
+    <button type="button" onClick={() => void postGoal(confirmDuplicate)} disabled={!canSubmitNow}
+      className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50">
+      {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <Plus className="h-5 w-5" aria-hidden />}
+      {submitting ? "Saving…" : confirmDuplicate ? "Confirm second goal" : isEdit ? "Save changes" : "Confirm goal"}
+    </button>
+  );
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 ref={stepHeading} tabIndex={-1} className="text-base font-bold text-ink">{stepLabels[step]}</h4>
-        <span aria-current="step" className="text-xs tabular-nums text-ink-dim">
-          Step {stepIndex + 1} of {steps.length}
-        </span>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-contain px-4 py-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 ref={stepHeading} tabIndex={-1} className="text-base font-bold text-ink">{stepLabels[step]}</h4>
+          <span aria-current="step" className="text-xs tabular-nums text-ink-dim">
+            Step {stepIndex + 1} of {steps.length}
+          </span>
+        </div>
 
-      {step === "scorer" && (
-        <>
-          <label className="flex min-h-12 items-center gap-2 text-sm text-ink">
-            <input type="checkbox" checked={isOwnGoal} onChange={(event) => {
-              setIsOwnGoal(event.target.checked);
-              setAssist(null);
-              setGoalkeeper(null);
-            }} />
-            Own goal
-          </label>
-          <div className="grid grid-cols-2 items-start gap-2">
-            {(["a", "b"] as const).map((side) => (
-              <PlayerSelect key={side} label={teams[side].name} side={side}
-                players={teams[side].users.map(toPlayer)} selected={scorer}
-                onSelect={(player) => chooseScorer(player, side)} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {(step === "assist" || step === "keeper") && (
-        <>
-          <PlayerSelect label={teams[step === "assist" ? scoringSide : concedingSide].name}
-            players={teams[step === "assist" ? scoringSide : concedingSide].users
-              .filter((player) => player.id !== scorer?.id && (step === "assist" || player.id !== assist?.id))
-              .map(toPlayer)}
-            selected={step === "assist" ? assist : goalkeeper}
-            onSelect={step === "assist"
-              ? (player) => { setAssist(player); goTo("keeper"); }
-              : (player) => { setGoalkeeper(player); goTo("review"); }}
-          />
-          <div className="flex flex-wrap justify-between gap-2">
-            {backButton}
-            <button type="button" onClick={() => {
-              if (step === "assist") {
+        {step === "scorer" && (
+          <>
+            <label className="flex min-h-12 items-center gap-2 text-sm text-ink">
+              <input type="checkbox" checked={isOwnGoal} onChange={(event) => {
+                setIsOwnGoal(event.target.checked);
                 setAssist(null);
-                goTo("keeper");
-              } else {
                 setGoalkeeper(null);
-                goTo("review");
-              }
-            }} className="min-h-12 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90">
-              {step === "assist" ? "Skip assist" : "Skip goalkeeper"}
-            </button>
-          </div>
-        </>
-      )}
+              }} />
+              Own goal
+            </label>
+            <div className="grid grid-cols-2 items-start gap-2">
+              {(["a", "b"] as const).map((side) => (
+                <PlayerSelect key={side} label={teams[side].name} side={side}
+                  players={teams[side].users.map(toPlayer)} selected={scorer}
+                  onSelect={(player) => chooseScorer(player, side)} />
+              ))}
+            </div>
+          </>
+        )}
 
-      {step === "review" && (
-        <form aria-label="Goal review" onSubmit={(event) => {
-          event.preventDefault();
-          void postGoal(confirmDuplicate);
-        }} className="space-y-4">
-          <div className="border border-line bg-raised px-3 py-2 font-semibold text-ink">
-            Goal for {teams[scoringSide].name}
-          </div>
-          <div className="divide-y divide-line border border-line">
-            {([
-              ["scorer", isOwnGoal ? "Own goal" : "Scorer", scorer],
-              ...(!isOwnGoal ? [["assist", "Assist", assist] as const] : []),
-              ["keeper", "Goalkeeper", goalkeeper],
-            ] as const).map(([target, label, player]) => (
-              <button key={target} type="button" disabled={submitting} onClick={() => goTo(target as GoalStep)}
-                aria-label={`Change ${label.toLowerCase()}: ${player?.name ?? "Skipped"}`}
-                className="flex min-h-12 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-raised">
-                <span className="shrink-0 text-ink-dim">{label}</span>
-                <span className="min-w-0 break-words text-right font-medium text-ink">{player?.name ?? "Skipped"}</span>
-              </button>
-            ))}
-          </div>
-          {showMinute && (
-          <div>
-            <label htmlFor={minuteId} className="mb-1 block text-sm font-medium text-ink">Goal minute</label>
-            <div className="flex flex-wrap items-center gap-2">
-              <input id={minuteId} name="minute" type="number" inputMode="numeric" required min={1}
-                max={Math.min(600, Math.ceil(match.timer_total_seconds / 60) + 10)} value={minute}
-                disabled={submitting} onChange={(event) => {
-                  setMinute(event.target.value === "" ? "" : event.target.valueAsNumber);
-                  setConfirmDuplicate(false);
-                }}
-                className="min-h-12 w-24 border border-line bg-raised px-3 py-2 text-base font-bold tabular-nums text-ink"
-              />
-              <button type="button" disabled={submitting} onClick={() => {
-                setMinute(liveMinute(match));
-                setConfirmDuplicate(false);
-              }} className="min-h-12 px-2 text-sm text-ink-dim underline hover:text-ink">
-                Use live clock
+        {(step === "assist" || step === "keeper") && (
+          <>
+            <PlayerSelect label={teams[step === "assist" ? scoringSide : concedingSide].name}
+              players={teams[step === "assist" ? scoringSide : concedingSide].users
+                .filter((player) => player.id !== scorer?.id && (step === "assist" || player.id !== assist?.id))
+                .map(toPlayer)}
+              selected={step === "assist" ? assist : goalkeeper}
+              onSelect={step === "assist"
+                ? (player) => { setAssist(player); goTo("keeper"); }
+                : (player) => { setGoalkeeper(player); goTo("review"); }}
+            />
+            <div className="flex flex-wrap justify-between gap-2">
+              {backButton}
+              <button type="button" onClick={() => {
+                if (step === "assist") {
+                  setAssist(null);
+                  goTo("keeper");
+                } else {
+                  setGoalkeeper(null);
+                  goTo("review");
+                }
+              }} className="min-h-12 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90">
+                {step === "assist" ? "Skip assist" : "Skip goalkeeper"}
               </button>
             </div>
-            {afterWhistle && <p className="mt-1 text-sm text-live">This minute is after the scheduled match length.</p>}
-          </div>
-          )}
+          </>
+        )}
 
-          {confirmDuplicate && (
-            <p role="status" className="border border-live/40 bg-live/15 p-3 text-sm text-ink">
-              {scorer?.name} already has a goal in minute {minute}. Confirm to record another.
-            </p>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        {step === "review" && (
+          <section aria-label="Goal review" className="space-y-4">
+            <div className="border border-line bg-raised px-3 py-2 font-semibold text-ink">
+              Goal for {teams[scoringSide].name}
+            </div>
+            <div className="divide-y divide-line border border-line">
+              {([
+                ["scorer", isOwnGoal ? "Own goal" : "Scorer", scorer],
+                ...(!isOwnGoal ? [["assist", "Assist", assist] as const] : []),
+                ["keeper", "Goalkeeper", goalkeeper],
+              ] as const).map(([target, label, player]) => (
+                <button key={target} type="button" disabled={submitting} onClick={() => goTo(target as GoalStep)}
+                  aria-label={`Change ${label.toLowerCase()}: ${player?.name ?? "Skipped"}`}
+                  className="flex min-h-12 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-raised">
+                  <span className="shrink-0 text-ink-dim">{label}</span>
+                  <span className="min-w-0 break-words text-right font-medium text-ink">{player?.name ?? "Skipped"}</span>
+                </button>
+              ))}
+            </div>
+            {showMinute && (
+              <div>
+                <p id={minuteLabelId} className="mb-1 text-sm font-medium text-ink">Goal minute</p>
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby={minuteLabelId}>
+                  <button type="button" disabled={submitting || minute <= 1}
+                    onClick={() => { setMinute((m) => Math.max(1, m - 1)); setConfirmDuplicate(false); }}
+                    className="grid h-12 w-12 shrink-0 place-items-center border border-line bg-raised text-ink hover:bg-raised/70 disabled:opacity-40"
+                    aria-label="Decrease minute">
+                    <Minus className="h-4 w-4" aria-hidden />
+                  </button>
+                  <span className="min-w-[3ch] text-center text-2xl font-extrabold tabular-nums text-ink">
+                    {minute}′
+                  </span>
+                  <button type="button" disabled={submitting || minute >= maxMinute}
+                    onClick={() => { setMinute((m) => Math.min(maxMinute, m + 1)); setConfirmDuplicate(false); }}
+                    className="grid h-12 w-12 shrink-0 place-items-center border border-line bg-raised text-ink hover:bg-raised/70 disabled:opacity-40"
+                    aria-label="Increase minute">
+                    <Plus className="h-4 w-4" aria-hidden />
+                  </button>
+                  <button type="button" disabled={submitting} onClick={() => {
+                    setMinute(liveMinute(match));
+                    setConfirmDuplicate(false);
+                  }} className="min-h-12 px-2 text-sm text-ink-dim underline hover:text-ink">
+                    Use live clock
+                  </button>
+                </div>
+                {afterWhistle && <p className="mt-1 text-sm text-live">This minute is after the scheduled match length.</p>}
+              </div>
+            )}
+
+            {confirmDuplicate && (
+              <p role="status" className="border border-live/40 bg-live/15 p-3 text-sm text-ink">
+                {scorer?.name} already has a goal in minute {minute}. Confirm to record another.
+              </p>
+            )}
+          </section>
+        )}
+      </div>
+
+      {step === "review" && (
+        <div className="shrink-0 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2">
             {backButton}
-            <button type="submit" disabled={!canSubmitNow}
-              className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50">
-              {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <Plus className="h-5 w-5" aria-hidden />}
-              {submitting ? "Saving…" : confirmDuplicate ? "Confirm second goal" : isEdit ? "Save changes" : "Confirm goal"}
-            </button>
+            {submitButton}
           </div>
           {editGoal && onDeleteGoal && (
             <button type="button" disabled={submitting} onClick={() => {
               if (confirmDelete) onDeleteGoal(editGoal);
               else setConfirmDelete(true);
-            }} className="flex min-h-12 w-full items-center justify-center gap-2 border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger/10">
+            }} className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger/10">
               <Trash2 className="h-4 w-4" aria-hidden />
               {confirmDelete ? "Tap again to delete this goal" : "Delete goal"}
             </button>
           )}
-        </form>
+        </div>
       )}
     </div>
   );
 }
-

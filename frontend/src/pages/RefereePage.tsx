@@ -1003,10 +1003,14 @@ export function RefereePage() {
       m.match_number > (currentMatch?.match_number || 0),
   );
 
+  // Bottom action deck only exists for live controls — no deck in the other states.
+  const liveControls =
+    currentMatch && !isPastDeadline && !showManualForm && !allComplete && !selectingTeams;
+
   return (
     <div
       ref={rootRef}
-      className="min-h-screen bg-board"
+      className="flex h-[100dvh] flex-col bg-board"
       onClickCapture={(e) => {
         // Web Vibration (Android/desktop) on any button press; the switch
         // overlay above covers iOS.
@@ -1014,7 +1018,7 @@ export function RefereePage() {
       }}
     >
       {/* Header — painted scoreboard band */}
-      <div className="sticky top-0 z-40 border-b border-line bg-board">
+      <div className="shrink-0 border-b border-line bg-board">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-2 px-2 pt-2">
             <button
@@ -1146,7 +1150,8 @@ export function RefereePage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
         {penaltyMatch && !isPastDeadline && (
           <PenaltyShootoutPanel
             meetupId={sid}
@@ -1528,97 +1533,6 @@ export function RefereePage() {
               </div>
             </div>
 
-            {/* Timer controls */}
-            {currentMatch.status === "pending" && (
-              <button
-                type="button"
-                onClick={() => void handleStartTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Play className="h-6 w-6" />
-                Start Timer
-              </button>
-            )}
-
-            {currentMatch.status === "active" && !isPaused && (
-              <button
-                type="button"
-                onClick={() => void handlePauseTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Pause className="h-6 w-6" />
-                Pause
-              </button>
-            )}
-
-            {currentMatch.status === "active" && isPaused && (
-              <button
-                type="button"
-                onClick={() => void handleResumeTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Play className="h-6 w-6" />
-                Resume
-              </button>
-            )}
-
-            {/* + Goal — the goal-recording sheet (lease-gated, per match). */}
-            {currentMatch.status !== "time_up" && (
-              <button
-                type="button"
-                disabled={(!!lease && leaseLeft > 0) || busy !== null}
-                onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
-                className="w-full py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[56px]"
-              >
-                {lease && leaseLeft > 0
-                  ? leaseBusyLabel(lease.holderName, leaseLeft)
-                  : "+ Goal"}
-              </button>
-            )}
-
-            {/* Score is driven by the goal log — the ±steppers are gone. */}
-
-            {/* End match — neutral: finishing is routine, not destructive */}
-            <button
-              type="button"
-              onClick={() => setConfirmAction({ kind: "end" })}
-              disabled={busy !== null}
-              className="w-full py-5 border-2 border-ink/30 text-ink text-xl font-bold hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-            >
-              <Flag className="h-6 w-6" />
-              End Match
-            </button>
-
-            {/* Reset / Delete — borderless, side by side */}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() =>
-                  currentMatch && setConfirmAction({ kind: "reset" })
-                }
-                disabled={busy !== null}
-                className="flex-1 py-3 text-ink-dim text-sm font-semibold hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Reset
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  currentMatch &&
-                  setConfirmAction({ kind: "delete", matchId: currentMatch.id })
-                }
-                disabled={busy !== null}
-                className="flex-1 py-3 text-danger text-sm font-semibold hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </button>
-            </div>
-
             {/* Next match preview */}
             {nextMatch && (
               <div className="border border-line bg-raised p-4 space-y-1">
@@ -1691,9 +1605,93 @@ export function RefereePage() {
             })}
           </div>
         )}
+        </div>
       </div>
 
-      {/* Winner picker modal */}
+      {/* Bottom action deck — live controls only */}
+      {liveControls && (
+        <div className="shrink-0 border-t border-line bg-board px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto max-w-lg space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              {currentMatch.status === "pending" && (
+                <button
+                  type="button"
+                  onClick={() => void handleStartTimer()}
+                  disabled={busy !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Play className="h-5 w-5" />
+                  Start Timer
+                </button>
+              )}
+              {currentMatch.status === "active" && !isPaused && (
+                <button
+                  type="button"
+                  onClick={() => void handlePauseTimer()}
+                  disabled={busy !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Pause className="h-5 w-5" />
+                  Pause
+                </button>
+              )}
+              {currentMatch.status === "active" && isPaused && (
+                <button
+                  type="button"
+                  onClick={() => void handleResumeTimer()}
+                  disabled={busy !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Play className="h-5 w-5" />
+                  Resume
+                </button>
+              )}
+              {currentMatch.status !== "time_up" && (
+                <button
+                  type="button"
+                  disabled={(!!lease && leaseLeft > 0) || busy !== null}
+                  onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
+                >
+                  {lease && leaseLeft > 0
+                    ? leaseBusyLabel(lease.holderName, leaseLeft)
+                    : "+ Goal"}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmAction({ kind: "end" })}
+                disabled={busy !== null}
+                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                <Flag className="h-5 w-5" />
+                End Match
+              </button>
+              <button
+                type="button"
+                onClick={() => currentMatch && setConfirmAction({ kind: "reset" })}
+                disabled={busy !== null}
+                className="flex min-h-[48px] items-center justify-center gap-2 px-3 py-3 text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => currentMatch && setConfirmAction({ kind: "delete", matchId: currentMatch.id })}
+                disabled={busy !== null}
+                className="flex min-h-[48px] items-center justify-center gap-2 px-3 py-3 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm destructive actions */}
       <ConfirmDialog
         open={confirmAction != null}

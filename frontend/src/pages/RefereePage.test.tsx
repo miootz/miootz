@@ -207,3 +207,23 @@ it("updates match scores even when a team request is slow", async () => {
   expect(screen.getByText("—", { selector: "p > span" }).parentElement).toHaveTextContent("2—0");
   await act(async () => finishTeams({ meetup_id: 1, content_revision: 0, teams: [] }));
 });
+
+it("shows the live bottom deck with the primary controls for a paused match", async () => {
+  await openReferee();
+  // Active + paused fixture: Resume, + Goal, End Match, Reset and Delete.
+  expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "+ Goal" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "End Match" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+});
+
+it("shows Start Timer in the deck for a pending match", async () => {
+  const pending: MatchSummary = {
+    ...match, status: "pending", timer_paused: false, timer_seconds_remaining: 900,
+  };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [pending] });
+  await openReferee();
+  expect(screen.getByRole("button", { name: "Start Timer" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "+ Goal" })).toBeInTheDocument();
+});
