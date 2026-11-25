@@ -83,7 +83,7 @@ function MemberChrome() {
   };
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-board transition-colors">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-board transition-colors">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-line focus:bg-panel focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-lg"

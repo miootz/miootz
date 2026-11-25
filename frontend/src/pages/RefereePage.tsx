@@ -1010,7 +1010,7 @@ export function RefereePage() {
   return (
     <div
       ref={rootRef}
-      className="flex h-[100dvh] flex-col bg-board"
+      className="flex flex-1 min-h-0 flex-col bg-board"
       onClickCapture={(e) => {
         // Web Vibration (Android/desktop) on any button press; the switch
         // overlay above covers iOS.
@@ -1610,7 +1610,7 @@ export function RefereePage() {
 
       {/* Bottom action deck — live controls only */}
       {liveControls && (
-        <div className="shrink-0 border-t border-line bg-board px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-line bg-board px-4 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-lg space-y-2">
             <div className="grid grid-cols-2 gap-2">
               {currentMatch.status === "pending" && (
@@ -1653,7 +1653,7 @@ export function RefereePage() {
                   onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
                   className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
                 >
-                  {lease && leaseLeft > 0
+                  {lease && leaseLeft > 0 && !showSubstitutions
                     ? leaseBusyLabel(lease.holderName, leaseLeft)
                     : "+ Goal"}
                 </button>

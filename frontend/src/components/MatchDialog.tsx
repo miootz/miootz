@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { fetchMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
@@ -9,6 +9,7 @@ import {
   type MatchSubstitution,
 } from "../api/matchesApi";
 import { useToast } from "../context/ToastContext";
+import { computeInheritedLineups } from "../utils/inheritedLineups";
 import { GoalsSection } from "./GoalsSection";
 import { HistoricalLineupForm } from "./HistoricalLineupForm";
 import { MobileSheet } from "./MobileSheet";
@@ -20,6 +21,8 @@ interface MatchDialogProps {
   mode: "add" | "edit";
   /** Edit mode only — the match being edited. */
   match: MatchSummary | null;
+  /** Existing matches in the meetup (for add-mode lineup inheritance). */
+  existingMatches: MatchSummary[];
   onClose: () => void;
   /** Add mode: called once the match is created; the dialog stays open. */
   onCreated: (match: MatchSummary) => void;
@@ -41,6 +44,7 @@ export function MatchDialog({
   attendees,
   mode,
   match,
+  existingMatches,
   onClose,
   onCreated,
   onSaved,
@@ -74,6 +78,14 @@ export function MatchDialog({
     };
   }, [meetupId, mode]);
 
+  const lineups = useMemo(
+    () =>
+      teams && teamA && teamB
+        ? computeInheritedLineups(teams, existingMatches, teamA, teamB)
+        : null,
+    [teams, existingMatches, teamA, teamB],
+  );
+
   const activeMatch = mode === "edit" ? match : createdMatch;
 
   const handleCreate = async () => {
@@ -88,6 +100,8 @@ export function MatchDialog({
         team_b_name: teamB.trim(),
         score_a: 0,
         score_b: 0,
+        team_a_users: lineups?.teamA.players ?? [],
+        team_b_users: lineups?.teamB.players ?? [],
       });
       setCreatedMatch(res.match);
       onCreated(res.match);
@@ -255,12 +269,6 @@ function AddMatchBody({
           Loading teams…
         </p>
       )}
-      {teams && teams.length >= 2 && (
-        <p className="text-sm text-ink-dim">
-          Pick both teams, then create the match — you can edit the lineups and log goals once the
-          match is created.
-        </p>
-      )}
     </div>
   );
 }
@@ -280,14 +288,18 @@ function EditMatchBody({
 }) {
   const [loaded, setLoaded] = useState<{ id: number; subs: MatchSubstitution[] } | null>(null);
   const [loadErrorId, setLoadErrorId] = useState<number | null>(null);
-  const [lineupOpen, setLineupOpen] = useState(true);
+  const [lineupOpen, setLineupOpen] = useState(false);
 
   const matchId = match.id;
   useEffect(() => {
+    if (!lineupOpen) return;
     let cancelled = false;
     fetchMatchSubstitutions(meetupId, matchId)
       .then((res) => {
-        if (!cancelled) setLoaded({ id: matchId, subs: res.substitutions });
+        if (!cancelled) {
+          setLoaded({ id: matchId, subs: res.substitutions });
+          setLoadErrorId(null);
+        }
       })
       .catch(() => {
         if (!cancelled) setLoadErrorId(matchId);
@@ -295,7 +307,7 @@ function EditMatchBody({
     return () => {
       cancelled = true;
     };
-  }, [meetupId, matchId]);
+  }, [meetupId, matchId, lineupOpen]);
 
   const subs = loaded?.id === matchId ? loaded.subs : null;
   const loadError = loadErrorId === matchId;

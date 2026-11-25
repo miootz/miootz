@@ -23,17 +23,19 @@ if (shouldOpenDemoLobby()) {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <BrowserRouter basename={demoRoom() || undefined}>
-        <ThemeProvider>
-          <ToastProvider>
-            <UpdateChecker />
-            <DemoModeBar />
-            <AuthProvider>
-              <App />
-            </AuthProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </BrowserRouter>
+      <div className="flex h-[100dvh] flex-col">
+        <DemoModeBar />
+        <BrowserRouter basename={demoRoom() || undefined}>
+          <ThemeProvider>
+            <ToastProvider>
+              <UpdateChecker />
+              <AuthProvider>
+                <App />
+              </AuthProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </BrowserRouter>
+      </div>
     </StrictMode>
   );
 

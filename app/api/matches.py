@@ -103,6 +103,8 @@ class MatchCreateBody(BaseModel):
     team_b_name: str = Field(min_length=1, max_length=60)
     score_a: int = Field(ge=0)
     score_b: int = Field(ge=0)
+    team_a_users: list[int] = Field(default_factory=list)
+    team_b_users: list[int] = Field(default_factory=list)
 
 
 class MatchScoreSet(BaseModel):
@@ -818,11 +820,18 @@ async def create_match(
             detail="Team A and Team B must be different.",
         )
 
+    # A player can only be on one side of the match
+    if len(set(body.team_a_users) & set(body.team_b_users)):
+        raise HTTPException(
+            status_code=400,
+            detail="A player can only be on one side of the match.",
+        )
+
     match = MeetupMatch(
         meetup_id=meetup_id,
         match_number=next_num,
-        team_a_users=json.dumps([]),
-        team_b_users=json.dumps([]),
+        team_a_users=json.dumps(body.team_a_users),
+        team_b_users=json.dumps(body.team_b_users),
         team_a_name=body.team_a_name,
         team_b_name=body.team_b_name,
         score_a=body.score_a,
@@ -846,7 +855,7 @@ async def create_match(
 
     await bump_and_notify(db, meetup_id)
 
-    users_by_id: dict[int, dict] = {}
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {"status": "created", "match": _match_json(match, users_by_id)}
 
 

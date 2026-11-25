@@ -137,7 +137,7 @@ export function AdminLayout() {
 
   if (loading || !me) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-board">
+      <div className="flex flex-1 min-h-0 items-center justify-center bg-board">
         <div className="flex flex-col items-center gap-3">
           <div
             className="w-10 h-10 border-2 border-line border-t-live animate-spin"
@@ -154,7 +154,7 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-board flex flex-col md:flex-row">
+    <div className="flex flex-1 min-h-0 overflow-hidden bg-board flex-col md:flex-row">
       <a
         href="#admin-main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-board focus:outline-hidden focus:ring-2 focus:ring-live"

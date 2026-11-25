@@ -132,6 +132,7 @@ export function MatchHistoryList({
         <MatchDialog
           meetupId={meetupId}
           attendees={attendees}
+          existingMatches={matches}
           mode={dialog.mode}
           match={dialog.mode === "edit" ? dialog.match : null}
           onClose={() => setDialog(null)}

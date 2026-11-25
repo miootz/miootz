@@ -37,6 +37,9 @@ export interface MatchCreateBody {
   team_b_name: string;
   score_a: number;
   score_b: number;
+  /** Optional starting lineups; when omitted the match starts with an empty lineup. */
+  team_a_users?: number[];
+  team_b_users?: number[];
 }
 
 export async function createMatch(
