@@ -154,7 +154,7 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-board flex flex-col md:flex-row">
+    <div className="h-[100dvh] overflow-hidden bg-board flex flex-col md:flex-row">
       <a
         href="#admin-main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[120] focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-board focus:outline-hidden focus:ring-2 focus:ring-live"
@@ -164,7 +164,7 @@ export function AdminLayout() {
       <OfflineBanner />
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-board/95 px-4 backdrop-blur md:hidden">
+      <header className="z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-board/95 px-4 backdrop-blur md:hidden">
         <button
           type="button"
           onClick={openDrawer}
@@ -186,7 +186,7 @@ export function AdminLayout() {
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:w-56 border-b md:border-b-0 md:border-r border-line bg-panel md:min-h-screen shrink-0 flex-col">
+      <aside className="hidden md:flex md:h-full md:w-56 border-b md:border-b-0 md:border-r border-line bg-panel md:shrink-0 flex-col overflow-y-auto">
         <div className="p-4 border-b border-line">
           <Link
             to="/"
@@ -301,7 +301,7 @@ export function AdminLayout() {
       <main
         id="admin-main-content"
         tabIndex={-1}
-        className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 outline-hidden"
+        className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8 outline-hidden"
         style={{
           paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
         }}

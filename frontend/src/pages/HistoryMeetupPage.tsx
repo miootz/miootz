@@ -218,29 +218,31 @@ export function HistoryMeetupPage() {
             <p className="text-sm text-ink-dim">This meetup</p>
           </div>
           <div className="border border-line bg-panel">
-            <table className="w-full table-fixed text-sm">
-              <caption className="sr-only">Goals, assists and clean sheets for this meetup</caption>
-              <thead>
-                <tr className="border-b border-line text-ink-dim">
-                  <th scope="col" className="w-[55%] px-3 py-3 text-left">Player</th>
-                  <th scope="col" className="w-[15%] px-1 py-3 text-right"><abbr title="Goals">G</abbr></th>
-                  <th scope="col" className="w-[15%] px-1 py-3 text-right"><abbr title="Assists">A</abbr></th>
-                  <th scope="col" className="w-[15%] px-3 py-3 text-right"><abbr title="Clean sheets">CS</abbr></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {performers.map((player) => (
-                  <tr key={player.user.id} className={`relative ${player.user.id === me?.user?.id ? "bg-live/10" : ""}`}>
-                    <th scope="row" className="px-3 py-3 text-left font-medium text-ink [overflow-wrap:anywhere]">
+            <ul className="divide-y divide-line" aria-label="Goals, assists and clean sheets for this meetup">
+              {performers.map((player) => (
+                <li key={player.user.id} className={`relative px-3 py-3 ${player.user.id === me?.user?.id ? "bg-live/10" : ""}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1 text-left font-medium text-ink [overflow-wrap:anywhere]">
                       <PlayerEditLink playerId={player.user.id} stretch>{player.user.display_name}</PlayerEditLink>
-                    </th>
-                    <td className="px-1 py-3 text-right font-bold tabular-nums">{player.goals - player.own_goals}</td>
-                    <td className="px-1 py-3 text-right font-bold tabular-nums">{player.assists}</td>
-                    <td className="px-3 py-3 text-right font-bold tabular-nums">{player.clean_sheets}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3 text-sm">
+                      <span className="flex flex-col items-center text-xs text-ink-dim">
+                        <span className="font-bold text-ink tabular-nums">{player.goals - player.own_goals}</span>
+                        <abbr title="Goals">G</abbr>
+                      </span>
+                      <span className="flex flex-col items-center text-xs text-ink-dim">
+                        <span className="font-bold text-ink tabular-nums">{player.assists}</span>
+                        <abbr title="Assists">A</abbr>
+                      </span>
+                      <span className="flex flex-col items-center text-xs text-ink-dim">
+                        <span className="font-bold text-ink tabular-nums">{player.clean_sheets}</span>
+                        <abbr title="Clean sheets">CS</abbr>
+                      </span>
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
           <p className="text-xs text-ink-dim">Goals exclude own goals.</p>
         </section>

@@ -384,60 +384,61 @@ function MeetupAttendanceActions({
 						</p>
 					</div>
 				</div>
-				<div className="border-t border-line px-4 py-3">
-					{feedback && (
-						<p className="mb-2 text-sm text-danger" role="alert">
-							{feedback}
-						</p>
-					)}
-					<div className="flex flex-wrap gap-2">
-						{(status == null || status === "cancelled") && (
+			<div className="border-t border-line px-4 py-3">
+				{feedback && (
+					<p className="text-sm text-danger" role="alert">
+						{feedback}
+					</p>
+				)}
+			</div>
+			</div>
+		<div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-line bg-board px-4 py-3">
+			<div className="mx-auto flex max-w-xl flex-wrap gap-2">
+				{(status == null || status === "cancelled") && (
+					<button
+						type="button"
+						disabled={busy}
+						onClick={() => void runJoin()}
+						className="flex-1 min-w-[10rem] justify-center px-4 py-2.5 inline-flex items-center bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+					>
+						{status === "cancelled" ? "Join again" : "Join meetup"}
+					</button>
+				)}
+				{status === "waitlisted" && (myWeatherHeroUnused ?? 0) > 0 && (
+					<button
+						type="button"
+						disabled={busy}
+						onClick={() => void runRedeemWeatherHero()}
+						className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
+					>
+						<CloudRain size={14} aria-hidden />
+						Use Weather Hero spot
+					</button>
+				)}
+				{(status === "confirmed" || status === "waitlisted") && (
+					<>
+						{status === "confirmed" && (
 							<button
 								type="button"
-								disabled={busy}
-								onClick={() => void runJoin()}
-								className="flex-1 min-w-[10rem] justify-center px-4 py-2.5 inline-flex items-center bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+								onClick={() => setShowPlusOne(true)}
+								className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
 							>
-								{status === "cancelled" ? "Join again" : "Join meetup"}
+								<UserPlus size={14} />
+								Add a plus-one
 							</button>
 						)}
-						{status === "waitlisted" &&
-							(myWeatherHeroUnused ?? 0) > 0 && (
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => void runRedeemWeatherHero()}
-									className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
-								>
-									<CloudRain size={14} aria-hidden />
-									Use Weather Hero spot
-								</button>
-							)}
-						{(status === "confirmed" || status === "waitlisted") && (
-							<>
-								{status === "confirmed" && (
-									<button
-										type="button"
-										onClick={() => setShowPlusOne(true)}
-										className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
-									>
-										<UserPlus size={14} />
-										Add a plus-one
-									</button>
-								)}
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => void runLeave()}
-									className="inline-flex flex-1 min-w-[10rem] justify-center items-center px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
-								>
-									{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
-								</button>
-							</>
-						)}
-					</div>
-				</div>
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => void runLeave()}
+							className="inline-flex flex-1 min-w-[10rem] justify-center items-center px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
+						>
+							{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
+						</button>
+					</>
+				)}
 			</div>
+		</div>
 			{showPlusOne && (
 				<PlusOneModal
 					meetupId={meetupId}
@@ -474,7 +475,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 		Number.isFinite(startMs) && now >= startMs - 15 * 60_000;
 
 	return (
-		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8">
+		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8 pb-32">
 			{/* 1. Match results — from T-15 min, in place of attendance */}
 			{resultsMode && !isNaN(meetupIdNum) && (
 				<section className="space-y-3">

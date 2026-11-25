@@ -36,9 +36,11 @@ describe("HistoryMeetupPage contributions", () => {
         <Routes><Route path="/history/:meetupId" element={<HistoryMeetupPage />} /></Routes>
       </MemoryRouter>,
     );
-    const player = await screen.findByRole("rowheader", { name: "Sam Vale" });
-    const row = player.closest("tr")!;
-    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["2", "1", "2"]);
+    const player = await screen.findByText("Sam Vale");
+    const row = player.closest("li")!;
+    expect(within(row).getByTitle("Goals").previousSibling).toHaveTextContent("2");
+    expect(within(row).getByTitle("Assists").previousSibling).toHaveTextContent("1");
+    expect(within(row).getByTitle("Clean sheets").previousSibling).toHaveTextContent("2");
     expect(screen.getByText("Match statistics")).toBeTruthy();
     const winner = screen.getByRole("article");
     expect(within(winner).getByRole("heading", { name: "Meetup winner" })).toBeInTheDocument();

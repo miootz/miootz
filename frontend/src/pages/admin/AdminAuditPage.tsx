@@ -350,7 +350,7 @@ export function AdminAuditPage() {
 										{p.label}
 									</button>
 								))}
-								<label className="flex items-center gap-1.5 text-xs text-ink-dim">
+								<label className="flex flex-wrap items-center gap-1.5 text-xs text-ink-dim">
 									<span className="sr-only">From</span>
 									<input
 										type="datetime-local"
