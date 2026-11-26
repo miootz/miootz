@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     shutdown_scheduler()
 
 
-app = FastAPI(title=settings.PROJECT_NAME, version="1.4.1", lifespan=lifespan)
+app = FastAPI(title=settings.PROJECT_NAME, version="1.7.0", lifespan=lifespan)
 
 # Rate limiting (slowapi, in-memory per-process store; single uvicorn worker).
 app.state.limiter = limiter

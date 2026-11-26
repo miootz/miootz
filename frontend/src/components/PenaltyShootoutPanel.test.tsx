@@ -65,6 +65,8 @@ describe("PenaltyShootoutPanel", () => {
     await waitFor(() => expect(screen.getByText(/Blue wins the shootout/)).toBeInTheDocument());
     expect(finishMockAsync).toHaveBeenCalledWith(1, 10);
     expect(onFinished).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Done" })).toHaveFocus();
+    expect(screen.getByText("1 – 0")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onFinished).toHaveBeenCalledTimes(1);

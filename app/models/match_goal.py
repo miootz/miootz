@@ -39,7 +39,7 @@ class MatchGoal(Base):
     match_id: Mapped[int] = mapped_column(ForeignKey("meetup_matches.id"), index=True)
     #: 'a' | 'b' — which team scored.
     team: Mapped[str] = mapped_column(String(1))
-    scorer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    scorer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     #: Exactly one assist, or none (plan §2.8).
     assist_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     #: Optional: the keeper who was in goal for the *conceding* team, i.e.

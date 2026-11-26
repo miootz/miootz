@@ -1,6 +1,6 @@
 export function AppSplash({ status }: { status: string }) {
   return (
-    <div className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-board px-6">
+    <div className="relative isolate grid flex-1 min-h-0 place-items-center overflow-hidden bg-board px-6">
       <picture className="absolute inset-0 -z-10">
         <source
           media="(min-width: 768px) and (orientation: landscape)"

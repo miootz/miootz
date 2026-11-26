@@ -7,14 +7,16 @@
 """
 
 from datetime import datetime, timedelta, UTC
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.main import app
 from app.core.database import Base, engine
+from app.core.migrations import run_sqlite_migrations
 from app.models.match import MeetupMatch, PenaltyMiss
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Meetup
@@ -324,3 +326,131 @@ async def test_miss_own_goal_rejected():
             headers=hdr("p1"),
         )
         assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_miss_uses_confirmed_minute_and_intent_cannot_cross_matches():
+    async with await client() as ac:
+        sid, mid, ids = await make_setup(ac, ["p1", "p2"])
+        await acquire(ac, sid, "p1")
+        data = {"team": "a", "scorer_id": ids["p1"], "is_penalty": True,
+                "missed": True, "clock_minute": 7, "intent_id": "minute-and-match"}
+        r = await ac.post(f"/meetups/{sid}/matches/{mid}/goals", json=data, headers=hdr("p1"))
+        assert r.status_code == 201, r.text
+        assert r.json()["miss"]["clock_minute"] == 7
+        assert (await ac.post(f"/meetups/{sid}/matches/{mid}/goals", json=data, headers=hdr("p1"))).status_code == 200
+
+        async with AsyncSession(engine) as db:
+            original = await db.get(MeetupMatch, mid)
+            other = MeetupMatch(
+                meetup_id=sid, match_number=2, team_a_users=original.team_a_users,
+                team_b_users=original.team_b_users, team_a_name="A", team_b_name="B",
+                status="active",
+            )
+            db.add(other)
+            await db.flush()
+            other_id = other.id
+            await db.commit()
+        response = await ac.post(f"/meetups/{sid}/matches/{other_id}/goals", json=data, headers=hdr("p1"))
+        assert response.status_code == 409, response.text
+
+        # A reset removes the old miss so it cannot affect the replayed match.
+        response = await ac.post(f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("admin"))
+        assert response.status_code == 200, response.text
+        assert (await ac.get(f"/meetups/{sid}/matches/{mid}/penalty-misses", headers=hdr("p1"))).json()["misses"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["match", "meetup", "attendance", "user"])
+async def test_delete_removes_regulation_miss(target, monkeypatch):
+    import app.api.users as users_api
+
+    monkeypatch.setattr(users_api, "delete_user", AsyncMock(return_value=True), raising=False)
+    async with await client() as ac:
+        sid, mid, ids = await make_setup(ac, ["p1", "p2"])
+        await acquire(ac, sid, "p1")
+        r = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/goals",
+            json={"team": "a", "scorer_id": ids["p1"], "is_penalty": True,
+                  "missed": True, "intent_id": "delete-test"},
+            headers=hdr("p1"),
+        )
+        assert r.status_code == 201, r.text
+        url = {
+            "match": f"/meetups/{sid}/matches/{mid}",
+            "meetup": f"/meetups/{sid}",
+            "attendance": f"/meetups/{sid}/attendance/{ids['p1']}",
+            "user": f"/users/{ids['p1']}",
+        }[target]
+        response = await ac.delete(url, headers=hdr("admin"))
+        assert response.status_code in (200, 204), response.text
+        async with AsyncSession(engine) as db:
+            assert list(await db.scalars(select(PenaltyMiss))) == []
+
+
+@pytest.mark.asyncio
+async def test_historical_penalty_goal_can_be_added_and_edited():
+    async with await client() as ac:
+        sid, mid, ids = await make_setup(ac, ["p1", "p2"])
+        await end_match(ac, sid, mid)
+        url = f"/meetups/{sid}/matches/{mid}/goal-attribution"
+        r = await ac.put(url, headers=hdr("admin"), json={
+            "team": "a", "scorer_id": ids["p1"], "assist_id": ids["p2"],
+            "is_penalty": True, "add_to_score": True, "intent_id": "historical-penalty",
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["goal"]["is_penalty"] is True
+        assert r.json()["goal"]["assist"] is None
+        assert r.json()["score_a"] == 1
+        goal_id = r.json()["goal"]["id"]
+        r = await ac.put(url, headers=hdr("admin"), json={
+            "goal_id": goal_id, "team": "a", "scorer_id": ids["p2"],
+            "is_own_goal": True, "is_penalty": False, "intent_id": "historical-edit",
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["goal"]["is_own_goal"] is True
+        assert r.json()["goal"]["is_penalty"] is False
+
+
+@pytest.mark.asyncio
+async def test_live_penalty_edit_preserves_own_goal_flag():
+    async with await client() as ac:
+        sid, mid, ids = await make_setup(ac, ["p1", "p2"])
+        url = f"/meetups/{sid}/matches/{mid}/goals"
+        await acquire(ac, sid, "p1")
+        r = await ac.post(url, headers=hdr("p1"), json={
+            "team": "a", "scorer_id": ids["p1"], "is_penalty": True,
+            "clock_minute": 6, "intent_id": "edit-penalty",
+        })
+        assert r.status_code == 201, r.text
+        assert r.json()["goal"]["clock_minute"] == 6
+        goal_id = r.json()["goal"]["id"]
+        await acquire(ac, sid, "p1")
+        r = await ac.patch(f"{url}/{goal_id}", headers=hdr("p1"), json={
+            "team": "a", "scorer_id": ids["p2"], "clock_minute": 6,
+            "is_own_goal": True, "is_penalty": False,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["goal"]["is_own_goal"] is True
+        assert r.json()["goal"]["is_penalty"] is False
+
+
+@pytest.mark.asyncio
+async def test_migration_installs_penalty_miss_cache_triggers_for_existing_db():
+    async with await client() as ac:
+        sid, mid, ids = await make_setup(ac, ["p1", "p2"])
+        async with engine.begin() as conn:
+            for operation in ("insert", "update", "delete"):
+                await conn.exec_driver_sql(
+                    f"DROP TRIGGER IF EXISTS invalidate_meetup_analytics_penalty_misses_{operation}"
+                )
+            await run_sqlite_migrations(conn)
+            await run_sqlite_migrations(conn)  # startup is repeatable
+            await conn.execute(text("DELETE FROM meetup_analytics WHERE meetup_id = :id"), {"id": sid})
+            await conn.execute(text("INSERT INTO meetup_analytics (meetup_id, version, totals) VALUES (:id, 1, '{}')"), {"id": sid})
+            await conn.execute(text(
+                "INSERT INTO penalty_misses (match_id, team, scorer_id, clock_minute, intent_id, created_at) "
+                "VALUES (:match, 'a', :scorer, 1, 'migration-test', CURRENT_TIMESTAMP)"
+            ), {"match": mid, "scorer": ids["p1"]})
+            cached = await conn.scalar(text("SELECT meetup_id FROM meetup_analytics WHERE meetup_id = :id"), {"id": sid})
+            assert cached is None

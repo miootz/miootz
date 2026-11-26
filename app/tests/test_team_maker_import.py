@@ -264,6 +264,20 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     assert await run_import({}) == []
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
+
+    # A removed workbook miss is deleted on re-import, without leaving a
+    # stale attempt in the reconciled statistics.
+    nights[corrected].matches[2].misses.clear()
+    casey_stats = list(expected["Casey Sample"])
+    casey_stats[STAT_COLUMNS.index("Pens taken")] = 2
+    casey_stats[STAT_COLUMNS.index("Pen %")] = 1
+    expected["Casey Sample"] = tuple(casey_stats)
+    assert await run_import({}) == []
+    with sqlite3.connect(database) as db:
+        assert db.execute("SELECT COUNT(*) FROM penalty_misses").fetchone()[0] == 0
+        before = list(db.iterdump())
+
+    assert await run_import({}) == []
     with pytest.raises(ValueError, match="existing Pocket ID link"):
         await run_import({"Alex Example": str(UUID(int=2))})
     with sqlite3.connect(database) as db:

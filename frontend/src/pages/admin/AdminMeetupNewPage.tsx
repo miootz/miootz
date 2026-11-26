@@ -1,3 +1,4 @@
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
@@ -9,6 +10,7 @@ import {
 } from '../../api/adminApi';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { LocationPicker, type GeoPoint } from '../../components/admin/LocationPicker';
+import { StickyFormBar } from '../../components/StickyFormBar';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import {
   ADMIN_LAST_LOCATION_KEY,
@@ -18,7 +20,6 @@ import {
   readMeetupDraft,
   writeMeetupDraft,
 } from '../../utils/adminPrefs';
-import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 function defaultStartLocal(): string {
   const d = new Date();
@@ -194,7 +195,7 @@ export function AdminMeetupNewPage() {
   );
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-xl mx-auto pb-28">
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
@@ -219,6 +220,7 @@ export function AdminMeetupNewPage() {
       {stepper}
 
       <form
+        id="meetup-new-form"
         onSubmit={(e) => void handleSubmit(e)}
         className="border border-line bg-panel p-6 space-y-5 transition-colors"
       >
@@ -379,13 +381,6 @@ export function AdminMeetupNewPage() {
                 <option value="random">Random order (snake)</option>
               </select>
             </div>
-            <button
-              type="button"
-              className="w-full min-h-[44px] bg-ink text-board font-bold hover:bg-white/90 active:scale-[0.98] transition-colors"
-              onClick={() => setStep(2)}
-            >
-              Next: review
-            </button>
           </div>
         )}
 
@@ -406,33 +401,12 @@ export function AdminMeetupNewPage() {
               </p>
             </div>
             <div className="flex items-start gap-3 border border-line bg-raised/50 px-3 py-3 transition-colors">
-              <ToggleSwitch
-                enabled={sendPushNotifs}
-                onChange={() => setSendPushNotifs(!sendPushNotifs)}
-                ariaLabel="Notify all players"
-              />
+              <ToggleSwitch enabled={sendPushNotifs} onChange={() => setSendPushNotifs(!sendPushNotifs)} ariaLabel="Notify all players" />
               <span className="text-sm text-ink">
                 <span className="font-medium text-ink">
                   Notify all players
                 </span>
               </span>
-            </div>
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                type="button"
-                className="flex-1 min-h-[44px] border border-line py-2.5 font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
-                onClick={() => setStep(1)}
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60 transition-colors"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Create meetup
-              </button>
             </div>
             <Link
               to="/admin/meetups"
@@ -443,6 +417,37 @@ export function AdminMeetupNewPage() {
           </div>
         )}
       </form>
+
+      <StickyFormBar innerClassName="max-w-xl">
+        {step === 1 ? (
+          <button
+            type="button"
+            className="w-full min-h-12 bg-ink text-board font-bold hover:bg-white/90 active:scale-[0.98] transition-colors"
+            onClick={() => setStep(2)}
+          >
+            Next: review
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex-1 min-h-12 border border-line py-2.5 font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
+              onClick={() => setStep(1)}
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              form="meetup-new-form"
+              disabled={saving}
+              className="flex-1 min-h-12 inline-flex items-center justify-center gap-2 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60 transition-colors"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Create meetup
+            </button>
+          </div>
+        )}
+      </StickyFormBar>
     </div>
   );
 }

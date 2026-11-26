@@ -198,7 +198,7 @@ async def test_reset_zeroes_score_and_keeps_it_zero():
         assert r.status_code == 201, r.text
 
         r = await ac.post(
-            f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("admin")
         )
         assert r.status_code == 200, r.text
         assert (r.json()["score_a"], r.json()["score_b"]) == (0, 0)

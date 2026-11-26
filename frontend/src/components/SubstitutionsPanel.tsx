@@ -14,13 +14,7 @@ import { useToast } from "../context/ToastContext";
 import { Loader2 } from "lucide-react";
 import { pickSubstitute, type SubstitutionPick } from "../utils/substitutionSelection";
 
-export interface PanelTeamUser {
-  id: number;
-  display_name: string;
-  pac?: number | null;
-  dri?: number | null;
-  inAnotherMatch?: boolean;
-}
+import { SubstitutionRoster, type SubstitutionPlayer as PanelTeamUser } from "./SubstitutionRoster";
 
 export interface ExtraTeam {
   name: string;
@@ -213,77 +207,14 @@ export function SubstitutionsPanel({
     pickSubstitute(selected, { id, key }, setSelected, applySwap);
   };
 
-  const renderTeam = (r: Roster) => (
-    <div key={r.key} className={`min-w-0 space-y-1.5 ${r.matchSide === null ? "col-span-2" : ""}`}>
-      <div
-        className={`flex items-center justify-between px-3 py-2 ${
-          r.matchSide === "a"
-            ? "bg-team-a text-white"
-            : r.matchSide === "b"
-              ? "bg-team-b text-white"
-              : "bg-raised text-ink-dim"
-        }`}
-      >
-        <span className="text-xs font-bold uppercase tracking-wide truncate">
-          {r.name}
-        </span>
-        <span className="text-xs font-bold tabular-nums">
-          {r.users.length}
-        </span>
-      </div>
-      <ul className="divide-y divide-line bg-panel">
-        {r.users.map((u) => {
-          const isSelected = selected?.id === u.id;
-          return (
-            <li key={u.id}>
-              <button
-                type="button"
-                onClick={() => tapPlayer(u.id)}
-                disabled={saving || !holding}
-                className={`w-full min-h-[44px] px-3 py-2 text-left text-sm active:scale-[0.99] transition-transform disabled:opacity-50 ${
-                  isSelected
-                    ? "bg-live/10 font-semibold text-live"
-                    : "text-ink hover:bg-raised"
-                }`}
-                aria-pressed={isSelected}
-              >
-                {u.display_name}
-                {(u.pac ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-pac">PAC</span>}
-                {(u.dri ?? 3) > 3 && <span className="ml-1 text-2xs font-bold text-attribute-dri">DRI</span>}
-              </button>
-              {isSelected && r.matchSide === null && !u.inAnotherMatch && (
-                <div className="grid grid-cols-2 gap-2 px-2 pb-2">
-                  {(["a", "b"] as const).map((side, index) => (
-                    <button
-                      key={side}
-                      type="button"
-                      disabled={saving || !holding}
-                      aria-label={`Add ${u.display_name} to ${rosters[index].name}`}
-                      onClick={() => void addPlayer(u, side, rosters[index].name)}
-                      className="min-h-[44px] min-w-0 break-words border border-line px-2 py-2 text-sm font-semibold text-ink hover:bg-raised disabled:opacity-50"
-                    >
-                      Add to {rosters[index].name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-
   return (
-    <section className="border border-line bg-panel p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-          Substitutions
-        </h3>
-        {acquiring && (
+    <div className="space-y-3">
+      {acquiring && (
+        <p className="flex items-center gap-2 text-xs font-medium text-ink-dim">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-live" aria-hidden />
-        )}
-      </div>
+          Acquiring the match editor…
+        </p>
+      )}
 
       {/* One-writer state — named, never silent */}
       {busy && (
@@ -293,13 +224,28 @@ export function SubstitutionsPanel({
       )}
 
       <div className={`grid grid-cols-2 gap-3 ${busy ? "opacity-50" : ""}`}>
-        {rosters.map((r) => renderTeam(r))}
+        {rosters.map((roster) => (
+          <SubstitutionRoster key={roster.key} name={roster.name} side={roster.matchSide}
+            players={roster.users} selectedId={selected?.id} disabled={saving || !holding}
+            onPick={tapPlayer} actions={roster.matchSide === null ? (player) => !player.inAnotherMatch && (
+              <div className="grid grid-cols-2 gap-2 px-2 pb-2">
+                {(["a", "b"] as const).map((side, index) => (
+                  <button key={side} type="button" disabled={saving || !holding}
+                    aria-label={`Add ${player.display_name} to ${rosters[index].name}`}
+                    onClick={() => void addPlayer(player, side, rosters[index].name)}
+                    className="min-h-12 min-w-0 break-words border border-line px-2 py-2 text-sm font-semibold text-ink hover:bg-raised disabled:opacity-50">
+                    Add to {rosters[index].name}
+                  </button>
+                ))}
+              </div>
+            ) : undefined} />
+        ))}
       </div>
       {holding && selected && (
         <p className="text-xs font-medium text-live">
           Tap a player on any other team to swap.
         </p>
       )}
-    </section>
+    </div>
   );
 }

@@ -24,8 +24,6 @@ import { MeetupWeatherBadge } from "../components/MeetupWeatherBadge";
 import { BrandWordmark } from "../components/BrandWordmark";
 import { demoRoom } from "../utils/demoRoom";
 
-const BOTTOM_NAV_H = "4.5rem";
-
 function SseIndicator({ live }: { live: boolean }) {
   return (
     <span className="ml-1.5 inline-flex items-center" aria-hidden>
@@ -83,7 +81,7 @@ function MemberChrome() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-board transition-colors">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-board transition-colors">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-line focus:bg-panel focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-lg"
@@ -93,8 +91,8 @@ function MemberChrome() {
       <OfflineBanner />
       {!demoRoom() && <InstallAppBanner enabled={online} />}
       <MemberNotificationPrompt enabled={online} />
-      <header className="sticky top-0 z-40 border-b border-line bg-board/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
+      <header className="shrink-0 z-40 border-b border-line bg-board/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3 tablet:max-w-[96rem] tablet:items-center tablet:px-6 desktop:px-8">
           <div className="min-w-0 flex-1 text-left">
             <p className="flex items-center text-ink">
               <BrandWordmark />
@@ -104,7 +102,7 @@ function MemberChrome() {
             </p>
             {header ? (
               <>
-                <h1 className="text-base font-bold text-ink">{header.line1}</h1>
+                <h1 className="text-base font-bold text-ink tablet:text-xl">{header.line1}</h1>
                 {(header.location != null ||
                   header.fee != null ||
                   header.meetupId != null) && (
@@ -232,86 +230,89 @@ function MemberChrome() {
         </div>
       </header>
 
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="mx-auto w-full max-w-6xl flex-1 text-left outline-hidden"
-        style={{
-          paddingBottom: `calc(${BOTTOM_NAV_H} + env(safe-area-inset-bottom, 0px))`,
-        }}
-      >
-        <Outlet />
-      </main>
+      <div className="flex min-h-0 w-full flex-1 flex-col desktop:mx-auto desktop:grid desktop:max-w-[96rem] desktop:grid-cols-[12rem_minmax(0,1fr)]">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto overscroll-y-contain pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] text-left outline-hidden tablet:max-w-none tablet:pb-0 desktop:col-start-2 desktop:row-start-1"
+        >
+          <Outlet />
+        </main>
 
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-line bg-panel/95 backdrop-blur"
-        style={{
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        }}
-        aria-label="Member navigation"
-      >
-        <div className="mx-auto flex max-w-6xl items-stretch justify-around gap-1 px-2 pt-1">
-          <button
-            type="button"
-            onClick={goDetails}
-            aria-label={chatUnread ? "Meetup, unread chat messages" : "Meetup"}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
-              isPlayerHome ? "text-live" : "text-ink-faint hover:text-ink-dim"
-            }`}
-          >
-            <span className="relative inline-flex">
-              <LayoutGrid className="h-5 w-5 shrink-0" aria-hidden />
-              {chatUnread && (
-                <span
-                  className="absolute -right-0.5 -top-0.5 h-2 w-2 bg-danger ring-2 ring-panel"
-                  aria-hidden
-                />
-              )}
-            </span>
-            <span className="truncate">Meetup</span>
-            <span
-              className={`h-0.5 w-8 ${isPlayerHome ? "bg-live" : "bg-transparent"}`}
-            />
-          </button>
-          <button
-            type="button"
-            onClick={goHistory}
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
-              isHistory ? "text-live" : "text-ink-faint hover:text-ink-dim"
-            }`}
-          >
-            <History className="h-5 w-5 shrink-0" aria-hidden />
-            <span className="truncate">History</span>
-            <span
-              className={`h-0.5 w-8 ${isHistory ? "bg-live" : "bg-transparent"}`}
-            />
-          </button>
-          <Link
-            to="/rankings"
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
-              isRankings ? "text-live" : "text-ink-faint hover:text-ink-dim"
-            }`}
-          >
-            <Trophy className="h-5 w-5 shrink-0" aria-hidden />
-            <span className="truncate">Rankings</span>
-            <span
-              className={`h-0.5 w-8 ${isRankings ? "bg-live" : "bg-transparent"}`}
-            />
-          </Link>
-          <Link
-            to="/profile"
-            className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
-              isProfile ? "text-live" : "text-ink-faint hover:text-ink-dim"
-            }`}
-          >
-            <UserCircle className="h-5 w-5 shrink-0" aria-hidden />
-            <span className="truncate">Profile</span>
-            <span
-              className={`h-0.5 w-8 ${isProfile ? "bg-live" : "bg-transparent"}`}
-            />
-          </Link>
-        </div>
-      </nav>
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-40 border-t border-line bg-panel/95 backdrop-blur tablet:static tablet:order-first tablet:shrink-0 tablet:border-t-0 tablet:border-b desktop:col-start-1 desktop:row-start-1 desktop:border-r desktop:border-b-0"
+          style={{
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          }}
+          aria-label="Member navigation"
+        >
+          <div className="mx-auto flex max-w-6xl items-stretch justify-around gap-1 px-2 pt-1 tablet:justify-start tablet:gap-2 tablet:px-6 tablet:py-2 desktop:flex-col desktop:items-stretch desktop:px-3 desktop:py-5">
+            <button
+              type="button"
+              onClick={goDetails}
+              aria-label={chatUnread ? "Meetup, unread chat messages" : "Meetup"}
+              aria-current={isPlayerHome ? "page" : undefined}
+              className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live tablet:relative tablet:min-h-11 tablet:flex-none tablet:flex-row tablet:gap-2 tablet:px-4 tablet:text-sm desktop:justify-start ${
+                isPlayerHome ? "text-live" : "text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              <span className="relative inline-flex">
+                <LayoutGrid className="h-5 w-5 shrink-0" aria-hidden />
+                {chatUnread && (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 bg-danger ring-2 ring-panel"
+                    aria-hidden
+                  />
+                )}
+              </span>
+              <span className="truncate">Meetup</span>
+              <span
+                className={`h-0.5 w-8 tablet:absolute tablet:inset-x-2 tablet:bottom-0 tablet:w-auto desktop:inset-y-2 desktop:inset-x-auto desktop:start-0 desktop:h-auto desktop:w-0.5 ${isPlayerHome ? "bg-live" : "bg-transparent"}`}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={goHistory}
+              aria-current={isHistory ? "page" : undefined}
+              className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live tablet:relative tablet:min-h-11 tablet:flex-none tablet:flex-row tablet:gap-2 tablet:px-4 tablet:text-sm desktop:justify-start ${
+                isHistory ? "text-live" : "text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              <History className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="truncate">History</span>
+              <span
+                className={`h-0.5 w-8 tablet:absolute tablet:inset-x-2 tablet:bottom-0 tablet:w-auto desktop:inset-y-2 desktop:inset-x-auto desktop:start-0 desktop:h-auto desktop:w-0.5 ${isHistory ? "bg-live" : "bg-transparent"}`}
+              />
+            </button>
+            <Link
+              to="/rankings"
+              aria-current={isRankings ? "page" : undefined}
+              className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live tablet:relative tablet:min-h-11 tablet:flex-none tablet:flex-row tablet:gap-2 tablet:px-4 tablet:text-sm desktop:justify-start ${
+                isRankings ? "text-live" : "text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              <Trophy className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="truncate">Rankings</span>
+              <span
+                className={`h-0.5 w-8 tablet:absolute tablet:inset-x-2 tablet:bottom-0 tablet:w-auto desktop:inset-y-2 desktop:inset-x-auto desktop:start-0 desktop:h-auto desktop:w-0.5 ${isRankings ? "bg-live" : "bg-transparent"}`}
+              />
+            </Link>
+            <Link
+              to="/profile"
+              aria-current={isProfile ? "page" : undefined}
+              className={`flex min-h-[3.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-live tablet:relative tablet:min-h-11 tablet:flex-none tablet:flex-row tablet:gap-2 tablet:px-4 tablet:text-sm desktop:justify-start ${
+                isProfile ? "text-live" : "text-ink-faint hover:text-ink-dim"
+              }`}
+            >
+              <UserCircle className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="truncate">Profile</span>
+              <span
+                className={`h-0.5 w-8 tablet:absolute tablet:inset-x-2 tablet:bottom-0 tablet:w-auto desktop:inset-y-2 desktop:inset-x-auto desktop:start-0 desktop:h-auto desktop:w-0.5 ${isProfile ? "bg-live" : "bg-transparent"}`}
+              />
+            </Link>
+          </div>
+        </nav>
+      </div>
     </div>
   );
 }

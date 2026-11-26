@@ -8,6 +8,9 @@ Covers the optional ``goalkeeper_id`` surface:
 - replay of the same intent keeps the same keeper
 """
 
+from asyncio import gather
+from datetime import datetime, timedelta, UTC
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, text
@@ -16,8 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.core.migrations import run_sqlite_migrations
+from app.models.match import MeetupMatch, MatchSubstitution
 from app.models.match_goal import MatchGoal
+from app.models.meetup import Meetup
+from app.models.meetup_analytics import MeetupAnalytics
 from app.models.user import User
+from app.services.rankings_service import ANALYTICS_VERSION, _aggregate
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -119,6 +126,187 @@ async def make_live_setup(ac: AsyncClient, tokens, *, start_offset_minutes: int 
 TOKENS = ["p1", "p2", "p3", "tp1"]
 
 
+async def test_historical_tap_swap_switches_players_between_match_teams():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            await db.commit()
+        url = f"/meetups/{sid}/matches/{mid}/substitutions"
+        body = {"team": "a", "player_off": ids["p2"], "player_on": ids["tp1"]}
+        assert (await ac.post(url, headers=hdr("admin"), json=body)).status_code == 409
+        result = await ac.post(url, headers=hdr("admin"), json={**body, "swap_teams": True})
+        assert result.status_code == 200, result.text
+        assert len(result.json()["substitutions"]) == 1
+        assert {p["id"] for p in result.json()["match"]["team_a"]["users"]} == {ids["p1"], ids["tp1"]}
+        assert {p["id"] for p in result.json()["match"]["team_b"]["users"]} == {ids["p3"], ids["p2"]}
+
+
+async def test_new_historical_goal_increases_score_once_and_preserves_unassigned_goals():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_b = 1
+            await db.commit()
+
+        url = f"/meetups/{sid}/matches/{mid}/goal-attribution"
+        body = {"team": "a", "scorer_id": ids["p1"], "intent_id": "new-historical", "add_to_score": True}
+
+        async def save(payload):
+            return await ac.put(url, headers=hdr("admin"), json=payload)
+
+        first, retry = await gather(save(body), save(body))
+        assert first.status_code == retry.status_code == 200
+        result = first.json()
+        assert result == retry.json()
+        assert (result["score_a"], result["score_b"]) == (1, 1)
+        assert (await save({**body, "goal_id": result["goal"]["id"]})).status_code == 400
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            assert (match.score_offset_a, match.score_offset_b) == (0, 1)
+            match.penalty_winner = "b"
+            await db.commit()
+        blocked = await save({**body, "intent_id": "would-invalidate-shootout"})
+        assert blocked.status_code == 409
+        assert "shootout" in blocked.json()["detail"]
+
+
+async def test_admin_can_correct_kickoff_and_insert_substitution_before_a_saved_one():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        base = f"/meetups/{sid}/matches/{mid}"
+        url = f"{base}/substitutions"
+        p1, p2, p3, tp1 = (ids[token] for token in TOKENS)
+        later = {"team": "b", "player_off": p3, "player_on": tp1, "elapsed_seconds": 240}
+        assert (await ac.post(url, json=later, headers=hdr("p1"))).status_code == 403
+        assert (await ac.post(url, json=later, headers=hdr("admin"))).status_code == 409
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_a, match.score_b = 1, 0
+            match.team_b_users = f"[{p3}]"
+            # A six-minute early finish with the old kickoff remaining value still stored.
+            match.completed_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3)
+            match.timer_started_at = match.completed_at - timedelta(minutes=6)
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = match.timer_started_at
+            await db.flush()
+            db.add(MeetupAnalytics(meetup_id=sid, version=ANALYTICS_VERSION, totals={}))
+            await db.commit()
+
+        async def save(change):
+            return await ac.post(url, json=change, headers=hdr("admin"))
+
+        assert (await save({**later, "elapsed_seconds": 360})).status_code == 400
+        result = await save(later)
+        assert result.status_code == 200, result.text
+        late_id = result.json()["substitutions"][0]["id"]
+
+        correction = await save({"team": "a", "player_off": p2})
+        assert correction.status_code == 200, correction.text
+        early = {"team": "a", "player_off": p1, "player_on": p2, "elapsed_seconds": 180}
+        result = await save(early)
+        assert result.status_code == 200, result.text
+        result = result.json()
+        late_row = next(row for row in result["substitutions"] if row["id"] == late_id)
+        assert late_row["old_team_a_users"] == late_row["new_team_a_users"] == [p2]
+        assert late_row["old_team_b_users"] == [p3]
+        assert late_row["new_team_b_users"] == [tp1]
+        assert (result["match"]["score_a"], result["match"]["score_b"]) == (1, 0)
+
+        assert (await save(early)).status_code == 409
+        conflict = await save({"team": "b", "player_off": p3, "elapsed_seconds": 120})
+        assert conflict.status_code == 409
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            substitutions = list(await db.scalars(select(MatchSubstitution).where(
+                MatchSubstitution.match_id == match.id,
+            )))
+            assert len(substitutions) == 3
+            assert await db.get(MeetupAnalytics, sid) is None
+            metrics = _aggregate({uid: 1 for uid in ids.values()}, [match], [], False, substitutions)
+            assert {uid: row["matches"] for uid, row in metrics.items()} == {p1: 1, p2: 1, p3: 1, tp1: 0}
+            assert all(metrics[uid]["wins"] == metrics[uid]["clean_sheets"] == 1 for uid in (p1, p2))
+
+
+async def test_admin_can_backfill_and_edit_historical_goal_without_changing_result():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        base = f"/meetups/{sid}/matches/{mid}"
+        url = f"{base}/goal-attribution"
+        admin = hdr("admin")
+        p1, p2, p3, keeper = (ids[token] for token in TOKENS)
+        body = {
+            "team": "a", "scorer_id": p2, "assist_id": p1,
+            "goalkeeper_id": keeper, "intent_id": "history-a1",
+        }
+        assert (await ac.put(url, json=body, headers=hdr("p1"))).status_code == 403
+        assert (await ac.put(url, json=body, headers=admin)).status_code == 409
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.score_a = match.score_b = 1
+            match.was_draw = True
+            match.team_b_users = f"[{p3}]"
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=3)
+            db.add(MatchSubstitution(
+                meetup_id=sid, match_id=mid, recorded_by=p1, clock_secs=300,
+                old_team_a_users=match.team_a_users, new_team_a_users=match.team_a_users,
+                old_team_b_users=f"[{p3},{keeper}]", new_team_b_users=match.team_b_users,
+            ))
+            await db.flush()
+            db.add(MeetupAnalytics(meetup_id=sid, version=1, totals={}))
+            await db.commit()
+
+        history_url = f"{base}/goals?include_history_rosters=true"
+        assert (await ac.get(history_url, headers=hdr("p1"))).status_code == 403
+        log = (await ac.get(history_url, headers=admin)).json()
+        assert {player["id"] for player in log["rosters"]["b"]} == {p3, keeper}
+        for invalid in ({"assist_id": p3}, {"goalkeeper_id": p1}):
+            result = await ac.put(url, json={**body, **invalid}, headers=admin)
+            assert result.status_code == 400, result.text
+
+        async def save(data):
+            return await ac.put(url, json=data, headers=admin)
+
+        lease_url = f"/meetups/{sid}/matches/lease"
+        lease = await ac.post(f"{lease_url}/acquire?match_id={mid}", headers=admin)
+        assert lease.status_code == 200, lease.text
+        assert (await save(body)).status_code == 409
+        release = await ac.post(
+            f"{lease_url}/release?match_id={mid}",
+            headers=admin, json={"lease_token": lease.json()["lease_token"]},
+        )
+        assert release.status_code == 200, release.text
+
+        results = await gather(save(body), save(body), save({**body, "intent_id": "other"}))
+        # Either request may win the race, but only one goal can fill the slot.
+        accepted = [response.json()["goal"] for response in results if response.status_code == 200]
+        assert accepted and len({goal["id"] for goal in accepted}) == 1
+        assert all(response.status_code in (200, 409) for response in results)
+        goal = accepted[0]
+        assert goal["clock_minute"] == 0
+        assert goal["assist"]["id"] == p1
+        assert goal["goalkeeper"]["id"] == keeper
+
+        edited = await save({**body, "goal_id": goal["id"], "assist_id": None, "goalkeeper_id": p3})
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["goal"]["assist"] is None
+        assert edited.json()["goal"]["goalkeeper"]["id"] == p3
+
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            assert (match.score_a, match.score_b, match.penalty_winner) == (1, 1, None)
+            assert (match.score_offset_a, match.score_offset_b) == (0, 1)
+            assert await db.get(MeetupAnalytics, sid) is None
+
+
 @pytest.mark.asyncio
 async def test_goal_with_valid_conceding_keeper():
     async with await client() as ac:
@@ -216,7 +404,7 @@ async def test_keeper_equal_scorer_or_assist_refused():
             headers=hdr("p1"),
         )
         assert r2.status_code == 400
-        assert "not the assist" in r2.json()["detail"].lower()
+        assert "assist" in r2.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -384,3 +572,83 @@ async def test_is_own_goal_migration_adds_column():
         await run_sqlite_migrations(conn)
         cols = [c[1] for c in (await conn.execute(text("PRAGMA table_info(match_goals)"))).fetchall()]
         assert "is_own_goal" in cols
+
+async def test_unknown_scorer_and_decided_shootout_blocks_goal_changes():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        base = f"/meetups/{sid}/matches/{mid}"
+        assert (await ac.post(f"/meetups/{sid}/matches/lease/acquire", headers=hdr("p1"))).status_code == 200
+        goal = await ac.post(f"{base}/goals", headers=hdr("p1"), json={
+            "team": "a", "intent_id": "unknown-live", "assist_id": ids["p1"],
+            "goalkeeper_id": ids["p3"],
+        })
+        assert goal.status_code == 201, goal.text
+        assert goal.json()["goal"]["scorer"] is None
+        goal_id = goal.json()["goal"]["id"]
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            match.penalty_winner = "a"
+            await db.commit()
+        headers = hdr("admin")
+        assert (await ac.post(f"{base}/goals", headers=headers, json={"team": "a", "intent_id": "blocked"})).status_code == 409
+        assert (await ac.patch(f"{base}/goals/{goal_id}", headers=headers, json={"team": "a", "clock_minute": 1})).status_code == 409
+        assert (await ac.delete(f"{base}/goals/{goal_id}", headers=headers)).status_code == 409
+        assert (await ac.put(f"{base}/goal-attribution", headers=headers, json={"team": "a", "goal_id": goal_id, "intent_id": "edit"})).status_code == 409
+        assert (await ac.put(f"{base}/goal-attribution", headers=headers, json={"team": "a", "intent_id": "add", "add_to_score": True})).status_code == 409
+
+
+async def test_retro_match_rejects_duplicate_and_outside_players():
+    async with await client() as ac:
+        sid, _, ids = await make_live_setup(ac, TOKENS)
+        body = {"team_a_name": "A", "team_b_name": "B", "score_a": 0, "score_b": 0,
+                "team_a_users": [ids["p1"]], "team_b_users": [ids["p3"]]}
+        url = f"/meetups/{sid}/matches/create"
+        for teams in ({"team_a_users": [ids["p1"], ids["p1"]]},
+                      {"team_b_users": [ids["p1"]]}, {"team_a_users": [999999]}):
+            assert (await ac.post(url, headers=hdr("admin"), json={**body, **teams})).status_code == 400
+        assert (await ac.post(url, headers=hdr("admin"), json=body)).status_code == 201
+
+
+async def test_nullable_scorer_migration_preserves_rows_and_indexes():
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE match_goals"))
+        await conn.execute(text("CREATE TABLE match_goals (id INTEGER PRIMARY KEY, scorer_id INTEGER NOT NULL, intent_id VARCHAR UNIQUE)"))
+        await conn.execute(text("CREATE INDEX test_goal_scorer ON match_goals (scorer_id)"))
+        await conn.execute(text("INSERT INTO match_goals VALUES (1, 42, 'old')"))
+        await run_sqlite_migrations(conn)
+        await conn.execute(text("INSERT INTO match_goals (id, scorer_id, intent_id) VALUES (2, NULL, 'new')"))
+        assert (await conn.execute(text("SELECT scorer_id FROM match_goals ORDER BY id"))).scalars().all() == [42, None]
+        assert (await conn.execute(text("SELECT name FROM sqlite_master WHERE name='test_goal_scorer'"))).scalar() == "test_goal_scorer"
+
+async def test_historical_unknown_scorer_counts_without_player_credit():
+    async with await client() as ac:
+        sid, mid, ids = await make_live_setup(ac, TOKENS)
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.status = "completed"
+            await db.commit()
+        result = await ac.put(f"/meetups/{sid}/matches/{mid}/goal-attribution", headers=hdr("admin"), json={
+            "team": "a", "is_own_goal": True, "assist_id": ids["p1"],
+            "goalkeeper_id": ids["p3"], "intent_id": "unknown-history", "add_to_score": True,
+        })
+        assert result.status_code == 200, result.text
+        assert result.json()["goal"]["scorer"] is None
+        assert result.json()["score_a"] == 1
+        async with AsyncSession(engine) as db:
+            goal = await db.scalar(select(MatchGoal).where(MatchGoal.match_id == mid))
+            stats = _aggregate({}, [], [goal], True)
+            assert None not in stats
+            assert stats[ids["p1"]]["assists"] == 1
+            assert stats[ids["p3"]]["goals_conceded"] == 1
+
+
+def test_unknown_scorer_does_not_create_negative_shooting_evidence():
+    from app.services.player_attributes import attribute_evidence_by_meetup
+
+    match = MeetupMatch(id=1, meetup_id=1, score_a=1, score_b=0,
+                        team_a_users="[1]", team_b_users="[2]")
+    goal = MatchGoal(team="a", scorer_id=None, is_own_goal=False, is_penalty=False)
+    evidence = attribute_evidence_by_meetup([match], {1: [goal]}, set())
+    assert evidence[1]["1"]["sho"]["sample"] == 0
+    assert evidence[1]["2"]["sho"]["sample"] == 1

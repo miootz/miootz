@@ -140,9 +140,10 @@ def attribute_evidence_by_meetup(
                 defence["count"] += int(conceded == 0)
                 if not reconciled:
                     continue
-                shooting = attrs["sho"]
-                shooting["sample"] += 1
-                shooting["count"] += scorers[user_id]
+                if all(goal.scorer_id is not None for goal in open_play):
+                    shooting = attrs["sho"]
+                    shooting["sample"] += 1
+                    shooting["count"] += scorers[user_id]
 
                 passing = attrs["pas"]
                 passing["sample"] += known_goals

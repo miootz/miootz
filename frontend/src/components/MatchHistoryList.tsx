@@ -1,29 +1,42 @@
 import { parseMeetupStart } from "../utils/datetime";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import {
-  createMatch,
   deleteMatch,
   fetchMatchSubstitutions,
   fetchMeetupMatches,
-  setScores,
   type MatchSummary,
   type MatchSubstitution,
 } from "../api/matchesApi";
-import { ChevronDown, Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
+import { ChevronDown, Loader2, Pencil, Plus, Trash2, Trophy } from "lucide-react";
+import type { MeetupDetail } from "../api/meetupsApi";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
 import { deletePenaltyMiss, fetchGoals, fetchPenaltyMisses, type GoalRow, type PenaltyMissRow } from "../api/stewardApi";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { GoalList } from "./GoalList";
 import { PlayerEditLink } from "./PlayerEditLink";
+import { MatchDialog } from "./MatchDialog";
 
-export function MatchHistoryList({
+interface MatchHistoryListProps {
+  meetupId: number;
+  /** When true, admins can edit scores and match details. */
+  editable?: boolean;
+  allowCreate?: boolean;
+  refreshKey?: number;
+  attendees?: MeetupDetail["attendees"];
+}
+
+export function MatchHistoryList(props: MatchHistoryListProps) {
+  return <MatchHistoryContent key={props.meetupId} {...props} />;
+}
+
+function MatchHistoryContent({
   meetupId,
   editable = false,
-}: {
-  meetupId: number;
-  /** When true, scores are clickable and editable by admins. */
-  editable?: boolean;
-}) {
+  allowCreate = true,
+  refreshKey,
+  attendees,
+}: MatchHistoryListProps) {
   const { showToast } = useToast();
   const auth = useContext(AuthContext);
   const isAdmin = auth?.me?.is_admin ?? false;
@@ -31,116 +44,48 @@ export function MatchHistoryList({
 
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await fetchMeetupMatches(meetupId);
-      setMatches(res.matches.filter((m) => m.status === "completed"));
-    } catch {
-      setMatches([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [liveRevision, setLiveRevision] = useState(0);
+  const [rowRevision, setRowRevision] = useState(0);
+  const [dialog, setDialog] = useState<
+    { mode: "add" } | { mode: "edit"; matchId: number } | null
+  >(null);
+  const editingMatch = dialog?.mode === "edit"
+    ? matches.find((match) => match.id === dialog.matchId)
+    : undefined;
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetupId]);
+    let current = true;
+    void fetchMeetupMatches(meetupId).then(({ matches }) => {
+      if (current) setMatches(matches.filter((match) => match.status === "completed"));
+    }).catch(() => {
+      // Keep the last successful list if a live refresh fails.
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => { current = false; };
+  }, [meetupId, refreshKey, liveRevision]);
 
-  const handleScoreSubmit = async (
-    match: MatchSummary,
-    scoreA: string,
-    scoreB: string,
-  ) => {
-    const numA = parseInt(scoreA, 10);
-    const numB = parseInt(scoreB, 10);
-    if (isNaN(numA) || numA < 0 || isNaN(numB) || numB < 0) {
-      setEditingId(null);
-      return;
-    }
-    const newScoreA = numA;
-    const newScoreB = numB;
+  useEffect(() => {
+    if (!auth?.tokens?.accessToken) return;
+    return subscribeMeetupData(meetupId, auth.tokens.accessToken, (event) => {
+      if (["goal_added", "goal_updated", "goal_removed", "penalty_missed", "penalty_miss_removed", "match_ended", "match_penalty_finished"].includes(String(event.type))) {
+        setLiveRevision((revision) => revision + 1);
+      }
+    });
+  }, [meetupId, auth?.tokens?.accessToken]);
 
-    // Optimistic update
-    setMatches((prev) =>
-      prev.map((m) =>
-        m.id === match.id
-          ? { ...m, score_a: newScoreA, score_b: newScoreB }
-          : m,
-      ),
-    );
-    setEditingId(null);
-
-    try {
-      await setScores(meetupId, match.id, newScoreA, newScoreB);
-    } catch (e) {
-      // Revert on failure
-      setMatches((prev) =>
-        prev.map((m) =>
-          m.id === match.id
-            ? { ...m, score_a: match.score_a, score_b: match.score_b }
-            : m,
-        ),
-      );
-      showToast(
-        e instanceof Error ? e.message : "Failed to update score",
-        "error",
-      );
-    }
+  const handleCreated = (match: MatchSummary) => {
+    setMatches((prev) => [...prev, match]);
+    setDialog({ mode: "edit", matchId: match.id });
+    showToast("Match created.", "success");
   };
 
   const handleDeleteMatch = async (matchId: number) => {
-    try {
-      await deleteMatch(meetupId, matchId);
-      setMatches((prev) => prev.filter((m) => m.id !== matchId));
-      setEditingId(null);
-      showToast("Match deleted", "success");
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Failed to delete match",
-        "error",
-      );
-    }
+    await deleteMatch(meetupId, matchId);
+    setMatches((prev) => prev.filter((m) => m.id !== matchId));
+    setDialog(null);
+    showToast("Match deleted", "success");
   };
-
-  const handleAddMatch = async (
-    teamA: string,
-    teamB: string,
-    scoreA: number,
-    scoreB: number,
-  ) => {
-    try {
-      const res = await createMatch(meetupId, {
-        team_a_name: teamA.trim(),
-        team_b_name: teamB.trim(),
-        score_a: scoreA,
-        score_b: scoreB,
-      });
-      // Add the new match to the list (it's completed)
-      setMatches((prev) => [...prev, res.match]);
-      setShowAddForm(false);
-      showToast("Match added.", "success");
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Failed to add match",
-        "error",
-      );
-    }
-  };
-
-  // Collect unique team names from existing matches for dropdown options
-  const teamNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const m of matches) {
-      names.add(m.team_a.name);
-      names.add(m.team_b.name);
-    }
-    return Array.from(names).sort();
-  }, [matches]);
 
   if (loading) {
     return (
@@ -151,53 +96,62 @@ export function MatchHistoryList({
     );
   }
 
-  if (matches.length === 0) {
-    return (
-      <div className="border border-dashed border-line p-6 text-center">
-        <Trophy className="w-6 h-6 mx-auto text-ink-faint mb-1.5" />
-        <p className="text-sm text-ink-dim">
-          No match results recorded yet.
-        </p>
-      </div>
-    );
-  }
-
-  const finalMatch = matches[matches.length - 1];
-  const finalResultText = `${finalMatch.team_a.name} ${finalMatch.score_a} – ${finalMatch.score_b} ${finalMatch.team_b.name}`;
-
   return (
     <div className="space-y-3">
-      {/* Add match form */}
-      {canEdit && (
-        <AddMatchForm
-          teamNames={teamNames}
-          isOpen={showAddForm}
-          onToggle={() => setShowAddForm((v) => !v)}
-          onSubmit={handleAddMatch}
-        />
+      {/* Add match button */}
+      {canEdit && allowCreate && (
+        <button
+          type="button"
+          onClick={() => setDialog({ mode: "add" })}
+          className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 border border-dashed border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-[0.99] transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Add match result
+        </button>
       )}
 
-      {matches.length > 1 && (
-        <div className="flex items-center gap-2 text-sm font-medium text-ink px-1">
-          <Flag className="h-4 w-4" aria-hidden />
-          <span className="tabular-nums">Final match: {finalResultText}</span>
+      {matches.length === 0 ? (
+        <div className="border border-dashed border-line p-6 text-center">
+          <Trophy className="w-6 h-6 mx-auto text-ink-faint mb-1.5" />
+          <p className="text-sm text-ink-dim">No match results recorded yet.</p>
         </div>
-      )}
+      ) : (
+        <>
       <div className="space-y-2">
         {matches.map((m) => (
           <MatchResultRow
             key={m.id}
             meetupId={meetupId}
             match={m}
+            liveRevision={liveRevision + rowRevision}
+            refreshKey={refreshKey}
             canEdit={canEdit}
-            editingId={editingId}
-            onEditStart={() => setEditingId(m.id)}
-            onEditCancel={() => setEditingId(null)}
-            onEditSubmit={handleScoreSubmit}
-            onDelete={() => void handleDeleteMatch(m.id)}
+            attendees={attendees}
+            onEdit={() => setDialog({ mode: "edit", matchId: m.id })}
           />
         ))}
       </div>
+        </>
+      )}
+
+      {dialog && (dialog.mode === "add" || editingMatch) && (
+        <MatchDialog
+          meetupId={meetupId}
+          attendees={attendees}
+          existingMatches={matches}
+          mode={dialog.mode}
+          match={editingMatch ?? null}
+          onClose={() => setDialog(null)}
+          onCreated={handleCreated}
+          onSaved={(matchId, updated) => {
+            setMatches((previous) =>
+              previous.map((row) => (row.id === matchId ? { ...row, ...updated } : row)),
+            );
+            setRowRevision((revision) => revision + 1);
+          }}
+          onDelete={handleDeleteMatch}
+        />
+      )}
     </div>
   );
 }
@@ -208,68 +162,63 @@ function MatchResultRow({
   meetupId,
   match,
   canEdit,
-  editingId,
-  onEditStart,
-  onEditCancel,
-  onEditSubmit,
-  onDelete,
+  attendees,
+  liveRevision,
+  refreshKey,
+  onEdit,
 }: {
   meetupId: number;
   match: MatchSummary;
   canEdit: boolean;
-  editingId: number | null;
-  onEditStart: () => void;
-  onEditCancel: () => void;
-  onEditSubmit: (match: MatchSummary, scoreA: string, scoreB: string) => void;
-  onDelete: () => void;
+  attendees?: MeetupDetail["attendees"];
+  liveRevision: number;
+  refreshKey?: number;
+  onEdit: () => void;
 }) {
-  const { showToast } = useToast();
   const [expanded, setExpanded] = useState(false);
   // null = not fetched yet; lazy-load on first expand
   const [subs, setSubs] = useState<MatchSubstitution[] | null>(null);
   const [goals, setGoals] = useState<GoalRow[] | null>(null);
   const [misses, setMisses] = useState<PenaltyMissRow[] | null>(null);
+  const [missLoadError, setMissLoadError] = useState(false);
+  const { showToast } = useToast();
+  const [subLoadError, setSubLoadError] = useState(false);
 
   useEffect(() => {
-    if (!expanded || subs !== null) return;
-    fetchMatchSubstitutions(meetupId, match.id)
-      .then((r) => setSubs(r.substitutions))
-      .catch(() => setSubs([]));
-  }, [expanded, meetupId, match.id, subs]);
-
-  useEffect(() => {
-    if (!expanded || goals !== null) return;
+    if (!expanded) return;
+    let current = true;
+    fetchMatchSubstitutions(meetupId, match.id).then((r) => {
+      if (!current) return;
+      setSubs(r.substitutions);
+      setSubLoadError(false);
+    }).catch(() => {
+      if (current) setSubLoadError(true);
+    });
     fetchGoals(meetupId, match.id)
-      .then(setGoals)
-      .catch(() => setGoals([]));
-  }, [expanded, meetupId, match.id, goals]);
-
-  useEffect(() => {
-    if (!expanded || misses !== null) return;
+      .then((result) => { if (current) setGoals(result); })
+      .catch(() => { if (current) setGoals([]); });
     fetchPenaltyMisses(meetupId, match.id)
-      .then(setMisses)
-      .catch(() => setMisses([]));
-  }, [expanded, meetupId, match.id, misses]);
+      .then((result) => { if (current) { setMisses(result); setMissLoadError(false); } })
+      .catch(() => { if (current) setMissLoadError(true); });
+    return () => { current = false; };
+  }, [expanded, meetupId, match.id, liveRevision, refreshKey]);
 
   const handleDeleteMiss = async (miss: PenaltyMissRow) => {
     try {
       await deletePenaltyMiss(meetupId, match.id, miss.id);
-      setMisses((prev) => (prev ?? []).filter((m) => m.id !== miss.id));
+      setMisses((rows) => (rows ?? []).filter((row) => row.id !== miss.id));
       showToast("Penalty miss removed", "success");
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Delete failed",
-        "error",
-      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not delete penalty miss", "error");
     }
   };
 
   const nameById = useMemo(() => {
-    const m = new Map<number, string>();
+    const m = new Map(attendees?.map((attendee) => [attendee.user_id, attendee.display_name]));
     for (const u of match.team_a.users) m.set(u.id, u.display_name);
     for (const u of match.team_b.users) m.set(u.id, u.display_name);
     return m;
-  }, [match]);
+  }, [match, attendees]);
 
   const movesFor = (s: MatchSubstitution): string[] => {
     const oldA = new Set(s.old_team_a_users);
@@ -281,16 +230,15 @@ function MatchResultRow({
     for (const id of s.new_team_a_users)
       if (!oldA.has(id))
         out.push(`${nameById.get(id) ?? "?"} → ${match.team_a.name}`);
+    const onPitch = new Set([...s.new_team_a_users, ...s.new_team_b_users]);
+    for (const id of [...oldA, ...oldB])
+      if (!onPitch.has(id))
+        out.push(`${nameById.get(id) ?? "?"} → Bench`);
     return out;
   };
 
   const winner =
-    match.score_a > match.score_b
-      ? "a"
-      : match.score_b > match.score_a
-        ? "b"
-        : null;
-  const isEditing = editingId === match.id;
+    match.score_a > match.score_b ? "a" : match.score_b > match.score_a ? "b" : null;
 
   const timeLabel = (() => {
     if (!match.completed_at) return null;
@@ -305,96 +253,59 @@ function MatchResultRow({
       }`}
     >
       {/* Match header — tap to expand rosters + substitutions */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-board border-b border-line text-left min-h-[44px]"
-        aria-expanded={expanded}
-      >
-        <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
-          Match {match.match_number}
-        </span>
-        {match.was_draw && (
-          <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1.5 py-0.5">
-            Draw
+      <div className="flex items-center bg-board border-b border-line">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex flex-1 items-center gap-2 px-4 py-2.5 text-left min-h-[44px]"
+          aria-expanded={expanded}
+        >
+          <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
+            Match {match.match_number}
           </span>
-        )}
-        {timeLabel && (
-          <>
-            <span className="text-ink-faint">·</span>
-            <span className="text-2xs text-ink-dim tabular-nums">
-              {timeLabel}
+          {match.was_draw && (
+            <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1.5 py-0.5">
+              Draw
             </span>
-          </>
+          )}
+          {timeLabel && (
+            <>
+              <span className="text-ink-faint">·</span>
+              <span className="text-2xs text-ink-dim tabular-nums">{timeLabel}</span>
+            </>
+          )}
+          <span className="ml-auto">
+            <ChevronDown
+              className={`h-4 w-4 text-ink-faint transition-transform ${
+                expanded ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            />
+          </span>
+        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="grid h-11 w-11 shrink-0 place-items-center border-l border-line text-ink-dim hover:bg-raised hover:text-ink"
+            aria-label={`Edit match ${match.match_number}`}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </button>
         )}
-        <span className="ml-auto">
-          <ChevronDown
-            className={`h-4 w-4 text-ink-faint transition-transform ${
-              expanded ? "rotate-180" : ""
-            }`}
-            aria-hidden
-          />
-        </span>
-      </button>
+      </div>
+
       <div className="px-4 py-3 flex flex-col gap-2">
-        {/* Score — larger, centred, above the team names */}
+        {/* Score — read-only */}
         <div className="flex items-center justify-center gap-2">
-            {isEditing ? (
-              <EditableScore
-                value={match.score_a}
-                matchId={match.id}
-                isEditing
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={
-                  canEdit
-                    ? (e) => {
-                        e.stopPropagation();
-                        onEditStart();
-                      }
-                    : undefined
-                }
-                className={`text-3xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
-                  canEdit
-                    ? "cursor-pointer text-ink hover:text-live"
-                    : "cursor-default text-ink"
-                }`}
-              >
-                {match.score_a}
-              </button>
-            )}
-            <span className="text-ink-faint text-xl font-bold select-none">
-              :
-            </span>
-            {isEditing ? (
-              <EditableScore
-                value={match.score_b}
-                matchId={match.id}
-                isEditing
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={
-                  canEdit
-                    ? (e) => {
-                        e.stopPropagation();
-                        onEditStart();
-                      }
-                    : undefined
-                }
-                className={`text-3xl font-bold tabular-nums min-w-[2ch] text-center transition-colors ${
-                  canEdit
-                    ? "cursor-pointer text-ink hover:text-live"
-                    : "cursor-default text-ink"
-                }`}
-              >
-                {match.score_b}
-              </button>
-            )}
-          </div>
+          <span className="text-3xl font-bold tabular-nums text-ink min-w-[2ch] text-center">
+            {match.score_a}
+          </span>
+          <span className="text-ink-faint text-xl font-bold select-none">:</span>
+          <span className="text-3xl font-bold tabular-nums text-ink min-w-[2ch] text-center">
+            {match.score_b}
+          </span>
+        </div>
 
         {/* Team names — 50/50 so full names fit */}
         <div className="flex items-center">
@@ -410,56 +321,12 @@ function MatchResultRow({
           </div>
         </div>
 
-        {/* Save / Cancel / Delete buttons — centered below score */}
-        {isEditing && (
-          <div className="flex items-center justify-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-danger/40 text-danger text-xs font-medium hover:bg-danger/10 active:scale-95 transition-colors min-h-[32px]"
-            >
-              <Trash2 className="w-3 h-3" />
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const inputs = document.querySelectorAll<HTMLInputElement>(
-                  `input[data-match-edit="${match.id}"]`,
-                );
-                const scoreA = inputs[0]?.value ?? String(match.score_a);
-                const scoreB = inputs[1]?.value ?? String(match.score_b);
-                onEditSubmit(match, scoreA, scoreB);
-              }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-ink text-board text-xs font-bold hover:bg-white/90 active:scale-95 transition-colors min-h-[32px]"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M13.5 4.5L6 12L2.5 8.5"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={onEditCancel}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-line text-ink-dim text-xs font-medium hover:bg-raised hover:text-ink active:scale-95 transition-colors min-h-[32px]"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
         {/* Expanded: scorers, final rosters + substitution log */}
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
             {match.penalty_winner && (
               <p className="text-xs text-ink-dim tabular-nums">
-                Shootout: {match.penalty_score_a ?? "?"} –{" "}
-                {match.penalty_score_b ?? "?"} —{" "}
+                Shootout: {match.penalty_score_a != null && match.penalty_score_b != null && <>{match.penalty_score_a} – {match.penalty_score_b} — </>}
                 {match.penalty_winner === "a" ? match.team_a.name : match.team_b.name} wins
               </p>
             )}
@@ -473,33 +340,17 @@ function MatchResultRow({
                 />
               </div>
             )}
+            {missLoadError && <p role="alert" className="text-sm text-danger">Couldn’t load penalty misses.</p>}
             {misses && misses.length > 0 && (
               <div className="space-y-1">
-                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-                  Penalty misses
-                </p>
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">Penalty misses</p>
                 <ul className="divide-y divide-line">
-                  {misses.map((m) => (
-                    <li
-                      key={m.id}
-                      className="flex items-center justify-between gap-2 py-1.5"
-                    >
-                      <span className="text-sm text-ink-dim truncate">
-                        <span className="tabular-nums text-ink-faint mr-2">
-                          {m.clock_minute}&prime;
-                        </span>
-                        {m.scorer.display_name} (miss)
-                      </span>
-                      {canEdit && (
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteMiss(m)}
-                          className="inline-flex h-8 w-8 items-center justify-center text-ink-faint hover:text-danger transition-colors"
-                          aria-label={`Delete penalty miss by ${m.scorer.display_name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                        </button>
-                      )}
+                  {misses.map((miss) => (
+                    <li key={miss.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="text-sm text-ink-dim"><span className="mr-2 tabular-nums text-ink-faint">{miss.clock_minute}′</span>{miss.scorer.display_name} (miss)</span>
+                      {canEdit && <button type="button" onClick={() => void handleDeleteMiss(miss)}
+                        className="grid h-11 w-11 place-items-center text-ink-faint hover:text-danger"
+                        aria-label={`Delete penalty miss by ${miss.scorer.display_name}`}><Trash2 className="h-4 w-4" aria-hidden /></button>}
                     </li>
                   ))}
                 </ul>
@@ -533,20 +384,23 @@ function MatchResultRow({
                 </div>
               ))}
             </div>
+            {subLoadError && (
+              <p className="text-sm text-danger" role="alert">
+                Couldn’t load substitutions.{" "}
+                <button type="button" onClick={() => setSubLoadError(false)} className="min-h-12 underline">Retry</button>
+              </p>
+            )}
             {subs && subs.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
                   Substitutions
                 </p>
-                {subs.map((s) => (
+                {[...subs].sort((a, b) => (a.clock_secs ?? -1) - (b.clock_secs ?? -1)).map((s) => (
                   <div key={s.id} className="flex gap-2 text-xs">
                     <span className="tabular-nums text-ink-faint shrink-0">
-                      {s.created_at
-                        ? new Date(s.created_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""}
+                      {s.clock_secs == null
+                        ? "Before kickoff"
+                        : `${Math.floor(s.clock_secs / 60)}:${String(s.clock_secs % 60).padStart(2, "0")}`}
                     </span>
                     <span className="text-ink-dim">
                       {movesFor(s).join(" · ")}
@@ -559,244 +413,5 @@ function MatchResultRow({
         )}
       </div>
     </div>
-  );
-}
-
-// ── Editable score number ──────────────────────────────────────────
-
-function EditableScore({
-  value,
-  matchId,
-  isEditing,
-}: {
-  value: number;
-  matchId: number;
-  isEditing: boolean;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
-  if (!isEditing) {
-    return null;
-  }
-
-  return (
-    <input
-      ref={inputRef}
-      type="number"
-      inputMode="numeric"
-      min={0}
-      defaultValue={value}
-      data-match-edit={matchId}
-      className="w-12 text-2xl font-bold tabular-nums text-center border-2 border-live bg-raised text-ink outline-hidden"
-    />
-  );
-}
-
-// ── Add match form ─────────────────────────────────────────────────
-
-function AddMatchForm({
-  teamNames,
-  isOpen,
-  onToggle,
-  onSubmit,
-}: {
-  teamNames: string[];
-  isOpen: boolean;
-  onToggle: () => void;
-  onSubmit: (
-    teamA: string,
-    teamB: string,
-    scoreA: number,
-    scoreB: number,
-  ) => void;
-}) {
-  const [teamA, setTeamA] = useState("");
-  const [teamB, setTeamB] = useState("");
-  const [scoreA, setScoreA] = useState(0);
-  const [scoreB, setScoreB] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Seed defaults from first two team names
-  useEffect(() => {
-    if (isOpen && !teamA && teamNames.length > 0) {
-      setTeamA(teamNames[0]);
-      if (teamNames.length > 1) setTeamB(teamNames[1]);
-    }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const a = teamA.trim();
-    const b = teamB.trim();
-    if (!a || !b) {
-      setError("Both team names are required.");
-      return;
-    }
-    if (a.toLowerCase() === b.toLowerCase()) {
-      setError("Teams must be different.");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await onSubmit(a, b, scoreA, scoreB);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (!isOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 border border-dashed border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-[0.99] transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-        Add match result
-      </button>
-    );
-  }
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="border border-line bg-panel p-4 space-y-3"
-    >
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">
-          Add match result
-        </h2>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="text-ink-faint hover:text-ink p-1"
-          aria-label="Close"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M12 4L4 12M4 4l8 8"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {error && (
-        <p className="text-xs text-danger" role="alert">
-          {error}
-        </p>
-      )}
-
-      {/* Team dropdowns */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
-            Team A
-          </label>
-          <select
-            value={teamA}
-            onChange={(e) => setTeamA(e.target.value)}
-            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink"
-          >
-            {teamNames.map((name) => (
-              <option
-                key={name}
-                value={name}
-                disabled={name.toLowerCase() === teamB.trim().toLowerCase()}
-              >
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
-            Team B
-          </label>
-          <select
-            value={teamB}
-            onChange={(e) => setTeamB(e.target.value)}
-            className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink"
-          >
-            {teamNames.map((name) => (
-              <option
-                key={name}
-                value={name}
-                disabled={name.toLowerCase() === teamA.trim().toLowerCase()}
-              >
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Score inputs */}
-      <div className="flex items-center justify-center gap-3">
-        <div className="text-center">
-          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
-            {teamA || "Team A"}
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={scoreA}
-            onChange={(e) =>
-              setScoreA(Math.max(0, parseInt(e.target.value || "0", 10)))
-            }
-            className="w-16 text-center text-xl font-bold tabular-nums border border-line bg-raised px-2 py-1.5 text-ink"
-          />
-        </div>
-        <span className="text-ink-faint text-lg font-bold select-none">:</span>
-        <div className="text-center">
-          <label className="block text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1">
-            {teamB || "Team B"}
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={scoreB}
-            onChange={(e) =>
-              setScoreB(Math.max(0, parseInt(e.target.value || "0", 10)))
-            }
-            className="w-16 text-center text-xl font-bold tabular-nums border border-line bg-raised px-2 py-1.5 text-ink"
-          />
-        </div>
-      </div>
-
-      {/* Buttons */}
-      <div className="flex items-center justify-center gap-2 pt-1">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-95 transition-colors min-h-[36px]"
-        >
-          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          {submitting ? "Adding…" : "Save match"}
-        </button>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="inline-flex items-center gap-1 px-4 py-2 border border-line text-ink-dim text-sm font-medium hover:bg-raised hover:text-ink active:scale-95 transition-colors min-h-[36px]"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }

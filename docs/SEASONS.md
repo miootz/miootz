@@ -15,7 +15,9 @@ are assigned to the year the match was completed. Only completed matches and
 non-deleted goals contribute to match statistics.
 
 Goals, assists and goals conceded are credited to the players recorded on each
-goal. Season rankings exclude own goals by default; the user can include them.
+goal. Scored regulation penalties count toward the match score. Rankings and
+Profile Progress track penalty attempts and conversion separately from player
+goal totals. Season rankings exclude own goals by default; the user can include them.
 A clean sheet is credited to eligible members of a team that conceded no goals.
 For matches with recorded timed substitutions, the player must have played at
 least half the match to receive match-based credit.
@@ -23,7 +25,8 @@ least half the match to receive match-based credit.
 Wins go to the winner of a decided shootout; otherwise they go to the higher
 scoring team. When scores are tied, the away team advances and receives the win,
 including when the match is also recorded as a draw. Penalty totals include
-recorded in-game penalty goals and shootout kicks.
+recorded regulation penalty goals, regulation penalty misses, and shootout kicks.
+Conversion is the share of those recorded attempts that scored.
 
 Authenticated clients can request:
 

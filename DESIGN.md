@@ -323,6 +323,25 @@ the reading order and keep the text legible at the narrowest layout.
 - **Empty Meetup History:** Use a muted court marking at the edge of the
   no-history message.
 
+## Tablet and desktop workspaces
+
+Use the phone layout below 48rem and on short landscape screens. The tablet
+layout starts at 48rem when at least 36rem of height is available. At 72rem
+and wider, use the desktop workspace. Keep the same destinations and controls
+at every size.
+
+- Tablet member navigation sits under the page header. The admin rail uses
+  compact, labeled touch targets, and Team Capacity puts its two inputs
+  side by side.
+- Desktop member and admin navigation stay in left rails. On Meetup, the
+  roster or results stay beside chat and location. Profile keeps ratings and
+  stats beside progress and preferences.
+- On the live referee screen, keep the scoreboard and clock controls visible
+  together. Tablet pairs the score and lineups with controls and activity.
+  Desktop gives match activity its own column beside the lineups and controls.
+- Keep one primary scroll area in each app shell. Keep action labels visible
+  and allow the content column and its tables to shrink independently.
+
 ## Asset Provenance
 
 - **Goal Cut** is the Miootz mark. The off-white SVG is used beside the Archivo

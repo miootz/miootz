@@ -59,6 +59,8 @@ class MeetupMatch(Base):
     #: 'a' | 'b' when a penalty shootout resolved a tied first match. The
     #: shootout winner takes the de-facto win (stats + pitch rotation).
     penalty_winner: Mapped[str | None] = mapped_column(String, nullable=True)
+    penalty_skipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    auto_queued: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     #: Historical result entered independently of the individual kicks.
     penalty_score_a: Mapped[int | None] = mapped_column(Integer, nullable=True)
     penalty_score_b: Mapped[int | None] = mapped_column(Integer, nullable=True)

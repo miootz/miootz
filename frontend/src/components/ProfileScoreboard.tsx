@@ -37,19 +37,11 @@ export function ProfileScoreboard({ stats, error }: ProfileScoreboardProps) {
           </dl>
           <dl className="divide-y divide-line px-4">
             <StatRow label="Clean sheets" value={stats.season_clean_sheets} />
-          </dl>
-
-          <h3 className="border-y border-line bg-board px-4 py-2.5 text-sm font-semibold text-ink">
-            Penalties
-          </h3>
-          <dl className="divide-y divide-line px-4">
-            <StatRow label="Taken" value={stats.season_penalties_taken} />
-            <StatRow label="Scored" value={stats.season_penalties_scored} />
             <StatRow
-              label="Conversion"
-              value={stats.season_penalties_taken
-                ? percent.format(stats.season_penalty_conversion_rate)
-                : "—"}
+              label="Penalties scored / taken"
+              value={`${stats.season_penalties_scored} / ${stats.season_penalties_taken}${stats.season_penalties_taken
+                ? ` (${percent.format(stats.season_penalty_conversion_rate)})`
+                : ""}`}
             />
           </dl>
 

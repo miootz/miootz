@@ -17,7 +17,7 @@ export interface MatchSummary {
   was_draw?: boolean;
   /** 'a' | 'b' when a penalty shootout resolved a tied first match. */
   penalty_winner?: "a" | "b" | null;
-  /** Shootout scores (winner's side is the winner). */
+  penalty_skipped?: boolean;
   penalty_score_a?: number | null;
   penalty_score_b?: number | null;
   status: "pending" | "active" | "time_up" | "completed";
@@ -40,6 +40,9 @@ export interface MatchCreateBody {
   team_b_name: string;
   score_a: number;
   score_b: number;
+  /** Optional starting lineups; when omitted the match starts with an empty lineup. */
+  team_a_users?: number[];
+  team_b_users?: number[];
 }
 
 export async function createMatch(
@@ -131,6 +134,25 @@ export async function fetchMatchSubstitutions(
   return r.json();
 }
 
+export async function recordHistoricalSubstitution(
+  meetupId: number,
+  matchId: number,
+  body: {
+    team: "a" | "b";
+    player_off: number | null;
+    player_on: number | null;
+    elapsed_seconds: number | null;
+    swap_teams?: boolean;
+  },
+): Promise<{ match: MatchSummary; substitutions: MatchSubstitution[] }> {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/substitutions`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
 export async function startTimer(
   meetupId: number,
   matchId: number,
@@ -150,6 +172,19 @@ export async function pauseTimer(
   const r = await apiFetch(
     `/meetups/${meetupId}/matches/${matchId}/timer/pause`,
     { method: "POST" },
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
+export async function adjustTimer(
+  meetupId: number,
+  matchId: number,
+  deltaSeconds: -15 | 15,
+): Promise<{ status: string; seconds_remaining: number }> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/timer/adjust`,
+    { method: "POST", body: JSON.stringify({ delta_seconds: deltaSeconds }) },
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   return r.json();
@@ -211,6 +246,8 @@ export async function endMatch(
   meetupId: number,
   matchId: number,
   winner_team?: "a" | "b",
+  /** When true, the next match is not auto-queued — the referee overrides the team picking. */
+  skip_next_match?: boolean,
 ): Promise<{
   status: string;
   match: MatchSummary;
@@ -223,6 +260,7 @@ export async function endMatch(
 }> {
   const body: Record<string, unknown> = {};
   if (winner_team) body.winner_team = winner_team;
+  if (skip_next_match) body.skip_next_match = true;
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/end`, {
     method: "POST",
     body: JSON.stringify(body),
@@ -263,12 +301,13 @@ async function penaltyFetch<T>(
   meetupId: number,
   matchId: number,
   path: string,
+  method: "GET" | "POST",
   body?: unknown,
 ): Promise<T> {
   const r = await apiFetch(
     `/meetups/${meetupId}/matches/${matchId}/penalty${path}`,
     {
-      method: body === undefined ? "GET" : "POST",
+      method,
       body: body === undefined ? undefined : JSON.stringify(body),
     },
   );
@@ -280,7 +319,7 @@ export function fetchPenalty(
   meetupId: number,
   matchId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "");
+  return penaltyFetch(meetupId, matchId, "", "GET");
 }
 
 export function addPenaltyShot(
@@ -290,7 +329,7 @@ export function addPenaltyShot(
   scored: boolean,
   scorerId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "/shots", {
+  return penaltyFetch(meetupId, matchId, "/shots", "POST", {
     team,
     scored,
     scorer_id: scorerId,
@@ -301,7 +340,7 @@ export function undoPenaltyShot(
   meetupId: number,
   matchId: number,
 ): Promise<PenaltyState> {
-  return penaltyFetch(meetupId, matchId, "/undo");
+  return penaltyFetch(meetupId, matchId, "/undo", "POST");
 }
 
 export function finishPenaltyShootout(
@@ -312,5 +351,9 @@ export function finishPenaltyShootout(
   match: MatchSummary;
   next_match?: MatchSummary;
 }> {
-  return penaltyFetch(meetupId, matchId, "/finish");
+  return penaltyFetch(meetupId, matchId, "/finish", "POST");
+}
+
+export function skipPenaltyShootout(meetupId: number, matchId: number): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "/skip", "POST");
 }

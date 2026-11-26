@@ -43,6 +43,7 @@ for source, key in {
     "meetup_matches": "{row}.meetup_id",
     "match_goals": "(SELECT meetup_id FROM meetup_matches WHERE id = {row}.match_id)",
     "match_penalties": "(SELECT meetup_id FROM meetup_matches WHERE id = {row}.match_id)",
+    "penalty_misses": "(SELECT meetup_id FROM meetup_matches WHERE id = {row}.match_id)",
     "match_substitutions": "{row}.meetup_id",
     "meetups": "{row}.id",
 }.items():
@@ -61,5 +62,8 @@ for source, key in {
             ).execute_if(dialect="sqlite"),
         )
 
-for dependency in ("attendance", "meetup_matches", "match_goals", "match_penalties", "match_substitutions"):
+for dependency in (
+    "attendance", "meetup_matches", "match_goals", "match_penalties",
+    "penalty_misses", "match_substitutions",
+):
     MeetupAnalytics.__table__.add_is_dependent_on(Base.metadata.tables[dependency])

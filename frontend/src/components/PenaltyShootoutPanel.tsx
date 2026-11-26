@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addPenaltyShot,
   finishPenaltyShootout,
   fetchPenalty,
   undoPenaltyShot,
+  skipPenaltyShootout,
   type MatchSummary,
   type PenaltyState,
 } from "../api/matchesApi";
@@ -29,11 +30,12 @@ export function PenaltyShootoutPanel({
   const [state, setState] = useState<PenaltyState | null>(null);
   const [scorerId, setScorerId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const doneRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     try {
       const s = await fetchPenalty(meetupId, match.id);
-      setState(s);
+      setState((previous) => previous?.winner && !s.winner ? previous : s);
       // Default the taker picker to the first roster player of the team
       // on turn — one less tap in the rain.
       const counts = s.counts;
@@ -53,6 +55,10 @@ export function PenaltyShootoutPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (state?.winner) doneRef.current?.focus();
+  }, [state?.winner]);
 
   if (!state) {
     return (
@@ -117,6 +123,21 @@ export function PenaltyShootoutPanel({
     }
   };
 
+  const skip = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await skipPenaltyShootout(meetupId, match.id);
+      showToast("Shootout skipped", "success");
+      onFinished();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not skip shootout", "error");
+      void load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="border border-line bg-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -124,7 +145,7 @@ export function PenaltyShootoutPanel({
           Penalty shootout
         </h3>
         <span className="text-lg font-bold tabular-nums">
-          {state.counts.a} – {state.counts.b}
+          {state.shots.filter((shot) => shot.team === "a" && shot.scored).length} – {state.shots.filter((shot) => shot.team === "b" && shot.scored).length}
         </span>
       </div>
 
@@ -172,6 +193,7 @@ export function PenaltyShootoutPanel({
             {teamName(state.winner)} wins the shootout
           </p>
           <button
+            ref={doneRef}
             type="button"
             onClick={() => onFinished()}
             className="min-h-[44px] w-full bg-ink text-board px-3 py-2 text-sm font-bold hover:bg-white/90 active:scale-[0.98] transition-transform"
@@ -222,6 +244,14 @@ export function PenaltyShootoutPanel({
             </button>
           </div>
 
+          <button
+            type="button"
+            onClick={() => void skip()}
+            disabled={busy}
+            className="min-h-[44px] border border-line px-3 py-2 text-sm font-semibold text-ink-dim hover:text-ink disabled:opacity-40"
+          >
+            Skip shootout
+          </button>
           <div className="flex items-center gap-3">
             <button
               type="button"

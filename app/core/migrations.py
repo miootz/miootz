@@ -2,6 +2,7 @@
 
 import json as _json
 import logging
+import re
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -22,12 +23,8 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         return r.scalar_one_or_none() is not None
 
-    if await has_table("job_queue") and not await has_column(
-        "job_queue", "claimed_until"
-    ):
-        await conn.exec_driver_sql(
-            "ALTER TABLE job_queue ADD COLUMN claimed_until DATETIME"
-        )
+    if await has_table("job_queue") and not await has_column("job_queue", "claimed_until"):
+        await conn.exec_driver_sql("ALTER TABLE job_queue ADD COLUMN claimed_until DATETIME")
 
     if not await has_column("meetups", "min_players"):
         await conn.execute(
@@ -51,7 +48,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     if not await has_column("meetups", "content_revision"):
         await conn.execute(
-            text("ALTER TABLE meetups ADD COLUMN content_revision INTEGER DEFAULT 0")
+            text(
+                "ALTER TABLE meetups ADD COLUMN content_revision INTEGER DEFAULT 0"
+            )
         )
 
     if not await has_column("meetups", "team_assignment_mode"):
@@ -63,7 +62,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     if not await has_column("meetups", "kickoff_reminder_sent_at"):
         await conn.execute(
-            text("ALTER TABLE meetups ADD COLUMN kickoff_reminder_sent_at TIMESTAMP")
+            text(
+                "ALTER TABLE meetups ADD COLUMN kickoff_reminder_sent_at TIMESTAMP"
+            )
         )
 
     if await has_table("ratings"):
@@ -135,7 +136,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("meetups", "rating_reminder_sent_at"):
         await conn.execute(
-            text("ALTER TABLE meetups ADD COLUMN rating_reminder_sent_at TIMESTAMP")
+            text(
+                "ALTER TABLE meetups ADD COLUMN rating_reminder_sent_at TIMESTAMP"
+            )
         )
 
     # ── Remove email from users; replace with display_name ──────────────
@@ -510,7 +513,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("meetups", "weather_forecast_fetched_at"):
         await conn.execute(
-            text("ALTER TABLE meetups ADD COLUMN weather_forecast_fetched_at TIMESTAMP")
+            text(
+                "ALTER TABLE meetups ADD COLUMN weather_forecast_fetched_at TIMESTAMP"
+            )
         )
     if not await has_column("meetups", "weather_actual_temp_c"):
         await conn.execute(
@@ -526,12 +531,16 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
     if not await has_column("meetups", "weather_actual_recorded_at"):
         await conn.execute(
-            text("ALTER TABLE meetups ADD COLUMN weather_actual_recorded_at TIMESTAMP")
+            text(
+                "ALTER TABLE meetups ADD COLUMN weather_actual_recorded_at TIMESTAMP"
+            )
         )
 
     # ── Team names: persisted random names per meetup ─────────────────
     if not await has_column("meetups", "team_names_json"):
-        await conn.execute(text("ALTER TABLE meetups ADD COLUMN team_names_json TEXT"))
+        await conn.execute(
+            text("ALTER TABLE meetups ADD COLUMN team_names_json TEXT")
+        )
 
     # Backfill team_names_json from existing meetup_matches (idempotent).
     if await has_table("meetup_matches"):
@@ -562,7 +571,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     _unique.append(_n)
             if _unique:
                 await conn.execute(
-                    text("UPDATE meetups SET team_names_json = :val WHERE id = :sid"),
+                    text(
+                        "UPDATE meetups SET team_names_json = :val WHERE id = :sid"
+                    ),
                     {"val": _json.dumps(_unique), "sid": _sid},
                 )
 
@@ -576,82 +587,12 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             """
         )
     )
-    import random as _random
+    from app.services.team_names import generate_team_names as _generate
 
-    _pool = [
-        "Red Devils",
-        "Blue Stars",
-        "Golden Boot",
-        "Iron Leg",
-        "Thunder FC",
-        "Lightning United",
-        "Phoenix Rising",
-        "Eagles Soar",
-        "Crimson Tide",
-        "Silver Arrows",
-        "Wildcats",
-        "Panthers",
-        "Raptors",
-        "Hawks",
-        "Vipers",
-        "Cobras",
-        "Tigers",
-        "Lions",
-        "Sharks",
-        "Wolves",
-        "Galacticos",
-        "Night Owls",
-        "Fire Storm",
-        "Ice Breakers",
-        "Diamondbacks",
-        "Steel City",
-        "Rough Riders",
-        "Storm Chasers",
-        "Blaze",
-        "Vendetta",
-        "Renegades",
-        "Warriors",
-        "Gladiators",
-        "Spartans",
-        "Crusaders",
-        "Titans",
-        "Vikings",
-        "Samurai",
-        "Ninjas",
-        "Phantoms",
-        "Spectres",
-        "Rebels",
-        "Outlaws",
-        "Bandits",
-        "Corsairs",
-        "Marauders",
-        "Conquerors",
-        "Legion",
-        "Dynasty",
-    ]
-    _used_names: set[str] = set()
-    # Collect already-used names to avoid repeats
-    _existing = await conn.execute(
-        text("SELECT team_names_json FROM meetups WHERE team_names_json IS NOT NULL")
-    )
-    for _erow in _existing.fetchall():
-        try:
-            for _en in _json.loads(_erow[0]):
-                _used_names.add(_en)
-        except Exception:
-            pass
     for _nrow in _needs_names.fetchall():
         _nsid, _nmp = _nrow
         _nteam_count = 3 if _nmp >= 13 else 2
-        _available = [n for n in _pool if n not in _used_names]
-        if len(_available) >= _nteam_count:
-            _picked = _random.sample(_available, _nteam_count)
-        else:
-            _picked = list(_available)
-            while len(_picked) < _nteam_count:
-                _picked.append(f"Team {len(_picked) + 1}")
-        for _p in _picked:
-            _used_names.add(_p)
+        _picked = _generate(_nteam_count)
         await conn.execute(
             text("UPDATE meetups SET team_names_json = :val WHERE id = :sid"),
             {"val": _json.dumps(_picked), "sid": _nsid},
@@ -659,7 +600,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
 
     # ── max_teams: upper bound on team count for dynamic expansion ──
     if not await has_column("meetups", "max_teams"):
-        await conn.execute(text("ALTER TABLE meetups ADD COLUMN max_teams INTEGER"))
+        await conn.execute(
+            text("ALTER TABLE meetups ADD COLUMN max_teams INTEGER")
+        )
 
     if not await has_column("meetups", "team_size"):
         await conn.execute(text("ALTER TABLE meetups ADD COLUMN team_size INTEGER"))
@@ -688,27 +631,52 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         "match_goals", "is_own_goal"
     ):
         await conn.execute(
-            text("ALTER TABLE match_goals ADD COLUMN is_own_goal INTEGER DEFAULT 0")
+            text(
+                "ALTER TABLE match_goals ADD COLUMN is_own_goal INTEGER DEFAULT 0"
+            )
         )
 
-    if await has_table("match_goals") and not await has_column(
-        "match_goals", "is_penalty"
-    ):
-        await conn.exec_driver_sql(
-            "ALTER TABLE match_goals ADD COLUMN is_penalty BOOLEAN NOT NULL DEFAULT 0"
-        )
+    if await has_table("match_goals") and not await has_column("match_goals", "is_penalty"):
+        await conn.exec_driver_sql("ALTER TABLE match_goals ADD COLUMN is_penalty BOOLEAN NOT NULL DEFAULT 0")
+
+    # SQLite cannot drop a NOT NULL constraint in place. Preserve the table's
+    # existing columns, indexes, and triggers when upgrading older databases.
+    if await has_table("match_goals"):
+        columns = (await conn.exec_driver_sql('PRAGMA table_info("match_goals")')).fetchall()
+        if any(row[1] == "scorer_id" and row[3] for row in columns):
+            schema = await conn.exec_driver_sql(
+                "SELECT type, sql FROM sqlite_master WHERE tbl_name='match_goals' "
+                "AND sql IS NOT NULL ORDER BY type"
+            )
+            objects = schema.fetchall()
+            table_sql = next(sql for kind, sql in objects if kind == "table")
+            new_sql = re.sub(r'(?i)(scorer_id\s+INTEGER)\s+NOT NULL', r'\1', table_sql)
+            if new_sql == table_sql:
+                raise RuntimeError("Cannot migrate match_goals scorer_id constraint")
+            new_sql = re.sub(r'(?i)CREATE TABLE ["`\[]?match_goals["`\]]?',
+                             'CREATE TABLE match_goals_new', new_sql, count=1)
+            await conn.exec_driver_sql(new_sql)
+            names = ", ".join('"' + row[1].replace('"', '""') + '"' for row in columns)
+            await conn.exec_driver_sql(f"INSERT INTO match_goals_new ({names}) SELECT {names} FROM match_goals")
+            await conn.exec_driver_sql("DROP TABLE match_goals")
+            await conn.exec_driver_sql("ALTER TABLE match_goals_new RENAME TO match_goals")
+            for kind, sql in objects:
+                if kind != "table":
+                    await conn.exec_driver_sql(sql)
 
     # ── Manual score offsets: score = live goal COUNT + offset ──
     if not await has_column("meetup_matches", "score_offset_a"):
         await conn.execute(
             text(
-                "ALTER TABLE meetup_matches ADD COLUMN score_offset_a INTEGER DEFAULT 0"
+                "ALTER TABLE meetup_matches ADD COLUMN score_offset_a "
+                "INTEGER DEFAULT 0"
             )
         )
     if not await has_column("meetup_matches", "score_offset_b"):
         await conn.execute(
             text(
-                "ALTER TABLE meetup_matches ADD COLUMN score_offset_b INTEGER DEFAULT 0"
+                "ALTER TABLE meetup_matches ADD COLUMN score_offset_b "
+                "INTEGER DEFAULT 0"
             )
         )
 
@@ -729,7 +697,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     # Fresh DBs get it from the model constraint; this covers existing DBs.
     # (game_template_id is NULL for ad-hoc meetups — SQLite treats NULLs as
     # distinct, so they are exempt.)
-    if await has_table("meetups") and await has_column("meetups", "game_template_id"):
+    if await has_table("meetups") and await has_column(
+        "meetups", "game_template_id"
+    ):
         await conn.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_meetup_template_start "
@@ -771,26 +741,28 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         version = r.scalar_one_or_none() or ""
         if _parse_sqlite_version(version) >= (3, 35, 0):
             await conn.execute(
-                text("ALTER TABLE match_editor_lease DROP COLUMN IF EXISTS kind")
+                text(
+                    "ALTER TABLE match_editor_lease DROP COLUMN IF EXISTS kind"
+                )
             )
         else:
             logger.warning(
                 "Cannot drop column 'kind' from match_editor_lease (SQLite < 3.35)"
             )
 
+
     # ── Penalty shootout for tied first matches ──
     if not await has_column("meetup_matches", "penalty_winner"):
         await conn.execute(
             text("ALTER TABLE meetup_matches ADD COLUMN penalty_winner VARCHAR")
         )
+    for column in ("penalty_skipped", "auto_queued"):
+        if not await has_column("meetup_matches", column):
+            await conn.exec_driver_sql(f"ALTER TABLE meetup_matches ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 0")
     if not await has_column("meetup_matches", "penalty_score_a"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE meetup_matches ADD COLUMN penalty_score_a INTEGER"
-        )
+        await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_a INTEGER")
     if not await has_column("meetup_matches", "penalty_score_b"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE meetup_matches ADD COLUMN penalty_score_b INTEGER"
-        )
+        await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_b INTEGER")
     if not await has_table("match_penalties"):
         await conn.execute(
             text(
@@ -821,7 +793,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     id INTEGER NOT NULL PRIMARY KEY,
                     match_id INTEGER NOT NULL REFERENCES meetup_matches(id),
                     team VARCHAR NOT NULL,
-                    scorer_id INTEGER NOT NULL,
+                    scorer_id INTEGER NOT NULL REFERENCES users(id),
                     clock_minute INTEGER NOT NULL,
                     intent_id VARCHAR NOT NULL,
                     created_at DATETIME NOT NULL
@@ -841,6 +813,28 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 "ON penalty_misses (intent_id)"
             )
         )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_penalty_misses_scorer_id "
+                "ON penalty_misses (scorer_id)"
+            )
+        )
+
+    # Existing databases already have meetup_analytics, so its after_create
+    # hooks do not run again when a new source table is added.
+    if await has_table("meetup_analytics"):
+        for operation, rows in {
+            "insert": ("NEW",), "update": ("OLD", "NEW"), "delete": ("OLD",),
+        }.items():
+            keys = ", ".join(
+                f"(SELECT meetup_id FROM meetup_matches WHERE id = {row}.match_id)"
+                for row in rows
+            )
+            await conn.exec_driver_sql(
+                f"CREATE TRIGGER IF NOT EXISTS invalidate_meetup_analytics_penalty_misses_{operation} "
+                f"AFTER {operation.upper()} ON penalty_misses BEGIN "
+                f"DELETE FROM meetup_analytics WHERE meetup_id IN ({keys}); END"
+            )
 
     # ── Mid-match (timer-paused) substitutions carry the match clock ──
     if not await has_column("match_substitutions", "clock_secs"):
@@ -849,11 +843,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
 
     if not await has_column("match_substitutions", "is_sideline_addition"):
-        await conn.execute(
-            text(
-                "ALTER TABLE match_substitutions ADD COLUMN is_sideline_addition BOOLEAN NOT NULL DEFAULT 0"
-            )
-        )
+        await conn.execute(text(
+            "ALTER TABLE match_substitutions ADD COLUMN is_sideline_addition BOOLEAN NOT NULL DEFAULT 0"
+        ))
 
     # ── Weather Hero award (stacking spot guarantee) ──
     if not await has_table("weather_hero_awards"):
@@ -892,9 +884,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(text("ALTER TABLE meetups ADD COLUMN fee_text VARCHAR"))
 
     if not await has_column("game_templates", "fee_text"):
-        await conn.execute(
-            text("ALTER TABLE game_templates ADD COLUMN fee_text VARCHAR")
-        )
+        await conn.execute(text("ALTER TABLE game_templates ADD COLUMN fee_text VARCHAR"))
 
     # ── Single calculated rating: drop users.self_assessed_skill ──────
     if await has_column("users", "self_assessed_skill"):
@@ -928,15 +918,17 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                     text("ALTER TABLE guest_plus_ones ADD COLUMN skill INTEGER")
                 )
                 await conn.execute(
-                    text("UPDATE guest_plus_ones SET skill = self_assessed_skill")
+                    text(
+                        "UPDATE guest_plus_ones SET skill = self_assessed_skill"
+                    )
                 )
+
 
     if not await has_column("users", "seed_skill"):
         await conn.execute(text("ALTER TABLE users ADD COLUMN seed_skill FLOAT"))
         # Pending reminders for meetups without a set duration used the old 60-minute default.
         if await has_table("job_queue"):
-            await conn.execute(
-                text("""
+            await conn.execute(text("""
                 UPDATE job_queue
                 SET run_at = (
                     SELECT datetime(substr(start_time, 1, 19), '+120 minutes') || substr(start_time, 20)
@@ -945,8 +937,7 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
                 WHERE job_type = 'rating_reminder' AND ref_id IN (
                     SELECT id FROM meetups WHERE coalesce(duration_minutes, 0) = 0
                 )
-            """)
-            )
+            """))
 
     for column in ("pac", "dri", "sho_override", "pas_override", "def_override"):
         if not await has_column("users", column):

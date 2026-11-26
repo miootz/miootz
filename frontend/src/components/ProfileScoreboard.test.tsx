@@ -32,31 +32,16 @@ const stats: UserStats = {
   attributes: null,
 };
 
-const penaltiesSection = () => {
-  const heading = screen.getByRole("heading", { name: "Penalties" });
-  return heading.parentElement!.parentElement as HTMLElement;
-};
-
 describe("ProfileScoreboard", () => {
-  it("shows a dedicated Penalties section with taken/scored/conversion", () => {
+  it("shows scored and taken penalties with conversion on one row", () => {
     render(<ProfileScoreboard stats={stats} error={null} />);
-    const section = penaltiesSection();
-    expect(section.textContent).toContain("Taken");
-    expect(section.textContent).toContain("Scored");
-    expect(section.textContent).toContain("Conversion");
-    expect(section.textContent).toContain("4");
-    expect(section.textContent).toContain("3");
-    expect(section.textContent).toContain("75%");
+    expect(screen.getByText("Penalties scored / taken").parentElement).toHaveTextContent("3 / 4 (75%)");
   });
 
-  it("shows an em dash for conversion when no penalties were taken", () => {
-    render(
-      <ProfileScoreboard
-        stats={{ ...stats, season_penalties_taken: 0, season_penalties_scored: 0, season_penalty_conversion_rate: 0 }}
-        error={null}
-      />,
-    );
-    expect(penaltiesSection().textContent).toContain("—");
+  it("does not show a percentage when no penalties were taken", () => {
+    render(<ProfileScoreboard stats={{ ...stats, season_penalties_taken: 0, season_penalties_scored: 0, season_penalty_conversion_rate: 0 }} error={null} />);
+    expect(screen.getByText("Penalties scored / taken").parentElement).toHaveTextContent("0 / 0");
+    expect(screen.getByText("Penalties scored / taken").parentElement).not.toHaveTextContent("%");
   });
 
   it("shows the error state", () => {

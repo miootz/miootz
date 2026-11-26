@@ -1,14 +1,12 @@
-# ISOLATED DEMO STACK (docs/DEMO.md). Runs the `python -m app.demo` entrypoint
-# (fresh temporary database, random local tokens, no Pocket ID) behind the same
-# Traefik + mkcert TLS as the dev stack, on the existing app.miootz.local host.
+# ISOLATED DEMO STACK (docs/DEMO.md). Two rooms (squad + matchday), the same
+# two-step landing page as the local overlay: a room picker at /api/demo, then
+# a room-specific account chooser. Each room has a fresh temporary database and
+# random local tokens; no Pocket ID.
 #
 #   docker compose --env-file .env.dev -f docker-compose.demo.yml up -d --build
 #
-# App:  https://app.miootz.local:8443   (demo account menu: /api/demo)
-# The API is same-origin under /api (Vite proxy), so only APP_DOMAIN is needed.
+# App:  https://app.miootz.local:8443   (room picker: /api/demo)
 # Mutually exclusive with the dev stack: both own :8443 and the traefik name.
-#
-# Scenario: DEMO_SCENARIO env var (open|full|broadcast|random|live|kickoff, default full).
 
 services:
   traefik:
@@ -32,28 +30,62 @@ services:
     networks:
       - web
 
-  demo:
-    build:
-      context: .
-      dockerfile: Dockerfile.demo
-    container_name: miootz_demo
+  api-squad:
+    build: .
+    container_name: miootz-demo-api-squad
+    restart: unless-stopped
     environment:
-      # Bind both servers to the container interface (not just loopback).
       DEMO_BIND_HOST: "0.0.0.0"
-      # Traefik forwards Host: app.miootz.local (no port).
       DEMO_TRUSTED_HOSTS: "${APP_DOMAIN},127.0.0.1,localhost"
-      # Deep links in push notifications.
-      DEMO_PUBLIC_APP_URL: "https://${APP_DOMAIN}:8443"
+      DEMO_PUBLIC_APP_URL: "https://${APP_DOMAIN}:8443/squad"
     command:
-      [
-        "uv",
-        "run",
-        "python",
-        "-m",
-        "app.demo",
-        "--scenario",
-        "${DEMO_SCENARIO:-full}",
-      ]
+      - "uv"
+      - "run"
+      - "python"
+      - "-m"
+      - "app.demo"
+      - "--api-only"
+      - "--api-port"
+      - "8000"
+      - "--room"
+      - "squad"
+    networks:
+      - web
+
+  api-matchday:
+    build: .
+    container_name: miootz-demo-api-matchday
+    restart: unless-stopped
+    environment:
+      DEMO_BIND_HOST: "0.0.0.0"
+      DEMO_TRUSTED_HOSTS: "${APP_DOMAIN},127.0.0.1,localhost"
+      DEMO_PUBLIC_APP_URL: "https://${APP_DOMAIN}:8443/matchday"
+    command:
+      - "uv"
+      - "run"
+      - "python"
+      - "-m"
+      - "app.demo"
+      - "--api-only"
+      - "--api-port"
+      - "8000"
+      - "--room"
+      - "matchday"
+    networks:
+      - web
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_DEMO: "1"
+        VITE_DEMO_ROOMS: "1"
+        NGINX_CONF: nginx.demo.conf
+    container_name: miootz_demo
+    restart: unless-stopped
+    depends_on:
+      - api-squad
+      - api-matchday
     networks:
       - web
     labels:
@@ -61,7 +93,7 @@ services:
       - "traefik.http.routers.demo.rule=Host(`${APP_DOMAIN}`)"
       - "traefik.http.routers.demo.entrypoints=websecure"
       - "traefik.http.routers.demo.tls=true"
-      - "traefik.http.services.demo.loadbalancer.server.port=5180"
+      - "traefik.http.services.demo.loadbalancer.server.port=80"
 
 networks:
   web:
