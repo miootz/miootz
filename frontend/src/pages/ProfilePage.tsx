@@ -342,7 +342,7 @@ export function ProfilePage() {
   const pushOn = pushEndpoint != null && pushDevices.some((device) => device.endpoint === pushEndpoint);
 
   return (
-    <div className="min-h-screen bg-board text-ink">
+    <div className="bg-board text-ink">
       <div className="max-w-lg mx-auto p-6 space-y-6">
         {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
         <section className="border border-line bg-panel p-5">

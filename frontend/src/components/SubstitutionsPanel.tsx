@@ -208,15 +208,13 @@ export function SubstitutionsPanel({
   };
 
   return (
-    <section className="border border-line bg-panel p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-          Substitutions
-        </h3>
-        {acquiring && (
+    <div className="space-y-3">
+      {acquiring && (
+        <p className="flex items-center gap-2 text-xs font-medium text-ink-dim">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-live" aria-hidden />
-        )}
-      </div>
+          Acquiring the match editor…
+        </p>
+      )}
 
       {/* One-writer state — named, never silent */}
       {busy && (
@@ -248,6 +246,6 @@ export function SubstitutionsPanel({
           Tap a player on any other team to swap.
         </p>
       )}
-    </section>
+    </div>
   );
 }

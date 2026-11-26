@@ -25,6 +25,7 @@ import {
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { MatchHistoryList } from "../../components/MatchHistoryList";
 import { MeetupWeatherBadge } from "../../components/MeetupWeatherBadge";
+import { StickyFormBar } from "../../components/StickyFormBar";
 import { MeetupTeamsPanel } from "../../components/MeetupTeamsPanel";
 import { MeetupAttendancePanel } from "../../components/MeetupAttendancePanel";
 import { useToast } from "../../context/ToastContext";
@@ -191,7 +192,7 @@ export function AdminMeetupDetailPage() {
   // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4 pb-8">
+    <div className={`max-w-3xl mx-auto space-y-4 ${tab === "details" && detailsExpanded ? "pb-28" : "pb-8"}`}>
       {/* Breadcrumb */}
       <AdminBreadcrumb
         items={[
@@ -242,44 +243,9 @@ export function AdminMeetupDetailPage() {
         )}
       </div>
 
-      {/* Tabs — horizontal scroll on desktop, accordion on mobile */}
+      {/* Tabs — horizontal scrollable chips */}
       <div
-        className="sm:hidden flex flex-col gap-2"
-        role="tablist"
-        aria-label="Meetup sections"
-      >
-        {tabs.map(({ key, label, icon: Icon, badge }) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setTab(key)}
-            className={`w-full flex items-center justify-between gap-2 border px-4 py-3 text-sm font-medium transition-colors active:scale-[0.99] ${
-              tab === key
-                ? "bg-ink text-board font-bold"
-                : "border-line text-ink-dim hover:bg-raised hover:text-ink"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Icon className="w-4 h-4" aria-hidden />
-              {label}
-            </div>
-            {badge != null && (
-              <span
-                className={`text-2xs tabular-nums ${
-                  tab === key ? "text-board/70" : "text-ink-faint"
-                }`}
-              >
-                {badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div
-        className="hidden sm:flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Meetup sections"
       >
@@ -414,7 +380,9 @@ export function AdminMeetupDetailPage() {
 
           {/* Expanded form */}
           {detailsExpanded && (
+            <>
             <form
+              id="meetup-details-form"
               onSubmit={(e) => void saveMeta(e)}
               className="border border-line bg-panel p-4 sm:p-6 space-y-5"
             >
@@ -551,26 +519,31 @@ export function AdminMeetupDetailPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
+            </form>
+
+            <StickyFormBar innerClassName="max-w-3xl">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDetailsExpanded(false)}
+                  className="flex-1 min-h-12 border border-line px-4 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
+                  form="meetup-details-form"
                   disabled={savingMeta}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98]"
+                  className="flex-1 min-h-12 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98]"
                 >
                   {savingMeta ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : null}
                   Save changes
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setDetailsExpanded(false)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
-                >
-                  Cancel
-                </button>
               </div>
-            </form>
+            </StickyFormBar>
+            </>
           )}
         </section>
       )}

@@ -161,7 +161,7 @@ export interface GoalRow {
   id: number;
   team: "a" | "b";
   clock_minute: number;
-  scorer: GoalPerson;
+  scorer: GoalPerson | null;
   assist: GoalPerson | null;
   /** Keeper who was in goal for the conceding team when this went in. */
   goalkeeper: GoalPerson | null;
@@ -198,7 +198,7 @@ function normalizeGoal(v: unknown): GoalRow | null {
     id,
     team,
     clock_minute: num(o.clock_minute, 0),
-    scorer: normalizePerson(o.scorer),
+    scorer: o.scorer == null ? null : normalizePerson(o.scorer),
     assist: o.assist ? normalizePerson(o.assist) : null,
     goalkeeper: o.goalkeeper ? normalizePerson(o.goalkeeper) : null,
     recorded_by: normalizePerson(o.recorded_by),
@@ -248,10 +248,11 @@ async function fetchGoalLog(
 
 export interface GoalCreateBody {
   team: "a" | "b";
-  scorer_id: number;
+  scorer_id: number | null;
   assist_id?: number | null;
   /** Must be on the conceding (opposing) team; omit when unknown. */
   goalkeeper_id?: number | null;
+  clock_minute?: number;
   intent_id: string;
   force?: boolean;
   /** Own goal: the scorer is on the conceding team. */
@@ -272,7 +273,7 @@ export interface HistoricalGoalResult {
 export async function saveHistoricalGoal(
   meetupId: number,
   matchId: number,
-  body: Omit<GoalCreateBody, "force"> & { goal_id?: number; add_to_score?: boolean },
+  body: Omit<GoalCreateBody, "force" | "clock_minute"> & { goal_id?: number; add_to_score?: boolean },
 ): Promise<HistoricalGoalResult> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goal-attribution`, {
     method: "PUT",

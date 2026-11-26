@@ -180,7 +180,8 @@ def _aggregate(
     for g in goals:
         if g.is_own_goal and not include_own_goals:
             continue
-        stats.setdefault(g.scorer_id, _zero())["goals"] += 1
+        if g.scorer_id is not None:
+            stats.setdefault(g.scorer_id, _zero())["goals"] += 1
         if g.assist_id is not None:
             stats.setdefault(g.assist_id, _zero())["assists"] += 1
         if g.goalkeeper_id is not None:

@@ -126,9 +126,6 @@ async def hold_lease(match_id: int, user_id: int) -> None:
 async def test_reshape_2x6_fresh_names_no_bench():
     async with await client() as ac:
         sid = await make_meetup_with_pending_match(ac)
-        rt = await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))
-        old_names = [t["name"] for t in rt.json()["teams"]]
-
         r = await ac.post(
             f"/meetups/{sid}/teams/reshape",
             json={"team_count": 2, "team_size": 6},
@@ -140,9 +137,9 @@ async def test_reshape_2x6_fresh_names_no_bench():
         assert [len(t["players"]) for t in teams] == [6, 6]
         flat = [int(p["id"]) for t in teams for p in t["players"]]
         assert len(flat) == len(set(flat)) == 12
-        # Fresh names: the new lineup is a new team (Theseus).
+        # Fresh names: the reshape re-assigns sequential names (Team A, Team B).
         new_names = [t["name"] for t in teams]
-        assert new_names != old_names
+        assert new_names == ["Team A", "Team B"]
 
         async with AsyncSession(engine) as db:
             m = await db.get(Meetup, sid)

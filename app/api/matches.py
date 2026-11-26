@@ -37,6 +37,7 @@ from app.services.manual_teams import (
     get_team_names,
     resolve_meetup_teams_nested,
 )
+from app.services.team_names import team_name as _team_name
 from app.services.meetup_revision import (
     bump_and_notify,
     bump_meetup_revision,
@@ -73,6 +74,9 @@ class HistoricalLineupChange(BaseModel):
 class MatchEndBody(BaseModel):
     #: Required only when scores are tied. "a" or "b".
     winner_team: str | None = None
+    #: When set, do not auto-queue the next match — the referee is choosing
+    #: to override the team picking (e.g. when ending a match by hand).
+    skip_next_match: bool = False
 
 
 class PenaltyShotBody(BaseModel):
@@ -102,6 +106,8 @@ class MatchCreateBody(BaseModel):
     team_b_name: str = Field(min_length=1, max_length=60)
     score_a: int = Field(ge=0)
     score_b: int = Field(ge=0)
+    team_a_users: list[int] = Field(default_factory=list)
+    team_b_users: list[int] = Field(default_factory=list)
 
 
 class MatchScoreSet(BaseModel):
@@ -116,11 +122,12 @@ class LeaseTokenBody(BaseModel):
 
 class GoalCreate(BaseModel):
     team: str = Field(pattern=r"^[ab]$")
-    scorer_id: int
+    scorer_id: int | None = None
     assist_id: int | None = None
     #: Keeper who was in goal for the *conceding* team (must be an opposing
     #: player). Optional — nobody should be blocked on an unknown/rotated keeper.
     goalkeeper_id: int | None = None
+    clock_minute: int | None = Field(default=None, ge=1, le=600)
     #: Own goal: the scorer is on the conceding team (still counts toward
     #: ``team``'s score).
     is_own_goal: bool = False
@@ -134,7 +141,7 @@ class GoalUpdate(BaseModel):
     """Full re-attribution of a logged goal (edit sheet)."""
 
     team: str = Field(pattern=r"^[ab]$")
-    scorer_id: int
+    scorer_id: int | None = None
     assist_id: int | None = None
     goalkeeper_id: int | None = None
     clock_minute: int = Field(ge=1, le=600)
@@ -145,7 +152,7 @@ class HistoricalGoalAttribution(BaseModel):
     goal_id: int | None = None
     intent_id: str = Field(min_length=1, max_length=64)
     team: str = Field(pattern=r"^[ab]$")
-    scorer_id: int
+    scorer_id: int | None = None
     assist_id: int | None = None
     goalkeeper_id: int | None = None
     is_own_goal: bool = False
@@ -283,6 +290,7 @@ def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
         "score_b": match.score_b,
         "was_draw": match.was_draw,
         "penalty_winner": match.penalty_winner,
+        "penalty_skipped": match.penalty_skipped,
         "penalty_score_a": match.penalty_score_a,
         "penalty_score_b": match.penalty_score_b,
         "status": match.status,
@@ -393,7 +401,7 @@ async def start_matches(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin_or_present_member),
 ):
-    """Start the match meetup. Creates the first match (Team 1 vs Team 2 by default,
+    """Start the match meetup. Creates the first match (Team A vs Team B by default,
     or the given team indices when provided)."""
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
@@ -488,11 +496,11 @@ async def start_matches(
         match_number=1,
         team_a_users=json.dumps([p["user_id"] for p in team_a]),
         team_b_users=json.dumps([p["user_id"] for p in team_b]),
-        team_a_name=team_names[team_a_idx] if team_names else "Team 1",
+        team_a_name=team_names[team_a_idx] if team_names else _team_name(1),
         team_b_name=(
             team_names[team_b_idx]
             if team_names and len(team_names) > team_b_idx
-            else "Team 2"
+            else _team_name(2)
         ),
         score_a=0,
         score_b=0,
@@ -553,7 +561,7 @@ async def _rotation_teams(
             set(_loads_int_list(match.team_b_users)) - borrowed,
         )
         for idx, team in enumerate(teams):
-            name = names[idx] if names and idx < len(names) else f"Team {idx + 1}"
+            name = names[idx] if names and idx < len(names) else _team_name(idx + 1)
             if {p["user_id"] for p in team} in played or (
                 borrowed and name in (match.team_a_name, match.team_b_name)
             ):
@@ -650,12 +658,12 @@ async def create_new_pending_match(
         team_a_name = (
             team_names[body.team_a_idx]
             if team_names and body.team_a_idx < len(team_names)
-            else f"Team {body.team_a_idx + 1}"
+            else _team_name(body.team_a_idx + 1)
         )
         team_b_name = (
             team_names[body.team_b_idx]
             if team_names and body.team_b_idx < len(team_names)
-            else f"Team {body.team_b_idx + 1}"
+            else _team_name(body.team_b_idx + 1)
         )
         team_a_users_list = [p["user_id"] for p in team_a]
         team_b_users_list = [p["user_id"] for p in team_b]
@@ -719,7 +727,7 @@ async def create_new_pending_match(
         team_b_name = (
             team_names[next_team_idx]
             if team_names and next_team_idx < len(team_names)
-            else f"Team {next_team_idx + 1}"
+            else _team_name(next_team_idx + 1)
         )
         team_b_users_list = [p["user_id"] for p in team_b]
 
@@ -761,7 +769,7 @@ async def delete_match(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_admin_or_present_member),
+    _user: User = Depends(require_admin),
 ):
     """Delete a match (admin only)."""
     match = await db.get(MeetupMatch, match_id)
@@ -816,11 +824,24 @@ async def create_match(
             detail="Team A and Team B must be different.",
         )
 
+    roster = body.team_a_users + body.team_b_users
+    if len(roster) != len(set(roster)):
+        raise HTTPException(status_code=400, detail="A player can only appear once in the match.")
+    if roster:
+        confirmed = set(await db.scalars(
+            select(Attendance.user_id).where(
+                Attendance.meetup_id == meetup_id,
+                Attendance.status == "confirmed",
+            )
+        ))
+        if not confirmed.issuperset(roster):
+            raise HTTPException(status_code=400, detail="Every player must be confirmed for this meetup.")
+
     match = MeetupMatch(
         meetup_id=meetup_id,
         match_number=next_num,
-        team_a_users=json.dumps([]),
-        team_b_users=json.dumps([]),
+        team_a_users=json.dumps(body.team_a_users),
+        team_b_users=json.dumps(body.team_b_users),
         team_a_name=body.team_a_name,
         team_b_name=body.team_b_name,
         score_a=body.score_a,
@@ -844,7 +865,7 @@ async def create_match(
 
     await bump_and_notify(db, meetup_id)
 
-    users_by_id: dict[int, dict] = {}
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
     return {"status": "created", "match": _match_json(match, users_by_id)}
 
 
@@ -951,6 +972,7 @@ async def swap_match_teams(
             is_sideline_addition=body.add_sideline_player,
         )
     )
+    match.auto_queued = False
     match.team_a_users = json.dumps(new_a)
     match.team_b_users = json.dumps(new_b)
 
@@ -1232,6 +1254,7 @@ def _penalty_json(match: MeetupMatch, shots: list[MatchPenalty], users_by_id: di
             and match.match_number == 1
             and match.score_a == match.score_b
             and match.penalty_winner is None
+            and not match.penalty_skipped
         ),
         "winner": match.penalty_winner,
         "shots": [
@@ -1287,8 +1310,9 @@ async def add_penalty_shot(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin_or_present_member),
 ):
+    await db.execute(text("BEGIN IMMEDIATE"))
     match, shots = await _penalty_base(db, meetup_id, match_id)
-    if match.penalty_winner is not None:
+    if match.penalty_winner is not None or match.penalty_skipped:
         raise HTTPException(status_code=409, detail="The shootout is already finished.")
     n_a = sum(1 for s in shots if s.team == "a")
     n_b = len(shots) - n_a
@@ -1331,8 +1355,9 @@ async def undo_penalty_shot(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_admin_or_present_member),
 ):
+    await db.execute(text("BEGIN IMMEDIATE"))
     match, shots = await _penalty_base(db, meetup_id, match_id)
-    if match.penalty_winner is not None:
+    if match.penalty_winner is not None or match.penalty_skipped:
         raise HTTPException(status_code=409, detail="The shootout is already finished.")
     if not shots:
         raise HTTPException(status_code=400, detail="No shots to undo.")
@@ -1366,8 +1391,9 @@ async def finish_penalty_shootout(
 ):
     """Lock in the shootout winner: they take the de-facto match win and
     stay on the pitch for the next match."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match, shots = await _penalty_base(db, meetup_id, match_id)
-    if match.penalty_winner is not None:
+    if match.penalty_winner is not None or match.penalty_skipped:
         raise HTTPException(status_code=409, detail="The shootout is already finished.")
     winner = _shootout_winner([(s.team, s.scored) for s in shots])
     if winner is None:
@@ -1385,7 +1411,7 @@ async def finish_penalty_shootout(
             )
         )
     ).scalars().first()
-    if next_match is not None:
+    if next_match is not None and next_match.auto_queued:
         winner_users = _loads_int_list(
             match.team_a_users if winner == "a" else match.team_b_users
         )
@@ -1425,6 +1451,28 @@ async def finish_penalty_shootout(
     return result
 
 
+@router.post("/{meetup_id}/matches/{match_id}/penalty/skip")
+async def skip_penalty_shootout(
+    meetup_id: int,
+    match_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_admin_or_present_member),
+):
+    await db.execute(text("BEGIN IMMEDIATE"))
+    match, _ = await _penalty_base(db, meetup_id, match_id)
+    if match.penalty_winner is not None or match.penalty_skipped:
+        raise HTTPException(status_code=409, detail="The shootout is already finished.")
+    await db.execute(delete(MatchPenalty).where(MatchPenalty.match_id == match.id))
+    match.penalty_skipped = True
+    await db.commit()
+    log_action(request, "referee", "referee.penalty_skipped",
+               f"Skipped penalty shootout in match #{match.match_number}", meetup_id=meetup_id)
+    await _broadcast_match_event(meetup_id, {"type": "match_penalty_finished", "match_id": match.id})
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return _penalty_json(match, [], users_by_id)
+
+
 @router.post("/{meetup_id}/matches/{match_id}/timer/start")
 async def start_timer(
     meetup_id: int,
@@ -1454,6 +1502,16 @@ async def start_timer(
             "ends_at": _timer_ends_at_iso(match),
             "controlled_by": {"name": user.display_name},
         }
+
+    if match.match_number > 1:
+        first = (await db.execute(select(MeetupMatch).where(
+            MeetupMatch.meetup_id == meetup_id,
+            MeetupMatch.match_number == 1,
+            MeetupMatch.status == "completed",
+        ))).scalar_one_or_none()
+        if (first and first.score_a == first.score_b
+                and first.penalty_winner is None and not first.penalty_skipped):
+            raise HTTPException(status_code=409, detail="Finish or skip the first match shootout before starting the next match.")
 
     if not _loads_int_list(match.team_a_users) or not _loads_int_list(match.team_b_users):
         meetup = await db.get(Meetup, meetup_id)
@@ -1683,9 +1741,9 @@ async def reset_timer(
     match_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_admin_or_present_member),
+    user: User = Depends(require_admin),
 ):
-    """Reset timer and scores for a match (present member, idempotent)."""
+    """Reset timer and scores for a match (admin only, idempotent)."""
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -1823,6 +1881,7 @@ async def set_score(
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    _require_editable_goal_log(match)
     count_a, count_b = await _goal_counts(db, match)
     old_score = f"{match.score_a}-{match.score_b}"
     match.score_a = body.score_a
@@ -1830,6 +1889,7 @@ async def set_score(
     match.score_offset_a = body.score_a - count_a
     match.score_offset_b = body.score_b - count_b
     if match.status == "completed":
+        await _update_completed_draw(db, match)
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(
@@ -1983,16 +2043,17 @@ async def end_match(
             break
 
     next_match_data: dict | None = None
-    if next_team is not None and next_team_idx is not None:
+    if not body.skip_next_match and next_team is not None and next_team_idx is not None:
         used_team_indices.add(next_team_idx)
         next_team_name = (
             team_names[next_team_idx]
             if team_names and next_team_idx < len(team_names)
-            else f"Team {next_team_idx + 1}"
+            else _team_name(next_team_idx + 1)
         )
         next_match = MeetupMatch(
             meetup_id=meetup_id,
             match_number=match.match_number + 1,
+            auto_queued=True,
             team_a_users=json.dumps(winner_users),
             team_b_users=json.dumps([p["user_id"] for p in next_team]),
             team_a_name=winner_name,
@@ -2022,6 +2083,8 @@ async def end_match(
         + (
             f"; next match queued vs {next_match_data['team_b']['name']}"
             if next_match_data
+            else "; no next match queued"
+            if body.skip_next_match
             else "; all matches complete"
         ),
         meetup_id=meetup_id,
@@ -2053,7 +2116,7 @@ async def end_match(
     }
     if next_match_data:
         result["next_match"] = next_match_data
-    else:
+    elif not body.skip_next_match:
         result["all_matches_complete"] = True
     return result
 
@@ -2336,9 +2399,26 @@ async def _recompute_scores(db: AsyncSession, match: MeetupMatch) -> tuple[int, 
     return match.score_a, match.score_b
 
 
+def _require_editable_goal_log(match: MeetupMatch) -> None:
+    if match.penalty_winner is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This match has a shootout result. Delete the match and record a new one to correct it.",
+        )
+
+
+async def _update_completed_draw(db: AsyncSession, match: MeetupMatch) -> None:
+    match.was_draw = False
+    if match.score_a == match.score_b:
+        meetup = await db.scalar(
+            select(Meetup).options(selectinload(Meetup.game_template)).where(Meetup.id == match.meetup_id)
+        )
+        match.was_draw = bool(meetup and meetup.game_template and meetup.game_template.allows_draws)
+
+
 def _validate_goal_fields(body, match: MeetupMatch, users_by_id: dict[int, dict]) -> None:
     """Team/own-goal/keeper team-membership rules for one goal entry."""
-    if body.scorer_id not in users_by_id:
+    if body.scorer_id is not None and body.scorer_id not in users_by_id:
         raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
     scoring = _loads_int_list(
         match.team_a_users if body.team == "a" else match.team_b_users
@@ -2346,18 +2426,20 @@ def _validate_goal_fields(body, match: MeetupMatch, users_by_id: dict[int, dict]
     conceding = _loads_int_list(
         match.team_b_users if body.team == "a" else match.team_a_users
     )
-    if body.is_own_goal:
+    if body.is_own_goal and body.scorer_id is not None:
         if body.scorer_id not in conceding:
             raise HTTPException(
                 status_code=400, detail="Own-goal scorer must be on the conceding team"
             )
-    elif body.scorer_id not in scoring:
+    elif not body.is_own_goal and body.scorer_id is not None and body.scorer_id not in scoring:
         raise HTTPException(
             status_code=400, detail="Scorer must be on the scoring team"
         )
     if body.assist_id is not None:
         if body.assist_id not in users_by_id:
             raise HTTPException(status_code=400, detail="Assist is not in this meetup")
+        if body.assist_id not in scoring:
+            raise HTTPException(status_code=400, detail="Assist must be on the scoring team")
         if body.assist_id == body.scorer_id:
             raise HTTPException(
                 status_code=400, detail="Assist must be a different player"
@@ -2402,9 +2484,11 @@ async def create_goal(
     On success: recompute ``score_a``/``score_b`` from COUNT, release the
     lease (the next person's turn starts clean) and broadcast ``goal_added``.
     """
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    _require_editable_goal_log(match)
 
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     _validate_goal_fields(body, match, users_by_id)
@@ -2436,11 +2520,16 @@ async def create_goal(
     if lease.holder_id != user.id:
         return await _lease_busy_response(db, match_id, now)
 
-    # Timer clock is authoritative for the minute mark.
+    # Use the confirmed minute when supplied. Older clients use the live clock.
     remaining = _compute_timer_remaining(match)
     elapsed = max((match.timer_total_seconds or 0) - remaining, 0)
-    clock_minute = elapsed // 60 + 1
-    after_whistle = remaining <= 0 or match.status in ("time_up", "completed")
+    live_minute = elapsed // 60 + 1
+    clock_minute = body.clock_minute if body.clock_minute is not None else live_minute
+    after_whistle = (
+        remaining <= 0
+        or match.status in ("time_up", "completed")
+        or clock_minute * 60 > match.timer_total_seconds
+    )
 
     # Duplicate backstop: the same (team, scorer, minute) inside 90 s.
     res = await db.execute(
@@ -2451,6 +2540,8 @@ async def create_goal(
             MatchGoal.scorer_id == body.scorer_id,
             MatchGoal.deleted_at.is_(None),
         )
+        .order_by(MatchGoal.created_at.desc(), MatchGoal.id.desc())
+        .limit(1)
     )
     duplicate = res.scalar_one_or_none()
     if duplicate is not None and not body.force:
@@ -2487,7 +2578,9 @@ async def create_goal(
         scorer_id=body.scorer_id,
         assist_id=body.assist_id,
         goalkeeper_id=body.goalkeeper_id,
-        clock_secs=remaining,
+        clock_secs=remaining if clock_minute == live_minute else max(
+            match.timer_total_seconds - (clock_minute - 1) * 60, 0
+        ),
         clock_minute=clock_minute,
         after_whistle=after_whistle,
         is_own_goal=body.is_own_goal,
@@ -2502,9 +2595,10 @@ async def create_goal(
     lease.expires_at = utcnow()
     lease.release_token = ""
     if match.status == "completed":
+        await _update_completed_draw(db, match)
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
-    scorer_name = users_by_id.get(body.scorer_id, {}).get("name", str(body.scorer_id))
+    scorer_name = users_by_id.get(body.scorer_id, {}).get("display_name", "Unknown scorer")
     log_action(
         request,
         "referee",
@@ -2625,6 +2719,7 @@ async def save_historical_goal(
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    _require_editable_goal_log(match)
     if match.status != "completed":
         raise HTTPException(status_code=409, detail="Only completed matches can be edited here")
 
@@ -2656,18 +2751,16 @@ async def save_historical_goal(
     scoring = {p["id"] for p in rosters[body.team]}
     conceding = {p["id"] for p in rosters["b" if body.team == "a" else "a"]}
     scorer_team = conceding if body.is_own_goal else scoring
-    if body.scorer_id not in scorer_team and not (
-        goal and goal.scorer_id == body.scorer_id and goal.is_own_goal == body.is_own_goal
-    ):
+    if body.scorer_id is not None and body.scorer_id not in scorer_team:
         raise HTTPException(status_code=400, detail="Select a scorer from the correct team")
     if body.assist_id is not None and (
         body.assist_id == body.scorer_id
-        or (body.assist_id not in scoring and not (goal and goal.assist_id == body.assist_id))
+        or body.assist_id not in scoring
     ):
         raise HTTPException(status_code=400, detail="Select a different player from the scoring team as the assist")
     if body.goalkeeper_id is not None and (
         body.goalkeeper_id in (body.scorer_id, body.assist_id)
-        or (body.goalkeeper_id not in conceding and not (goal and goal.goalkeeper_id == body.goalkeeper_id))
+        or body.goalkeeper_id not in conceding
     ):
         raise HTTPException(status_code=400, detail="Select a different player from the conceding team as the keeper")
 
@@ -2676,8 +2769,7 @@ async def save_historical_goal(
         count, score = (count_a, match.score_a) if body.team == "a" else (count_b, match.score_b)
         if body.add_to_score:
             has_shootout = (
-                match.penalty_winner is not None
-                or match.penalty_score_a is not None
+                match.penalty_score_a is not None
                 or match.penalty_score_b is not None
                 or await db.scalar(select(MatchPenalty.id).where(MatchPenalty.match_id == match.id).limit(1)) is not None
             )
@@ -2687,14 +2779,9 @@ async def save_historical_goal(
                 )
             match.score_a += int(body.team == "a")
             match.score_b += int(body.team == "b")
-            match.was_draw = False
-            if match.score_a == match.score_b:
-                meetup = await db.scalar(
-                    select(Meetup).options(selectinload(Meetup.game_template)).where(Meetup.id == meetup_id)
-                )
-                match.was_draw = bool(meetup and meetup.game_template and meetup.game_template.allows_draws)
+            await _update_completed_draw(db, match)
         elif count >= score:
-            raise HTTPException(status_code=409, detail="Every goal for this team already has a scorer")
+            raise HTTPException(status_code=409, detail="Every goal for this team already has a goal entry.")
         goal = MatchGoal(
             match_id=match_id,
             team=body.team,
@@ -2742,9 +2829,11 @@ async def update_goal(
     user: User = Depends(require_admin_or_present_member),
 ):
     """Edit a logged goal (caller must hold the live lease, like create)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    _require_editable_goal_log(match)
     res = await db.execute(
         select(MatchGoal).where(
             MatchGoal.id == goal_id,
@@ -2771,6 +2860,7 @@ async def update_goal(
     goal.scorer_id = body.scorer_id
     goal.assist_id = body.assist_id
     goal.goalkeeper_id = body.goalkeeper_id
+    goal.is_own_goal = body.is_own_goal
     goal.clock_minute = body.clock_minute
     goal.clock_secs = max(
         (match.timer_total_seconds or 0) - (body.clock_minute - 1) * 60, 0
@@ -2783,9 +2873,10 @@ async def update_goal(
     lease.expires_at = utcnow()
     lease.release_token = ""
     if match.status == "completed":
+        await _update_completed_draw(db, match)
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
-    scorer_name = users_by_id.get(goal.scorer_id, {}).get("name", str(goal.scorer_id))
+    scorer_name = users_by_id.get(goal.scorer_id, {}).get("display_name", "Unknown scorer")
     log_action(
         request,
         "referee",
@@ -2828,6 +2919,7 @@ async def remove_goal(
     user: User = Depends(require_admin_or_present_member),
 ):
     """Soft-delete one goal, recompute counters, broadcast ``goal_removed``."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     res = await db.execute(
         select(MatchGoal).where(
             MatchGoal.id == goal_id,
@@ -2841,11 +2933,13 @@ async def remove_goal(
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
+    _require_editable_goal_log(match)
 
     goal.deleted_at = utcnow()
     await db.flush()
     score_a, score_b = await _recompute_scores(db, match)
     if match.status == "completed":
+        await _update_completed_draw(db, match)
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(

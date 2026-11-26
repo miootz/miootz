@@ -85,7 +85,7 @@ export class RouteLoadBoundary extends Component<
   render() {
     if (this.state.failed) {
       return (
-        <main role="alert" className="grid min-h-dvh place-items-center bg-board p-6 text-center">
+        <main role="alert" className="grid flex-1 min-h-0 place-items-center bg-board p-6 text-center">
           <div className="space-y-4">
             <p className="text-ink">This page could not be loaded.</p>
             <button type="button" onClick={() => window.location.reload()} className="bg-ink px-4 py-3 font-bold text-board">

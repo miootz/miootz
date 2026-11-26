@@ -31,6 +31,7 @@ export function GoalList({
     <ul className="divide-y divide-line">
       {goals.map((g) => {
         const sideA = g.team === "a";
+        const scorerName = g.scorer?.display_name ?? "Scorer unknown";
         const minute = g.clock_minute > 0 ? `${g.clock_minute}′` : "";
         const minuteLabel = minute && (
           <span className="shrink-0 text-xs font-bold tabular-nums text-ink-faint">{minute}</span>
@@ -46,7 +47,7 @@ export function GoalList({
               } ${showKeeper ? "min-h-12 px-2" : ""}`}
               aria-label={
                 canEdit
-                  ? `Edit goal: ${g.scorer.display_name}${minute ? ` at ${minute}` : ""}`
+                  ? `Edit goal: ${scorerName}${minute ? ` at ${minute}` : ""}`
                   : undefined
               }
             >
@@ -64,7 +65,7 @@ export function GoalList({
                         sideA ? "text-team-a" : "text-team-b"
                       }`}
                     >
-                      {g.scorer.display_name}
+                      {scorerName}
                       {g.is_own_goal ? " (OG)" : ""}
                     </span>
                   </>
@@ -77,7 +78,7 @@ export function GoalList({
                         sideA ? "text-team-a" : "text-team-b"
                       }`}
                     >
-                      {g.scorer.display_name}
+                      {scorerName}
                       {g.is_own_goal ? " (OG)" : ""}
                     </span>
                     {minuteLabel}

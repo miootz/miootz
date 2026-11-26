@@ -28,7 +28,8 @@ import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
 import { GoalEntrySheet } from "../components/GoalEntrySheet";
-import { leaseBusyLabel } from "../utils/lease";
+import { MobileSheet } from "../components/MobileSheet";
+import { leaseBusyButtonLabel } from "../utils/lease";
 import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
 import { playFinalWhistle, playHalfTimeWhistle, unlockWhistles } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -48,10 +49,9 @@ import {
   Pause,
   Play,
   Plus,
-  RotateCcw,
   Settings,
   Trash2,
-  X,
+  WifiOff,
 } from "lucide-react";
 
 function formatTimer(seconds: number): string {
@@ -87,6 +87,7 @@ function ManualMatchForm({
   existingTeamNames,
   initial,
   goals = [],
+  goalsLocked = false,
   onAddGoal,
   onEditGoal,
 }: {
@@ -107,6 +108,7 @@ function ManualMatchForm({
   };
   /** Edit mode: the match's goal log (TV-style list, tap to edit). */
   goals?: GoalRow[];
+  goalsLocked?: boolean;
   onAddGoal?: () => void;
   onEditGoal?: (goal: GoalRow) => void;
 }) {
@@ -181,8 +183,13 @@ function ManualMatchForm({
             </span>
           </div>
           <div className="border border-line bg-raised px-3 py-1">
-            <GoalList goals={goals} canEdit onEdit={(g) => onEditGoal?.(g)} />
+            <GoalList goals={goals} canEdit={!!onEditGoal} onEdit={(g) => onEditGoal?.(g)} />
           </div>
+          {goalsLocked && (
+            <p className="text-sm text-ink-dim">
+              Goals are locked after a shootout. An admin can delete and re-record this match to correct the result.
+            </p>
+          )}
           {onAddGoal && (
             <button
               type="button"
@@ -251,6 +258,7 @@ function ManualMatchForm({
           <button
             type="button"
             onClick={onDelete}
+            aria-label="Delete match"
             className="px-4 py-3 border border-danger/40 text-danger font-semibold hover:bg-danger/10 active:scale-[0.98] transition-transform flex items-center gap-1.5"
           >
             <Trash2 className="h-4 w-4" />
@@ -261,9 +269,9 @@ function ManualMatchForm({
           onClick={onCancel}
           className="flex-1 py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform"
         >
-          Cancel
+          {goalsLocked ? "Done" : "Cancel"}
         </button>
-        <button
+        {!goalsLocked && <button
           type="button"
           onClick={() =>
             onSubmit({
@@ -280,7 +288,7 @@ function ManualMatchForm({
           className="flex-1 py-3 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-40 active:scale-[0.98] transition-transform"
         >
           Save result
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -292,9 +300,6 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
   const completed = matches.filter((m) => m.status === "completed");
   if (completed.length === 0) return null;
 
-  // Final (last) match result
-  const lastMatch = completed[completed.length - 1];
-
   return (
     <div className="space-y-6">
       <div className="text-center space-y-3 py-4">
@@ -305,12 +310,6 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
           />
         </div>
         <h2 className="text-xl font-bold text-ink">All matches complete</h2>
-        <div className="inline-flex items-center gap-2 bg-raised px-4 py-1.5">
-          <span className="text-sm font-semibold text-ink-dim tabular-nums">
-            Final match: {lastMatch.team_a.name} {lastMatch.score_a} –{" "}
-            {lastMatch.score_b} {lastMatch.team_b.name}
-          </span>
-        </div>
       </div>
 
       <div className="space-y-2">
@@ -383,10 +382,13 @@ export function RefereePage() {
   const [selectingTeams, setSelectingTeams] = useState(false);
   const [selectedTeamA, setSelectedTeamA] = useState(0);
   const [selectedTeamB, setSelectedTeamB] = useState(1);
+  // Set after a match is deleted: the referee should get the same "Start new
+  // match" entry point as after ending one — not the "ready to start?" state.
+  const [matchDeleted, setMatchDeleted] = useState(false);
   const [showSubstitutions, setShowSubstitutions] = useState(false);
   const [showReshape, setShowReshape] = useState(false);
   // Shared line-up accordion under the scoreboard band (default: closed).
-  const [rostersOpen, setRostersOpen] = useState(false);
+  const [rostersOpen, setRostersOpen] = useState(true);
   const [goalSheet, setGoalSheet] = useState<{
     match: MatchSummary;
     goal: GoalRow | null;
@@ -423,6 +425,7 @@ export function RefereePage() {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Drives deadline re-evaluation without waiting for SSE (see effect below).
+  const [sseLive, setSseLive] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Deadline: 15 min after scheduled meetup end (computed from detail).
@@ -508,7 +511,8 @@ export function RefereePage() {
                 m.status === "completed" &&
                 m.match_number === 1 &&
                 m.score_a === m.score_b &&
-                m.penalty_winner == null,
+                m.penalty_winner == null &&
+                !m.penalty_skipped,
             );
             setPenaltyMatch(shoot ?? null);
           } catch (e) {
@@ -625,6 +629,7 @@ export function RefereePage() {
         }
       },
       (live) => {
+        setSseLive(live);
         if (live && !wasLive) {
           // (Re)connected after a gap — refetch snapshots, never replay.
           if (liveRefreshRef.current) clearTimeout(liveRefreshRef.current);
@@ -795,20 +800,23 @@ export function RefereePage() {
     });
   };
 
-  const handleEndMatch = useCallback(() => {
-    if (!currentMatch) return;
-    // Ties end with the away team as de-facto winner (server decides; a draw
-    // is recorded for stats only when the template allows it).
-    void (async () => {
-      await run("Ending match...", async () => {
-        const res = await endMatch(sid, currentMatch.id);
-        showToast(
-          `Match ${currentMatch.match_number} over! Winner: ${res.winner_name}`,
-          "success",
-        );
-      });
-    })();
-  }, [currentMatch, run, sid, showToast]);
+  const handleEndMatch = useCallback(
+    ({ skipNextMatch = false }: { skipNextMatch?: boolean } = {}) => {
+      if (!currentMatch) return;
+      // Ties end with the away team as de-facto winner (server decides; a draw
+      // is recorded for stats only when the template allows it).
+      void (async () => {
+        await run("Ending match...", async () => {
+          const res = await endMatch(sid, currentMatch.id, undefined, skipNextMatch);
+          showToast(
+            `Match ${currentMatch.match_number} over! Winner: ${res.winner_name}`,
+            "success",
+          );
+        });
+      })();
+    },
+    [currentMatch, run, sid, showToast],
+  );
 
   // Full-time: long whistle + haptic, and the match ends automatically.
   // Fires on the first render where an active/time_up match reads zero —
@@ -836,6 +844,7 @@ export function RefereePage() {
       showToast("Match deleted", "success");
       setShowManualForm(false);
       setEditingMatch(null);
+      setMatchDeleted(true);
     });
   };
 
@@ -845,7 +854,7 @@ export function RefereePage() {
     if (!action) return;
     setConfirmAction(null);
     if (action.kind === "end") {
-      handleEndMatch();
+      handleEndMatch({ skipNextMatch: true });
     } else if (action.kind === "reset") {
       await handleReset();
     } else if (action.kind === "delete") {
@@ -865,12 +874,14 @@ export function RefereePage() {
         showToast("Score updated", "success");
         setEditingMatch(null);
         setShowManualForm(false);
+        setMatchDeleted(false);
       });
     } else {
       await run("Saving...", async () => {
         await createMatch(sid, body);
         showToast("Match result saved", "success");
         setShowManualForm(false);
+        setMatchDeleted(false);
       });
     }
   };
@@ -886,23 +897,32 @@ export function RefereePage() {
   const handleGoalDeleted = async (g: GoalRow) => {
     const match = goalSheet?.match;
     if (!match) return;
-    try {
-      await deleteGoal(sid, match.id, g.id);
-      setGoalSheet(null);
-      handleGoalSaved();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Delete failed", "error");
-    }
+    await deleteGoal(sid, match.id, g.id);
+    handleGoalSaved();
   };
 
   const handleStartNewMatch = async () => {
     await run("Creating match...", async () => {
-      await createNewPendingMatch(sid, {
-        team_a_idx: selectedTeamA,
-        team_b_idx: selectedTeamB,
-      });
+      if (matches.length === 0) {
+        // No completed match to build from (e.g. the only match was just
+        // deleted) — start the schedule from scratch with the picked teams.
+        const res = await startMatches(sid, {
+          team_a_idx: selectedTeamA,
+          team_b_idx: selectedTeamB,
+        });
+        showToast(
+          `Matches started! ${res.match.team_a.name} vs ${res.match.team_b.name}`,
+          "success",
+        );
+      } else {
+        await createNewPendingMatch(sid, {
+          team_a_idx: selectedTeamA,
+          team_b_idx: selectedTeamB,
+        });
+        showToast("New match ready — start the timer!", "success");
+      }
       setSelectingTeams(false);
-      showToast("New match ready — start the timer!", "success");
+      setMatchDeleted(false);
     });
   };
 
@@ -995,6 +1015,10 @@ export function RefereePage() {
     matches.length > 0 &&
     matches.every((m) => m.status === "completed") &&
     !currentMatch;
+  // After a delete, the referee gets the same "Start new match" entry point
+  // the all-complete state offers — even with an empty match list.
+  const showStartNewMatch =
+    allComplete || (matchDeleted && matches.length === 0);
 
   // Show next match preview after a match ended
   const nextMatch = matches.find(
@@ -1003,10 +1027,14 @@ export function RefereePage() {
       m.match_number > (currentMatch?.match_number || 0),
   );
 
+  // Bottom action deck only exists for live controls — no deck in the other states.
+  const liveControls =
+    currentMatch && !isPastDeadline && !showManualForm && !showStartNewMatch && !selectingTeams;
+
   return (
     <div
       ref={rootRef}
-      className="min-h-screen bg-board"
+      className="flex flex-1 min-h-0 flex-col bg-board"
       onClickCapture={(e) => {
         // Web Vibration (Android/desktop) on any button press; the switch
         // overlay above covers iOS.
@@ -1014,7 +1042,7 @@ export function RefereePage() {
       }}
     >
       {/* Header — painted scoreboard band */}
-      <div className="sticky top-0 z-40 border-b border-line bg-board">
+      <div className="shrink-0 border-b border-line bg-board">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-2 px-2 pt-2">
             <button
@@ -1026,13 +1054,21 @@ export function RefereePage() {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-sm font-bold text-ink leading-tight">
+              <h1 className="flex items-center gap-2 text-sm font-bold text-ink leading-tight">
                 Match Control
+                {sseLive ? (
+                  <span className="relative inline-block h-2 w-2" aria-hidden>
+                    <span className="absolute inset-0 motion-safe:animate-ping motion-reduce:animate-none bg-live opacity-75" />
+                    <span className="relative block h-2 w-2 bg-live" />
+                  </span>
+                ) : (
+                  <WifiOff className="h-3.5 w-3.5 text-ink-faint" aria-hidden />
+                )}
               </h1>
               <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
                 {currentMatch
                   ? `Match ${currentMatch.match_number}`
-                  : allComplete
+                  : showStartNewMatch
                     ? "All matches done"
                     : "No active match"}
               </p>
@@ -1053,7 +1089,7 @@ export function RefereePage() {
           {currentMatch && (
             <div className="mt-2">
               {/* Score above the teams — larger, centred */}
-              <p className="py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink">
+              <p className="texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink">
                 {currentMatch.score_a}
                 <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
                 {currentMatch.score_b}
@@ -1146,7 +1182,8 @@ export function RefereePage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
         {penaltyMatch && !isPastDeadline && (
           <PenaltyShootoutPanel
             meetupId={sid}
@@ -1186,7 +1223,7 @@ export function RefereePage() {
               setEditingMatch(null);
             }}
             onDelete={
-              editingMatch
+              isAdmin && editingMatch
                 ? () =>
                     setConfirmAction({
                       kind: "delete",
@@ -1209,18 +1246,19 @@ export function RefereePage() {
                 : undefined
             }
             goals={editingMatch ? editingMatchGoals : undefined}
+            goalsLocked={editingMatch?.penalty_winner != null}
             onAddGoal={
-              editingMatch
+              editingMatch && editingMatch.penalty_winner == null
                 ? () => setGoalSheet({ match: editingMatch, goal: null })
                 : undefined
             }
             onEditGoal={
-              editingMatch
+              editingMatch && editingMatch.penalty_winner == null
                 ? (g) => setGoalSheet({ match: editingMatch, goal: g })
                 : undefined
             }
           />
-        ) : allComplete && selectingTeams ? (
+        ) : showStartNewMatch && selectingTeams ? (
           /* Team selection for new match */
           <div className="space-y-4">
             <div className="text-center">
@@ -1287,7 +1325,7 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => void handleStartNewMatch()}
-                disabled={busy !== null || selectedTeamA === selectedTeamB}
+                disabled={busy !== null || selectedTeamA === selectedTeamB || penaltyMatch !== null}
                 className="flex-1 py-3 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
               >
                 <Play className="h-4 w-4" />
@@ -1295,7 +1333,7 @@ export function RefereePage() {
               </button>
             </div>
           </div>
-        ) : allComplete ? (
+        ) : showStartNewMatch ? (
           /* All matches done but deadline not passed — offer to add more */
           <div className="text-center space-y-6 py-8">
             <div className="inline-flex items-center justify-center w-14 h-14 bg-team-a/15">
@@ -1312,7 +1350,7 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => setSelectingTeams(true)}
-                disabled={busy !== null}
+                disabled={busy !== null || penaltyMatch !== null}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
               >
                 <Play className="h-5 w-5" />
@@ -1471,153 +1509,28 @@ export function RefereePage() {
             )}
 
             {/* Substitutions — admin only: pre-start, or mid-match while the
-                timer is paused. Same button + panel in both. */}
+                timer is paused. Opens the fullscreen sheet. */}
             {(currentMatch.status === "pending" ||
               (currentMatch.status === "active" && isPaused)) &&
             isAdmin && (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSubstitutions((v) => !v)}
-                  className="w-full py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[48px]"
-                  aria-expanded={showSubstitutions}
-                >
-                  {showSubstitutions ? (
-                    <X className="h-4 w-4" aria-hidden />
-                  ) : (
-                    <ArrowRightLeft className="h-4 w-4" aria-hidden />
-                  )}
-                  Substitutions
-                </button>
-                {showSubstitutions && (
-                  <SubstitutionsPanel
-                    key={currentMatch.id}
-                    meetupId={sid}
-                    match={currentMatch}
-                    extraTeams={extraTeams}
-                    onSaved={loadMatches}
-                  />
-                )}
+              <button
+                type="button"
+                onClick={() => setShowSubstitutions(true)}
+                className="w-full py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[48px]"
+                aria-haspopup="dialog"
+              >
+                <ArrowRightLeft className="h-4 w-4" aria-hidden />
+                Substitutions
+              </button>
+            )}
+
+            {/* Half-time flash — scrolls with the content; the timer below
+                is pinned above the action deck. */}
+            {halfTimeFlash && (
+              <div className="text-center py-2 px-4 bg-live text-board text-lg font-bold animate-pulse">
+                ⚡ Half-time!
               </div>
             )}
-
-            {/* Clock — teams + score live in the painted header band */}
-            <div className="border border-line bg-panel p-4 space-y-3">
-              {/* Half-time flash */}
-              {halfTimeFlash && (
-                <div className="text-center py-2 px-4 bg-live text-board text-lg font-bold animate-pulse">
-                  ⚡ Half-time!
-                </div>
-              )}
-
-              {/* Timer */}
-              <div className="text-center">
-                <span
-                  className={`text-4xl font-bold tabular-nums ${getTimerColor(
-                    timerSeconds,
-                    currentMatch.timer_total_seconds,
-                  )}`}
-                >
-                  {formatTimer(timerSeconds)}
-                </span>
-                {isPaused && currentMatch.status === "active" && (
-                  <p className="text-sm font-medium text-ink-dim mt-1">
-                    Paused
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Timer controls */}
-            {currentMatch.status === "pending" && (
-              <button
-                type="button"
-                onClick={() => void handleStartTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Play className="h-6 w-6" />
-                Start Timer
-              </button>
-            )}
-
-            {currentMatch.status === "active" && !isPaused && (
-              <button
-                type="button"
-                onClick={() => void handlePauseTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Pause className="h-6 w-6" />
-                Pause
-              </button>
-            )}
-
-            {currentMatch.status === "active" && isPaused && (
-              <button
-                type="button"
-                onClick={() => void handleResumeTimer()}
-                disabled={busy !== null}
-                className="w-full py-5 bg-live text-board text-xl font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-              >
-                <Play className="h-6 w-6" />
-                Resume
-              </button>
-            )}
-
-            {/* + Goal — the goal-recording sheet (lease-gated, per match). */}
-            {currentMatch.status !== "time_up" && (
-              <button
-                type="button"
-                disabled={(!!lease && leaseLeft > 0) || busy !== null}
-                onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
-                className="w-full py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[56px]"
-              >
-                {lease && leaseLeft > 0
-                  ? leaseBusyLabel(lease.holderName, leaseLeft)
-                  : "+ Goal"}
-              </button>
-            )}
-
-            {/* Score is driven by the goal log — the ±steppers are gone. */}
-
-            {/* End match — neutral: finishing is routine, not destructive */}
-            <button
-              type="button"
-              onClick={() => setConfirmAction({ kind: "end" })}
-              disabled={busy !== null}
-              className="w-full py-5 border-2 border-ink/30 text-ink text-xl font-bold hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-3 min-h-[56px]"
-            >
-              <Flag className="h-6 w-6" />
-              End Match
-            </button>
-
-            {/* Reset / Delete — borderless, side by side */}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() =>
-                  currentMatch && setConfirmAction({ kind: "reset" })
-                }
-                disabled={busy !== null}
-                className="flex-1 py-3 text-ink-dim text-sm font-semibold hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Reset
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  currentMatch &&
-                  setConfirmAction({ kind: "delete", matchId: currentMatch.id })
-                }
-                disabled={busy !== null}
-                className="flex-1 py-3 text-danger text-sm font-semibold hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </button>
-            </div>
 
             {/* Next match preview */}
             {nextMatch && (
@@ -1639,61 +1552,144 @@ export function RefereePage() {
             <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
               Completed matches
             </h3>
-            {completedMatches.map((m) => {
-              const hasWinner = m.score_a !== m.score_b;
-              return (
-                <div
-                  key={m.id}
-                  className={`flex items-center justify-between border border-line px-4 py-3 gap-2 ${
-                    hasWinner ? "bg-raised" : "bg-panel"
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
-                      Match {m.match_number}
-                    </span>
-                    {m.was_draw && (
-                      <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1 py-0.5">
-                        Draw
-                      </span>
-                    )}
+            {completedMatches.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center justify-between border border-line bg-panel px-4 py-3 gap-2"
+            >
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
+                    Match {m.match_number}
                   </span>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm font-semibold truncate">
-                      <span className="text-team-a">{m.team_a.name}</span>{" "}
-                      <span className="tabular-nums text-ink">
-                        {m.score_a}
-                      </span>
+                  {m.was_draw && (
+                    <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint border border-line px-1 py-0.5">
+                      Draw
                     </span>
-                    <span className="text-ink-faint shrink-0">—</span>
-                    <span className="text-sm font-semibold truncate">
-                      <span className="tabular-nums text-ink">
-                        {m.score_b}
-                      </span>{" "}
-                      <span className="text-team-b">{m.team_b.name}</span>
-                    </span>
-                  </div>
-                  {!isPastDeadline && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingMatch(m);
-                        setShowManualForm(true);
-                      }}
-                      className="p-1.5 hover:bg-raised shrink-0"
-                      aria-label={`Edit match ${m.match_number}`}
-                    >
-                      <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
-                    </button>
                   )}
+                </span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-semibold truncate">
+                    <span className="text-team-a">{m.team_a.name}</span>{" "}
+                    <span className="tabular-nums text-ink">
+                      {m.score_a}
+                    </span>
+                  </span>
+                  <span className="text-ink-faint shrink-0">—</span>
+                  <span className="text-sm font-semibold truncate">
+                    <span className="tabular-nums text-ink">
+                      {m.score_b}
+                    </span>{" "}
+                    <span className="text-team-b">{m.team_b.name}</span>
+                  </span>
                 </div>
-              );
-            })}
+                {!isPastDeadline && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMatch(m);
+                      setShowManualForm(true);
+                    }}
+                    className="p-1.5 hover:bg-raised shrink-0"
+                    aria-label={`Edit match ${m.match_number}`}
+                  >
+                    <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         )}
+        </div>
       </div>
 
-      {/* Winner picker modal */}
+      {/* Countdown timer — pinned above the action deck */}
+      {liveControls && (
+        <div className="shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
+          <div className="mx-auto max-w-lg text-center">
+            <span
+              className={`text-3xl font-bold tabular-nums ${getTimerColor(
+                timerSeconds,
+                currentMatch.timer_total_seconds,
+              )}`}
+            >
+              {formatTimer(timerSeconds)}
+            </span>
+            {isPaused && currentMatch.status === "active" && (
+              <p className="text-xs font-medium text-ink-dim">Paused</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom action deck — live controls only */}
+      {liveControls && (
+        <div className="shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto max-w-lg space-y-2">
+            {penaltyMatch && currentMatch.status === "pending" && (
+              <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {currentMatch.status === "pending" && (
+                <button
+                  type="button"
+                  onClick={() => void handleStartTimer()}
+                  disabled={busy !== null || penaltyMatch !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Play className="h-5 w-5" />
+                  Start Timer
+                </button>
+              )}
+              {currentMatch.status === "active" && !isPaused && (
+                <button
+                  type="button"
+                  onClick={() => void handlePauseTimer()}
+                  disabled={busy !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Pause className="h-5 w-5" />
+                  Pause
+                </button>
+              )}
+              {currentMatch.status === "active" && isPaused && (
+                <button
+                  type="button"
+                  onClick={() => void handleResumeTimer()}
+                  disabled={busy !== null}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Play className="h-5 w-5" />
+                  Resume
+                </button>
+              )}
+              {currentMatch.status !== "time_up" && (
+                <button
+                  type="button"
+                  disabled={(!!lease && leaseLeft > 0) || busy !== null}
+                  onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
+                  className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
+                >
+                  {lease && leaseLeft > 0 && !showSubstitutions
+                    ? leaseBusyButtonLabel(lease.holderName, leaseLeft)
+                    : "+ Goal"}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmAction({ kind: "end" })}
+                disabled={busy !== null}
+                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
+              >
+                <Flag className="h-5 w-5" />
+                End Match
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirm destructive actions */}
       <ConfirmDialog
         open={confirmAction != null}
@@ -1734,9 +1730,25 @@ export function RefereePage() {
             handleGoalSaved();
           }}
           onDeleteGoal={
-            goalSheet.goal ? (g) => void handleGoalDeleted(g) : undefined
+            goalSheet.goal ? handleGoalDeleted : undefined
           }
         />
+      )}
+
+      {/* Substitutions — fullscreen sheet, admin only */}
+      {showSubstitutions && currentMatch && (
+        <MobileSheet
+          title="Substitutions"
+          onClose={() => setShowSubstitutions(false)}
+        >
+          <SubstitutionsPanel
+            key={currentMatch.id}
+            meetupId={sid}
+            match={currentMatch}
+            extraTeams={extraTeams}
+            onSaved={loadMatches}
+          />
+        </MobileSheet>
       )}
 
       {/* Mid-meetup team reshape — admin only, from the header gear */}
@@ -1754,6 +1766,22 @@ export function RefereePage() {
           hasStarted={Boolean(meetupDetail.has_started) || matches.some((m) => m.status !== "pending")}
           liveMatchNumber={
             matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
+          }
+          onResetMatch={
+            currentMatch
+              ? () => {
+                  setShowReshape(false);
+                  setConfirmAction({ kind: "reset" });
+                }
+              : undefined
+          }
+          onDeleteMatch={
+            currentMatch
+              ? () => {
+                  setShowReshape(false);
+                  setConfirmAction({ kind: "delete", matchId: currentMatch.id });
+                }
+              : undefined
           }
           onClose={() => setShowReshape(false)}
           onSaved={(result, teamCount, signupCapacity, teamSize) => {

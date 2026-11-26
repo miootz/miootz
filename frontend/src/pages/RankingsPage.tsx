@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation, useNavigationType } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/useAuth";
 import {
@@ -96,6 +97,8 @@ type YearSel = number | "all";
 
 export function RankingsPage() {
   const { me } = useAuth();
+  const location = useLocation();
+  const navigationType = useNavigationType();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<RankingsResponse | null>(null);
@@ -115,7 +118,17 @@ export function RankingsPage() {
   const attributeYear = yearSel ?? seasonYear;
   // Restore scroll after a rubric change re-renders the table with a new row
   // order (year/page changes intentionally scroll to the top).
-  const restoreScroll = useRef<number | null>(null);
+  const scrollKey = `rankings-scroll:${location.key}`;
+  const restoreScroll = useRef<number | null>(
+    navigationType === "POP" && sessionStorage.getItem(scrollKey) !== null
+      ? Number(sessionStorage.getItem(scrollKey))
+      : null,
+  );
+
+  useLayoutEffect(() => () => {
+    const main = document.getElementById("main-content");
+    if (main) sessionStorage.setItem(scrollKey, String(main.scrollTop));
+  }, [scrollKey]);
 
   const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -174,10 +187,12 @@ export function RankingsPage() {
 
   useEffect(() => {
     if (!loading && restoreScroll.current != null) {
-      window.scrollTo({ top: restoreScroll.current });
+      const main = document.getElementById("main-content");
+      if (main) main.scrollTop = restoreScroll.current;
+      sessionStorage.removeItem(scrollKey);
       restoreScroll.current = null;
     }
-  }, [loading]);
+  }, [loading, scrollKey]);
 
   const years = data?.available_years ?? [];
   const selected = attributeYear ?? new Date().getUTCFullYear();
@@ -281,7 +296,7 @@ export function RankingsPage() {
               sort={sort}
               order={order}
               onSortChange={(s, o) => {
-                restoreScroll.current = window.scrollY;
+                restoreScroll.current = document.getElementById("main-content")?.scrollTop ?? null;
                 setSort(s);
                 setOrder(o);
                 setPage(1);

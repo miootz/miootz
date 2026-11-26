@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
-import { Minus, Plus, X } from "lucide-react";
+import { Minus, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { reshapeMeetupTeams, type TeamsResponse } from "../api/meetupsApi";
 import { useToast } from "../context/ToastContext";
 
@@ -16,6 +16,9 @@ interface TeamReshapeSheetProps {
   liveMatchNumber: number | null;
   onClose: () => void;
   onSaved: (result: TeamsResponse, teamCount: number, signupCapacity: number, teamSize: number) => void;
+  /** Reset / delete the live match — confirm dialogs live on the caller. */
+  onResetMatch?: () => void;
+  onDeleteMatch?: () => void;
 }
 
 const MAX_TEAM_COUNT = 5;
@@ -35,6 +38,8 @@ export function TeamReshapeSheet({
   liveMatchNumber,
   onClose,
   onSaved,
+  onResetMatch,
+  onDeleteMatch,
 }: TeamReshapeSheetProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -217,6 +222,39 @@ export function TeamReshapeSheet({
             {saving ? "Applying…" : "Apply"}
           </button>
         </div>
+
+        {/* Match actions — the caller confirms and runs these */}
+        {(onResetMatch || onDeleteMatch) && (
+          <div className="mt-5 border-t border-line pt-4">
+            <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+              Match
+            </p>
+            <div className="mt-2 flex gap-2">
+              {onResetMatch && (
+                <button
+                  type="button"
+                  onClick={onResetMatch}
+                  disabled={saving}
+                  className="flex min-h-[44px] flex-1 items-center justify-center gap-2 border border-line px-3 py-2.5 text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink disabled:opacity-40 active:scale-[0.98] transition-transform"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </button>
+              )}
+              {onDeleteMatch && (
+                <button
+                  type="button"
+                  onClick={onDeleteMatch}
+                  disabled={saving}
+                  className="flex min-h-[44px] flex-1 items-center justify-center gap-2 border border-danger/40 px-3 py-2.5 text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-40 active:scale-[0.98] transition-transform"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </dialog>
   );

@@ -83,7 +83,7 @@ function MemberChrome() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-board transition-colors">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-board transition-colors">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-line focus:bg-panel focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-lg"
@@ -93,7 +93,7 @@ function MemberChrome() {
       <OfflineBanner />
       {!demoRoom() && <InstallAppBanner enabled={online} />}
       <MemberNotificationPrompt enabled={online} />
-      <header className="sticky top-0 z-40 border-b border-line bg-board/95 backdrop-blur">
+      <header className="shrink-0 z-40 border-b border-line bg-board/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-start gap-3 px-4 py-3">
           <div className="min-w-0 flex-1 text-left">
             <p className="flex items-center text-ink">
@@ -235,7 +235,7 @@ function MemberChrome() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto w-full max-w-6xl flex-1 text-left outline-hidden"
+        className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-y-auto overscroll-y-contain text-left outline-hidden"
         style={{
           paddingBottom: `calc(${BOTTOM_NAV_H} + env(safe-area-inset-bottom, 0px))`,
         }}

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  leaseBusyButtonLabel,
   leaseBusyLabel,
   leaseCountdown,
   leaseActive,
@@ -40,6 +41,14 @@ describe('leaseBusyLabel', () => {
     );
     expect(leaseBusyLabel('Carlos', 0)).toBe('Carlos is entering a goal… 0s');
     expect(leaseBusyLabel('Carlos', -3)).toBe('Carlos is entering a goal… 0s');
+  });
+});
+
+describe('leaseBusyButtonLabel', () => {
+  it('uses the first name and a short countdown', () => {
+    expect(leaseBusyButtonLabel('Andrea Pirlo', 38.2)).toBe('Andrea · 39s');
+    expect(leaseBusyButtonLabel('Carlos', 0)).toBe('Carlos · 0s');
+    expect(leaseBusyButtonLabel('Carlos', -3)).toBe('Carlos · 0s');
   });
 });
 

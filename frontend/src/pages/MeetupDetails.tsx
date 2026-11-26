@@ -31,7 +31,8 @@ import { Link } from "react-router-dom";
 import { hapticError, hapticSuccess } from "../utils/haptics";
 import { parseMeetupStart } from "../utils/datetime";
 import { shareLink } from "../utils/share";
-import { UserPlus, X } from "lucide-react";
+import { UserPlus } from "lucide-react";
+import { MobileSheet } from "../components/MobileSheet";
 import { StarRating } from "../components/StarRating";
 import { SKILL_SCALE_BLURB } from "../components/OnboardingCard";
 import { roomPath } from "../utils/demoRoom";
@@ -57,21 +58,14 @@ function PlusOneModal({
 	onSuccess: () => void;
 }) {
 	const { showToast } = useToast();
-	const titleId = React.useId();
-
-	// Close on Escape and lock page scroll while open (parity with ConfirmDialog).
-	React.useEffect(() => {
-		const prev = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => {
-			document.body.style.overflow = prev;
-			window.removeEventListener("keydown", onKey);
-		};
-	}, [onClose]);
+	const formId = React.useId();
+	const [firstName, setFirstName] = useState("");
+	const [lastName, setLastName] = useState("");
+	const [skill, setSkill] = useState<number | null>(5);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [result, setResult] = useState<{ claim_url: string } | null>(null);
+	const sid = Number.parseInt(meetupId, 10);
 
 	const handleSharePlusOne = async () => {
 		if (!result) return;
@@ -87,14 +81,6 @@ function PlusOneModal({
 			showToast("Failed to share invite.", "error");
 		}
 	};
-
-	const [firstName, setFirstName] = useState("");
-	const [lastName, setLastName] = useState("");
-	const [skill, setSkill] = useState<number | null>(5);
-	const [busy, setBusy] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [result, setResult] = useState<{ claim_url: string } | null>(null);
-	const sid = Number.parseInt(meetupId, 10);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -132,142 +118,106 @@ function PlusOneModal({
 	};
 
 	return (
-		<div
-			className="fixed inset-0 z-50 flex items-center justify-center p-4"
-			role="presentation"
-		>
-			<button
-				type="button"
-				className="absolute inset-0 bg-black/60"
-				aria-label="Dismiss"
-				onClick={onClose}
-			/>
-			<div
-				className="relative z-10 w-full max-w-md border border-line bg-panel p-6 space-y-4 shadow-xl"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby={titleId}
-				onClick={(e) => e.stopPropagation()}
-			>
-				<button
-					type="button"
-					onClick={onClose}
-					className="absolute top-4 right-4 p-2 text-ink-dim hover:bg-raised hover:text-ink"
-					aria-label="Close"
-				>
-					<X size={18} />
-				</button>
-
-				{result ? (
-					<div className="text-center space-y-4">
-						<PartyPopper className="mx-auto h-10 w-10 text-team-a" aria-hidden />
-						<h3
-							id={titleId}
-							className="text-lg font-bold text-ink"
+		<MobileSheet
+			onClose={onClose}
+			title={result ? "Plus-one added!" : "Add a plus-one"}
+			footer={
+				result ? (
+					<div className="flex gap-2">
+						<button
+							type="button"
+							onClick={handleSharePlusOne}
+							className="flex min-h-12 flex-1 items-center justify-center gap-2 border border-line px-4 py-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
 						>
-							Plus-one added!
-						</h3>
-						<div className="break-all bg-raised p-3 text-xs text-ink-dim font-mono select-all">
-							{window.location.origin}
-							{roomPath(result.claim_url)}
-						</div>
-						<div className="flex gap-2">
-							<button
-								type="button"
-								onClick={handleSharePlusOne}
-								className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 border border-line text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
-							>
-								<Share className="h-4 w-4" aria-hidden />
-								Share
-							</button>
-							<button
-								type="button"
-								onClick={onClose}
-								className="flex-1 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90"
-							>
-								Done
-							</button>
-						</div>
+							<Share className="h-4 w-4" aria-hidden />
+							Share
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							className="min-h-12 flex-1 bg-ink px-4 py-2.5 text-sm font-bold text-board hover:bg-white/90"
+						>
+							Done
+						</button>
 					</div>
 				) : (
-					<>
-						<div className="flex items-center gap-2">
-							<UserPlus className="text-ink" size={20} />
-							<h3
-								id={titleId}
-								className="text-lg font-bold text-ink"
-							>
-								Add a plus-one
-							</h3>
+					<div className="flex gap-2">
+						<button
+							type="button"
+							onClick={onClose}
+							className="min-h-12 flex-1 border border-line px-4 py-2 text-sm text-ink-dim hover:bg-raised"
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							form={formId}
+							disabled={busy}
+							className="min-h-12 flex-1 bg-ink px-4 py-2.5 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50"
+						>
+							{busy ? "Adding…" : "Add plus-one"}
+						</button>
+					</div>
+				)
+			}
+		>
+			{result ? (
+				<div className="space-y-4 text-center">
+					<PartyPopper className="mx-auto h-10 w-10 text-team-a" aria-hidden />
+					<div className="break-all bg-raised p-3 text-xs font-mono text-ink-dim select-all">
+						{window.location.origin}
+						{roomPath(result.claim_url)}
+					</div>
+				</div>
+			) : (
+				<form id={formId} onSubmit={handleSubmit} className="space-y-4">
+					<div className="grid grid-cols-2 gap-3">
+						<div>
+							<label htmlFor="plus-one-first" className="mb-1 block text-xs font-medium text-ink-dim">
+								First name
+							</label>
+							<input
+								id="plus-one-first"
+								type="text"
+								value={firstName}
+								onChange={(e) => setFirstName(e.target.value)}
+								placeholder="John"
+								className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+								maxLength={80}
+							/>
 						</div>
+						<div>
+							<label htmlFor="plus-one-last" className="mb-1 block text-xs font-medium text-ink-dim">
+								Last name
+							</label>
+							<input
+								id="plus-one-last"
+								type="text"
+								value={lastName}
+								onChange={(e) => setLastName(e.target.value)}
+								placeholder="Doe"
+								className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
+								maxLength={80}
+							/>
+						</div>
+					</div>
 
-						<form onSubmit={handleSubmit} className="space-y-4">
-							<div className="grid grid-cols-2 gap-3">
-								<div>
-									<label className="block text-xs font-medium text-ink-dim mb-1">
-										First name
-									</label>
-									<input
-										type="text"
-										value={firstName}
-										onChange={(e) => setFirstName(e.target.value)}
-										placeholder="John"
-										className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
-										maxLength={80}
-									/>
-								</div>
-								<div>
-									<label className="block text-xs font-medium text-ink-dim mb-1">
-										Last name
-									</label>
-									<input
-										type="text"
-										value={lastName}
-										onChange={(e) => setLastName(e.target.value)}
-										placeholder="Doe"
-										className="w-full border border-line bg-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-hidden focus:ring-2 focus:ring-live"
-										maxLength={80}
-									/>
-								</div>
-							</div>
+					<div>
+						<span className="mb-1 block text-xs font-medium text-ink-dim">Skill level</span>
+						<StarRating value={skill} onChange={setSkill} onClear={() => setSkill(null)} min={1} size={28} label="Skill level" />
+						<p className="mt-1 text-2xs text-ink-faint">
+							{SKILL_SCALE_BLURB}
+						</p>
+					</div>
 
-							<div>
-								<label className="block text-xs font-medium text-ink-dim mb-1">
-									Skill level
-								</label>
-								<StarRating value={skill} onChange={setSkill} onClear={() => setSkill(null)} min={1} size={28} label="Skill level" />
-								<p className="mt-1 text-2xs text-ink-faint">
-									{SKILL_SCALE_BLURB}
-								</p>
-							</div>
-
-							{error && (
-								<p className="text-sm text-danger" role="alert">
-									{error}
-								</p>
-							)}
-
-							<div className="flex gap-2">
-								<button
-									type="button"
-									onClick={onClose}
-									className="flex-1 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised"
-								>
-									Cancel
-								</button>
-								<button
-									type="submit"
-									disabled={busy}
-									className="flex-1 px-4 py-2.5 bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50"
-								>
-									{busy ? "Adding…" : "Add plus-one"}
-								</button>
-							</div>
-						</form>
-					</>
-				)}
-			</div>
-		</div>
+					{error && (
+						<p className="text-sm text-danger" role="alert">
+							{error}
+						</p>
+					)}
+				</form>
+			)}
+		</MobileSheet>
 	);
 }
 
@@ -434,59 +384,58 @@ function MeetupAttendanceActions({
 						</p>
 					</div>
 				</div>
-				<div className="border-t border-line px-4 py-3">
-					{feedback && (
-						<p className="mb-2 text-sm text-danger" role="alert">
-							{feedback}
-						</p>
+			<div className="border-t border-line px-4 py-3">
+				{feedback && (
+					<p className="mb-2 text-sm text-danger" role="alert">
+						{feedback}
+					</p>
+				)}
+				<div className="flex flex-wrap gap-2">
+					{(status == null || status === "cancelled") && (
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => void runJoin()}
+							className="flex-1 min-w-[10rem] justify-center px-4 py-2.5 inline-flex items-center bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+						>
+							{status === "cancelled" ? "Join again" : "Join meetup"}
+						</button>
 					)}
-					<div className="flex flex-wrap gap-2">
-						{(status == null || status === "cancelled") && (
+					{status === "waitlisted" && (myWeatherHeroUnused ?? 0) > 0 && (
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => void runRedeemWeatherHero()}
+							className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
+						>
+							<CloudRain size={14} aria-hidden />
+							Use Weather Hero spot
+						</button>
+					)}
+					{(status === "confirmed" || status === "waitlisted") && (
+						<>
+							{status === "confirmed" && (
+								<button
+									type="button"
+									onClick={() => setShowPlusOne(true)}
+									className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+								>
+									<UserPlus size={14} />
+									Add a plus-one
+								</button>
+							)}
 							<button
 								type="button"
 								disabled={busy}
-								onClick={() => void runJoin()}
-								className="flex-1 min-w-[10rem] justify-center px-4 py-2.5 inline-flex items-center bg-ink text-board text-sm font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+								onClick={() => void runLeave()}
+								className="inline-flex flex-1 min-w-[10rem] justify-center items-center px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
 							>
-								{status === "cancelled" ? "Join again" : "Join meetup"}
+								{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
 							</button>
-						)}
-						{status === "waitlisted" &&
-							(myWeatherHeroUnused ?? 0) > 0 && (
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => void runRedeemWeatherHero()}
-									className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2.5 bg-live text-board text-sm font-bold hover:bg-live/90 disabled:opacity-50 active:scale-[0.98]"
-								>
-									<CloudRain size={14} aria-hidden />
-									Use Weather Hero spot
-								</button>
-							)}
-						{(status === "confirmed" || status === "waitlisted") && (
-							<>
-								{status === "confirmed" && (
-									<button
-										type="button"
-										onClick={() => setShowPlusOne(true)}
-										className="inline-flex flex-1 min-w-[10rem] justify-center items-center gap-1.5 px-4 py-2 border border-line text-sm text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
-									>
-										<UserPlus size={14} />
-										Add a plus-one
-									</button>
-								)}
-								<button
-									type="button"
-									disabled={busy}
-									onClick={() => void runLeave()}
-									className="inline-flex flex-1 min-w-[10rem] justify-center items-center px-4 py-2 border border-danger/40 text-sm text-danger hover:bg-danger/10 disabled:opacity-50 active:scale-[0.98]"
-								>
-									{status === "confirmed" ? "Leave meetup" : "Leave waitlist"}
-								</button>
-							</>
-						)}
-					</div>
+						</>
+					)}
 				</div>
+			</div>
 			</div>
 			{showPlusOne && (
 				<PlusOneModal
@@ -524,7 +473,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 		Number.isFinite(startMs) && now >= startMs - 15 * 60_000;
 
 	return (
-		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8">
+		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8 pb-8">
 			{/* 1. Match results — from T-15 min, in place of attendance */}
 			{resultsMode && !isNaN(meetupIdNum) && (
 				<section className="space-y-3">

@@ -11,7 +11,7 @@ from app.services.team_assignment import (
     rebalance_around_locked,
     team_counts,
 )
-from app.services.team_names import generate_team_names
+from app.services.team_names import generate_team_names, team_name as _team_name
 
 
 def parse_manual_teams_json(raw: str | None) -> list[list[int]] | None:
@@ -241,12 +241,12 @@ def format_teams_api_payload(
     """Format resolved teams for the API response.
 
     When *team_names* is provided (from meetup.team_names_json), uses those
-    names. Otherwise falls back to "Team 1", "Team 2", …
+    names. Otherwise falls back to "Team A", "Team B", …
     """
     out: list[dict[str, Any]] = []
     for i, team in enumerate(teams_nested, start=1):
         name = (team_names[i - 1] if team_names and i - 1 < len(team_names)
-                else f"Team {i}")
+                else _team_name(i))
         out.append(
             {
                 "id": f"t{i}",

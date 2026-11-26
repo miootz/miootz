@@ -349,66 +349,47 @@ export function AdminPlayersPage() {
 						No invites created yet.
 					</p>
 				) : (
-					<div className="overflow-x-auto">
-						<table className="w-full text-sm">
-							<thead>
-								<tr className="border-b border-line text-left">
-									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Player</th>
-									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint hidden sm:table-cell">Created</th>
-									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint hidden sm:table-cell">Expires</th>
-									<th className="pb-2 pr-4 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Status</th>
-									<th className="pb-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-faint">Link</th>
-								</tr>
-							</thead>
-							<tbody className="divide-y divide-line">
-								{inviteHistory.map((row) => {
-									const expired = new Date(row.expires_at) < new Date();
-									const name = `${row.first_name} ${row.last_name}`;
-									return (
-										<tr
-											key={row.token}
-											className="hover:bg-raised transition-colors"
+					<ul className="divide-y divide-line border border-line bg-panel">
+						{inviteHistory.map((row) => {
+							const expired = new Date(row.expires_at) < new Date();
+							const name = `${row.first_name} ${row.last_name}`;
+							return (
+								<li key={row.token} className="px-3 py-3 sm:px-4 hover:bg-raised transition-colors">
+									<div className="flex items-center gap-3">
+										<span className="min-w-0 flex-1">
+											<span className="block truncate text-sm font-medium text-ink">{name}</span>
+											<span className="mt-0.5 block text-xs text-ink-faint tabular-nums">
+												{new Date(row.created_at).toLocaleDateString()} → {new Date(row.expires_at).toLocaleDateString()}
+											</span>
+										</span>
+										<span className="shrink-0">
+											{row.used ? (
+												<span className="inline-flex items-center gap-1 text-xs font-medium text-team-a">
+													<Check className="h-3.5 w-3.5" aria-hidden /> Used
+												</span>
+											) : expired ? (
+												<span className="inline-flex items-center gap-1 text-xs font-medium text-ink-faint">
+													<XCircle className="h-3.5 w-3.5" aria-hidden /> Expired
+												</span>
+											) : (
+												<span className="inline-flex items-center gap-1 text-xs font-medium text-live">
+													<Mail className="h-3.5 w-3.5" aria-hidden /> Active
+												</span>
+											)}
+										</span>
+										<button
+											type="button"
+											onClick={() => void copyLink(row.invite_link)}
+											className="inline-flex min-h-11 items-center gap-1 border border-line px-2 py-1 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
 										>
-											<td className="py-2.5 pr-4 font-medium text-ink">
-												{name}
-											</td>
-											<td className="py-2.5 pr-4 text-ink-faint tabular-nums hidden sm:table-cell">
-												{new Date(row.created_at).toLocaleDateString()}
-											</td>
-											<td className="py-2.5 pr-4 text-ink-faint tabular-nums hidden sm:table-cell">
-												{new Date(row.expires_at).toLocaleDateString()}
-											</td>
-											<td className="py-2.5 pr-4">
-												{row.used ? (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-team-a">
-														<Check className="h-3.5 w-3.5" aria-hidden /> Used
-													</span>
-												) : expired ? (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-ink-faint">
-														<XCircle className="h-3.5 w-3.5" aria-hidden /> Expired
-													</span>
-												) : (
-													<span className="inline-flex items-center gap-1 text-xs font-medium text-live">
-														<Mail className="h-3.5 w-3.5" aria-hidden /> Active
-													</span>
-												)}
-											</td>
-											<td className="py-2.5">
-												<button
-													type="button"
-													onClick={() => void copyLink(row.invite_link)}
-													className="inline-flex items-center gap-1 border border-line px-2 py-1 text-xs font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
-												>
-													<Copy className="h-3 w-3" aria-hidden />
-													Copy
-												</button>
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
+											<Copy className="h-3 w-3" aria-hidden />
+											Copy
+										</button>
+									</div>
+								</li>
+							);
+						})}
+					</ul>
 				)}
 			</section>
 		</div>

@@ -9,6 +9,7 @@ import {
 } from '../../api/adminApi';
 import { AdminBreadcrumb } from '../../components/admin/AdminBreadcrumb';
 import { LocationPicker, type GeoPoint } from '../../components/admin/LocationPicker';
+import { StickyFormBar } from '../../components/StickyFormBar';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import {
   ADMIN_LAST_LOCATION_KEY,
@@ -193,7 +194,7 @@ export function AdminMeetupNewPage() {
   );
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-xl mx-auto pb-28">
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
@@ -218,6 +219,7 @@ export function AdminMeetupNewPage() {
       {stepper}
 
       <form
+        id="meetup-new-form"
         onSubmit={(e) => void handleSubmit(e)}
         className="border border-line bg-panel p-6 space-y-5 transition-colors"
       >
@@ -378,13 +380,6 @@ export function AdminMeetupNewPage() {
                 <option value="random">Random order (snake)</option>
               </select>
             </div>
-            <button
-              type="button"
-              className="w-full min-h-[44px] bg-ink text-board font-bold hover:bg-white/90 active:scale-[0.98] transition-colors"
-              onClick={() => setStep(2)}
-            >
-              Next: review
-            </button>
           </div>
         )}
 
@@ -417,23 +412,6 @@ export function AdminMeetupNewPage() {
                 </span>
               </span>
             </label>
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                type="button"
-                className="flex-1 min-h-[44px] border border-line py-2.5 font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
-                onClick={() => setStep(1)}
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60 transition-colors"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Create meetup
-              </button>
-            </div>
             <Link
               to="/admin/meetups"
               className="block text-center text-sm text-ink-dim hover:text-ink"
@@ -443,6 +421,37 @@ export function AdminMeetupNewPage() {
           </div>
         )}
       </form>
+
+      <StickyFormBar innerClassName="max-w-xl">
+        {step === 1 ? (
+          <button
+            type="button"
+            className="w-full min-h-12 bg-ink text-board font-bold hover:bg-white/90 active:scale-[0.98] transition-colors"
+            onClick={() => setStep(2)}
+          >
+            Next: review
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex-1 min-h-12 border border-line py-2.5 font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors"
+              onClick={() => setStep(1)}
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              form="meetup-new-form"
+              disabled={saving}
+              className="flex-1 min-h-12 inline-flex items-center justify-center gap-2 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-60 transition-colors"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Create meetup
+            </button>
+          </div>
+        )}
+      </StickyFormBar>
     </div>
   );
 }

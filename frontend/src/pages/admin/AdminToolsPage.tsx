@@ -5,6 +5,7 @@ import { adminExportData, adminRunRecurringNow, adminSendTestPush } from "../../
 import { fetchRatingSettings, saveRatingSettings, type RatingSettings } from "../../api/ratingSettingsApi";
 import { AdminBreadcrumb } from "../../components/admin/AdminBreadcrumb";
 import { AdminPageHeader } from "../../components/admin/AdminPageHeader";
+import { StickyFormBar } from "../../components/StickyFormBar";
 import { useToast } from "../../context/ToastContext";
 import {
   appendJobHistory,
@@ -108,7 +109,7 @@ export function AdminToolsPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-10">
+    <div className="max-w-xl mx-auto space-y-10 pb-28">
       <AdminPageHeader
         breadcrumb={
           <AdminBreadcrumb
@@ -121,7 +122,7 @@ export function AdminToolsPage() {
       <section className="border border-line bg-panel p-6">
         <h2 className="text-lg font-bold text-ink">Player ratings</h2>
         {ratingSettings && (
-          <form onSubmit={(event) => void saveRatings(event)} className="mt-4 space-y-5">
+          <form id="rating-settings-form" onSubmit={(event) => void saveRatings(event)} className="mt-4 space-y-5">
             <label className="flex min-h-11 items-center gap-3 text-sm text-ink">
               <input
                 type="checkbox"
@@ -162,9 +163,6 @@ export function AdminToolsPage() {
               </div>
               <p className="mt-2 text-sm text-ink-dim">At least three eligible players must rate the same player at a meetup before those ratings affect skill.</p>
             </fieldset>
-            <button type="submit" disabled={savingRatings} className="min-h-11 bg-ink px-5 py-2 font-bold text-board hover:bg-white/90 disabled:opacity-50">
-              {savingRatings ? "Saving…" : "Save rating settings"}
-            </button>
             {ratingSaved && <p role="status" className="text-sm text-team-a">Rating settings saved.</p>}
           </form>
         )}
@@ -303,6 +301,18 @@ export function AdminToolsPage() {
         Player skill recalculation and invite cleanup run on the server
         schedule; ask a developer to expose them here if needed.
       </p>
+      {ratingSettings && (
+        <StickyFormBar innerClassName="max-w-xl">
+          <button
+            type="submit"
+            form="rating-settings-form"
+            disabled={savingRatings}
+            className="w-full min-h-12 bg-ink px-5 py-2 font-bold text-board hover:bg-white/90 disabled:opacity-50"
+          >
+            {savingRatings ? "Saving…" : "Save rating settings"}
+          </button>
+        </StickyFormBar>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ export interface MatchSummary {
   was_draw?: boolean;
   /** 'a' | 'b' when a penalty shootout resolved a tied first match. */
   penalty_winner?: "a" | "b" | null;
+  penalty_skipped?: boolean;
   status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;
@@ -37,6 +38,9 @@ export interface MatchCreateBody {
   team_b_name: string;
   score_a: number;
   score_b: number;
+  /** Optional starting lineups; when omitted the match starts with an empty lineup. */
+  team_a_users?: number[];
+  team_b_users?: number[];
 }
 
 export async function createMatch(
@@ -227,6 +231,8 @@ export async function endMatch(
   meetupId: number,
   matchId: number,
   winner_team?: "a" | "b",
+  /** When true, the next match is not auto-queued — the referee overrides the team picking. */
+  skip_next_match?: boolean,
 ): Promise<{
   status: string;
   match: MatchSummary;
@@ -239,6 +245,7 @@ export async function endMatch(
 }> {
   const body: Record<string, unknown> = {};
   if (winner_team) body.winner_team = winner_team;
+  if (skip_next_match) body.skip_next_match = true;
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/end`, {
     method: "POST",
     body: JSON.stringify(body),
@@ -330,4 +337,8 @@ export function finishPenaltyShootout(
   next_match?: MatchSummary;
 }> {
   return penaltyFetch(meetupId, matchId, "/finish", "POST");
+}
+
+export function skipPenaltyShootout(meetupId: number, matchId: number): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "/skip", "POST");
 }

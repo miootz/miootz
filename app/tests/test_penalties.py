@@ -334,3 +334,57 @@ def test_eligible_players_half_time_boundary():
     # No clocked subs → everyone credited (None).
     assert rankings_service._eligible_players(m, []) is None
     assert rankings_service._eligible_players(m, [swap_at(None)]) is None
+
+@pytest.mark.asyncio
+async def test_skip_shootout_clears_shots_and_unlocks_next_match():
+    async with await client() as ac:
+        sid, mid, ids = await make_tied_first_match(ac)
+        body = await end_tied(ac, sid, mid)
+        next_id = body["next_match"]["id"]
+        start_url = f"/meetups/{sid}/matches/{next_id}/timer/start"
+        assert (await ac.post(start_url, headers=hdr("p1"))).status_code == 409
+        assert (await shoot(ac, sid, mid, "a", True, ids["p1"])).status_code == 200
+        skipped = await ac.post(f"/meetups/{sid}/matches/{mid}/penalty/skip", headers=hdr("p1"))
+        assert skipped.status_code == 200, skipped.text
+        assert skipped.json()["shots"] == []
+        assert skipped.json()["available"] is False
+        assert (await shoot(ac, sid, mid, "a", True, ids["p1"])).status_code == 409
+        assert (await ac.post(start_url, headers=hdr("p1"))).status_code == 200
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            assert match.penalty_skipped is True
+            assert match.penalty_winner is None
+
+
+@pytest.mark.asyncio
+async def test_finish_preserves_manually_queued_pair():
+    async with await client() as ac:
+        sid, mid, ids = await make_tied_first_match(ac)
+        body = await end_tied(ac, sid, mid)
+        next_id = body["next_match"]["id"]
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, next_id)
+            match.auto_queued = False
+            match.team_a_name = "Manual A"
+            match.team_b_name = "Manual B"
+            await db.commit()
+        for _ in range(3):
+            assert (await shoot(ac, sid, mid, "a", True, ids["p1"])).status_code == 200
+            assert (await shoot(ac, sid, mid, "b", False, ids["p2"])).status_code == 200
+        result = await ac.post(f"/meetups/{sid}/matches/{mid}/penalty/finish", headers=hdr("p1"))
+        assert result.status_code == 200, result.text
+        assert result.json()["next_match"]["team_a"]["name"] == "Manual A"
+        assert result.json()["next_match"]["team_b"]["name"] == "Manual B"
+        assert (await ac.post(f"/meetups/{sid}/matches/{next_id}/timer/start", headers=hdr("p1"))).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_only_admin_can_reset_or_delete_match():
+    async with await client() as ac:
+        sid, mid, _ = await make_tied_first_match(ac)
+        reset = f"/meetups/{sid}/matches/{mid}/timer/reset"
+        match = f"/meetups/{sid}/matches/{mid}"
+        assert (await ac.post(reset, headers=hdr("p1"))).status_code == 403
+        assert (await ac.delete(match, headers=hdr("p1"))).status_code == 403
+        assert (await ac.post(reset, headers=hdr("admin"))).status_code == 200
+        assert (await ac.delete(match, headers=hdr("admin"))).status_code == 204
