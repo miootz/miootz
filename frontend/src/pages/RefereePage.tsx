@@ -1041,8 +1041,10 @@ export function RefereePage() {
   );
 
   // Bottom action deck only exists for live controls — no deck in the other states.
+  const shootoutOpen = penaltyMatch !== null && !isPastDeadline;
+  const showCompleted = showStartNewMatch && !showManualForm && !selectingTeams && !shootoutOpen && !isPastDeadline;
   const liveControls =
-    currentMatch && !isPastDeadline && !showManualForm && !showStartNewMatch && !selectingTeams;
+    currentMatch && !isPastDeadline && !showManualForm && !showStartNewMatch && !selectingTeams && !shootoutOpen;
 
   return (
     <div
@@ -1129,7 +1131,8 @@ export function RefereePage() {
                 <button
                   type="button"
                   onClick={() => setRostersOpen((o) => !o)}
-                  aria-expanded={rostersOpen}
+                  aria-expanded={rostersOpen && !shootoutOpen}
+                  disabled={shootoutOpen}
                   aria-controls="match-rosters"
                   className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
@@ -1146,7 +1149,8 @@ export function RefereePage() {
                 <button
                   type="button"
                   onClick={() => setRostersOpen((o) => !o)}
-                  aria-expanded={rostersOpen}
+                  aria-expanded={rostersOpen && !shootoutOpen}
+                  disabled={shootoutOpen}
                   aria-controls="match-rosters"
                   className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
@@ -1163,7 +1167,7 @@ export function RefereePage() {
               </div>
             </div>
           )}
-          {currentMatch && rostersOpen && (
+          {currentMatch && rostersOpen && !shootoutOpen && (
             <div
               id="match-rosters"
               className="referee-rosters mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
@@ -1214,9 +1218,9 @@ export function RefereePage() {
       </div>
 
       <div className="referee-activity relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <div className={`referee-activity-inner mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
+        <div className={`referee-activity-inner mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${showCompleted && completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
         <div className="space-y-6">
-        {penaltyMatch && !isPastDeadline && (
+        {shootoutOpen && penaltyMatch ? (
           <PenaltyShootoutPanel
             meetupId={sid}
             match={penaltyMatch}
@@ -1225,8 +1229,7 @@ export function RefereePage() {
               void loadMatches();
             }}
           />
-        )}
-        {isPastDeadline ? (
+        ) : isPastDeadline ? (
           /* Locked — past deadline */
           <div className="space-y-4">
             <div className="text-center space-y-2 py-4">
@@ -1582,7 +1585,7 @@ export function RefereePage() {
         </div>
 
         {/* Past matches */}
-        {completedMatches.length > 0 && (
+        {showCompleted && completedMatches.length > 0 && (
           <div className="mt-6 space-y-3 desktop:mt-0">
             <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
               Completed matches
