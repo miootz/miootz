@@ -1122,7 +1122,7 @@ export function RefereePage() {
             <div className="referee-scoreboard mt-2">
               <p className="referee-score texture-painted-steel flex items-center justify-center py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
                 {currentMatch.score_a}
-                <span className="mx-3 h-0.5 w-6 bg-ink-faint"><span className="sr-only">–</span></span>
+                <span className="mx-3 h-0.5 w-6 bg-ink-faint text-[0px]">—</span>
                 {currentMatch.score_b}
               </p>
               <div className="flex items-stretch">
