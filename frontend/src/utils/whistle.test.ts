@@ -31,7 +31,7 @@ it("resumes audio on the gesture and schedules both whistles on the same context
 
   playHalfTimeWhistle();
   playFinalWhistle();
-  await vi.waitFor(() => expect(start.mock.calls).toEqual([[10], [10.45], [10]]));
+  await vi.waitFor(() => expect(start.mock.calls).toEqual([[10], [10]]));
 
   context.state = "interrupted";
   unlockWhistles();
@@ -78,10 +78,10 @@ it("primes media during the gesture and falls back when Web Audio is unavailable
   vi.useFakeTimers();
   playHalfTimeWhistle();
   expect(elements[0].play).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(450);
-  expect(elements[0].play).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(elements[0].play).toHaveBeenCalledTimes(2);
   previewWhistle();
-  expect(elements[0].play).toHaveBeenCalledTimes(4);
+  expect(elements[0].play).toHaveBeenCalledTimes(3);
   vi.clearAllTimers();
   vi.useRealTimers();
 });

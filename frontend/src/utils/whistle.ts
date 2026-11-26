@@ -112,9 +112,9 @@ function playWhistle(url: string, offsets: number[]): void {
   }).catch(() => playMedia(url, offsets));
 }
 
-/** Half-time: short whistle, twice. */
+/** Half-time: one short whistle. */
 export function playHalfTimeWhistle(): void {
-  playWhistle(WHISTLE_SHORT, [0, 0.45]);
+  playWhistle(WHISTLE_SHORT, [0]);
 }
 
 /** Full-time: long whistle, once. */
@@ -128,7 +128,7 @@ export function previewWhistle(): void {
   const element = media.get(WHISTLE_SHORT);
   if (element) {
     element.muted = false;
-    playMedia(WHISTLE_SHORT, [0, 0.45]);
+    playMedia(WHISTLE_SHORT, [0]);
   } else {
     playHalfTimeWhistle();
   }

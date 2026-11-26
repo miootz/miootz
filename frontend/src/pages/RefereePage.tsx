@@ -53,7 +53,6 @@ import {
   Settings,
   Trash2,
   WifiOff,
-  Volume2,
 } from "lucide-react";
 
 function formatTimer(seconds: number): string {
@@ -678,7 +677,7 @@ export function RefereePage() {
     const prev = prevRatioRef.current;
     prevRatioRef.current = ratio;
     if (prev != null && prev > 0.5 && ratio <= 0.5) {
-      // Just crossed the 50% mark — half-time flash, double whistle, haptic
+      // Just crossed the 50% mark — half-time flash, whistle, haptic
       halfTimeTriggeredAt.current = Date.now();
       setHalfTimeFlash(true);
       playHalfTimeWhistle();
@@ -1097,7 +1096,12 @@ export function RefereePage() {
                 aria-label="Test whistle"
                 className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink tablet:px-3"
               >
-                <Volume2 className="h-4 w-4" aria-hidden />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                  <path d="M21 5h-9l-2 3H8a6 6 0 1 0 6 6v-2l7-3z" />
+                  <circle cx="8" cy="14" r="2" />
+                  <path d="M2 4l2 2M6 2l1 3" />
+                </svg>
                 <span className="hidden tablet:inline">Test whistle</span>
               </button>
             )}
@@ -1116,9 +1120,9 @@ export function RefereePage() {
           </div>
           {currentMatch && (
             <div className="referee-scoreboard mt-2">
-              <p className="referee-score texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
+              <p className="referee-score texture-painted-steel flex items-center justify-center py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
                 {currentMatch.score_a}
-                <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
+                <span className="mx-3 h-0.5 w-6 bg-ink-faint"><span className="sr-only">–</span></span>
                 {currentMatch.score_b}
               </p>
               <div className="flex items-stretch">
