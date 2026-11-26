@@ -435,7 +435,7 @@ async def test_timer_double_taps_are_idempotent():
         sid, mid, _ = await make_live_setup(ac, ["p1", "p2"], start_offset_minutes=-5)
         # make_live_setup already started; go back to a clean pending timer.
         rr = await ac.post(
-            f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("p1")
+            f"/meetups/{sid}/matches/{mid}/timer/reset", headers=hdr("admin")
         )
         assert rr.status_code == 200
         assert rr.json()["status"] == "pending"

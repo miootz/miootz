@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Minus, Plus, Trash2 } from "lucide-react";
 import { useToast } from "../context/ToastContext";
 import type { MatchSummary } from "../api/matchesApi";
@@ -11,7 +11,6 @@ import {
 
 type Side = "a" | "b";
 type GoalStep = "scorer" | "assist" | "keeper" | "review";
-type Scorer = SelectablePlayer & { side: Side };
 
 const otherSide = (side: Side): Side => side === "a" ? "b" : "a";
 
@@ -48,7 +47,7 @@ function newIntentId(): string {
 
 export interface GoalSubmitInput {
   team: Side;
-  scorer_id: number;
+  scorer_id: number | null;
   assist_id: number | null;
   goalkeeper_id: number | null;
   is_own_goal: boolean;
@@ -69,6 +68,8 @@ export interface GoalSubmitInput {
 export function GoalEntryFlow({
   match,
   editGoal = null,
+  fixedScoringSide,
+  rosters,
   canSubmit,
   onSubmit,
   onClose,
@@ -77,10 +78,12 @@ export function GoalEntryFlow({
 }: {
   match: MatchSummary;
   editGoal?: GoalRow | null;
+  fixedScoringSide?: Side;
+  rosters?: Record<Side, GoalPerson[]>;
   canSubmit: boolean;
   onSubmit: (input: GoalSubmitInput) => Promise<GoalRow>;
   onClose: () => void;
-  onDeleteGoal?: (goal: GoalRow) => void;
+  onDeleteGoal?: (goal: GoalRow) => Promise<void>;
   /** Hide the minute field for flows that derive the minute server-side (e.g. admin history). */
   showMinute?: boolean;
 }) {
@@ -90,14 +93,15 @@ export function GoalEntryFlow({
 
   const [step, setStep] = useState<GoalStep>(isEdit ? "review" : "scorer");
   const [isOwnGoal, setIsOwnGoal] = useState(editGoal?.is_own_goal ?? false);
-  const [scorer, setScorer] = useState<Scorer | null>(editGoal ? {
-    ...toPlayer(editGoal.scorer),
-    side: editGoal.is_own_goal ? otherSide(editGoal.team) : editGoal.team,
-  } : null);
+  const [scorer, setScorer] = useState<SelectablePlayer | null>(
+    editGoal?.scorer ? toPlayer(editGoal.scorer) : null,
+  );
+  const [selectedTeam, setSelectedTeam] = useState<Side | null>(editGoal?.team ?? null);
   const [assist, setAssist] = useState(editGoal?.assist ? toPlayer(editGoal.assist) : null);
   const [goalkeeper, setGoalkeeper] = useState(editGoal?.goalkeeper ? toPlayer(editGoal.goalkeeper) : null);
   const [minute, setMinute] = useState<number>(() => editGoal?.clock_minute || liveMinute(match));
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const stepHeading = useRef<HTMLHeadingElement>(null);
@@ -105,9 +109,12 @@ export function GoalEntryFlow({
 
   useEffect(() => { stepHeading.current?.focus(); }, [step]);
 
-  const scoringSide = isOwnGoal ? otherSide(scorer?.side ?? "a") : (scorer?.side ?? "a");
-  const concedingSide = otherSide(scoringSide);
+  const lockedTeam = fixedScoringSide;
+  const scoringSide = lockedTeam ?? selectedTeam;
+  const concedingSide = scoringSide ? otherSide(scoringSide) : null;
   const teams = { a: match.team_a, b: match.team_b };
+  const scorerSides = lockedTeam ? [isOwnGoal ? otherSide(lockedTeam) : lockedTeam] : (["a", "b"] as const);
+  const detailSide = step === "assist" ? scoringSide : concedingSide;
   const steps: GoalStep[] = isOwnGoal ? ["scorer", "keeper", "review"] : ["scorer", "assist", "keeper", "review"];
   const stepIndex = steps.indexOf(step);
   const previous = steps[stepIndex - 1];
@@ -116,78 +123,79 @@ export function GoalEntryFlow({
   function goTo(next: GoalStep) {
     setConfirmDuplicate(false);
     setConfirmDelete(false);
+    setError("");
     setStep(next);
   }
 
-  function chooseScorer(player: SelectablePlayer, side: Side) {
-    if (scorer?.side !== side || assist?.id === player.id) setAssist(null);
-    if (scorer?.side !== side || goalkeeper?.id === player.id) setGoalkeeper(null);
-    setScorer({ ...player, side });
+  function chooseScorer(player: SelectablePlayer | null, team: Side) {
+    if (scoringSide !== team || assist?.id === player?.id) setAssist(null);
+    if (scoringSide !== team || goalkeeper?.id === player?.id) setGoalkeeper(null);
+    setSelectedTeam(team);
+    setScorer(player);
     goTo(isOwnGoal ? "keeper" : "assist");
   }
 
   const afterWhistle = showMinute && isAfterWhistle(minute, match.timer_total_seconds);
 
-  const postGoal = useCallback(
-    async (force: boolean) => {
-      if (!scorer || submitting) return;
-      setSubmitting(true);
-      setConfirmDuplicate(false);
-      try {
-        const saved = await onSubmit({
-          team: scoringSide,
-          scorer_id: scorer.id,
-          assist_id: assist?.id ?? null,
-          goalkeeper_id: goalkeeper?.id ?? null,
-          is_own_goal: isOwnGoal,
-          minute,
-          intent_id: intentIdRef.current,
-          force: force || afterWhistle,
-        });
-        showToast(
-          isEdit
-            ? `Goal updated — ${g2score(match, saved)}`
-            : `Goal logged — ${g2score(match, saved)}`,
-          "success",
-        );
-        onClose();
-      } catch (e) {
-        if (e instanceof Error && e.message === "busy") {
-          // The header chip shows the busy state; keep the fields, stay quiet.
-          return;
-        }
-        if (e instanceof Error && e.message === "duplicate_goal_within_90s") {
-          // A live same-minute goal exists: let the user confirm a second one
-          // (force re-send) instead of silently dropping it.
-          setConfirmDuplicate(true);
-        } else {
-          showToast(
-            e instanceof Error ? e.message : "Could not save the goal",
-            "error",
-          );
-        }
-      } finally {
-        setSubmitting(false);
+  async function postGoal(force: boolean) {
+    if (!scoringSide || !canSubmit || submitting) return;
+    setSubmitting(true);
+    setError("");
+    setConfirmDuplicate(false);
+    try {
+      const saved = await onSubmit({
+        team: scoringSide,
+        scorer_id: scorer?.id ?? null,
+        assist_id: assist?.id ?? null,
+        goalkeeper_id: goalkeeper?.id ?? null,
+        is_own_goal: isOwnGoal,
+        minute,
+        intent_id: intentIdRef.current,
+        force: force || afterWhistle,
+      });
+      showToast(
+        isEdit
+          ? `Goal updated — ${g2score(match, saved)}`
+          : `Goal logged — ${g2score(match, saved)}`,
+        "success",
+      );
+      onClose();
+    } catch (e) {
+      if (e instanceof Error && e.message === "busy") {
+        // The header chip shows the busy state; keep the fields, stay quiet.
+        return;
       }
-    },
-    [
-      assist,
-      afterWhistle,
-      goalkeeper,
-      isEdit,
-      isOwnGoal,
-      match,
-      minute,
-      onClose,
-      onSubmit,
-      scorer,
-      scoringSide,
-      submitting,
-      showToast,
-    ],
-  );
+      if (e instanceof Error && e.message === "duplicate_goal_within_90s") {
+        // A live same-minute goal exists: let the user confirm a second one
+        // (force re-send) instead of silently dropping it.
+        setConfirmDuplicate(true);
+      } else {
+        setError(e instanceof Error ? e.message : "Could not save the goal.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
-  const canSubmitNow = canSubmit && !submitting && !!scorer;
+  async function removeGoal() {
+    if (!editGoal || !onDeleteGoal || submitting) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onDeleteGoal(editGoal);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete the goal.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const canSubmitNow = canSubmit && !submitting && !!scoringSide;
 
   const backButton = previous && (
     <button type="button" disabled={submitting} onClick={() => goTo(previous)}
@@ -220,25 +228,36 @@ export function GoalEntryFlow({
             <label className="flex min-h-12 items-center gap-2 text-sm text-ink">
               <input type="checkbox" checked={isOwnGoal} onChange={(event) => {
                 setIsOwnGoal(event.target.checked);
+                setScorer(null);
                 setAssist(null);
                 setGoalkeeper(null);
               }} />
               Own goal
             </label>
-            <div className="grid grid-cols-2 items-start gap-2">
-              {(["a", "b"] as const).map((side) => (
-                <PlayerSelect key={side} label={teams[side].name} side={side}
-                  players={teams[side].users.map(toPlayer)} selected={scorer}
-                  onSelect={(player) => chooseScorer(player, side)} />
-              ))}
+            <div className={lockedTeam ? "" : "grid grid-cols-2 items-start gap-2"}>
+              {scorerSides.map((side) => {
+                const goalTeam = isOwnGoal ? otherSide(side) : side;
+                return (
+                  <div key={side} className="min-w-0 space-y-2">
+                    <PlayerSelect label={teams[side].name} side={side}
+                      players={(rosters?.[side] ?? teams[side].users).map(toPlayer)} selected={scorer}
+                      onSelect={(player) => chooseScorer(player, goalTeam)} />
+                    <button type="button" onClick={() => chooseScorer(null, goalTeam)}
+                      aria-label={`Skip scorer, goal for ${teams[goalTeam].name}`}
+                      className="min-h-12 w-full border border-line px-2 text-sm font-medium text-ink hover:bg-raised">
+                      {isOwnGoal && !lockedTeam ? `Skip scorer · Goal for ${teams[goalTeam].name}` : "Skip scorer"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
 
-        {(step === "assist" || step === "keeper") && (
+        {(step === "assist" || step === "keeper") && detailSide && (
           <>
-            <PlayerSelect label={teams[step === "assist" ? scoringSide : concedingSide].name}
-              players={teams[step === "assist" ? scoringSide : concedingSide].users
+            <PlayerSelect label={teams[detailSide].name}
+              players={(rosters?.[detailSide] ?? teams[detailSide].users)
                 .filter((player) => player.id !== scorer?.id && (step === "assist" || player.id !== assist?.id))
                 .map(toPlayer)}
               selected={step === "assist" ? assist : goalkeeper}
@@ -263,7 +282,7 @@ export function GoalEntryFlow({
           </>
         )}
 
-        {step === "review" && (
+        {step === "review" && scoringSide && (
           <section aria-label="Goal review" className="space-y-4">
             <div className="border border-line bg-raised px-3 py-2 font-semibold text-ink">
               Goal for {teams[scoringSide].name}
@@ -314,7 +333,7 @@ export function GoalEntryFlow({
 
             {confirmDuplicate && (
               <p role="status" className="border border-live/40 bg-live/15 p-3 text-sm text-ink">
-                {scorer?.name} already has a goal in minute {minute}. Confirm to record another.
+                {scorer ? `${scorer.name} already has` : `${teams[scoringSide].name} already has`} a goal in minute {minute}. Confirm to record another.
               </p>
             )}
           </section>
@@ -323,15 +342,14 @@ export function GoalEntryFlow({
 
       {step === "review" && (
         <div className="shrink-0 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <p role="status" className={error ? "mb-2 text-sm text-danger" : "sr-only"}>{error}</p>
           <div className="flex items-center gap-2">
             {backButton}
             {submitButton}
           </div>
           {editGoal && onDeleteGoal && (
-            <button type="button" disabled={submitting} onClick={() => {
-              if (confirmDelete) onDeleteGoal(editGoal);
-              else setConfirmDelete(true);
-            }} className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger/10">
+            <button type="button" disabled={submitting} onClick={() => void removeGoal()}
+              className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger/10">
               <Trash2 className="h-4 w-4" aria-hidden />
               {confirmDelete ? "Tap again to delete this goal" : "Delete goal"}
             </button>

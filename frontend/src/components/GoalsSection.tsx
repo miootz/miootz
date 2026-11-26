@@ -8,6 +8,7 @@ import {
   saveHistoricalGoal,
   type GoalRow,
   type HistoricalGoalLog,
+  type HistoricalGoalResult,
 } from "../api/stewardApi";
 import { useToast } from "../context/ToastContext";
 import { GoalList } from "./GoalList";
@@ -28,13 +29,17 @@ export function GoalsSection({
 }: {
   meetupId: number;
   match: MatchSummary;
-  onScoreSaved: (score: { score_a: number; score_b: number }) => void;
+  onScoreSaved: (score: Omit<HistoricalGoalResult, "goal">) => void;
 }) {
   const [log, setLog] = useState<HistoricalGoalLog | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const { showToast } = useToast();
-  const [picker, setPicker] = useState<{ editing: GoalRow | null; addToScore: boolean } | null>(null);
+  const [picker, setPicker] = useState<{
+    editing: GoalRow | null;
+    addToScore: boolean;
+    fixedSide?: GoalRow["team"];
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,13 +57,14 @@ export function GoalsSection({
   }, [meetupId, match.id, attempt]);
 
   const teams = { a: match.team_a.name, b: match.team_b.name };
+  const editingLocked = match.penalty_winner != null;
   const missing = {
     a: Math.max(0, match.score_a - (log?.goals.filter((goal) => goal.team === "a").length ?? 0)),
     b: Math.max(0, match.score_b - (log?.goals.filter((goal) => goal.team === "b").length ?? 0)),
   };
   const unassignedSides = (["a", "b"] as const).filter((side) => missing[side] > 0);
 
-  const sheet = picker ? (
+  const sheet = picker && log && !editingLocked ? (
     <MobileSheet
       onClose={() => setPicker(null)}
       title={picker.editing ? "Edit goal" : "Add goal"}
@@ -66,6 +72,8 @@ export function GoalsSection({
     >
       <GoalEntryFlow
         match={match}
+        rosters={log.rosters}
+        fixedScoringSide={picker.fixedSide}
         editGoal={picker.editing}
         canSubmit
         showMinute={false}
@@ -80,27 +88,24 @@ export function GoalsSection({
             assist_id: input.assist_id,
             goalkeeper_id: input.goalkeeper_id,
           });
-          onScoreSaved({ score_a: saved.score_a, score_b: saved.score_b });
-          setAttempt((value) => value + 1);
-          return saved.goal;
+          const { goal, ...score } = saved;
+          onScoreSaved(score);
+          setLog({
+            ...log,
+            goals: [...log.goals.filter((row) => row.id !== goal.id), goal]
+              .sort((a, b) => a.clock_minute - b.clock_minute || a.id - b.id),
+          });
+          return goal;
         }}
         onClose={() => setPicker(null)}
-        onDeleteGoal={picker.editing ? (goal) => {
-          void (async () => {
-            try {
-              await deleteGoal(meetupId, match.id, goal.id);
-              const updated = await fetchMatch(meetupId, match.id);
-              onScoreSaved({ score_a: updated.score_a, score_b: updated.score_b });
-              setAttempt((value) => value + 1);
-              setPicker(null);
-              showToast("Goal deleted.", "success");
-            } catch (e) {
-              showToast(
-                e instanceof Error ? e.message : "Could not delete the goal",
-                "error",
-              );
-            }
-          })();
+        onDeleteGoal={picker.editing ? async (goal) => {
+          await deleteGoal(meetupId, match.id, goal.id);
+          setLog({ ...log, goals: log.goals.filter((row) => row.id !== goal.id) });
+          const updated = await fetchMatch(meetupId, match.id);
+          onScoreSaved({
+            score_a: updated.score_a, score_b: updated.score_b, was_draw: !!updated.was_draw,
+          });
+          showToast("Goal deleted.", "success");
         } : undefined}
       />
     </MobileSheet>
@@ -111,7 +116,7 @@ export function GoalsSection({
       <section aria-label="Goals" className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-ink">Goals</h3>
-          {log && (
+          {log && !editingLocked && (
             <button
               type="button"
               onClick={() => setPicker({ editing: null, addToScore: true })}
@@ -122,6 +127,11 @@ export function GoalsSection({
             </button>
           )}
         </div>
+        {editingLocked && (
+          <p className="text-sm text-ink-dim">
+            Goals are locked after a shootout. To correct the result, delete this match and record a new one.
+          </p>
+        )}
         {loadError && (
           <div className="flex items-center gap-3">
             <p role="alert" className="text-sm text-danger">Couldn’t load goal details.</p>
@@ -142,17 +152,17 @@ export function GoalsSection({
           <>
             <GoalList
               goals={log.goals}
-              canEdit
-              onEdit={(goal) => setPicker({ editing: goal, addToScore: false })}
+              canEdit={!editingLocked}
+              onEdit={(goal) => setPicker({ editing: goal, addToScore: false, fixedSide: goal.team })}
               showKeeper
             />
-            {unassignedSides.length > 0 && (
+            {!editingLocked && unassignedSides.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {unassignedSides.map((side) => (
                   <button
                     type="button"
                     key={side}
-                    onClick={() => setPicker({ editing: null, addToScore: false })}
+                    onClick={() => setPicker({ editing: null, addToScore: false, fixedSide: side })}
                     className="inline-flex min-h-12 items-center gap-2 border border-line px-3 py-2 text-left text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink"
                   >
                     <Plus className="h-4 w-4 shrink-0" aria-hidden />

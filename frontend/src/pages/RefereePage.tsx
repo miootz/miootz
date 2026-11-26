@@ -87,6 +87,7 @@ function ManualMatchForm({
   existingTeamNames,
   initial,
   goals = [],
+  goalsLocked = false,
   onAddGoal,
   onEditGoal,
 }: {
@@ -107,6 +108,7 @@ function ManualMatchForm({
   };
   /** Edit mode: the match's goal log (TV-style list, tap to edit). */
   goals?: GoalRow[];
+  goalsLocked?: boolean;
   onAddGoal?: () => void;
   onEditGoal?: (goal: GoalRow) => void;
 }) {
@@ -181,8 +183,13 @@ function ManualMatchForm({
             </span>
           </div>
           <div className="border border-line bg-raised px-3 py-1">
-            <GoalList goals={goals} canEdit onEdit={(g) => onEditGoal?.(g)} />
+            <GoalList goals={goals} canEdit={!!onEditGoal} onEdit={(g) => onEditGoal?.(g)} />
           </div>
+          {goalsLocked && (
+            <p className="text-sm text-ink-dim">
+              Goals are locked after a shootout. An admin can delete and re-record this match to correct the result.
+            </p>
+          )}
           {onAddGoal && (
             <button
               type="button"
@@ -262,9 +269,9 @@ function ManualMatchForm({
           onClick={onCancel}
           className="flex-1 py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform"
         >
-          Cancel
+          {goalsLocked ? "Done" : "Cancel"}
         </button>
-        <button
+        {!goalsLocked && <button
           type="button"
           onClick={() =>
             onSubmit({
@@ -281,7 +288,7 @@ function ManualMatchForm({
           className="flex-1 py-3 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-40 active:scale-[0.98] transition-transform"
         >
           Save result
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -504,7 +511,8 @@ export function RefereePage() {
                 m.status === "completed" &&
                 m.match_number === 1 &&
                 m.score_a === m.score_b &&
-                m.penalty_winner == null,
+                m.penalty_winner == null &&
+                !m.penalty_skipped,
             );
             setPenaltyMatch(shoot ?? null);
           } catch (e) {
@@ -889,13 +897,8 @@ export function RefereePage() {
   const handleGoalDeleted = async (g: GoalRow) => {
     const match = goalSheet?.match;
     if (!match) return;
-    try {
-      await deleteGoal(sid, match.id, g.id);
-      setGoalSheet(null);
-      handleGoalSaved();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Delete failed", "error");
-    }
+    await deleteGoal(sid, match.id, g.id);
+    handleGoalSaved();
   };
 
   const handleStartNewMatch = async () => {
@@ -1220,7 +1223,7 @@ export function RefereePage() {
               setEditingMatch(null);
             }}
             onDelete={
-              editingMatch
+              isAdmin && editingMatch
                 ? () =>
                     setConfirmAction({
                       kind: "delete",
@@ -1243,13 +1246,14 @@ export function RefereePage() {
                 : undefined
             }
             goals={editingMatch ? editingMatchGoals : undefined}
+            goalsLocked={editingMatch?.penalty_winner != null}
             onAddGoal={
-              editingMatch
+              editingMatch && editingMatch.penalty_winner == null
                 ? () => setGoalSheet({ match: editingMatch, goal: null })
                 : undefined
             }
             onEditGoal={
-              editingMatch
+              editingMatch && editingMatch.penalty_winner == null
                 ? (g) => setGoalSheet({ match: editingMatch, goal: g })
                 : undefined
             }
@@ -1321,7 +1325,7 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => void handleStartNewMatch()}
-                disabled={busy !== null || selectedTeamA === selectedTeamB}
+                disabled={busy !== null || selectedTeamA === selectedTeamB || penaltyMatch !== null}
                 className="flex-1 py-3 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
               >
                 <Play className="h-4 w-4" />
@@ -1346,7 +1350,7 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => setSelectingTeams(true)}
-                disabled={busy !== null}
+                disabled={busy !== null || penaltyMatch !== null}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
               >
                 <Play className="h-5 w-5" />
@@ -1621,12 +1625,15 @@ export function RefereePage() {
       {liveControls && (
         <div className="shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto max-w-lg space-y-2">
+            {penaltyMatch && currentMatch.status === "pending" && (
+              <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               {currentMatch.status === "pending" && (
                 <button
                   type="button"
                   onClick={() => void handleStartTimer()}
-                  disabled={busy !== null}
+                  disabled={busy !== null || penaltyMatch !== null}
                   className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
                 >
                   <Play className="h-5 w-5" />
@@ -1723,7 +1730,7 @@ export function RefereePage() {
             handleGoalSaved();
           }}
           onDeleteGoal={
-            goalSheet.goal ? (g) => void handleGoalDeleted(g) : undefined
+            goalSheet.goal ? handleGoalDeleted : undefined
           }
         />
       )}

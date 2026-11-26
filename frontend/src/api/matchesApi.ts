@@ -17,6 +17,7 @@ export interface MatchSummary {
   was_draw?: boolean;
   /** 'a' | 'b' when a penalty shootout resolved a tied first match. */
   penalty_winner?: "a" | "b" | null;
+  penalty_skipped?: boolean;
   status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;
@@ -336,4 +337,8 @@ export function finishPenaltyShootout(
   next_match?: MatchSummary;
 }> {
   return penaltyFetch(meetupId, matchId, "/finish", "POST");
+}
+
+export function skipPenaltyShootout(meetupId: number, matchId: number): Promise<PenaltyState> {
+  return penaltyFetch(meetupId, matchId, "/skip", "POST");
 }

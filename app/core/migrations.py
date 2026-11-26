@@ -2,6 +2,7 @@
 
 import json as _json
 import logging
+import re
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -638,6 +639,31 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     if await has_table("match_goals") and not await has_column("match_goals", "is_penalty"):
         await conn.exec_driver_sql("ALTER TABLE match_goals ADD COLUMN is_penalty BOOLEAN NOT NULL DEFAULT 0")
 
+    # SQLite cannot drop a NOT NULL constraint in place. Preserve the table's
+    # existing columns, indexes, and triggers when upgrading older databases.
+    if await has_table("match_goals"):
+        columns = (await conn.exec_driver_sql('PRAGMA table_info("match_goals")')).fetchall()
+        if any(row[1] == "scorer_id" and row[3] for row in columns):
+            schema = await conn.exec_driver_sql(
+                "SELECT type, sql FROM sqlite_master WHERE tbl_name='match_goals' "
+                "AND sql IS NOT NULL ORDER BY type"
+            )
+            objects = schema.fetchall()
+            table_sql = next(sql for kind, sql in objects if kind == "table")
+            new_sql = re.sub(r'(?i)(scorer_id\s+INTEGER)\s+NOT NULL', r'\1', table_sql)
+            if new_sql == table_sql:
+                raise RuntimeError("Cannot migrate match_goals scorer_id constraint")
+            new_sql = re.sub(r'(?i)CREATE TABLE ["`\[]?match_goals["`\]]?',
+                             'CREATE TABLE match_goals_new', new_sql, count=1)
+            await conn.exec_driver_sql(new_sql)
+            names = ", ".join('"' + row[1].replace('"', '""') + '"' for row in columns)
+            await conn.exec_driver_sql(f"INSERT INTO match_goals_new ({names}) SELECT {names} FROM match_goals")
+            await conn.exec_driver_sql("DROP TABLE match_goals")
+            await conn.exec_driver_sql("ALTER TABLE match_goals_new RENAME TO match_goals")
+            for kind, sql in objects:
+                if kind != "table":
+                    await conn.exec_driver_sql(sql)
+
     # ── Manual score offsets: score = live goal COUNT + offset ──
     if not await has_column("meetup_matches", "score_offset_a"):
         await conn.execute(
@@ -730,6 +756,9 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         await conn.execute(
             text("ALTER TABLE meetup_matches ADD COLUMN penalty_winner VARCHAR")
         )
+    for column in ("penalty_skipped", "auto_queued"):
+        if not await has_column("meetup_matches", column):
+            await conn.exec_driver_sql(f"ALTER TABLE meetup_matches ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 0")
     if not await has_column("meetup_matches", "penalty_score_a"):
         await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_a INTEGER")
     if not await has_column("meetup_matches", "penalty_score_b"):

@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { apiFetch } from "./client";
-import { finishPenaltyShootout, undoPenaltyShot } from "./matchesApi";
+import { finishPenaltyShootout, skipPenaltyShootout, undoPenaltyShot } from "./matchesApi";
 
 vi.mock("./client", async (importOriginal) => ({
   ...await importOriginal<typeof import("./client")>(),
@@ -9,6 +9,7 @@ vi.mock("./client", async (importOriginal) => ({
 
 it.each([
   { action: "finish", request: finishPenaltyShootout, response: { winner: "a" } },
+  { action: "skip", request: skipPenaltyShootout, response: { available: false } },
   { action: "undo", request: undoPenaltyShot, response: { shots: [] } },
 ])("sends a bodyless POST to $action a penalty shootout", async ({ action, request, response }) => {
   vi.mocked(apiFetch).mockResolvedValueOnce(Response.json(response));

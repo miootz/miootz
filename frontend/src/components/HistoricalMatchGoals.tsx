@@ -127,7 +127,7 @@ function GoalAttributionForm({ meetupId, matchId, teams, rosters, draft, onCance
   const scoringTeamSelect = useRef<HTMLSelectElement>(null);
   const [side, setSide] = useState(draft.side);
   const [ownGoal, setOwnGoal] = useState(goal?.is_own_goal ?? false);
-  const [scorer, setScorer] = useState(goal ? String(goal.scorer.id) : "");
+  const [scorer, setScorer] = useState(goal?.scorer ? String(goal.scorer.id) : "");
   const [assist, setAssist] = useState(goal?.assist ? String(goal.assist.id) : "");
   const [keeper, setKeeper] = useState(goal?.goalkeeper ? String(goal.goalkeeper.id) : "");
   const [saving, setSaving] = useState(false);

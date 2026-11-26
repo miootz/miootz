@@ -34,8 +34,11 @@ export function MatchHistoryList({
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<
-    { mode: "add" } | { mode: "edit"; match: MatchSummary } | null
+    { mode: "add" } | { mode: "edit"; matchId: number } | null
   >(null);
+  const editingMatch = dialog?.mode === "edit"
+    ? matches.find((match) => match.id === dialog.matchId)
+    : undefined;
 
   const load = async () => {
     setLoading(true);
@@ -56,21 +59,15 @@ export function MatchHistoryList({
 
   const handleCreated = (match: MatchSummary) => {
     setMatches((prev) => [...prev, match]);
+    setDialog({ mode: "edit", matchId: match.id });
     showToast("Match created.", "success");
   };
 
   const handleDeleteMatch = async (matchId: number) => {
-    try {
-      await deleteMatch(meetupId, matchId);
-      setMatches((prev) => prev.filter((m) => m.id !== matchId));
-      setDialog(null);
-      showToast("Match deleted", "success");
-    } catch (e) {
-      showToast(
-        e instanceof Error ? e.message : "Failed to delete match",
-        "error",
-      );
-    }
+    await deleteMatch(meetupId, matchId);
+    setMatches((prev) => prev.filter((m) => m.id !== matchId));
+    setDialog(null);
+    showToast("Match deleted", "success");
   };
 
   if (loading) {
@@ -111,20 +108,20 @@ export function MatchHistoryList({
             match={m}
             canEdit={canEdit}
             attendees={attendees}
-            onEdit={() => setDialog({ mode: "edit", match: m })}
+            onEdit={() => setDialog({ mode: "edit", matchId: m.id })}
           />
         ))}
       </div>
         </>
       )}
 
-      {dialog && (
+      {dialog && (dialog.mode === "add" || editingMatch) && (
         <MatchDialog
           meetupId={meetupId}
           attendees={attendees}
           existingMatches={matches}
           mode={dialog.mode}
-          match={dialog.mode === "edit" ? dialog.match : null}
+          match={editingMatch ?? null}
           onClose={() => setDialog(null)}
           onCreated={handleCreated}
           onSaved={(matchId, updated) => {
@@ -132,9 +129,7 @@ export function MatchHistoryList({
               previous.map((row) => (row.id === matchId ? { ...row, ...updated } : row)),
             );
           }}
-          onDelete={(matchId) => {
-            void handleDeleteMatch(matchId);
-          }}
+          onDelete={handleDeleteMatch}
         />
       )}
     </div>
@@ -163,18 +158,20 @@ function MatchResultRow({
   const [subLoadError, setSubLoadError] = useState(false);
 
   useEffect(() => {
-    if (!expanded || subs !== null || subLoadError) return;
-    fetchMatchSubstitutions(meetupId, match.id)
-      .then((r) => setSubs(r.substitutions))
-      .catch(() => setSubLoadError(true));
-  }, [expanded, meetupId, match.id, subs, subLoadError]);
-
-  useEffect(() => {
-    if (!expanded || goals !== null) return;
+    if (!expanded) return;
+    let current = true;
+    fetchMatchSubstitutions(meetupId, match.id).then((r) => {
+      if (!current) return;
+      setSubs(r.substitutions);
+      setSubLoadError(false);
+    }).catch(() => {
+      if (current) setSubLoadError(true);
+    });
     fetchGoals(meetupId, match.id)
-      .then(setGoals)
-      .catch(() => setGoals([]));
-  }, [expanded, meetupId, match.id, goals]);
+      .then((result) => { if (current) setGoals(result); })
+      .catch(() => { if (current) setGoals([]); });
+    return () => { current = false; };
+  }, [expanded, meetupId, match]);
 
   const nameById = useMemo(() => {
     const m = new Map(attendees?.map((attendee) => [attendee.user_id, attendee.display_name]));

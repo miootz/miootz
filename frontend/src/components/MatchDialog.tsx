@@ -8,7 +8,6 @@ import {
   fetchMatchSubstitutions,
   type MatchSubstitution,
 } from "../api/matchesApi";
-import { useToast } from "../context/ToastContext";
 import { computeInheritedLineups } from "../utils/inheritedLineups";
 import { GoalsSection } from "./GoalsSection";
 import { HistoricalLineupForm } from "./HistoricalLineupForm";
@@ -27,7 +26,7 @@ interface MatchDialogProps {
   /** Add mode: called once the match is created; the dialog stays open. */
   onCreated: (match: MatchSummary) => void;
   onSaved: (matchId: number, updated: Partial<MatchSummary>) => void;
-  onDelete: (matchId: number) => void;
+  onDelete: (matchId: number) => Promise<void>;
 }
 
 /**
@@ -50,13 +49,12 @@ export function MatchDialog({
   onSaved,
   onDelete,
 }: MatchDialogProps) {
-  const { showToast } = useToast();
   const [teams, setTeams] = useState<TeamsResponse["teams"] | null>(null);
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
-  const [createdMatch, setCreatedMatch] = useState<MatchSummary | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -86,14 +84,13 @@ export function MatchDialog({
     [teams, existingMatches, teamA, teamB],
   );
 
-  const activeMatch = mode === "edit" ? match : createdMatch;
-
   const handleCreate = async () => {
     if (!teamA || !teamB || teamA.trim().toLowerCase() === teamB.trim().toLowerCase()) {
-      showToast("Pick two different teams first.", "error");
+      setSaveError("Pick two different teams first.");
       return;
     }
-    setCreating(true);
+    setSaving(true);
+    setSaveError("");
     try {
       const res = await createMatch(meetupId, {
         team_a_name: teamA.trim(),
@@ -103,86 +100,94 @@ export function MatchDialog({
         team_a_users: lineups?.teamA.players ?? [],
         team_b_users: lineups?.teamB.players ?? [],
       });
-      setCreatedMatch(res.match);
       onCreated(res.match);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Failed to create the match", "error");
+      setSaveError(e instanceof Error ? e.message : "Could not create the match.");
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   };
 
   const handleSaved = (updated: Partial<MatchSummary>) => {
-    if (!activeMatch) return;
-    if (mode === "add") {
-      setCreatedMatch((prev) => (prev ? { ...prev, ...updated } : prev));
-    }
-    onSaved(activeMatch.id, updated);
+    if (match) onSaved(match.id, updated);
   };
 
-  const title =
-    mode === "edit" || createdMatch
-      ? `Edit match ${activeMatch ? `#${activeMatch.match_number}` : ""}`
-      : "Add match result";
+  const handleDelete = async () => {
+    if (!match || saving) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onDelete(match.id);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not delete the match.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <MobileSheet
       onClose={onClose}
-      title={title}
+      title={match ? `Edit match #${match.match_number}` : "Add match result"}
       maxWidth="max-w-lg"
       footer={
-        activeMatch ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (confirmDelete) onDelete(activeMatch.id);
-                else setConfirmDelete(true);
-              }}
-              className="flex min-h-12 items-center gap-1.5 border border-danger/40 px-3 py-3 text-sm font-semibold text-danger hover:bg-danger/10 active:scale-[0.98]"
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-              {confirmDelete ? "Confirm delete" : "Delete"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-12 flex-1 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98]"
-            >
-              Done
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-12 flex-1 border border-line px-4 py-3 text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={creating || !teams || teams.length < 2 || !teamA || !teamB || !!teamsError}
-              onClick={() => void handleCreate()}
-              className="flex min-h-12 flex-1 items-center justify-center gap-1.5 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
-            >
-              {creating ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Plus className="h-4 w-4" aria-hidden />
-              )}
-              Create match
-            </button>
-          </div>
-        )
+        <>
+          <p role="status" className={saveError ? "mb-2 text-sm text-danger" : "sr-only"}>{saveError}</p>
+          {match ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleDelete()}
+                  className="flex min-h-12 items-center gap-1.5 border border-danger/40 px-3 py-3 text-sm font-semibold text-danger hover:bg-danger/10 active:scale-[0.98]"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  {saving ? "Deleting…" : confirmDelete ? "Confirm delete" : "Delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="min-h-12 flex-1 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 active:scale-[0.98]"
+                >
+                  Done
+                </button>
+              </div>
+          ) : (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="min-h-12 flex-1 border border-line px-4 py-3 text-sm font-semibold text-ink-dim hover:bg-raised hover:text-ink active:scale-[0.98]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || !teams || teams.length < 2 || !teamA || !teamB || !!teamsError}
+                  onClick={() => void handleCreate()}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-1.5 bg-ink px-4 py-3 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50 active:scale-[0.98]"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Plus className="h-4 w-4" aria-hidden />
+                  )}
+                  Create match
+                </button>
+              </div>
+          )}
+        </>
       }
     >
-      {activeMatch ? (
+      {match ? (
         <EditMatchBody
           meetupId={meetupId}
           attendees={attendees ?? []}
-          match={activeMatch}
+          match={match}
           onSaved={handleSaved}
         />
       ) : (
@@ -289,6 +294,7 @@ function EditMatchBody({
   const [loaded, setLoaded] = useState<{ id: number; subs: MatchSubstitution[] } | null>(null);
   const [loadErrorId, setLoadErrorId] = useState<number | null>(null);
   const [lineupOpen, setLineupOpen] = useState(false);
+  const [lineupRevision, setLineupRevision] = useState(0);
 
   const matchId = match.id;
   useEffect(() => {
@@ -371,6 +377,7 @@ function EditMatchBody({
             onSaved={(updated, newSubs) => {
               onSaved(updated);
               setLoaded({ id: matchId, subs: newSubs });
+              setLineupRevision((revision) => revision + 1);
             }}
             onCancel={() => setLineupOpen(false)}
           />
@@ -386,7 +393,7 @@ function EditMatchBody({
       )}
 
       {/* Goals */}
-      <GoalsSection meetupId={meetupId} match={match} onScoreSaved={onSaved} />
+      <GoalsSection key={lineupRevision} meetupId={meetupId} match={match} onScoreSaved={onSaved} />
     </div>
   );
 }

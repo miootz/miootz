@@ -4,6 +4,7 @@ import {
   finishPenaltyShootout,
   fetchPenalty,
   undoPenaltyShot,
+  skipPenaltyShootout,
   type MatchSummary,
   type PenaltyState,
 } from "../api/matchesApi";
@@ -115,6 +116,21 @@ export function PenaltyShootoutPanel({
     }
   };
 
+  const skip = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await skipPenaltyShootout(meetupId, match.id);
+      showToast("Shootout skipped", "success");
+      onFinished();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not skip shootout", "error");
+      void load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="border border-line bg-panel p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -211,6 +227,14 @@ export function PenaltyShootoutPanel({
             </button>
           </div>
 
+          <button
+            type="button"
+            onClick={() => void skip()}
+            disabled={busy}
+            className="min-h-[44px] border border-line px-3 py-2 text-sm font-semibold text-ink-dim hover:text-ink disabled:opacity-40"
+          >
+            Skip shootout
+          </button>
           <div className="flex items-center gap-3">
             <button
               type="button"

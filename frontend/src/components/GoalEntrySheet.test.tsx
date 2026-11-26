@@ -71,3 +71,23 @@ it("credits the other team for an own goal and skips the assist step", async () 
     team: "a", scorer_id: 3, assist_id: null, goalkeeper_id: null, is_own_goal: true,
   })));
 });
+
+it("records a goal without a named scorer and shows save errors inside the sheet", async () => {
+  vi.mocked(createGoal).mockRejectedValueOnce(new Error("The match has already been locked."));
+  const onClose = vi.fn();
+  render(<GoalEntrySheet meetupId={1} match={match} onClose={onClose} onLogged={vi.fn()} />);
+  const sheet = within(screen.getByRole("dialog", { name: "Log a goal" }));
+  fireEvent.click(sheet.getByRole("button", { name: "Skip scorer, goal for Mint United" }));
+  fireEvent.click(sheet.getByRole("button", { name: "Johan Cruyff" }));
+  fireEvent.click(sheet.getByRole("button", { name: "Skip goalkeeper" }));
+  const confirm = sheet.getByRole("button", { name: "Confirm goal" });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
+  expect(await sheet.findByText("The match has already been locked.")).toBeVisible();
+  expect(confirm).toBeEnabled();
+  expect(createGoal).toHaveBeenCalledWith(1, 7, expect.objectContaining({
+    team: "b", scorer_id: null, assist_id: 3, goalkeeper_id: null,
+  }));
+  expect(onClose).not.toHaveBeenCalled();
+  expect(toast).not.toHaveBeenCalled();
+});

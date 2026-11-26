@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useToast } from "../context/ToastContext";
 import {
   acquireLease,
   createGoal,
@@ -29,7 +28,7 @@ interface GoalEntrySheetProps {
   /** Present → edit mode: the sheet prefills from this goal and PATCHes it. */
   editGoal?: GoalRow | null;
   /** Only offered in edit mode — removes the goal row (light two-tap confirm). */
-  onDeleteGoal?: (goal: GoalRow) => void;
+  onDeleteGoal?: (goal: GoalRow) => Promise<void>;
 }
 
 export function GoalEntrySheet({
@@ -40,16 +39,16 @@ export function GoalEntrySheet({
   editGoal = null,
   onDeleteGoal,
 }: GoalEntrySheetProps) {
-  const { showToast } = useToast();
-
   // ── Lease state ──────────────────────────────────────────────────
   const [lease, setLease] = useState<LeaseInfo | null>(null); // someone else
   const [holding, setHolding] = useState(false);
   const [acquiring, setAcquiring] = useState(false);
+  const [leaseError, setLeaseError] = useState("");
   const tokenRef = useRef<string | null>(null);
 
   const tryAcquire = useCallback(async (): Promise<boolean> => {
     setAcquiring(true);
+    setLeaseError("");
     try {
       const res = await acquireLease(meetupId, match.id);
       if (res.ok) {
@@ -65,15 +64,12 @@ export function GoalEntrySheet({
       return false;
     } catch (e) {
       setHolding(false);
-      showToast(
-        e instanceof Error ? e.message : "Could not reach the server",
-        "error",
-      );
+      setLeaseError(e instanceof Error ? e.message : "Could not reach the server.");
       return false;
     } finally {
       setAcquiring(false);
     }
-  }, [meetupId, match.id, showToast]);
+  }, [meetupId, match.id]);
 
   // Acquire immediately on open; keep renewed while open; release on unmount.
   useEffect(() => {
@@ -153,6 +149,7 @@ export function GoalEntrySheet({
       headerExtra={leaseChip}
       bodyClassName="overflow-hidden px-0 py-0"
     >
+      <p role="status" className={leaseError ? "px-4 py-2 text-sm text-danger" : "sr-only"}>{leaseError}</p>
       <GoalEntryFlow
         match={match}
         editGoal={editGoal}

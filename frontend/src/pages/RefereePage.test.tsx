@@ -6,6 +6,8 @@ import {
   endMatch,
   deleteMatch,
   createNewPendingMatch,
+  fetchPenalty,
+  skipPenaltyShootout,
   startMatches,
   type MatchSummary,
 } from "../api/matchesApi";
@@ -34,6 +36,8 @@ vi.mock("../api/matchesApi", async (original) => ({
   endMatch: vi.fn(),
   deleteMatch: vi.fn(),
   createNewPendingMatch: vi.fn(),
+  fetchPenalty: vi.fn(),
+  skipPenaltyShootout: vi.fn(),
   startMatches: vi.fn(),
 }));
 vi.mock("../api/meetupsApi", async (original) => ({
@@ -328,7 +332,7 @@ it("offers Start new match after the last match is deleted", async () => {
     team_b: { name: "Green", users: [] },
   };
   vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [completed] });
-  await openReferee();
+  await openReferee(true);
 
   // Edit the completed match → delete button → confirm.
   fireEvent.click(screen.getByRole("button", { name: "Edit match 1" }));
@@ -361,7 +365,7 @@ it("starts a new match from the Start new match flow with picked teams", async (
   // All-complete from the start: the only match is completed.
   vi.mocked(fetchMeetupMatches).mockResolvedValue({
     ...response(),
-    matches: [{ ...match, status: "completed" }],
+    matches: [{ ...match, status: "completed", score_a: 1 }],
   });
   await openReferee();
   fireEvent.click(screen.getByRole("button", { name: "Start new match" }));
@@ -376,6 +380,26 @@ it("starts a new match from the Start new match flow with picked teams", async (
   });
 });
 
+it("blocks the next match until the referee skips the shootout", async () => {
+  const opener: MatchSummary = { ...match, status: "completed" };
+  const shootout = { available: true, winner: null, shots: [], counts: { a: 0, b: 0 }, decided: false };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [opener] });
+  vi.mocked(fetchPenalty).mockResolvedValue(shootout);
+  vi.mocked(skipPenaltyShootout).mockImplementation(async () => {
+    vi.mocked(fetchMeetupMatches).mockResolvedValue({
+      ...response(), matches: [{ ...opener, penalty_skipped: true }],
+    });
+    return { ...shootout, available: false };
+  });
+  await openReferee();
+  expect(screen.getByRole("button", { name: "Start new match" })).toBeDisabled();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Skip shootout" }));
+  });
+  expect(skipPenaltyShootout).toHaveBeenCalledWith(1, 10);
+  expect(screen.getByRole("button", { name: "Start new match" })).toBeEnabled();
+});
+
 
 it("starts the schedule from scratch when adding the first match after a delete", async () => {
   const completed: MatchSummary = {
@@ -387,7 +411,7 @@ it("starts the schedule from scratch when adding the first match after a delete"
     team_b: { name: "Green", users: [] },
   };
   vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [completed] });
-  await openReferee();
+  await openReferee(true);
 
   fireEvent.click(screen.getByRole("button", { name: "Edit match 1" }));
   const form = screen.getByRole("heading", { name: "Edit match result" }).parentElement!;
