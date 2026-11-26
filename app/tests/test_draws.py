@@ -137,14 +137,10 @@ async def test_tie_ends_away_winning_and_records_draw_per_flag(allows_draws):
             assert m.was_draw is allows_draws
             assert m.status == "completed"
 
-        # Auto-queue is off: no next match is created at end.
-        assert body.get("next_match") is None
-
-        # The manual path creates it: the away team stays on the pitch
-        # (team B) vs the entering team (teams[2]).
-        rs = await ac.post(f"/meetups/{sid}/matches/new", headers=hdr("admin"))
-        assert rs.status_code == 201, rs.text
-        next_match = rs.json()["match"]
+        # The away team stays on the pitch: next match is team B vs the
+        # entering team (teams[2]).
+        next_match = body.get("next_match")
+        assert next_match is not None
         assert next_match["team_a"]["name"] == body["match"]["team_b"]["name"]
         assert {u["id"] for u in next_match["team_a"]["users"]} == {ids["p2"]}
         assert {u["id"] for u in next_match["team_b"]["users"]} == {

@@ -17,6 +17,7 @@ import { MatchHistoryList } from "../components/MatchHistoryList";
 import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { PitchPicker } from "../components/PitchPicker";
 import { fetchMeetupMatches, type MatchSummary } from "../api/matchesApi";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
@@ -454,24 +455,39 @@ function MeetupAttendanceActions({
 }
 
 function LiveMatchBoard({ meetupId }: { meetupId: number }) {
-	const [matches, setMatches] = useState<MatchSummary[]>([]);
+	const { tokens } = useAuth();
+	const [snapshot, setSnapshot] = useState<{ meetupId: number; matches: MatchSummary[]; twoPitch: boolean }>();
 	useEffect(() => {
-		let cancelled = false;
-		void fetchMeetupMatches(meetupId)
-			.then((res) => {
-				if (!cancelled) setMatches(res.matches);
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
+		let revision = 0;
+		const refresh = async () => {
+			const request = ++revision;
+			try {
+				const res = await fetchMeetupMatches(meetupId);
+				if (request === revision) {
+					setSnapshot({ meetupId, matches: res.matches, twoPitch: !!res.two_pitch });
+				}
+			} catch {
+				// Keep the last snapshot until the next live update.
+			}
 		};
-	}, [meetupId]);
-	const inProgress = matches.filter(
-		(m) => m.status !== "completed",
-	);
+		const unsubscribe = subscribeMeetupData(meetupId, tokens?.accessToken, (event) => {
+			if (event.type === "meetup_updated" || event.type === "match_created" ||
+				event.type === "match_ended" || event.type === "match_penalty_finished") {
+				void refresh();
+			}
+		}, (live) => { if (live) void refresh(); });
+		void refresh();
+		return () => {
+			revision++;
+			unsubscribe();
+		};
+	}, [meetupId, tokens?.accessToken]);
+
+	if (snapshot?.meetupId !== meetupId) return null;
+	const inProgress = snapshot.matches.filter((m) => m.status !== "completed");
 	return (
 		<>
-			<PitchPicker meetupId={meetupId} />
+			{snapshot.twoPitch && <PitchPicker meetupId={meetupId} matches={snapshot.matches} />}
 			{inProgress.map((m) => (
 				<LiveMatchBanner key={m.id} meetupId={meetupId} matchId={m.id} />
 			))}

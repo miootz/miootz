@@ -28,6 +28,8 @@ class MeetupMatch(Base):
     meetup_id: Mapped[int] = mapped_column(ForeignKey("meetups.id"), index=True)
     #: 1-based sequence within the meetup.
     match_number: Mapped[int] = mapped_column(Integer)
+    #: Opening pitch number for a simultaneous two-pitch round.
+    pitch: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Team composition (user IDs stored as JSON text arrays)
     team_a_users: Mapped[str] = mapped_column(Text)  # JSON array of int user IDs

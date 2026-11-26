@@ -9,6 +9,7 @@ export interface MatchSummary {
   id: number;
   meetup_id: number;
   match_number: number;
+  pitch?: number | null;
   team_a: MatchTeamInfo;
   team_b: MatchTeamInfo;
   score_a: number;
@@ -31,6 +32,7 @@ export interface MatchSummary {
 export interface MeetupMatchesResponse {
   matches: MatchSummary[];
   match_duration_minutes: number;
+  two_pitch?: boolean;
 }
 
 export interface MatchCreateBody {

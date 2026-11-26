@@ -759,6 +759,10 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
     for column in ("penalty_skipped", "auto_queued"):
         if not await has_column("meetup_matches", column):
             await conn.exec_driver_sql(f"ALTER TABLE meetup_matches ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 0")
+    if not await has_column("meetups", "two_pitch"):
+        await conn.exec_driver_sql("ALTER TABLE meetups ADD COLUMN two_pitch BOOLEAN NOT NULL DEFAULT 0")
+    if not await has_column("meetup_matches", "pitch"):
+        await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN pitch INTEGER")
     if not await has_column("meetup_matches", "penalty_score_a"):
         await conn.exec_driver_sql("ALTER TABLE meetup_matches ADD COLUMN penalty_score_a INTEGER")
     if not await has_column("meetup_matches", "penalty_score_b"):

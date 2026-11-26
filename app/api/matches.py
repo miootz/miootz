@@ -288,6 +288,7 @@ def _match_json(match: MeetupMatch, users_by_id: dict[int, dict]) -> dict:
         "id": match.id,
         "meetup_id": match.meetup_id,
         "match_number": match.match_number,
+        "pitch": match.pitch,
         "team_a": {
             "name": match.team_a_name,
             "users": _user_list(team_a_users),
@@ -382,6 +383,7 @@ async def list_meetup_matches(
     return {
         "matches": [_match_json(m, users_by_id) for m in matches],
         "match_duration_minutes": meetup.match_duration_minutes or 10,
+        "two_pitch": meetup.two_pitch,
     }
 
 
@@ -413,6 +415,7 @@ async def start_matches(
 ):
     """Start the match meetup. Creates the first match (Team A vs Team B by default,
     or the given team indices when provided)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -466,7 +469,11 @@ async def start_matches(
         max_teams=getattr(meetup, "max_teams", None),
         team_size=meetup.team_size,
     )
-    nonempty_team_count = sum(bool(team) for team in teams_nested)
+    playing_indices = [
+        i for i, team in enumerate(teams_nested)
+        if team and (not meetup.max_teams or i < meetup.max_teams)
+    ]
+    nonempty_team_count = len(playing_indices)
     if nonempty_team_count < 2:
         raise HTTPException(
             status_code=400,
@@ -482,8 +489,8 @@ async def start_matches(
     team_names = ensure_team_names(meetup, len(teams_nested))
     await db.flush()
 
-    team_a_idx = body.team_a_idx if body and body.team_a_idx is not None else 0
-    team_b_idx = body.team_b_idx if body and body.team_b_idx is not None else 1
+    team_a_idx = body.team_a_idx if body and body.team_a_idx is not None else playing_indices[0]
+    team_b_idx = body.team_b_idx if body and body.team_b_idx is not None else playing_indices[1]
     if (
         not 0 <= team_a_idx < len(teams_nested)
         or not 0 <= team_b_idx < len(teams_nested)
@@ -493,13 +500,15 @@ async def start_matches(
             status_code=400,
             detail="team_a_idx/team_b_idx must be distinct valid team indices.",
         )
-    if meetup.max_teams and meetup.team_size and (team_a_idx >= meetup.max_teams or team_b_idx >= meetup.max_teams):
+    if meetup.max_teams and (team_a_idx >= meetup.max_teams or team_b_idx >= meetup.max_teams):
         raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
     if not teams_nested[team_a_idx] or not teams_nested[team_b_idx]:
         raise HTTPException(status_code=400, detail="Both teams must have players.")
 
     team_a = teams_nested[team_a_idx]
     team_b = teams_nested[team_b_idx]
+    if {p["user_id"] for p in team_a} & {p["user_id"] for p in team_b}:
+        raise HTTPException(status_code=400, detail="A player cannot play on both teams.")
 
     match_duration = meetup.match_duration_minutes or 10
 
@@ -523,18 +532,23 @@ async def start_matches(
     db.add(match)
     pitch_matches = [match]
 
-    # Round 1 on the remaining teams — the second pitch match (and any
-    # further pair) when more teams are available. Each pair is one pitch.
+    # Only a real second pair enables the two-pitch round.
     remaining = [
-        i for i in range(len(teams_nested)) if i != team_a_idx and i != team_b_idx
+        i for i in playing_indices if i != team_a_idx and i != team_b_idx
     ]
-    for i in range(0, len(remaining) - 1, 2):
-        a_idx, b_idx = remaining[i], remaining[i + 1]
+    meetup.two_pitch = len(remaining) >= 2
+    if meetup.two_pitch:
+        match.pitch = 1
+        a_idx, b_idx = remaining[:2]
         team_a_p = teams_nested[a_idx]
         team_b_p = teams_nested[b_idx]
+        opening_users = [p["user_id"] for team in (team_a, team_b, team_a_p, team_b_p) for p in team]
+        if len(opening_users) != len(set(opening_users)):
+            raise HTTPException(status_code=400, detail="A player cannot play on both pitches.")
         second = MeetupMatch(
             meetup_id=meetup_id,
-            match_number=len(pitch_matches) + 1,
+            match_number=2,
+            pitch=2,
             team_a_users=json.dumps([p["user_id"] for p in team_a_p]),
             team_b_users=json.dumps([p["user_id"] for p in team_b_p]),
             team_a_name=(
@@ -636,6 +650,7 @@ async def create_new_pending_match(
     If not provided, picks the last match winner as team A and the next
     unplayed (or any available) team as team B.
     """
+    await db.execute(text("BEGIN IMMEDIATE"))
     meetup = await db.get(Meetup, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -647,19 +662,27 @@ async def create_new_pending_match(
             detail="Provide both team_a_idx and team_b_idx, or neither.",
         )
 
-    # Find the last match to determine match number
     existing = await db.execute(
         select(MeetupMatch)
         .where(MeetupMatch.meetup_id == meetup_id)
-        .order_by(MeetupMatch.match_number.desc())
-        .limit(1)
+        .order_by(MeetupMatch.match_number.asc())
     )
-    last_match = existing.scalar_one_or_none()
+    played_matches = existing.scalars().all()
+    last_match = played_matches[-1] if played_matches else None
     if not last_match or last_match.status != "completed":
         raise HTTPException(
             status_code=400,
             detail="No completed match to build from. Start matches first.",
         )
+    opening = [m for m in played_matches if m.pitch is not None] if meetup.two_pitch else []
+    if meetup.two_pitch:
+        if any(m.status != "completed" for m in opening):
+            raise HTTPException(status_code=409, detail="Finish both opening matches first.")
+        first = next((m for m in opening if m.pitch == 1), None)
+        if first and first.score_a == first.score_b and first.penalty_winner is None and not first.penalty_skipped:
+            raise HTTPException(status_code=409, detail="Finish or skip the first match shootout first.")
+        if len(opening) != 2 and body.team_a_idx is None:
+            raise HTTPException(status_code=409, detail="Select teams manually when an opening match is missing.")
 
     # Load confirmed players and resolve teams
     result = await db.execute(
@@ -706,7 +729,7 @@ async def create_new_pending_match(
             raise HTTPException(status_code=400, detail="Invalid team_b_idx.")
         if body.team_a_idx == body.team_b_idx:
             raise HTTPException(status_code=400, detail="Teams must be different.")
-        if meetup.max_teams and meetup.team_size and (body.team_a_idx >= meetup.max_teams or body.team_b_idx >= meetup.max_teams):
+        if meetup.max_teams and (body.team_a_idx >= meetup.max_teams or body.team_b_idx >= meetup.max_teams):
             raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
         team_a = teams_nested[body.team_a_idx]
         team_b = teams_nested[body.team_b_idx]
@@ -723,19 +746,6 @@ async def create_new_pending_match(
         team_a_users_list = [p["user_id"] for p in team_a]
         team_b_users_list = [p["user_id"] for p in team_b]
     else:
-        # Auto-pick: bracket-aware.
-        # Round 1 complete (both pitch matches finished) -> the final
-        # (winner of pitch 1 vs winner of pitch 2).
-        # Final complete -> the loser match (loser of pitch 1 vs loser of pitch 2).
-        # Otherwise -> last match winner vs next unplayed team (legacy).
-        all_matches = await db.execute(
-            select(MeetupMatch)
-            .where(MeetupMatch.meetup_id == meetup_id)
-            .order_by(MeetupMatch.match_number.asc())
-        )
-        played_matches = all_matches.scalars().all()
-        completed = [m for m in played_matches if m.status == "completed"]
-
         def _winner_of(m: MeetupMatch) -> tuple[list[int], str]:
             if m.penalty_winner == "a":
                 return _loads_int_list(m.team_a_users), m.team_a_name
@@ -745,79 +755,59 @@ async def create_new_pending_match(
                 return _loads_int_list(m.team_a_users), m.team_a_name
             return _loads_int_list(m.team_b_users), m.team_b_name
 
-        def _loser_of(m: MeetupMatch) -> tuple[list[int], str]:
-            w, _ = _winner_of(m)
-            a = _loads_int_list(m.team_a_users)
-            b = _loads_int_list(m.team_b_users)
-            if set(a) == set(w):
-                return b, m.team_b_name
-            return a, m.team_a_name
-
-        if len(completed) == 2 and len(played_matches) == 2:
-            # Round 1 done -> the final
-            m1, m2 = completed[0], completed[1]
+        borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams_nested, team_names)
+        if len(opening) == 2 and len(played_matches) == 2:
+            m1, m2 = opening
             team_a_users_list, team_a_name = _winner_of(m1)
             team_b_users_list, team_b_name = _winner_of(m2)
-        elif len(completed) == 3 and len(played_matches) == 3:
-            # Final done -> the loser match
-            m1, m2 = completed[0], completed[1]
-            team_a_users_list, team_a_name = _loser_of(m1)
-            team_b_users_list, team_b_name = _loser_of(m2)
+            team_a_users_list = [uid for uid in team_a_users_list if uid not in borrowed.get(m1.id, ())]
+            team_b_users_list = [uid for uid in team_b_users_list if uid not in borrowed.get(m2.id, ())]
+        elif len(opening) == 2 and len(played_matches) == 3:
+            sides = [
+                (m, users, name)
+                for m in opening
+                for users, name in ((m.team_a_users, m.team_a_name), (m.team_b_users, m.team_b_name))
+            ]
+            names = [name for _, _, name in sides]
+            finalists = {last_match.team_a_name, last_match.team_b_name}
+            if len(set(names)) != 4 or len(finalists) != 2 or not finalists.issubset(names):
+                raise HTTPException(status_code=409, detail="Select the third-place teams manually.")
+            remaining_sides = [(m, users, name) for m, users, name in sides if name not in finalists]
+            (m1, users1, team_a_name), (m2, users2, team_b_name) = remaining_sides
+            team_a_users_list = [uid for uid in _loads_int_list(users1) if uid not in borrowed.get(m1.id, ())]
+            team_b_users_list = [uid for uid in _loads_int_list(users2) if uid not in borrowed.get(m2.id, ())]
         else:
-            # Legacy: last match winner vs next unplayed team. A tied match
-            # with a shootout winner pairs the shootout winner with the loser.
             winner_users, winner_name = _winner_of(last_match)
-            borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams_nested, team_names)
             winner_users = [uid for uid in winner_users if uid not in borrowed.get(last_match.id, ())]
+            import random as _random
 
-            if last_match.penalty_winner is not None:
-                # Shootout decided — the winner stays on the pitch against the loser.
-                loser_users, loser_name = _loser_of(last_match)
-                loser_users = [uid for uid in loser_users if uid not in borrowed.get(last_match.id, ())]
-                team_a_users_list = winner_users
-                team_a_name = winner_name
-                team_b_users_list = loser_users
-                team_b_name = loser_name
+            available = [
+                idx for idx, team in enumerate(teams_nested)
+                if team and (not meetup.max_teams or idx < meetup.max_teams)
+                and not set(p["user_id"] for p in team).intersection(winner_users)
+            ]
+            unplayed_indices = [idx for idx in available if idx not in used_team_indices]
+            if unplayed_indices:
+                next_team_idx = unplayed_indices[0]
+            elif available:
+                next_team_idx = _random.choice(available)
             else:
-                import random as _random
+                raise HTTPException(status_code=400, detail="Not enough teams for another match.")
 
-                # A bench team (partition larger than max_teams) is not a playing
-                # candidate — it exists for pre-start substitutions only.
-                bench_idx = (
-                    len(teams_nested) - 1
-                    if meetup.max_teams and len(teams_nested) > meetup.max_teams
-                    else None
-                )
-                unplayed_indices = [
-                    idx
-                    for idx in range(len(teams_nested))
-                    if idx not in used_team_indices and idx != bench_idx
-                ]
-                if unplayed_indices:
-                    next_team_idx = unplayed_indices[0]
-                else:
-                    available = [
-                        idx
-                        for idx in range(len(teams_nested))
-                        if idx != bench_idx
-                        and set(p["user_id"] for p in teams_nested[idx]) != set(winner_users)
-                    ]
-                    if not available:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Not enough teams for another match.",
-                        )
-                    next_team_idx = _random.choice(available)
+            team_a_users_list = winner_users
+            team_b = teams_nested[next_team_idx]
+            team_a_name = winner_name
+            team_b_name = (
+                team_names[next_team_idx]
+                if team_names and next_team_idx < len(team_names)
+                else _team_name(next_team_idx + 1)
+            )
+            team_b_users_list = [p["user_id"] for p in team_b]
 
-                team_a_users_list = winner_users  # already a list of ints
-                team_b = teams_nested[next_team_idx]
-                team_a_name = winner_name
-                team_b_name = (
-                    team_names[next_team_idx]
-                    if team_names and next_team_idx < len(team_names)
-                    else _team_name(next_team_idx + 1)
-                )
-                team_b_users_list = [p["user_id"] for p in team_b]
+    if not team_a_users_list or not team_b_users_list:
+        raise HTTPException(status_code=400, detail="Both teams must have players.")
+    if set(team_a_users_list) & set(team_b_users_list):
+        raise HTTPException(status_code=400, detail="A player cannot play on both teams.")
 
     match_duration = meetup.match_duration_minutes or 10
 
@@ -869,6 +859,10 @@ async def delete_match(
     del_teams = f"{match.team_a_name} vs {match.team_b_name} ({match.score_a}-{match.score_b})"
     await delete_match_children(db, match_id)
     await db.delete(match)
+    await db.flush()
+    if not await db.scalar(select(MeetupMatch.id).where(MeetupMatch.meetup_id == meetup_id).limit(1)):
+        meetup = await db.get(Meetup, meetup_id)
+        meetup.two_pitch = False
     if match.status == "completed":
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
@@ -1004,18 +998,19 @@ async def swap_match_teams(
         )
         if not valid_addition or len(new_a) + len(new_b) != len(old_a) + len(old_b) + 1:
             raise HTTPException(status_code=400, detail="Add one sideline player without moving anyone else.")
-        added = (new_a_ids | new_b_ids) - (old_a_ids | old_b_ids)
+    elif len(new_a) != len(old_a) or len(new_b) != len(old_b):
+        raise HTTPException(
+            status_code=400,
+            detail="Substitutions must be 1-for-1 swaps: keep each team's size.",
+        )
+    added = (new_a_ids | new_b_ids) - (old_a_ids | old_b_ids)
+    if added:
         other_matches = await db.execute(select(MeetupMatch.team_a_users, MeetupMatch.team_b_users).where(
             MeetupMatch.meetup_id == meetup_id, MeetupMatch.id != match.id,
             MeetupMatch.status.in_(("pending", "active", "time_up")),
         ))
         if any(added.intersection(_loads_int_list(a) + _loads_int_list(b)) for a, b in other_matches):
             raise HTTPException(status_code=409, detail="That player is already in another match.")
-    elif len(new_a) != len(old_a) or len(new_b) != len(old_b):
-        raise HTTPException(
-            status_code=400,
-            detail="Substitutions must be 1-for-1 swaps: keep each team's size.",
-        )
     confirmed = set(
         (
             await db.execute(
@@ -1488,9 +1483,40 @@ async def finish_penalty_shootout(
         raise HTTPException(status_code=400, detail="The shootout is not decided yet.")
     match.penalty_winner = winner
 
-    # The referee starts the next match manually; the shootout winner is
-    # recorded on this match (penalty_winner) so the next match picks them up.
-    await db.flush()
+    # end_match auto-created the next match with the default tie winner
+    # (away team) on pitch — put the shootout winner there instead.
+    meetup = await db.get(Meetup, meetup_id)
+    next_match = None
+    if not meetup.two_pitch:
+        next_match = (
+            await db.execute(
+                select(MeetupMatch).where(
+                    MeetupMatch.meetup_id == meetup_id,
+                    MeetupMatch.match_number == match.match_number + 1,
+                    MeetupMatch.status == "pending",
+                )
+            )
+        ).scalars().first()
+    if next_match is not None and next_match.auto_queued:
+        winner_users = _loads_int_list(
+            match.team_a_users if winner == "a" else match.team_b_users
+        )
+        borrowed = await _sideline_additions(db, [match.id])
+        winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
+        if winner_users != _loads_int_list(next_match.team_a_users):
+            next_match.team_a_users, next_match.team_b_users = (
+                next_match.team_b_users,
+                next_match.team_a_users,
+            )
+            next_match.team_a_name, next_match.team_b_name = (
+                next_match.team_b_name,
+                next_match.team_a_name,
+            )
+            next_match.team_a_users = json.dumps(winner_users)
+            next_match.team_a_name = (
+                match.team_a_name if winner == "a" else match.team_b_name
+            )
+
     await db.commit()
     await _broadcast_match_event(
         meetup_id,
@@ -1505,7 +1531,10 @@ async def finish_penalty_shootout(
         f"{match.team_a_name if winner == 'a' else match.team_b_name} wins",
         meetup_id=meetup_id,
     )
-    return {"winner": winner, "match": _match_json(match, users_by_id)}
+    result: dict = {"winner": winner, "match": _match_json(match, users_by_id)}
+    if next_match is not None:
+        result["next_match"] = _match_json(next_match, users_by_id)
+    return result
 
 
 @router.post("/{meetup_id}/matches/{match_id}/penalty/skip")
@@ -1560,7 +1589,7 @@ async def start_timer(
             "controlled_by": {"name": user.display_name},
         }
 
-    if match.match_number > 1:
+    if match.match_number > 1 and match.pitch != 2:
         first = (await db.execute(select(MeetupMatch).where(
             MeetupMatch.meetup_id == meetup_id,
             MeetupMatch.match_number == 1,
@@ -2024,6 +2053,7 @@ async def end_match(
     _user: User = Depends(require_admin_or_present_member),
 ):
     """End the current match. Winner stays on pitch; next team enters."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -2079,7 +2109,102 @@ async def end_match(
     )
     winner_name = match.team_a_name if winner_team == "a" else match.team_b_name
 
-    # Auto-queue removed — the referee starts the next match manually.
+    next_match_data: dict | None = None
+    if not _meetup.two_pitch and not body.skip_next_match:
+        # Get all teams for this meetup to find next team
+        _result = await db.execute(
+            select(User)
+            .join(Attendance, Attendance.user_id == User.id)
+            .where(
+                Attendance.meetup_id == meetup_id,
+                Attendance.status == "confirmed",
+            )
+        )
+        computed_scores = (await get_rating_settings(db)).computed_scores
+        _players = [
+            {
+                "id": str(u.id),
+                "name": u.display_name,
+                "skill": draft_skill(selected_rating(u, computed_scores)),
+                "user_id": u.id,
+                "pac": u.pac,
+                "dri": u.dri,
+            }
+            for u in _result.scalars().all()
+        ]
+        _mode = getattr(_meetup, "team_assignment_mode", None) or "balanced"
+        teams = resolve_meetup_teams_nested(
+            getattr(_meetup, "manual_teams_json", None),
+            _mode,
+            _players,
+            max_teams=getattr(_meetup, "max_teams", None),
+            team_size=_meetup.team_size,
+        )
+        team_names = get_team_names(_meetup)
+
+        # Find which teams have already been used as the "entering" side
+        all_matches = await db.execute(
+            select(MeetupMatch)
+            .where(MeetupMatch.meetup_id == meetup_id)
+            .where(MeetupMatch.match_number <= match.match_number)
+            .order_by(MeetupMatch.match_number.asc())
+        )
+        played_matches = all_matches.scalars().all()
+
+        borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams, team_names)
+        winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
+
+        # Find next unplayed team (a bench team — partition larger than
+        # max_teams — is only a substitution pool, never a playing candidate)
+        _bench_idx = (
+            len(teams) - 1
+            if getattr(_meetup, "max_teams", None) and len(teams) > _meetup.max_teams
+            else None
+        )
+        next_team = None
+        next_team_idx = None
+        for idx, team in enumerate(teams):
+            if (idx not in used_team_indices and idx != _bench_idx and team
+                    and not set(p["user_id"] for p in team).intersection(winner_users)):
+                next_team = team
+                next_team_idx = idx
+                break
+
+        if winner_users and next_team is not None and next_team_idx is not None:
+            used_team_indices.add(next_team_idx)
+            next_team_name = (
+                team_names[next_team_idx]
+                if team_names and next_team_idx < len(team_names)
+                else _team_name(next_team_idx + 1)
+            )
+            next_match = MeetupMatch(
+                meetup_id=meetup_id,
+                match_number=match.match_number + 1,
+                auto_queued=True,
+                team_a_users=json.dumps(winner_users),
+                team_b_users=json.dumps([p["user_id"] for p in next_team]),
+                team_a_name=winner_name,
+                team_b_name=next_team_name,
+                score_a=0,
+                score_b=0,
+                status="pending",
+                # The meetup's configured duration, NOT the ended match's:
+                # retroactive matches carry timer_total_seconds=0 and would
+                # poison every following match.
+                timer_total_seconds=(_meetup.match_duration_minutes or 10) * 60,
+            )
+            db.add(next_match)
+            await db.flush()
+            users_by_id = await _load_users_for_meetup(db, meetup_id)
+            next_match_data = _match_json(next_match, users_by_id)
+
+    opening_in_progress = _meetup.two_pitch and bool(await db.scalar(
+        select(MeetupMatch.id).where(
+            MeetupMatch.meetup_id == meetup_id,
+            MeetupMatch.pitch.is_not(None),
+            MeetupMatch.status != "completed",
+        ).limit(1)
+    ))
     await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
     log_action(
@@ -2089,7 +2214,15 @@ async def end_match(
         f"Ended match #{match.match_number}: {match.score_a}-{match.score_b}, "
         f"{winner_name} wins"
         + (" (draw)" if is_tie else "")
-        + "; referee will start the next match manually",
+        + (
+            f"; next match queued vs {next_match_data['team_b']['name']}"
+            if next_match_data
+            else "; no next match queued"
+            if body.skip_next_match
+            else "; referee will choose the next match"
+            if _meetup.two_pitch
+            else "; all matches complete"
+        ),
         meetup_id=meetup_id,
     )
 
@@ -2117,7 +2250,10 @@ async def end_match(
         "penalty_due": match.match_number == 1 and is_tie
         and match.penalty_winner is None,
     }
-    result["all_matches_complete"] = True
+    if next_match_data:
+        result["next_match"] = next_match_data
+    elif not body.skip_next_match and not opening_in_progress:
+        result["all_matches_complete"] = True
     return result
 
 

@@ -204,11 +204,7 @@ async def test_add_sideline_player_returns_them_to_original_team_for_next_match(
         assert (await ac.patch(f"{url}/score", json={"score_a": 1, "score_b": 0}, headers=headers)).status_code == 200
         result = await ac.post(f"{url}/end", json={}, headers=headers)
         assert result.status_code == 200, result.text
-        # Auto-queue is off — the next match is created manually.
-        assert result.json().get("next_match") is None
-        rs = await ac.post(f"/meetups/{sid}/matches/new", headers=headers)
-        assert rs.status_code == 201, rs.text
-        next_match = rs.json()["match"]
+        next_match = result.json()["next_match"]
         assert [u["id"] for u in next_match["team_a"]["users"]] == team_a
         assert [u["id"] for u in next_match["team_b"]["users"]] == team_c
 

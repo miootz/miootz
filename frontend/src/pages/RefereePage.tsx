@@ -25,6 +25,7 @@ import {
   type MeetupDetail,
   type TeamsResponse,
 } from "../api/meetupsApi";
+import { roomPath } from "../utils/demoRoom";
 import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
@@ -352,6 +353,7 @@ export function RefereePage() {
 
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
+  const [twoPitch, setTwoPitch] = useState(false);
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -484,6 +486,7 @@ export function RefereePage() {
             const res = await fetchMeetupMatches(sid);
             if (matchLoadRef.current !== current) return;
             setMatches(res.matches);
+            setTwoPitch(!!res.two_pitch);
             setEditingMatch((editing) =>
               editing ? res.matches.find((m) => m.id === editing.id) ?? editing : null,
             );
@@ -496,7 +499,7 @@ export function RefereePage() {
               (m) => m.status === "active" || m.status === "time_up",
             );
             const pending = res.matches.find((m) => m.status === "pending");
-            const chosen = routeMatch ?? active ?? pending ?? null;
+            const chosen = !res.two_pitch || routeMatchId == null ? active ?? pending ?? null : routeMatch ?? null;
             if (chosen) {
               setCurrentMatch(chosen);
               setTimerSeconds(
@@ -518,6 +521,7 @@ export function RefereePage() {
             const shoot = res.matches.find(
               (m) =>
                 m.status === "completed" &&
+                (!res.two_pitch || routeMatchId == null || m.id === routeMatchId) &&
                 m.match_number === 1 &&
                 m.score_a === m.score_b &&
                 m.penalty_winner == null &&
@@ -571,10 +575,10 @@ export function RefereePage() {
       .catch(() => {});
   }, [sid]);
 
-  const stewardEvents = useRef({ applyEvent, refreshGoals });
+  const stewardEvents = useRef({ applyEvent, refreshGoals, matchId: currentMatch?.id });
   useEffect(() => {
-    stewardEvents.current = { applyEvent, refreshGoals };
-  }, [applyEvent, refreshGoals]);
+    stewardEvents.current = { applyEvent, refreshGoals, matchId: currentMatch?.id };
+  }, [applyEvent, refreshGoals, currentMatch?.id]);
 
   // SSE — rides the ONE existing meetup-data connection through the shared
   // hub (utils/meetupDataBus); no second EventSource here anymore.
@@ -593,6 +597,8 @@ export function RefereePage() {
           }
           return;
         }
+        if (typeof data.type === "string" && data.type.startsWith("match_timer_") &&
+            data.match_id !== stewardEvents.current.matchId) return;
         const secs =
           typeof data.seconds_remaining === "number"
             ? Math.max(0, data.seconds_remaining)
@@ -921,7 +927,7 @@ export function RefereePage() {
     handleGoalSaved();
   };
 
-  const handleStartNewMatch = async () => {
+  const handleStartNewMatch = async (useBracket = false) => {
     await run("Creating match...", async () => {
       if (matches.length === 0) {
         // No completed match to build from (e.g. the only match was just
@@ -935,10 +941,11 @@ export function RefereePage() {
           "success",
         );
       } else {
-        await createNewPendingMatch(sid, {
+        const { match } = await createNewPendingMatch(sid, useBracket ? undefined : {
           team_a_idx: selectedTeamA,
           team_b_idx: selectedTeamB,
         });
+        if (twoPitch && routeMatchId != null) navigate(roomPath(`/meetup-matches/${sid}/${match.id}`));
         showToast("New match ready — start the timer!", "success");
       }
       setSelectingTeams(false);
@@ -1040,15 +1047,20 @@ export function RefereePage() {
   // the all-complete state offers — even with an empty match list.
   const showStartNewMatch =
     allComplete || (matchDeleted && matches.length === 0);
+  const firstShootoutPending = matches.some((m) =>
+    m.match_number === 1 && m.status === "completed" &&
+    m.score_a === m.score_b && !m.penalty_winner && !m.penalty_skipped
+  );
 
   // Show next match preview after a match ended
-  const nextMatch = matches.find(
+  const nextMatch = !twoPitch && matches.find(
     (m) =>
       m.status === "pending" &&
       m.match_number > (currentMatch?.match_number || 0),
   );
 
   // Bottom action deck only exists for live controls — no deck in the other states.
+  const kickoffBlocked = firstShootoutPending && !(twoPitch && currentMatch?.pitch === 2);
   const shootoutOpen = penaltyMatch !== null && !isPastDeadline;
   const showCompleted = showStartNewMatch && !showManualForm && !selectingTeams && !shootoutOpen && !isPastDeadline;
   const liveControls =
@@ -1368,7 +1380,7 @@ export function RefereePage() {
               <button
                 type="button"
                 onClick={() => void handleStartNewMatch()}
-                disabled={busy !== null || selectedTeamA === selectedTeamB || penaltyMatch !== null}
+                disabled={busy !== null || selectedTeamA === selectedTeamB || firstShootoutPending}
                 className="flex-1 py-3 bg-ink text-board font-bold hover:bg-white/90 disabled:opacity-40 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
               >
                 <Play className="h-4 w-4" />
@@ -1390,10 +1402,19 @@ export function RefereePage() {
               {completedMatches.length !== 1 ? "es" : ""} recorded
             </h2>
             <div className="flex flex-col gap-3 items-center">
+              {twoPitch && allComplete &&
+                (matches.length === 2 || matches.length === 3) && (
+                <button type="button" onClick={() => void handleStartNewMatch(true)}
+                  disabled={busy !== null || firstShootoutPending}
+                  className="inline-flex items-center gap-2 px-8 py-4 bg-ink text-board font-bold disabled:opacity-50">
+                  <Play className="h-5 w-5" />
+                  {matches.length === 2 ? "Set up final" : "Set up third-place match"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectingTeams(true)}
-                disabled={busy !== null || penaltyMatch !== null}
+                disabled={busy !== null || firstShootoutPending}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-ink text-board text-lg font-bold hover:bg-white/90 disabled:opacity-50 active:scale-[0.98] transition-transform min-h-[56px]"
               >
                 <Play className="h-5 w-5" />
@@ -1412,6 +1433,8 @@ export function RefereePage() {
               </button>
             </div>
           </div>
+        ) : !currentMatch && matches.length > 0 ? (
+          <p className="text-sm text-ink-dim">Waiting for the other match to finish.</p>
         ) : !currentMatch ? (
           /* No match started yet */
           <div className="text-center space-y-6 py-12">
@@ -1654,7 +1677,7 @@ export function RefereePage() {
 
           <div className="referee-actions shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mx-auto max-w-lg space-y-2 tablet:max-w-2xl">
-              {penaltyMatch && currentMatch.status === "pending" && (
+              {kickoffBlocked && currentMatch.status === "pending" && (
                 <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
               )}
               <div className="referee-primary-actions grid grid-cols-2 gap-2">
@@ -1662,7 +1685,7 @@ export function RefereePage() {
                   <button
                     type="button"
                     onClick={() => void handleStartTimer()}
-                    disabled={busy !== null || penaltyMatch !== null}
+                    disabled={busy !== null || kickoffBlocked}
                     className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
                   >
                     <Play className="h-5 w-5" />
