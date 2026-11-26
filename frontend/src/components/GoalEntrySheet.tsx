@@ -12,6 +12,7 @@ import {
 import { fetchMeetupDetail } from "../api/meetupsApi";
 import type { MatchSummary } from "../api/matchesApi";
 import { PlayerSelect, type SelectablePlayer } from "./PlayerSelect";
+import { ToggleSwitch } from "./ToggleSwitch";
 import {
   defaultGoalMinute,
   isAfterWhistle,
@@ -25,7 +26,7 @@ interface GoalEntrySheetProps {
   meetupId: number;
   match: MatchSummary;
   onClose: () => void;
-  onLogged: (goal: GoalRow) => void;
+  onLogged: () => void;
   /** Present → edit mode: the sheet prefills from this goal and PATCHes it. */
   editGoal?: GoalRow | null;
   /** Only offered in edit mode — removes the goal row (light two-tap confirm). */
@@ -75,7 +76,11 @@ export function GoalEntrySheet({
   const [team, setTeam] = useState<"a" | "b">(
     editGoal?.team ?? "a",
   );
-  const [isOwnGoal, setIsOwnGoal] = useState(editGoal?.is_own_goal ?? false);
+  const [isOwnGoal, setIsOwnGoal] = useState(
+    editGoal?.is_own_goal ?? false,
+  );
+  const [isPenalty, setIsPenalty] = useState(editGoal?.is_penalty ?? false);
+  const [missed, setMissed] = useState(false);
   const [scorer, setScorer] = useState<SelectablePlayer | null>(
     editGoal
       ? {
@@ -112,6 +117,29 @@ export function GoalEntrySheet({
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
   // Delete at the bottom (edit mode): first tap arms, second tap fires.
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const togglePenalty = useCallback(() => {
+    const next = !isPenalty;
+    setIsPenalty(next);
+    if (next) {
+      // Penalty and own goal can't combine (server rejects); a penalty
+      // never carries an assist (the player's penalty is the whole story).
+      // The scorer pool only changes for an own goal (conceding team →
+      // scoring team) — keep a regular pick.
+      if (isOwnGoal) setScorer(null);
+      setIsOwnGoal(false);
+      setAssist(null);
+    } else {
+      setMissed(false);
+    }
+    setConfirmDuplicate(false);
+  }, [isPenalty, isOwnGoal]);
+
+  const toggleMissed = useCallback(() => {
+    setMissed((v) => !v);
+    setAssist(null);
+    setGoalkeeper(null);
+  }, []);
 
   // ── Roster (confirmed attendees, with team tags for this match) ─
   const [roster, setRoster] = useState<SelectablePlayer[]>([]);
@@ -247,18 +275,27 @@ export function GoalEntrySheet({
               goalkeeper_id: goalkeeper?.id ?? null,
               clock_minute: minute,
               is_own_goal: isOwnGoal,
+              is_penalty: isPenalty,
             })
           : await createGoal(meetupId, match.id, {
               team,
               scorer_id: scorer.id,
-              assist_id: assist?.id ?? null,
-              goalkeeper_id: goalkeeper?.id ?? null,
+              assist_id: missed || isPenalty ? null : assist?.id ?? null,
+              goalkeeper_id: missed ? null : goalkeeper?.id ?? null,
               intent_id: intentIdRef.current,
               force: force || afterWhistle,
               is_own_goal: isOwnGoal,
+              is_penalty: isPenalty || missed,
+              missed,
             });
+        if (res.miss) {
+          onLogged();
+          showToast("Penalty miss logged — not in the match score", "success");
+          onClose();
+          return;
+        }
         if (res.goal) {
-          onLogged(res.goal);
+          onLogged();
           showToast(
             isEdit
               ? `Goal updated — ${g2score(match, res.goal)}`
@@ -290,6 +327,8 @@ export function GoalEntrySheet({
       afterWhistle,
       holding,
       isOwnGoal,
+      isPenalty,
+      missed,
       match,
       minute,
       onClose,
@@ -408,37 +447,55 @@ export function GoalEntrySheet({
           </div>
         </div>
 
-        {/* Own goal toggle */}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={isOwnGoal}
-          onClick={() => {
-            setIsOwnGoal((v) => !v);
-            setScorer(null);
-            setAssist(null);
-            setGoalkeeper(null);
-            setConfirmDuplicate(false);
-          }}
-          className={`flex items-center justify-between w-full px-3 py-2.5 border-2 text-sm font-semibold transition-colors ${
-            isOwnGoal
-              ? "border-live bg-live/15 text-ink"
-              : "border-line bg-raised text-ink-dim"
-          }`}
-        >
-          <span>Own goal (scored against the listed team)</span>
-          <span
-            className={`relative inline-flex h-5 w-9 items-center ${
-              isOwnGoal ? "bg-live" : "bg-line"
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                isOwnGoal ? "translate-x-4" : "translate-x-0.5"
-              }`}
+        {/* Own goal + Penalty toggles on one row */}
+        <div className="flex items-center justify-between gap-3 border-2 border-line bg-raised px-3 py-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <ToggleSwitch
+              enabled={isOwnGoal}
+              disabled={isPenalty}
+              onChange={() => {
+                setIsOwnGoal((v) => !v);
+                setScorer(null);
+                setAssist(null);
+                setGoalkeeper(null);
+                setConfirmDuplicate(false);
+              }}
+              ariaLabel="Own goal"
             />
-          </span>
-        </button>
+            <span className="text-sm font-semibold text-ink truncate">
+              Own goal
+            </span>
+          </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <ToggleSwitch
+              enabled={isPenalty}
+              onChange={togglePenalty}
+              ariaLabel="Penalty"
+            />
+            <span className="text-sm font-semibold text-ink truncate">
+              Penalty
+            </span>
+          </div>
+        </div>
+
+        {/* Miss — only for a penalty in create mode; the miss is not recorded in the match */}
+        {isPenalty && !isEdit && (
+          <div className="flex items-center justify-between gap-3 border-2 border-line bg-raised px-3 py-2.5">
+            <div className="min-w-0">
+              <span className="text-sm font-semibold text-ink">Miss</span>
+              {missed && (
+                <p className="text-xs text-ink-dim mt-0.5">
+                  Not in the match score — counts toward penalty stats.
+                </p>
+              )}
+            </div>
+            <ToggleSwitch
+              enabled={missed}
+              onChange={toggleMissed}
+              ariaLabel="Miss"
+            />
+          </div>
+        )}
 
         {/* Scorer */}
         <PlayerSelect
@@ -460,8 +517,8 @@ export function GoalEntrySheet({
           disabled={!rosterLoaded}
         />
 
-        {/* Assist (one, skippable; not offered for own goals) */}
-        {!isOwnGoal && (
+        {/* Assist (one, skippable; not offered for own goals or penalties) */}
+        {!isOwnGoal && !isPenalty && (
           <PlayerSelect
             label="3 · Assist (optional — one assist max)"
             players={assistOptions}
@@ -475,22 +532,24 @@ export function GoalEntrySheet({
           />
         )}
 
-        {/* Goalkeeper who was beaten (conceding team, optional) */}
-        <PlayerSelect
-          label={`${isOwnGoal ? "3" : "4"} · Goalkeeper beaten by ${
-            team === "a" ? match.team_b.name : match.team_a.name
-          } (optional)`}
+        {/* Goalkeeper who was beaten (conceding team, optional) — not for a miss */}
+        {!missed && (
+          <PlayerSelect
+            label={`${isOwnGoal || isPenalty ? "3" : "4"} · Goalkeeper beaten by ${
+              team === "a" ? match.team_b.name : match.team_a.name
+            } (optional)`}
           players={keeperOptions}
           selected={goalkeeper}
           onSelect={setGoalkeeper}
           allowClear
           onClear={() => setGoalkeeper(null)}
-        />
+          />
+        )}
 
         {/* Minute */}
         <div>
           <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim mb-1.5">
-            {isOwnGoal ? "4" : "5"} · Minute (from the server clock)
+            {missed ? "3" : isOwnGoal || isPenalty ? "4" : "5"} · Minute (from the server clock)
           </p>
           <div className="flex items-center gap-2">
             <input
@@ -526,6 +585,14 @@ export function GoalEntrySheet({
           )}
         </div>
 
+        {/* Miss summary — the miss is not recorded in the match */}
+        {missed && (
+          <p className="border border-live/40 bg-live/15 px-3 py-2.5 text-sm text-ink">
+            Penalty miss — not recorded in the match score. It counts toward
+            {scorer?.name ? ` ${scorer.name}` : " the player"}'s penalty stats.
+          </p>
+        )}
+
         {/* Confirm */}
         {confirmDuplicate && (
           <div className="border border-live/40 bg-live/15 p-3 space-y-2">
@@ -555,14 +622,18 @@ export function GoalEntrySheet({
             <Plus className="h-5 w-5" />
           )}
           {holding
-            ? isEdit
-              ? "Save changes"
-              : "Confirm goal"
+            ? missed
+              ? "Log penalty miss"
+              : isEdit
+                ? "Save changes"
+                : "Confirm goal"
             : lease
               ? leaseBusyLabel(lease.holderName, leaseCountdown(lease))
               : isEdit
                 ? "Take lease & save"
-                : "Take lease & log goal"}
+                : missed
+                  ? "Take lease & log miss"
+                  : "Take lease & log goal"}
         </button>
 
         {/* Delete (edit mode only) — two-tap confirm, at the very bottom. */}

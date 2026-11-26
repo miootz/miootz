@@ -19,6 +19,7 @@ import {
 } from "../../components/admin/LocationPicker";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../context/ToastContext";
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 function defaultStartLocal(): string {
   const d = new Date();
@@ -371,12 +372,10 @@ export function AdminGameTemplateEditPage() {
               recorded as a draw for statistics.
             </p>
           </div>
-          <input
-            type="checkbox"
-            checked={allowsDraws}
-            onChange={(e) => setAllowsDraws(e.target.checked)}
-            className="mt-1 h-5 w-5 accent-live"
-            aria-label="Record draws"
+          <ToggleSwitch
+            enabled={allowsDraws}
+            onChange={() => setAllowsDraws(!allowsDraws)}
+            ariaLabel="Record draws"
           />
         </div>
 

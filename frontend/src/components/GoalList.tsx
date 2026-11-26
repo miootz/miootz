@@ -61,7 +61,7 @@ export function GoalList({
                       }`}
                     >
                       {g.scorer.display_name}
-                      {g.is_own_goal ? " (OG)" : ""}
+                      {g.is_own_goal ? " (OG)" : g.is_penalty ? " (P)" : ""}
                     </span>
                   </>
                 ) : (
@@ -74,7 +74,7 @@ export function GoalList({
                       }`}
                     >
                       {g.scorer.display_name}
-                      {g.is_own_goal ? " (OG)" : ""}
+                      {g.is_own_goal ? " (OG)" : g.is_penalty ? " (P)" : ""}
                     </span>
                     <span className="text-xs font-bold tabular-nums text-ink-faint shrink-0">
                       {g.clock_minute}&prime;

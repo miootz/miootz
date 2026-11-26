@@ -17,6 +17,9 @@ export interface MatchSummary {
   was_draw?: boolean;
   /** 'a' | 'b' when a penalty shootout resolved a tied first match. */
   penalty_winner?: "a" | "b" | null;
+  /** Shootout scores (winner's side is the winner). */
+  penalty_score_a?: number | null;
+  penalty_score_b?: number | null;
   status: "pending" | "active" | "time_up" | "completed";
   timer_total_seconds: number;
   timer_seconds_remaining: number;

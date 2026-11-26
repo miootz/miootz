@@ -18,6 +18,7 @@ import {
   readMeetupDraft,
   writeMeetupDraft,
 } from '../../utils/adminPrefs';
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 function defaultStartLocal(): string {
   const d = new Date();
@@ -404,19 +405,18 @@ export function AdminMeetupNewPage() {
                 {minPlayers}–{maxPlayers} · Fee {fee}
               </p>
             </div>
-            <label className="flex items-start gap-3 cursor-pointer border border-line bg-raised/50 px-3 py-3 transition-colors">
-              <input
-                type="checkbox"
-                checked={sendPushNotifs}
-                onChange={(e) => setSendPushNotifs(e.target.checked)}
-                className="mt-0.5 border-line text-team-a focus:ring-2 focus:ring-live"
+            <div className="flex items-start gap-3 border border-line bg-raised/50 px-3 py-3 transition-colors">
+              <ToggleSwitch
+                enabled={sendPushNotifs}
+                onChange={() => setSendPushNotifs(!sendPushNotifs)}
+                ariaLabel="Notify all players"
               />
               <span className="text-sm text-ink">
                 <span className="font-medium text-ink">
                   Notify all players
                 </span>
               </span>
-            </label>
+            </div>
             <div className="flex flex-wrap gap-3 pt-2">
               <button
                 type="button"

@@ -12,7 +12,7 @@ import {
 import { ChevronDown, Flag, Loader2, Plus, Trash2, Trophy } from "lucide-react";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
-import { fetchGoals, type GoalRow } from "../api/stewardApi";
+import { deletePenaltyMiss, fetchGoals, fetchPenaltyMisses, type GoalRow, type PenaltyMissRow } from "../api/stewardApi";
 import { GoalList } from "./GoalList";
 import { PlayerEditLink } from "./PlayerEditLink";
 
@@ -223,10 +223,12 @@ function MatchResultRow({
   onEditSubmit: (match: MatchSummary, scoreA: string, scoreB: string) => void;
   onDelete: () => void;
 }) {
+  const { showToast } = useToast();
   const [expanded, setExpanded] = useState(false);
   // null = not fetched yet; lazy-load on first expand
   const [subs, setSubs] = useState<MatchSubstitution[] | null>(null);
   const [goals, setGoals] = useState<GoalRow[] | null>(null);
+  const [misses, setMisses] = useState<PenaltyMissRow[] | null>(null);
 
   useEffect(() => {
     if (!expanded || subs !== null) return;
@@ -241,6 +243,26 @@ function MatchResultRow({
       .then(setGoals)
       .catch(() => setGoals([]));
   }, [expanded, meetupId, match.id, goals]);
+
+  useEffect(() => {
+    if (!expanded || misses !== null) return;
+    fetchPenaltyMisses(meetupId, match.id)
+      .then(setMisses)
+      .catch(() => setMisses([]));
+  }, [expanded, meetupId, match.id, misses]);
+
+  const handleDeleteMiss = async (miss: PenaltyMissRow) => {
+    try {
+      await deletePenaltyMiss(meetupId, match.id, miss.id);
+      setMisses((prev) => (prev ?? []).filter((m) => m.id !== miss.id));
+      showToast("Penalty miss removed", "success");
+    } catch (e) {
+      showToast(
+        e instanceof Error ? e.message : "Delete failed",
+        "error",
+      );
+    }
+  };
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>();
@@ -434,6 +456,13 @@ function MatchResultRow({
         {/* Expanded: scorers, final rosters + substitution log */}
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
+            {match.penalty_winner && (
+              <p className="text-xs text-ink-dim tabular-nums">
+                Shootout: {match.penalty_score_a ?? "?"} –{" "}
+                {match.penalty_score_b ?? "?"} —{" "}
+                {match.penalty_winner === "a" ? match.team_a.name : match.team_b.name} wins
+              </p>
+            )}
             {goals && goals.length > 0 && (
               <div className="bg-raised px-3 py-1">
                 <GoalList
@@ -442,6 +471,38 @@ function MatchResultRow({
                   onEdit={() => {}}
                   emptyLabel=""
                 />
+              </div>
+            )}
+            {misses && misses.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+                  Penalty misses
+                </p>
+                <ul className="divide-y divide-line">
+                  {misses.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-center justify-between gap-2 py-1.5"
+                    >
+                      <span className="text-sm text-ink-dim truncate">
+                        <span className="tabular-nums text-ink-faint mr-2">
+                          {m.clock_minute}&prime;
+                        </span>
+                        {m.scorer.display_name} (miss)
+                      </span>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteMiss(m)}
+                          className="inline-flex h-8 w-8 items-center justify-center text-ink-faint hover:text-danger transition-colors"
+                          aria-label={`Delete penalty miss by ${m.scorer.display_name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

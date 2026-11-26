@@ -106,7 +106,9 @@ export function PenaltyShootoutPanel({
     try {
       const res = await finishPenaltyShootout(meetupId, match.id);
       showToast(`${teamName(res.winner)} wins the shootout`, "success");
-      onFinished();
+      // Keep the result on screen — the winner line and shots stay visible
+      // until the user taps Done (which closes the panel).
+      setState((s) => (s ? { ...s, winner: res.winner } : s));
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Could not finish", "error");
       void load();
@@ -165,9 +167,18 @@ export function PenaltyShootoutPanel({
       )}
 
       {state.winner ? (
-        <p className="border border-live/40 bg-live/10 px-3 py-2 text-sm font-bold text-live">
-          {teamName(state.winner)} wins the shootout
-        </p>
+        <div className="space-y-2">
+          <p className="border border-live/40 bg-live/10 px-3 py-2 text-sm font-bold text-live">
+            {teamName(state.winner)} wins the shootout
+          </p>
+          <button
+            type="button"
+            onClick={() => onFinished()}
+            className="min-h-[44px] w-full bg-ink text-board px-3 py-2 text-sm font-bold hover:bg-white/90 active:scale-[0.98] transition-transform"
+          >
+            Done
+          </button>
+        </div>
       ) : (
         <>
           <div className="space-y-2">

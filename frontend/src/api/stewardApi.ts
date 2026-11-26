@@ -170,6 +170,8 @@ export interface GoalRow {
   after_whistle?: boolean;
   /** Own goal: the scorer is on the conceding team. */
   is_own_goal?: boolean;
+  /** Penalty: counts toward the score, not the goals ranking. */
+  is_penalty?: boolean;
 }
 
 function normalizePerson(v: unknown): GoalPerson {
@@ -204,6 +206,7 @@ function normalizeGoal(v: unknown): GoalRow | null {
     recorded_by: normalizePerson(o.recorded_by),
     after_whistle: !!o.after_whistle,
     is_own_goal: !!o.is_own_goal,
+    is_penalty: !!o.is_penalty,
   };
 }
 
@@ -232,9 +235,13 @@ export interface GoalCreateBody {
   force?: boolean;
   /** Own goal: the scorer is on the conceding team. */
   is_own_goal?: boolean;
+  /** Penalty: counts toward the score, not the goals ranking. */
+  is_penalty?: boolean;
+  /** Missed penalty: not a goal — a stats record only. */
+  missed?: boolean;
 }
 
-export type GoalUpdateBody = Omit<GoalCreateBody, "intent_id" | "force"> & {
+export type GoalUpdateBody = Omit<GoalCreateBody, "intent_id" | "force" | "missed"> & {
   clock_minute: number;
 };
 
@@ -246,14 +253,17 @@ export async function createGoal(
   meetupId: number,
   matchId: number,
   body: GoalCreateBody,
-): Promise<{ goal: GoalRow | null }> {
+): Promise<{ goal: GoalRow | null; miss: PenaltyMissRow | null }> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/goals`, {
     method: "POST",
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await parseApiError(r));
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-  return { goal: normalizeGoal(j.goal ?? j) };
+  return {
+    goal: normalizeGoal(j.goal ?? j),
+    miss: j.miss ? normalizeMiss(j.miss) : null,
+  };
 }
 
 /**
@@ -265,7 +275,7 @@ export async function updateGoal(
   matchId: number,
   goalId: number,
   body: GoalUpdateBody,
-): Promise<{ goal: GoalRow | null }> {
+): Promise<{ goal: GoalRow | null; miss: null }> {
   const r = await apiFetch(
     `/meetups/${meetupId}/matches/${matchId}/goals/${goalId}`,
     {
@@ -275,7 +285,7 @@ export async function updateGoal(
   );
   if (!r.ok) throw new Error(await parseApiError(r));
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
-  return { goal: normalizeGoal(j.goal ?? j) };
+  return { goal: normalizeGoal(j.goal ?? j), miss: null };
 }
 
 export async function deleteGoal(
@@ -285,6 +295,54 @@ export async function deleteGoal(
 ): Promise<void> {
   const r = await apiFetch(
     `/meetups/${meetupId}/matches/${matchId}/goals/${goalId}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+}
+
+// ── Missed regulation penalties ──────────────────────────────────
+
+export interface PenaltyMissRow {
+  id: number;
+  team: "a" | "b";
+  clock_minute: number;
+  scorer: GoalPerson;
+  created_at?: string | null;
+}
+
+function normalizeMiss(v: unknown): PenaltyMissRow | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const id = num(o.id, NaN);
+  if (isNaN(id)) return null;
+  return {
+    id,
+    team: o.team === "b" ? "b" : "a",
+    clock_minute: num(o.clock_minute, 0),
+    scorer: normalizePerson(o.scorer),
+    created_at: typeof o.created_at === "string" ? o.created_at : null,
+  };
+}
+
+/** Authenticated GET — misses for one match (admin history). */
+export async function fetchPenaltyMisses(
+  meetupId: number,
+  matchId: number,
+): Promise<PenaltyMissRow[]> {
+  const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/penalty-misses`);
+  if (!r.ok) throw new Error(await parseApiError(r));
+  const j = (await r.json()) as { misses?: unknown[] } | unknown[];
+  const arr = Array.isArray(j) ? j : Array.isArray(j?.misses) ? j.misses : [];
+  return arr.map(normalizeMiss).filter((m): m is PenaltyMissRow => m != null);
+}
+
+export async function deletePenaltyMiss(
+  meetupId: number,
+  matchId: number,
+  missId: number,
+): Promise<void> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/penalty-misses/${missId}`,
     { method: "DELETE" },
   );
   if (!r.ok) throw new Error(await parseApiError(r));

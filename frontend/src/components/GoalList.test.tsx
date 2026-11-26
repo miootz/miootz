@@ -5,7 +5,7 @@ import { GoalList } from "./GoalList";
 
 const person = (name: string) => ({ id: 1, display_name: name, avatar_url: null });
 
-const goal = (team: "a" | "b"): GoalRow => ({
+const goal = (team: "a" | "b", is_penalty = false): GoalRow => ({
   id: 1,
   team,
   clock_minute: 11,
@@ -13,6 +13,7 @@ const goal = (team: "a" | "b"): GoalRow => ({
   assist: null,
   goalkeeper: null,
   recorded_by: person("Admin"),
+  is_penalty,
 });
 
 const rowOf = (container: HTMLElement, name: string) =>
@@ -35,4 +36,29 @@ it("renders a ball before the minute for home goals and after for away", () => {
   expect(awayRow.children[awayRow.children.length - 2]?.textContent).toBe(
     "11\u2032",
   );
+});
+
+it("marks a penalty goal with (P) instead of (OG)", () => {
+  const { container } = render(
+    <GoalList
+      goals={[{ ...goal("a", true), is_penalty: true }]}
+      canEdit={false}
+      onEdit={() => {}}
+    />,
+  );
+  const row = container.querySelector("li") as HTMLElement;
+  expect(row.textContent).toContain("(P)");
+  expect(row.textContent).not.toContain("(OG)");
+});
+
+it("marks an own goal with (OG)", () => {
+  const { container } = render(
+    <GoalList
+      goals={[{ ...goal("a"), is_own_goal: true }]}
+      canEdit={false}
+      onEdit={() => {}}
+    />,
+  );
+  const row = container.querySelector("li") as HTMLElement;
+  expect(row.textContent).toContain("(OG)");
 });

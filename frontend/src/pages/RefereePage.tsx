@@ -317,7 +317,7 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
         {completed.map((m) => (
           <div
             key={m.id}
-            className="flex items-center justify-between border border-line bg-panel px-4 py-3"
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border border-line bg-panel px-4 py-3"
           >
             <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
               Match {m.match_number}
@@ -331,6 +331,12 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
                 {m.score_b} {m.team_b.name}
               </span>
             </div>
+            {m.penalty_winner && (
+              <p className="basis-full w-full text-xs text-ink-dim tabular-nums text-right">
+                Shootout: {m.penalty_score_a ?? "?"} – {m.penalty_score_b ?? "?"} —{" "}
+                {m.penalty_winner === "a" ? m.team_a.name : m.team_b.name} wins
+              </p>
+            )}
           </div>
         ))}
       </div>

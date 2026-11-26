@@ -11,6 +11,7 @@ import {
   readJobHistory,
   type JobHistoryEntry,
 } from "../../utils/adminPrefs";
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 export function AdminToolsPage() {
   const { showToast } = useToast();
@@ -122,19 +123,18 @@ export function AdminToolsPage() {
         <h2 className="text-lg font-bold text-ink">Player ratings</h2>
         {ratingSettings && (
           <form onSubmit={(event) => void saveRatings(event)} className="mt-4 space-y-5">
-            <label className="flex min-h-11 items-center gap-3 text-sm text-ink">
-              <input
-                type="checkbox"
+            <div className="flex min-h-11 items-center gap-3 text-sm text-ink">
+              <ToggleSwitch
+                enabled={ratingSettings.computed_scores}
                 disabled={savingRatings}
-                className="h-5 w-5 accent-live"
-                checked={ratingSettings.computed_scores}
-                onChange={(event) => {
+                onChange={() => {
                   setRatingSaved(false);
-                  setRatingSettings({ ...ratingSettings, computed_scores: event.target.checked });
+                  setRatingSettings({ ...ratingSettings, computed_scores: !ratingSettings.computed_scores });
                 }}
+                ariaLabel="Use adjusted ratings"
               />
               Use adjusted ratings
-            </label>
+            </div>
             <p className="text-sm text-ink-dim">Turn off to use base ratings for rankings and team balancing.</p>
             <fieldset disabled={savingRatings}>
               <legend className="font-semibold text-ink">Peer ratings</legend>

@@ -24,6 +24,7 @@ import { ProfileProgress } from "../components/ProfileProgress";
 import { ProfileScoreboard } from "../components/ProfileScoreboard";
 import { PlayerAttributesPanel } from "../components/PlayerAttributesPanel";
 import { SkillRating } from "../components/SkillRating";
+import { ToggleSwitch } from "../components/ToggleSwitch";
 import {
   PUSH_REGISTRATION_CHANGED,
   pushSupported,
@@ -132,37 +133,6 @@ function ProfileSkeleton() {
       <div className={`h-40 rounded-xl ${pulse}`} />
       <div className={`h-32 rounded-xl ${pulse}`} />
     </div>
-  );
-}
-
-/* ── Toggle Switch (reusable) ──────────────────────────────────────── */
-
-function ToggleSwitch({
-  enabled,
-  disabled,
-  onChange,
-}: {
-  enabled: boolean;
-  disabled?: boolean;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onChange}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer border-2 border-transparent transition-colors focus:outline-hidden focus:ring-2 focus:ring-live ${
-        enabled ? "bg-live" : "bg-raised"
-      } disabled:opacity-50`}
-      role="switch"
-      aria-checked={enabled}
-    >
-      <span
-        className={`pointer-events-none inline-block h-5 w-5 transform bg-ink transition ${
-          enabled ? "translate-x-5" : "translate-x-1"
-        }`}
-      />
-    </button>
   );
 }
 
@@ -639,6 +609,7 @@ export function ProfilePage() {
                     <ToggleSwitch
                       enabled={row.enabled}
                       disabled={notifToggleBusy === row.category}
+                      ariaLabel={`${NOTIF_CATEGORY_META[row.category].display_name} notifications`}
                       onChange={() => {
                         const next = !row.enabled;
                         setNotifToggleBusy(row.category);
@@ -701,6 +672,7 @@ export function ProfilePage() {
                   <ToggleSwitch
                     enabled={row.notifications_enabled}
                     disabled={templateToggleBusy === row.game_template_id}
+                    ariaLabel={`${row.name} notifications`}
                     onChange={() => {
                       const next = !row.notifications_enabled;
                       setTemplateToggleBusy(row.game_template_id);

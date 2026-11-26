@@ -74,6 +74,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
                 (day, 1, "Alex Example", "Shootout missed", None),
                 (day, 1, "Casey Sample", "Shootout scored", None),
                 (day, 2, "Casey Sample", "Penalty", None),
+                (day, 2, "Casey Sample", "Penalty missed", None),
                 (day, 2, "Casey Sample", "Goal", None),
             ]
         ),
@@ -81,7 +82,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             [
                 ("Player", *STAT_COLUMNS),
                 ("Alex Example", 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0),
-                ("Casey Sample", 1, 2, 2, 0, 1, 3, 0, 0, 1.5, 0, 1.5, 2, 2, 1),
+                ("Casey Sample", 1, 2, 2, 0, 1, 2, 0, 0, 1.0, 0, 1.0, 3, 2, 2 / 3),
                 ("Jordan Fixture", 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 ("Taylor Mock", 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0),
             ]
@@ -208,8 +209,10 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         assert db.execute(
             "SELECT historical_roster_name, pac FROM users ORDER BY historical_roster_name"
         ).fetchall() == [
-            ("Alex Example", 4.2), ("Casey Sample", None),
-            ("Jordan Fixture", 4.2), ("Taylor Mock", None),
+            ("Alex Example", 4.2),
+            ("Casey Sample", None),
+            ("Jordan Fixture", 4.2),
+            ("Taylor Mock", None),
         ]
         assert db.execute(
             "SELECT score_a, score_b, penalty_score_a, penalty_score_b, penalty_winner "

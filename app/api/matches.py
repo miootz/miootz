@@ -25,7 +25,7 @@ from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.meetup_data_manager import meetup_data_manager
 from app.core.timeutil import utcnow
-from app.models.match import MeetupMatch, MatchPenalty, MatchSubstitution
+from app.models.match import MeetupMatch, MatchPenalty, MatchSubstitution, PenaltyMiss
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
@@ -111,6 +111,12 @@ class GoalCreate(BaseModel):
     #: Own goal: the scorer is on the conceding team (still counts toward
     #: ``team``'s score).
     is_own_goal: bool = False
+    #: Penalty: a regulation-time penalty. The goal still counts toward the
+    #: score but not the player's goals ranking; penalties are ranked separately.
+    is_penalty: bool = False
+    #: A missed penalty — not a goal at all (nothing in the match log), but
+    #: the miss counts toward the player's penalty stats.
+    missed: bool = False
     #: Client-minted idempotency key (UUID hex) — a retry replays the goal.
     intent_id: str = Field(min_length=1, max_length=64)
     #: Explicit user confirmation that a duplicated/after-whistle entry stands.
@@ -126,6 +132,7 @@ class GoalUpdate(BaseModel):
     goalkeeper_id: int | None = None
     clock_minute: int = Field(ge=1, le=600)
     is_own_goal: bool = False
+    is_penalty: bool = False
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -483,8 +490,7 @@ async def start_matches(
         request,
         "match",
         "match.started",
-        "Started matches: "
-        f"{match.team_a_name} vs {match.team_b_name}",
+        f"Started matches: {match.team_a_name} vs {match.team_b_name}",
         meetup_id=meetup_id,
     )
 
@@ -503,21 +509,34 @@ async def start_matches(
     return {"status": "started", "match": _match_json(match, users_by_id)}
 
 
-async def _sideline_additions(db: AsyncSession, match_ids: list[int]) -> dict[int, set[int]]:
+async def _sideline_additions(
+    db: AsyncSession, match_ids: list[int]
+) -> dict[int, set[int]]:
     additions: dict[int, set[int]] = {}
-    rows = await db.scalars(select(MatchSubstitution).where(
-        MatchSubstitution.match_id.in_(match_ids), MatchSubstitution.is_sideline_addition.is_(True),
-    ))
+    rows = await db.scalars(
+        select(MatchSubstitution).where(
+            MatchSubstitution.match_id.in_(match_ids),
+            MatchSubstitution.is_sideline_addition.is_(True),
+        )
+    )
     for row in rows:
-        before = set(_loads_int_list(row.old_team_a_users) + _loads_int_list(row.old_team_b_users))
-        after = set(_loads_int_list(row.new_team_a_users) + _loads_int_list(row.new_team_b_users))
+        before = set(
+            _loads_int_list(row.old_team_a_users)
+            + _loads_int_list(row.old_team_b_users)
+        )
+        after = set(
+            _loads_int_list(row.new_team_a_users)
+            + _loads_int_list(row.new_team_b_users)
+        )
         additions.setdefault(row.match_id, set()).update(after - before)
     return additions
 
 
 async def _rotation_teams(
-    db: AsyncSession, matches: Sequence[MeetupMatch],
-    teams: list[list[dict]], names: list[str] | None,
+    db: AsyncSession,
+    matches: Sequence[MeetupMatch],
+    teams: list[list[dict]],
+    names: list[str] | None,
 ) -> tuple[dict[int, set[int]], set[int]]:
     """Identify teams that played without carrying borrowed players forward."""
     additions = await _sideline_additions(db, [match.id for match in matches])
@@ -656,8 +675,12 @@ async def create_new_pending_match(
         )
         played_matches = all_matches.scalars().all()
 
-        borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams_nested, team_names)
-        winner_users = [uid for uid in winner_users if uid not in borrowed.get(last_match.id, ())]
+        borrowed, used_team_indices = await _rotation_teams(
+            db, played_matches, teams_nested, team_names
+        )
+        winner_users = [
+            uid for uid in winner_users if uid not in borrowed.get(last_match.id, ())
+        ]
 
         import random as _random
 
@@ -746,7 +769,9 @@ async def delete_match(
     from app.services.deletes import delete_match_children
 
     del_number = match.match_number
-    del_teams = f"{match.team_a_name} vs {match.team_b_name} ({match.score_a}-{match.score_b})"
+    del_teams = (
+        f"{match.team_a_name} vs {match.team_b_name} ({match.score_a}-{match.score_b})"
+    )
     await delete_match_children(db, match_id)
     await db.delete(match)
     if match.status == "completed":
@@ -842,7 +867,9 @@ async def swap_match_teams(
     A sideline addition applies to this match only.
     """
     if body.add_sideline_player and not request.state.is_admin:
-        raise HTTPException(status_code=403, detail="Only admins can add a sideline player.")
+        raise HTTPException(
+            status_code=403, detail="Only admins can add a sideline player."
+        )
     await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
@@ -863,21 +890,36 @@ async def swap_match_teams(
     old_a_ids, old_b_ids = set(old_a), set(old_b)
     new_a_ids, new_b_ids = set(new_a), set(new_b)
     if len(new_a_ids | new_b_ids) != len(new_a) + len(new_b):
-        raise HTTPException(status_code=400, detail="A player can only be on one side of the match.")
+        raise HTTPException(
+            status_code=400, detail="A player can only be on one side of the match."
+        )
     if body.add_sideline_player:
         valid_addition = (
-            old_a_ids < new_a_ids and old_b_ids == new_b_ids
-            or old_b_ids < new_b_ids and old_a_ids == new_a_ids
+            old_a_ids < new_a_ids
+            and old_b_ids == new_b_ids
+            or old_b_ids < new_b_ids
+            and old_a_ids == new_a_ids
         )
         if not valid_addition or len(new_a) + len(new_b) != len(old_a) + len(old_b) + 1:
-            raise HTTPException(status_code=400, detail="Add one sideline player without moving anyone else.")
+            raise HTTPException(
+                status_code=400,
+                detail="Add one sideline player without moving anyone else.",
+            )
         added = (new_a_ids | new_b_ids) - (old_a_ids | old_b_ids)
-        other_matches = await db.execute(select(MeetupMatch.team_a_users, MeetupMatch.team_b_users).where(
-            MeetupMatch.meetup_id == meetup_id, MeetupMatch.id != match.id,
-            MeetupMatch.status.in_(("pending", "active", "time_up")),
-        ))
-        if any(added.intersection(_loads_int_list(a) + _loads_int_list(b)) for a, b in other_matches):
-            raise HTTPException(status_code=409, detail="That player is already in another match.")
+        other_matches = await db.execute(
+            select(MeetupMatch.team_a_users, MeetupMatch.team_b_users).where(
+                MeetupMatch.meetup_id == meetup_id,
+                MeetupMatch.id != match.id,
+                MeetupMatch.status.in_(("pending", "active", "time_up")),
+            )
+        )
+        if any(
+            added.intersection(_loads_int_list(a) + _loads_int_list(b))
+            for a, b in other_matches
+        ):
+            raise HTTPException(
+                status_code=409, detail="That player is already in another match."
+            )
     elif len(new_a) != len(old_a) or len(new_b) != len(old_b):
         raise HTTPException(
             status_code=400,
@@ -893,7 +935,9 @@ async def swap_match_teams(
                     Attendance.status == "confirmed",
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     if not (set(new_a) | set(new_b)) <= confirmed:
         raise HTTPException(
@@ -930,11 +974,19 @@ async def swap_match_teams(
     match.team_a_users = json.dumps(new_a)
     match.team_b_users = json.dumps(new_b)
 
-    if match.status == "pending" and not body.add_sideline_player and not await _sideline_additions(db, [match.id]):
+    if (
+        match.status == "pending"
+        and not body.add_sideline_player
+        and not await _sideline_additions(db, [match.id])
+    ):
         # Propagate the swap to the meetup-level partition (future rounds).
         await _propagate_swap_to_meetup(db, meetup_id, old_a, old_b, new_a, new_b)
 
-    description = "Added a sideline player to" if body.add_sideline_player else "Substituted players in"
+    description = (
+        "Added a sideline player to"
+        if body.add_sideline_player
+        else "Substituted players in"
+    )
     await bump_and_notify(db, meetup_id)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     log_action(
@@ -1010,15 +1062,19 @@ async def list_match_substitutions(
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
     rows = (
-        await db.execute(
-            select(MatchSubstitution)
-            .where(MatchSubstitution.match_id == match_id)
-            .order_by(
-                MatchSubstitution.created_at.asc(),
-                MatchSubstitution.id.asc(),
+        (
+            await db.execute(
+                select(MatchSubstitution)
+                .where(MatchSubstitution.match_id == match_id)
+                .order_by(
+                    MatchSubstitution.created_at.asc(),
+                    MatchSubstitution.id.asc(),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_id = {s.recorded_by: await db.get(User, s.recorded_by) for s in rows}
     return {
         "substitutions": [
@@ -1088,7 +1144,9 @@ async def _penalty_base(db: AsyncSession, meetup_id: int, match_id: int):
     return match, shots
 
 
-def _penalty_json(match: MeetupMatch, shots: list[MatchPenalty], users_by_id: dict[int, dict]) -> dict:
+def _penalty_json(
+    match: MeetupMatch, shots: list[MatchPenalty], users_by_id: dict[int, dict]
+) -> dict:
     return {
         "available": (
             match.status == "completed"
@@ -1157,12 +1215,16 @@ async def add_penalty_shot(
     n_b = len(shots) - n_a
     next_team = "a" if n_a == n_b else "b"
     if body.team != next_team:
-        raise HTTPException(status_code=400, detail=f"Team {next_team.upper()} shoots next.")
+        raise HTTPException(
+            status_code=400, detail=f"Team {next_team.upper()} shoots next."
+        )
     roster = set(
         _loads_int_list(match.team_a_users if body.team == "a" else match.team_b_users)
     )
     if body.scorer_id not in roster:
-        raise HTTPException(status_code=400, detail="Scorer must be on the shooting team.")
+        raise HTTPException(
+            status_code=400, detail="Scorer must be on the shooting team."
+        )
     shot = MatchPenalty(
         match_id=match.id, team=body.team, scored=body.scored, scorer_id=body.scorer_id
     )
@@ -1170,7 +1232,9 @@ async def add_penalty_shot(
     await db.commit()
     shots.append(shot)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
-    scorer = users_by_id.get(shot.scorer_id, {}).get("name", str(shot.scorer_id))
+    scorer = users_by_id.get(shot.scorer_id, {}).get(
+        "display_name", str(shot.scorer_id)
+    )
     log_action(
         request,
         "referee",
@@ -1240,20 +1304,26 @@ async def finish_penalty_shootout(
     # end_match auto-created the next match with the default tie winner
     # (away team) on pitch — put the shootout winner there instead.
     next_match = (
-        await db.execute(
-            select(MeetupMatch).where(
-                MeetupMatch.meetup_id == meetup_id,
-                MeetupMatch.match_number == match.match_number + 1,
-                MeetupMatch.status == "pending",
+        (
+            await db.execute(
+                select(MeetupMatch).where(
+                    MeetupMatch.meetup_id == meetup_id,
+                    MeetupMatch.match_number == match.match_number + 1,
+                    MeetupMatch.status == "pending",
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if next_match is not None:
         winner_users = _loads_int_list(
             match.team_a_users if winner == "a" else match.team_b_users
         )
         borrowed = await _sideline_additions(db, [match.id])
-        winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
+        winner_users = [
+            uid for uid in winner_users if uid not in borrowed.get(match.id, ())
+        ]
         if winner_users != _loads_int_list(next_match.team_a_users):
             next_match.team_a_users, next_match.team_b_users = (
                 next_match.team_b_users,
@@ -1318,12 +1388,19 @@ async def start_timer(
             "controlled_by": {"name": user.display_name},
         }
 
-    if not _loads_int_list(match.team_a_users) or not _loads_int_list(match.team_b_users):
+    if not _loads_int_list(match.team_a_users) or not _loads_int_list(
+        match.team_b_users
+    ):
         meetup = await db.get(Meetup, meetup_id)
         if meetup and meetup.team_size is not None:
             await fill_empty_pending_matches(db, meetup)
-            if not _loads_int_list(match.team_a_users) or not _loads_int_list(match.team_b_users):
-                raise HTTPException(status_code=409, detail="Both teams need a player before starting the timer.")
+            if not _loads_int_list(match.team_a_users) or not _loads_int_list(
+                match.team_b_users
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Both teams need a player before starting the timer.",
+                )
 
     match.timer_started_at = datetime.now(UTC)
     match.timer_seconds_remaining = match.timer_total_seconds
@@ -1826,8 +1903,12 @@ async def end_match(
     )
     played_matches = all_matches.scalars().all()
 
-    borrowed, used_team_indices = await _rotation_teams(db, played_matches, teams, team_names)
-    winner_users = [uid for uid in winner_users if uid not in borrowed.get(match.id, ())]
+    borrowed, used_team_indices = await _rotation_teams(
+        db, played_matches, teams, team_names
+    )
+    winner_users = [
+        uid for uid in winner_users if uid not in borrowed.get(match.id, ())
+    ]
 
     # Find next unplayed team (a bench team — partition larger than
     # max_teams — is only a substitution pool, never a playing candidate)
@@ -1910,7 +1991,8 @@ async def end_match(
         "winner_name": winner_name,
         # A tied first match goes to a penalty shootout (referee UI shows it
         # automatically); the winner takes the de-facto win afterwards.
-        "penalty_due": match.match_number == 1 and is_tie
+        "penalty_due": match.match_number == 1
+        and is_tie
         and match.penalty_winner is None,
     }
     if next_match_data:
@@ -2166,6 +2248,121 @@ def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
         "recorded_by": person(goal.recorded_by),
         "after_whistle": bool(goal.after_whistle),
         "is_own_goal": bool(goal.is_own_goal),
+        "is_penalty": bool(goal.is_penalty),
+    }
+
+
+def _penalty_miss_json(miss: PenaltyMiss, users_by_id: dict[int, dict]) -> dict:
+    """One miss row for the log (display names resolved, never bare ids)."""
+
+    def person(uid: int | None) -> dict | None:
+        if uid is None:
+            return None
+        entry = users_by_id.get(uid)
+        name = entry["display_name"] if entry else f"User {uid}"
+        return {
+            "id": uid,
+            "display_name": name,
+            "avatar_url": (entry or {}).get("avatar_url"),
+        }
+
+    return {
+        "id": miss.id,
+        "team": miss.team,
+        "clock_minute": miss.clock_minute,
+        "scorer": person(miss.scorer_id),
+        "created_at": miss.created_at.isoformat() if miss.created_at else None,
+    }
+
+
+async def _record_penalty_miss(
+    meetup_id: int,
+    match: MeetupMatch,
+    body: GoalCreate,
+    users_by_id: dict[int, dict],
+    request: Request,
+    db: AsyncSession,
+    user: User,
+):
+    """Record a missed regulation penalty — no goal, no score change, but a
+    stats record that counts toward the player's penalty stats."""
+    # Network retry with the same intent replays the miss already stored.
+    res = await db.execute(
+        select(PenaltyMiss).where(PenaltyMiss.intent_id == body.intent_id)
+    )
+    replayed = res.scalar_one_or_none()
+    if replayed is not None:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "miss": _penalty_miss_json(replayed, users_by_id),
+                "replayed": True,
+                "score_a": match.score_a,
+                "score_b": match.score_b,
+            },
+        )
+
+    # Lease gate: whose turn it is, named (never silent).
+    lease = await db.get(MatchEditorLease, match.id)
+    now = utcnow()
+    if lease is None or lease.holder_id is None or lease.expires_at <= now:
+        return await _lease_busy_response(db, match.id, now)
+    if lease.holder_id != user.id:
+        return await _lease_busy_response(db, match.id, now)
+
+    # Timer clock is authoritative for the minute mark.
+    remaining = _compute_timer_remaining(match)
+    elapsed = max((match.timer_total_seconds or 0) - remaining, 0)
+    clock_minute = elapsed // 60 + 1
+
+    miss = PenaltyMiss(
+        match_id=match.id,
+        team=body.team,
+        scorer_id=body.scorer_id,
+        clock_minute=clock_minute,
+        intent_id=body.intent_id,
+    )
+    db.add(miss)
+    await db.flush()
+    # Our turn ends with the miss recorded: release the lease in the same tx.
+    lease.holder_id = None
+    lease.expires_at = utcnow()
+    lease.release_token = ""
+    if match.status == "completed":
+        await refresh_skills_after_meetup(db, meetup_id)
+    await db.commit()
+    scorer_name = users_by_id.get(body.scorer_id, {}).get(
+        "display_name", str(body.scorer_id)
+    )
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_missed",
+        f"Penalty miss in match #{match.match_number}: {scorer_name} "
+        f"({match.team_a_name if body.team == 'a' else match.team_b_name}) "
+        f"at {clock_minute}'",
+        meetup_id=meetup_id,
+    )
+
+    await _broadcast_match_event(
+        meetup_id,
+        {
+            "type": "penalty_missed",
+            "match_id": match.id,
+            "miss": _penalty_miss_json(miss, users_by_id),
+        },
+    )
+    # The turn ended: clear lease chips on every client immediately.
+    await _broadcast_match_event(
+        meetup_id, {"type": "lease_released", "match_id": match.id}
+    )
+    await bump_and_notify(db, meetup_id)
+
+    return {
+        "miss": _penalty_miss_json(miss, users_by_id),
+        "replayed": False,
+        "score_a": match.score_a,
+        "score_b": match.score_b,
     }
 
 
@@ -2198,8 +2395,22 @@ async def _recompute_scores(db: AsyncSession, match: MeetupMatch) -> tuple[int, 
     return match.score_a, match.score_b
 
 
-def _validate_goal_fields(body, match: MeetupMatch, users_by_id: dict[int, dict]) -> None:
+def _validate_goal_fields(
+    body, match: MeetupMatch, users_by_id: dict[int, dict]
+) -> None:
     """Team/own-goal/keeper team-membership rules for one goal entry."""
+    if getattr(body, "missed", False) or getattr(body, "is_penalty", False):
+        # Penalty goals and misses never carry an assist — the player's
+        # penalty is the whole story.
+        body.assist_id = None
+    if getattr(body, "missed", False):
+        body.goalkeeper_id = None
+        if body.is_own_goal:
+            raise HTTPException(
+                status_code=400, detail="A missed penalty cannot be an own goal"
+            )
+    if getattr(body, "is_penalty", False) and body.is_own_goal:
+        raise HTTPException(status_code=400, detail="A penalty cannot be an own goal")
     if body.scorer_id not in users_by_id:
         raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
     scoring = _loads_int_list(
@@ -2270,6 +2481,12 @@ async def create_goal(
 
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     _validate_goal_fields(body, match, users_by_id)
+
+    # A missed penalty is a stats record, not a goal — handled separately.
+    if body.missed:
+        return await _record_penalty_miss(
+            meetup_id, match, body, users_by_id, request, db, user
+        )
 
     # Network retry with the same intent replays the row already stored.
     res = await db.execute(
@@ -2353,6 +2570,7 @@ async def create_goal(
         clock_minute=clock_minute,
         after_whistle=after_whistle,
         is_own_goal=body.is_own_goal,
+        is_penalty=body.is_penalty,
         recorded_by=user.id,
         intent_id=body.intent_id,
     )
@@ -2366,7 +2584,9 @@ async def create_goal(
     if match.status == "completed":
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
-    scorer_name = users_by_id.get(body.scorer_id, {}).get("name", str(body.scorer_id))
+    scorer_name = users_by_id.get(body.scorer_id, {}).get(
+        "display_name", str(body.scorer_id)
+    )
     log_action(
         request,
         "referee",
@@ -2425,6 +2645,84 @@ async def list_goals(
     }
 
 
+@router.get("/{meetup_id}/matches/{match_id}/penalty-misses")
+async def list_penalty_misses(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Missed regulation penalties for one match (authenticated)."""
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    res = await db.execute(
+        select(PenaltyMiss)
+        .where(PenaltyMiss.match_id == match_id)
+        .order_by(PenaltyMiss.clock_minute, PenaltyMiss.id)
+    )
+    misses = list(res.scalars().all())
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return {"misses": [_penalty_miss_json(m, users_by_id) for m in misses]}
+
+
+@router.delete(
+    "/{meetup_id}/matches/{match_id}/penalty-misses/{miss_id}", status_code=204
+)
+async def remove_penalty_miss(
+    meetup_id: int,
+    match_id: int,
+    miss_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin_or_present_member),
+):
+    """Delete a missed regulation penalty (stats record; no score impact)."""
+    res = await db.execute(
+        select(PenaltyMiss).where(
+            PenaltyMiss.id == miss_id,
+            PenaltyMiss.match_id == match_id,
+        )
+    )
+    miss = res.scalar_one_or_none()
+    if miss is None:
+        raise HTTPException(status_code=404, detail="Miss not found")
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    scorer_id = miss.scorer_id
+    clock_minute = miss.clock_minute
+    match_number = match.match_number
+    await db.delete(miss)
+    await db.flush()
+    if match.status == "completed":
+        await refresh_skills_after_meetup(db, meetup_id)
+    await db.commit()
+    scorer_name = (
+        (await _load_users_for_meetup(db, meetup_id))
+        .get(scorer_id, {})
+        .get("display_name", str(scorer_id))
+    )
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_miss_removed",
+        f"Removed penalty miss in match #{match_number} ({scorer_name} "
+        f"at {clock_minute}')",
+        meetup_id=meetup_id,
+    )
+    await _broadcast_match_event(
+        meetup_id,
+        {
+            "type": "penalty_miss_removed",
+            "match_id": match_id,
+            "miss_id": miss_id,
+        },
+    )
+    await bump_and_notify(db, meetup_id)
+    return None
+
+
 @router.patch("/{meetup_id}/matches/{match_id}/goals/{goal_id}")
 async def update_goal(
     meetup_id: int,
@@ -2465,6 +2763,7 @@ async def update_goal(
     goal.scorer_id = body.scorer_id
     goal.assist_id = body.assist_id
     goal.goalkeeper_id = body.goalkeeper_id
+    goal.is_penalty = body.is_penalty
     goal.clock_minute = body.clock_minute
     goal.clock_secs = max(
         (match.timer_total_seconds or 0) - (body.clock_minute - 1) * 60, 0
@@ -2479,7 +2778,9 @@ async def update_goal(
     if match.status == "completed":
         await refresh_skills_after_meetup(db, meetup_id)
     await db.commit()
-    scorer_name = users_by_id.get(goal.scorer_id, {}).get("name", str(goal.scorer_id))
+    scorer_name = users_by_id.get(goal.scorer_id, {}).get(
+        "display_name", str(goal.scorer_id)
+    )
     log_action(
         request,
         "referee",
