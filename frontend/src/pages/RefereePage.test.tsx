@@ -253,13 +253,13 @@ it("updates an edited match's score and goal log from the same snapshot", async 
     ...match, id: 11, match_number: 2, status: "completed", score_a: 1,
     team_a: { name: "Red", users: [] }, team_b: { name: "Green", users: [] },
   };
-  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [match, completed] });
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [completed] });
   await openReferee();
   fireEvent.click(screen.getByRole("button", { name: "Edit match 2" }));
   const form = screen.getByRole("heading", { name: "Edit match result" }).parentElement!;
   fireEvent.click(within(form).getByRole("button", { name: "Goal" }));
   vi.mocked(fetchMeetupMatches).mockResolvedValue({
-    ...response(), matches: [match, { ...completed, score_a: 2 }],
+    ...response(), matches: [{ ...completed, score_a: 2 }],
   });
   vi.mocked(fetchGoals).mockClear();
   await act(async () => {
@@ -435,6 +435,29 @@ it("starts a new match from the Start new match flow with picked teams", async (
   });
 });
 
+it("gives a shootout the space above the pending match and restores the timer on dismissal", async () => {
+  const opener: MatchSummary = { ...match, status: "completed" };
+  const pending: MatchSummary = { ...match, id: 11, match_number: 2, status: "pending" };
+  const shootout = { available: true, winner: null, shots: [], counts: { a: 0, b: 0 }, decided: false };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [opener, pending] });
+  vi.mocked(fetchPenalty).mockResolvedValue(shootout);
+  vi.mocked(skipPenaltyShootout).mockImplementation(async () => {
+    vi.mocked(fetchMeetupMatches).mockResolvedValue({
+      ...response(), matches: [{ ...opener, penalty_skipped: true }, pending],
+    });
+    return { ...shootout, available: false };
+  });
+  await openReferee();
+  expect(screen.queryByRole("button", { name: "Start Timer" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit match 1" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Blue" })).toHaveAttribute("aria-expanded", "false");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Skip shootout" }));
+  });
+  expect(screen.getByRole("button", { name: "Start Timer" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Blue" })).toHaveAttribute("aria-expanded", "true");
+});
+
 it("blocks the next match until the referee skips the shootout", async () => {
   const opener: MatchSummary = { ...match, status: "completed" };
   const shootout = { available: true, winner: null, shots: [], counts: { a: 0, b: 0 }, decided: false };
@@ -447,7 +470,7 @@ it("blocks the next match until the referee skips the shootout", async () => {
     return { ...shootout, available: false };
   });
   await openReferee();
-  expect(screen.getByRole("button", { name: "Start new match" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Start new match" })).not.toBeInTheDocument();
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Skip shootout" }));
   });

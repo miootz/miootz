@@ -454,6 +454,7 @@ function MeetupAttendanceActions({
 export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	meetup,
 	onRosterUpdated,
+	lastRosterSync,
 }) => {
 	const { me } = useAuth();
 	const meetupIdNum = Number.parseInt(meetup.id, 10);
@@ -482,7 +483,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 					<section className="space-y-3">
 						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
 							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
-							Match results
+							Matches
 							{me?.is_admin && (
 								<Link
 									to={`/meetup-matches/${meetupIdNum}`}
@@ -494,7 +495,20 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 							)}
 						</h2>
 						<LiveMatchBanner meetupId={meetup.id} />
-						<MatchHistoryList meetupId={meetupIdNum} />
+						<MatchHistoryList
+							meetupId={meetupIdNum}
+							editable
+							allowCreate={false}
+							refreshKey={lastRosterSync?.getTime()}
+							attendees={meetup.attendance.map((player) => ({
+								user_id: Number(player.id),
+								display_name: player.name,
+								avatar_url: player.avatarUrl ?? null,
+								status: player.attendanceStatus ?? "confirmed",
+								joined_at: null,
+								skill: player.skillScore,
+							}))}
+						/>
 					</section>
 				)}
 

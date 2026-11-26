@@ -19,11 +19,15 @@ import { MatchDialog } from "./MatchDialog";
 export function MatchHistoryList({
   meetupId,
   editable = false,
+  allowCreate = true,
+  refreshKey,
   attendees,
 }: {
   meetupId: number;
   /** When true, admins can edit scores and match details. */
   editable?: boolean;
+  allowCreate?: boolean;
+  refreshKey?: number;
   attendees?: MeetupDetail["attendees"];
 }) {
   const { showToast } = useToast();
@@ -40,22 +44,17 @@ export function MatchHistoryList({
     ? matches.find((match) => match.id === dialog.matchId)
     : undefined;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await fetchMeetupMatches(meetupId);
-      setMatches(res.matches.filter((m) => m.status === "completed"));
-    } catch {
-      setMatches([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetupId]);
+    let current = true;
+    void fetchMeetupMatches(meetupId).then(({ matches }) => {
+      if (current) setMatches(matches.filter((match) => match.status === "completed"));
+    }).catch(() => {
+      // Keep the last successful list if a live refresh fails.
+    }).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => { current = false; };
+  }, [meetupId, refreshKey]);
 
   const handleCreated = (match: MatchSummary) => {
     setMatches((prev) => [...prev, match]);
@@ -82,7 +81,7 @@ export function MatchHistoryList({
   return (
     <div className="space-y-3">
       {/* Add match button */}
-      {canEdit && (
+      {canEdit && allowCreate && (
         <button
           type="button"
           onClick={() => setDialog({ mode: "add" })}
