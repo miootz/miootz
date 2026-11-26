@@ -82,7 +82,7 @@ function DashboardSkeleton() {
     <div className="space-y-4 animate-pulse" aria-busy="true">
       <div className="border border-line bg-panel p-5 h-44" />
       <div className="border border-line bg-raised h-72" />
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-5 desktop:gap-6">
         <div className="lg:col-span-3 border border-line bg-raised h-72" />
         <div className="lg:col-span-2 border border-line bg-raised h-72" />
       </div>
@@ -215,7 +215,7 @@ export function AdminDashboard() {
   /* ── Render ───────────────────────────────────────────── */
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto desktop:max-w-7xl">
       <AdminBreadcrumb
         items={[{ label: "Admin", to: "/admin" }, { label: "Overview" }]}
       />
@@ -243,8 +243,8 @@ export function AdminDashboard() {
       ) : detail ? (
         <>
           {/* ── Next meetup command card ─────────────────── */}
-          <section className="mb-4 border border-line bg-panel p-5">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+          <section className="mb-4 border border-line bg-panel p-5 tablet:p-6">
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start tablet:gap-8">
               <div className="min-w-0">
                 <h2 className="text-xl sm:text-2xl font-bold text-ink">
                   {format(parseMeetupStart(detail.start_time), "EEEE, d MMMM")}
@@ -252,7 +252,7 @@ export function AdminDashboard() {
                     {format(parseMeetupStart(detail.start_time), "HH:mm")}
                   </span>
                 </h2>
-                <div className="mt-3 max-w-md">
+                <div className="mt-3 max-w-md desktop:max-w-xl">
                   <CapacityBar
                     confirmed={confirmed}
                     max={detail.max_players}
@@ -314,7 +314,7 @@ export function AdminDashboard() {
           </div>
 
           {/* ── Attendance (left) + chat (right) ─────────── */}
-          <div className="grid gap-4 lg:grid-cols-5">
+          <div className="grid gap-4 lg:grid-cols-5 desktop:gap-6">
             <div className="lg:col-span-3 min-w-0">
               <MeetupAttendancePanel
                 meetupId={detail.id}

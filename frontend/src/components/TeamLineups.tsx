@@ -33,11 +33,12 @@ function SkillBanner({
   reshuffling?: boolean;
   substitutions?: SubstitutionsControls;
 }) {
-  const { totals, balanced, maxDiff } = teamSkillBalanceSummary(meetup.teams);
+  const playingTeams = meetup.teams.filter((team) => !team.isBench);
+  const { totals, balanced, maxDiff } = teamSkillBalanceSummary(playingTeams);
   if (totals.length === 0) return null;
 
   const parts = totals.map((total, i) => {
-    const teamName = meetup.teams[i]?.name ?? `Team ${i + 1}`;
+    const teamName = playingTeams[i]?.name ?? `Team ${i + 1}`;
     return `${teamName}: ${total.toFixed(1)}`;
   });
 

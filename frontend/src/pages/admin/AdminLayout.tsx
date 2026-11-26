@@ -22,7 +22,7 @@ import { BrandWordmark } from "../../components/BrandWordmark";
 import { AdminNotificationPrompt } from "../../components/admin/AdminNotificationPrompt";
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
+  `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors tablet:min-h-12 tablet:flex-col tablet:justify-center tablet:gap-1 tablet:px-1 desktop:flex-row desktop:justify-start desktop:gap-3 desktop:px-3 ${
     isActive
       ? "bg-ink text-board font-bold"
       : "text-ink-dim hover:bg-raised hover:text-ink"
@@ -31,37 +31,37 @@ const navCls = ({ isActive }: { isActive: boolean }) =>
 function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
-      <NavLink to="/admin" end className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin" title="Overview" end className={navCls} onClick={onNavigate}>
         <LayoutDashboard className="w-4 h-4 shrink-0" />
-        Overview
+        <span className="tablet:text-xs desktop:text-sm">Overview</span>
       </NavLink>
-      <NavLink to="/admin/meetups" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/meetups" title="Meetups" className={navCls} onClick={onNavigate}>
         <Calendar className="w-4 h-4 shrink-0" />
-        Meetups
+        <span className="tablet:text-xs desktop:text-sm">Meetups</span>
       </NavLink>
       <NavLink
-        to="/admin/game-templates"
+        to="/admin/game-templates" title="Templates"
         className={navCls}
         onClick={onNavigate}
       >
         <Repeat className="w-4 h-4 shrink-0" />
-        Templates
+        <span className="tablet:text-xs desktop:text-sm">Templates</span>
       </NavLink>
-      <NavLink to="/admin/players" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/players" title="Players" className={navCls} onClick={onNavigate}>
         <Users className="w-4 h-4 shrink-0" />
-        Players
+        <span className="tablet:text-xs desktop:text-sm">Players</span>
       </NavLink>
-      <NavLink to="/admin/tools" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/tools" title="Tools" className={navCls} onClick={onNavigate}>
         <Wrench className="w-4 h-4 shrink-0" />
-        Tools
+        <span className="tablet:text-xs desktop:text-sm">Tools</span>
       </NavLink>
-      <NavLink to="/admin/audit" className={navCls} onClick={onNavigate}>
+      <NavLink to="/admin/audit" title="Audit" className={navCls} onClick={onNavigate}>
         <ScrollText className="w-4 h-4 shrink-0" />
-        Audit
+        <span className="tablet:text-xs desktop:text-sm">Audit</span>
       </NavLink>
-      <NavLink to="/profile" className={navCls} onClick={onNavigate}>
+      <NavLink to="/profile" title="Profile" className={navCls} onClick={onNavigate}>
         <UserCircle className="w-4 h-4 shrink-0" />
-        Profile
+        <span className="tablet:text-xs desktop:text-sm">Profile</span>
       </NavLink>
     </>
   );
@@ -186,26 +186,27 @@ export function AdminLayout() {
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:h-full md:w-56 border-b md:border-b-0 md:border-r border-line bg-panel md:shrink-0 flex-col overflow-y-auto">
-        <div className="p-4 border-b border-line">
+      <aside className="hidden md:flex md:h-full md:w-56 tablet:w-24 desktop:w-56 border-b md:border-b-0 md:border-r border-line bg-panel md:shrink-0 flex-col overflow-y-auto">
+        <div className="p-4 border-b border-line tablet:px-2 desktop:px-4">
           <Link
             to="/"
             onClick={() => setPreferMemberView(true)}
-            className="inline-flex items-center gap-2 border border-line bg-raised/50 px-3 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors w-full"
+            className="inline-flex items-center gap-2 border border-line bg-raised/50 px-3 py-2.5 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink transition-colors w-full tablet:flex-col tablet:justify-center tablet:gap-1 tablet:px-1 desktop:flex-row desktop:justify-start desktop:gap-2 desktop:px-3"
+            title="Member view"
           >
             <Home className="w-4 h-4 shrink-0 text-ink-faint" aria-hidden />
-            <span className="text-left">
+            <span className="text-left tablet:text-xs desktop:text-sm">
               <span className="block">Member view</span>
-              <span className="block text-xs font-normal text-ink-faint">
+              <span className="block text-xs font-normal text-ink-faint tablet:hidden desktop:block">
                 Player home & meetups
               </span>
             </span>
           </Link>
-          <h2 className="mt-4 text-ink">
+          <h2 className="mt-4 text-ink tablet:sr-only desktop:not-sr-only">
             <BrandWordmark admin />
           </h2>
           <p
-            className="text-xs text-ink-dim truncate mt-1"
+            className="text-xs text-ink-dim truncate mt-1 tablet:sr-only desktop:not-sr-only"
             title={me.user.display_name ?? ""}
           >
             {me.user.display_name}
@@ -214,23 +215,25 @@ export function AdminLayout() {
         <nav className="p-2 flex flex-col gap-1 flex-1">
           <AdminNavLinks />
         </nav>
-        <div className="p-4 mt-auto border-t border-line space-y-2">
+        <div className="p-4 mt-auto border-t border-line space-y-2 tablet:px-2 desktop:px-4">
           <button
             type="button"
             onClick={() => void refresh()}
-            className="text-xs text-ink-faint hover:text-ink"
+            className="text-xs text-ink-faint hover:text-ink tablet:min-h-11 tablet:w-full desktop:min-h-0 desktop:w-auto"
           >
-            Refresh session
+            <span className="tablet:hidden desktop:inline">Refresh session</span>
+            <span className="hidden tablet:inline desktop:hidden">Refresh</span>
           </button>
           <button
             type="button"
             onClick={() => {
               void logout();
             }}
-            className="flex items-center gap-1.5 text-xs text-danger hover:opacity-80"
+            className="flex items-center gap-1.5 text-xs text-danger hover:opacity-80 tablet:min-h-11 tablet:w-full tablet:justify-center desktop:min-h-0 desktop:w-auto desktop:justify-start"
+            title="Log out"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Log out
+            <span className="tablet:sr-only desktop:not-sr-only">Log out</span>
           </button>
         </div>
       </aside>
@@ -298,10 +301,11 @@ export function AdminLayout() {
         </div>
       )}
 
+      {/* Keep absolutely positioned labels inside the scroll area. */}
       <main
         id="admin-main-content"
         tabIndex={-1}
-        className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8 outline-hidden"
+        className="relative flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8 outline-hidden"
         style={{
           paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
         }}

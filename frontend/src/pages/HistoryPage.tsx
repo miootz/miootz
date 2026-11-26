@@ -209,7 +209,7 @@ export const HistoryPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-2">
+      <div className="p-3 sm:p-4 max-w-2xl mx-auto tablet:max-w-4xl desktop:max-w-6xl space-y-2">
         <HistoryRowSkeleton />
         <HistoryRowSkeleton />
         <HistoryRowSkeleton />
@@ -218,7 +218,7 @@ export const HistoryPage: React.FC = () => {
   }
 
   return (
-    <div className="p-3 sm:p-4 max-w-2xl mx-auto space-y-4">
+    <div className="p-3 sm:p-4 max-w-2xl mx-auto tablet:max-w-4xl desktop:max-w-6xl space-y-4">
       {/* Header */}
       <header>
         <h1 className="text-2xl font-bold text-ink">
@@ -237,8 +237,8 @@ export const HistoryPage: React.FC = () => {
 
       {/* Search + Sort */}
       {pastMeetups.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2">
+        <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center tablet:gap-4">
+          <label className="flex items-center gap-2 border border-line bg-raised px-3 py-2 tablet:flex-1">
             <Search className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
             <input
               type="search"
@@ -279,13 +279,13 @@ export const HistoryPage: React.FC = () => {
           No meetups match your filter.
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 desktop:grid desktop:grid-cols-2 desktop:gap-3 desktop:space-y-0">
           {sortedFiltered.map((row) => (
             <HistoryMeetupRow key={row.id} row={row} />
           ))}
 
           {pastMeetups.length < pastTotal && (
-            <div className="flex justify-center pt-2">
+            <div className="flex justify-center pt-2 desktop:col-span-2">
               <button
                 type="button"
                 disabled={loadingMore}

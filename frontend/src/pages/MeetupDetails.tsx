@@ -473,71 +473,78 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 		Number.isFinite(startMs) && now >= startMs - 15 * 60_000;
 
 	return (
-		<div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-8 pb-8">
-			{/* 1. Match results — from T-15 min, in place of attendance */}
-			{resultsMode && !isNaN(meetupIdNum) && (
-				<section className="space-y-3">
-					<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-						<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
-						Match results
-						{me?.is_admin && (
-							<Link
-								to={`/meetup-matches/${meetupIdNum}`}
-								className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
-							>
-								<Shield size={13} />
-								Referee
-							</Link>
-						)}
-					</h2>
-					<LiveMatchBanner meetupId={meetup.id} />
-					<MatchHistoryList meetupId={meetupIdNum} />
-				</section>
-			)}
+		<div className={`p-4 sm:p-6 max-w-6xl mx-auto space-y-8 pb-8 desktop:grid desktop:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] desktop:items-start desktop:gap-8 desktop:space-y-0 ${
+			resultsMode ? "tablet:grid tablet:grid-cols-[minmax(0,1.4fr)_minmax(16rem,1fr)] tablet:items-start tablet:gap-6 tablet:space-y-0" : ""
+		}`}>
+			<div className="min-w-0 space-y-8">
+				{/* 1. Match results — from T-15 min, in place of attendance */}
+				{resultsMode && !isNaN(meetupIdNum) && (
+					<section className="space-y-3">
+						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
+							Match results
+							{me?.is_admin && (
+								<Link
+									to={`/meetup-matches/${meetupIdNum}`}
+									className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
+								>
+									<Shield size={13} />
+									Referee
+								</Link>
+							)}
+						</h2>
+						<LiveMatchBanner meetupId={meetup.id} />
+						<MatchHistoryList meetupId={meetupIdNum} />
+					</section>
+				)}
 
-			{/* 2. Join / Leave / Plus-one — before T-15 min only */}
-			{!resultsMode && onRosterUpdated && (
-				<MeetupAttendanceActions
-					meetupId={meetup.id}
-					myAttendance={meetup.myAttendance}
-					myWaitlistPosition={meetup.myWaitlistPosition}
-					myWeatherHeroUnused={meetup.myWeatherHeroUnused}
-					onUpdated={onRosterUpdated}
-				/>
-			)}
-
-			{/* 3. Teams — before T-15 min only */}
-			{!resultsMode && (
-				<section className="space-y-3">
-					<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-						<Users className="h-5 w-5 text-ink-dim" aria-hidden />
-						Teams
-					</h2>
-					<TeamLineups
-						meetup={meetup}
-						linkToPlayers={me?.is_admin === true}
-						currentUserId={me ? String(me.user.id) : undefined}
+				{/* 2. Join / Leave / Plus-one — before T-15 min only */}
+				{!resultsMode && onRosterUpdated && (
+					<MeetupAttendanceActions
+						meetupId={meetup.id}
+						myAttendance={meetup.myAttendance}
+						myWaitlistPosition={meetup.myWaitlistPosition}
+						myWeatherHeroUnused={meetup.myWeatherHeroUnused}
+						onUpdated={onRosterUpdated}
 					/>
-				</section>
-			)}
+				)}
 
-			{/* 4. Chat */}
-			<hr className="border-line" />
-			<MeetupChat meetupId={meetup.id} />
+				{/* 3. Teams — before T-15 min only */}
+				{!resultsMode && (
+					<section className="space-y-3">
+						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+							<Users className="h-5 w-5 text-ink-dim" aria-hidden />
+							Teams
+						</h2>
+						<TeamLineups
+							meetup={meetup}
+							linkToPlayers={me?.is_admin === true}
+							currentUserId={me ? String(me.user.id) : undefined}
+						/>
+					</section>
+				)}
+			</div>
+			<div className={`min-w-0 space-y-8 desktop:border-l desktop:border-line desktop:ps-6 ${
+				resultsMode ? "tablet:border-l tablet:border-line tablet:ps-4" : ""
+			}`}>
+				{/* 4. Chat */}
+				<hr className={`border-line desktop:hidden ${resultsMode ? "tablet:hidden" : ""}`} />
+				<MeetupChat meetupId={meetup.id} />
 
-			{/* 5. Location */}
-			<>
-				<hr className="border-line" />
-				<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-					<MapPin className="h-5 w-5 text-ink-dim" aria-hidden />
-					Location
-				</h2>
-			</>
-			<MeetupLocationSection
-				location={meetup.location}
-				latitude={meetup.latitude}
-				longitude={meetup.longitude}
-			/>
+				{/* 5. Location */}
+				<>
+					<hr className="border-line" />
+					<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+						<MapPin className="h-5 w-5 text-ink-dim" aria-hidden />
+						Location
+					</h2>
+				</>
+				<MeetupLocationSection
+					location={meetup.location}
+					latitude={meetup.latitude}
+					longitude={meetup.longitude}
+				/>
+			</div>
 		</div>
 	);
 };

@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.api.deps import require_admin
+from app.api.deps import PRESENCE_HEAD_MINUTES, require_admin
 from app.api.matches import _compute_timer_remaining, _is_currently_paused
 
 # slowapi limiter instance shared with main.py (bucket key: user id or client IP)
@@ -990,8 +990,11 @@ async def reshape_meetup_teams(
             .limit(1)
         )
     ).scalar_one_or_none() is not None
+    preserve_confirmed = (
+        started or meetup.start_time <= utcnow() + timedelta(minutes=PRESENCE_HEAD_MINUTES)
+    )
     capacity = body.team_count * body.team_size
-    if not started and not meetup.min_players <= capacity <= 50:
+    if not preserve_confirmed and not meetup.min_players <= capacity <= 50:
         raise HTTPException(
             status_code=400,
             detail=f"Signup capacity must be between {meetup.min_players} and 50 players",
@@ -1010,7 +1013,7 @@ async def reshape_meetup_teams(
     rows = result.all()
     confirmed = [(att, user) for att, user in rows if att.status == "confirmed"]
     waitlisted = [(att, user) for att, user in rows if att.status == "waitlisted"]
-    if not started and len(confirmed) > signup_capacity:
+    if not preserve_confirmed and len(confirmed) > signup_capacity:
         for att, _ in confirmed[signup_capacity:]:
             att.status = "waitlisted"
         confirmed = confirmed[:signup_capacity]

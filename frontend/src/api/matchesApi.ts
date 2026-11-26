@@ -175,6 +175,19 @@ export async function pauseTimer(
   return r.json();
 }
 
+export async function adjustTimer(
+  meetupId: number,
+  matchId: number,
+  deltaSeconds: -15 | 15,
+): Promise<{ status: string; seconds_remaining: number }> {
+  const r = await apiFetch(
+    `/meetups/${meetupId}/matches/${matchId}/timer/adjust`,
+    { method: "POST", body: JSON.stringify({ delta_seconds: deltaSeconds }) },
+  );
+  if (!r.ok) throw new Error(await parseApiError(r));
+  return r.json();
+}
+
 export async function resumeTimer(
   meetupId: number,
   matchId: number,

@@ -10,6 +10,7 @@ import {
   createNewPendingMatch,
   startTimer,
   pauseTimer,
+  adjustTimer,
   resumeTimer,
   resetMatch,
   endMatch,
@@ -31,7 +32,7 @@ import { GoalEntrySheet } from "../components/GoalEntrySheet";
 import { MobileSheet } from "../components/MobileSheet";
 import { leaseBusyButtonLabel } from "../utils/lease";
 import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
-import { playFinalWhistle, playHalfTimeWhistle, unlockWhistles } from "../utils/whistle";
+import { playFinalWhistle, playHalfTimeWhistle, previewWhistle, releaseWhistles, unlockWhistles } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
 import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
@@ -642,6 +643,8 @@ export function RefereePage() {
     );
   }, [sid, loadMatches, scheduleLiveRefresh, tokens?.accessToken]);
 
+  useEffect(() => () => releaseWhistles(), []);
+
   // Timer tick
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -674,7 +677,7 @@ export function RefereePage() {
     const prev = prevRatioRef.current;
     prevRatioRef.current = ratio;
     if (prev != null && prev > 0.5 && ratio <= 0.5) {
-      // Just crossed the 50% mark — half-time flash, double whistle, haptic
+      // Just crossed the 50% mark — half-time flash, whistle, haptic
       halfTimeTriggeredAt.current = Date.now();
       setHalfTimeFlash(true);
       playHalfTimeWhistle();
@@ -783,6 +786,14 @@ export function RefereePage() {
     });
   };
 
+  const handleAdjustTimer = async (delta: -15 | 15) => {
+    if (!currentMatch) return;
+    await run("Adjusting timer...", async () => {
+      const res = await adjustTimer(sid, currentMatch.id, delta);
+      setTimerSeconds(res.seconds_remaining);
+    });
+  };
+
   const handleResumeTimer = async () => {
     if (!currentMatch) return;
     unlockWhistles();
@@ -829,14 +840,14 @@ export function RefereePage() {
       finalFiredForRef.current = null;
       return;
     }
-    if (finalFiredForRef.current === currentMatch.id) return;
+    if (isPaused || finalFiredForRef.current === currentMatch.id) return;
     if (timerSeconds <= 0) {
       finalFiredForRef.current = currentMatch.id;
       playFinalWhistle();
       hapticFinal();
       handleEndMatch();
     }
-  }, [timerSeconds, currentMatch, handleEndMatch]);
+  }, [timerSeconds, currentMatch, isPaused, handleEndMatch]);
 
   const handleDeleteMatch = async (matchId: number) => {
     await run("Deleting...", async () => {
@@ -986,6 +997,8 @@ export function RefereePage() {
   const completedMatches = matches.filter((m) => m.status === "completed");
   const pendingMatches = matches.filter((m) => m.status === "pending");
 
+  const playingTeams = teamsData?.slice(0, meetupDetail?.max_teams ?? undefined);
+
   // Meetup teams not in the current match — the substitution bench pool.
   const extraTeams =
     currentMatch && teamsData
@@ -998,8 +1011,8 @@ export function RefereePage() {
             .filter((m) => m.id !== currentMatch.id && m.status !== "completed")
             .flatMap((m) => [...m.team_a.users, ...m.team_b.users].map((u) => u.id)));
           return teamsData
-            .map((t) => ({
-              name: t.name,
+            .map((t, index) => ({
+              name: meetupDetail?.max_teams != null && index >= meetupDetail.max_teams ? "Bench" : t.name,
               users: t.players.filter((p) => !inMatch.has(Number(p.id))).map((p) => ({
                 id: Number(p.id),
                 display_name: p.name,
@@ -1034,17 +1047,20 @@ export function RefereePage() {
   return (
     <div
       ref={rootRef}
-      className="flex flex-1 min-h-0 flex-col bg-board"
+      className={`flex flex-1 min-h-0 flex-col bg-board ${liveControls ? "referee-workspace" : ""}`}
       onClickCapture={(e) => {
         // Web Vibration (Android/desktop) on any button press; the switch
         // overlay above covers iOS.
-        if ((e.target as HTMLElement).closest("button")) hapticLight();
+        if ((e.target as HTMLElement).closest("button")) {
+          unlockWhistles();
+          hapticLight();
+        }
       }}
     >
       {/* Header — painted scoreboard band */}
-      <div className="shrink-0 border-b border-line bg-board">
-        <div className="max-w-lg mx-auto">
-          <div className="flex items-center gap-2 px-2 pt-2">
+      <div className="referee-header shrink-0 border-b border-line bg-board">
+        <div className="referee-header-inner max-w-lg mx-auto tablet:max-w-2xl">
+          <div className="referee-match-bar flex items-center gap-2 px-2 pt-2">
             <button
               type="button"
               onClick={() => navigate(-1)}
@@ -1073,6 +1089,22 @@ export function RefereePage() {
                     : "No active match"}
               </p>
             </div>
+            {liveControls && (
+              <button
+                type="button"
+                onClick={previewWhistle}
+                aria-label="Test whistle"
+                className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink tablet:px-3"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                  <path d="M21 5h-9l-2 3H8a6 6 0 1 0 6 6v-2l7-3z" />
+                  <circle cx="8" cy="14" r="2" />
+                  <path d="M2 4l2 2M6 2l1 3" />
+                </svg>
+                <span className="hidden tablet:inline">Test whistle</span>
+              </button>
+            )}
             {isAdmin && (
               <button
                 type="button"
@@ -1087,11 +1119,10 @@ export function RefereePage() {
             )}
           </div>
           {currentMatch && (
-            <div className="mt-2">
-              {/* Score above the teams — larger, centred */}
-              <p className="texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink">
+            <div className="referee-scoreboard mt-2">
+              <p className="referee-score texture-painted-steel flex items-center justify-center py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
                 {currentMatch.score_a}
-                <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
+                <span className="mx-3 h-0.5 w-6 bg-ink-faint text-[0px]">—</span>
                 {currentMatch.score_b}
               </p>
               <div className="flex items-stretch">
@@ -1100,7 +1131,7 @@ export function RefereePage() {
                   onClick={() => setRostersOpen((o) => !o)}
                   aria-expanded={rostersOpen}
                   aria-controls="match-rosters"
-                  className="flex flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110"
+                  className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
                   <p className="max-w-full truncate text-sm font-extrabold uppercase tracking-wide text-white">
                     {currentMatch.team_a.name}
@@ -1117,7 +1148,7 @@ export function RefereePage() {
                   onClick={() => setRostersOpen((o) => !o)}
                   aria-expanded={rostersOpen}
                   aria-controls="match-rosters"
-                  className="flex flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110"
+                  className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
                   <ChevronDown
                     className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
@@ -1135,7 +1166,7 @@ export function RefereePage() {
           {currentMatch && rostersOpen && (
             <div
               id="match-rosters"
-              className="mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
+              className="referee-rosters mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
             >
               <div className="min-w-0">
                 <p className="text-2xs font-bold uppercase tracking-[0.14em] text-team-a">
@@ -1182,8 +1213,9 @@ export function RefereePage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
+      <div className="referee-activity relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <div className={`referee-activity-inner mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
+        <div className="space-y-6">
         {penaltyMatch && !isPastDeadline && (
           <PenaltyShootoutPanel
             meetupId={sid}
@@ -1277,7 +1309,7 @@ export function RefereePage() {
                     onChange={(e) => setSelectedTeamA(Number(e.target.value))}
                     className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                   >
-                    {teamsData?.map((t, i) => (
+                    {playingTeams?.map((t, i) => (
                       <option
                         key={t.id}
                         value={i}
@@ -1300,7 +1332,7 @@ export function RefereePage() {
                     onChange={(e) => setSelectedTeamB(Number(e.target.value))}
                     className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                   >
-                    {teamsData?.map((t, i) => (
+                    {playingTeams?.map((t, i) => (
                       <option
                         key={t.id}
                         value={i}
@@ -1374,7 +1406,7 @@ export function RefereePage() {
           <div className="text-center space-y-6 py-12">
             <Flag className="h-16 w-16 mx-auto text-ink-faint" />
             <h2 className="text-xl font-bold text-ink">Ready to start?</h2>
-            {teamsData && teamsData.length > 2 ? (
+            {playingTeams && playingTeams.length > 2 ? (
               <div className="space-y-4 max-w-sm mx-auto">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5 text-left">
@@ -1389,7 +1421,7 @@ export function RefereePage() {
                         }
                         className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                       >
-                        {teamsData.map((t, i) => (
+                        {playingTeams.map((t, i) => (
                           <option
                             key={t.id}
                             value={i}
@@ -1414,7 +1446,7 @@ export function RefereePage() {
                         }
                         className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                       >
-                        {teamsData.map((t, i) => (
+                        {playingTeams.map((t, i) => (
                           <option
                             key={t.id}
                             value={i}
@@ -1466,9 +1498,10 @@ export function RefereePage() {
         ) : (
           /* Active or pending match */
           <>
-            {/* TV-style goal list — directly below the score; hidden until a
-                goal is logged; tap a goal to open the sheet in edit mode
-                (delete lives inside the sheet). */}
+            <h2 className="referee-wide-only hidden text-base font-bold text-ink">Match activity</h2>
+            {goals.length === 0 && (
+              <p className="referee-wide-only hidden border-b border-line pb-4 text-sm text-ink-dim">No goals logged yet.</p>
+            )}
             {goals.length > 0 && (
               <div className="border border-line bg-panel px-4 py-2">
                 <GoalList
@@ -1546,9 +1579,11 @@ export function RefereePage() {
           </>
         )}
 
+        </div>
+
         {/* Past matches */}
         {completedMatches.length > 0 && (
-          <div className="space-y-3">
+          <div className="mt-6 space-y-3 desktop:mt-0">
             <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
               Completed matches
             </h3>
@@ -1589,7 +1624,7 @@ export function RefereePage() {
                       setEditingMatch(m);
                       setShowManualForm(true);
                     }}
-                    className="p-1.5 hover:bg-raised shrink-0"
+                    className="p-1.5 hover:bg-raised shrink-0 tablet:grid tablet:min-h-11 tablet:min-w-11 tablet:place-items-center"
                     aria-label={`Edit match ${m.match_number}`}
                   >
                     <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
@@ -1602,89 +1637,102 @@ export function RefereePage() {
         </div>
       </div>
 
-      {/* Countdown timer — pinned above the action deck */}
       {liveControls && (
-        <div className="shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
-          <div className="mx-auto max-w-lg text-center">
-            <span
-              className={`text-3xl font-bold tabular-nums ${getTimerColor(
-                timerSeconds,
-                currentMatch.timer_total_seconds,
-              )}`}
-            >
-              {formatTimer(timerSeconds)}
-            </span>
-            {isPaused && currentMatch.status === "active" && (
-              <p className="text-xs font-medium text-ink-dim">Paused</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom action deck — live controls only */}
-      {liveControls && (
-        <div className="shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto max-w-lg space-y-2">
-            {penaltyMatch && currentMatch.status === "pending" && (
-              <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              {currentMatch.status === "pending" && (
-                <button
-                  type="button"
-                  onClick={() => void handleStartTimer()}
-                  disabled={busy !== null || penaltyMatch !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+        <div className="referee-console contents">
+          <div className="referee-clock shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
+            <h2 className="referee-wide-only hidden text-center text-sm font-medium text-ink-dim">Match clock</h2>
+            <div className="mx-auto max-w-lg text-center tablet:max-w-2xl">
+              <div className="flex items-center justify-center gap-4">
+                {isPaused && currentMatch.status === "active" && (
+                  <button type="button" onClick={() => void handleAdjustTimer(-15)}
+                    disabled={busy !== null || timerSeconds <= 0}
+                    className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                    aria-label="Subtract 15 seconds">−15s</button>
+                )}
+                <span
+                  className={`text-3xl font-bold tabular-nums ${getTimerColor(
+                    timerSeconds,
+                    currentMatch.timer_total_seconds,
+                  )}`}
                 >
-                  <Play className="h-5 w-5" />
-                  Start Timer
-                </button>
-              )}
-              {currentMatch.status === "active" && !isPaused && (
-                <button
-                  type="button"
-                  onClick={() => void handlePauseTimer()}
-                  disabled={busy !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  <Pause className="h-5 w-5" />
-                  Pause
-                </button>
-              )}
-              {currentMatch.status === "active" && isPaused && (
-                <button
-                  type="button"
-                  onClick={() => void handleResumeTimer()}
-                  disabled={busy !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  <Play className="h-5 w-5" />
-                  Resume
-                </button>
-              )}
-              {currentMatch.status !== "time_up" && (
-                <button
-                  type="button"
-                  disabled={(!!lease && leaseLeft > 0) || busy !== null}
-                  onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
-                >
-                  {lease && leaseLeft > 0 && !showSubstitutions
-                    ? leaseBusyButtonLabel(lease.holderName, leaseLeft)
-                    : "+ Goal"}
-                </button>
+                  {formatTimer(timerSeconds)}
+                </span>
+                {isPaused && currentMatch.status === "active" && (
+                  <button type="button" onClick={() => void handleAdjustTimer(15)}
+                    disabled={busy !== null || timerSeconds >= 600}
+                    className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                    aria-label="Add 15 seconds">+15s</button>
+                )}
+              </div>
+              {isPaused && currentMatch.status === "active" && (
+                <p className="text-xs font-medium text-ink-dim">Paused</p>
               )}
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmAction({ kind: "end" })}
-                disabled={busy !== null}
-                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
-              >
-                <Flag className="h-5 w-5" />
-                End Match
-              </button>
+          </div>
+
+          <div className="referee-actions shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mx-auto max-w-lg space-y-2 tablet:max-w-2xl">
+              {penaltyMatch && currentMatch.status === "pending" && (
+                <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
+              )}
+              <div className="referee-primary-actions grid grid-cols-2 gap-2">
+                {currentMatch.status === "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleStartTimer()}
+                    disabled={busy !== null || penaltyMatch !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Play className="h-5 w-5" />
+                    Start Timer
+                  </button>
+                )}
+                {currentMatch.status === "active" && !isPaused && (
+                  <button
+                    type="button"
+                    onClick={() => void handlePauseTimer()}
+                    disabled={busy !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Pause className="h-5 w-5" />
+                    Pause
+                  </button>
+                )}
+                {currentMatch.status === "active" && isPaused && (
+                  <button
+                    type="button"
+                    onClick={() => void handleResumeTimer()}
+                    disabled={busy !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Play className="h-5 w-5" />
+                    Resume
+                  </button>
+                )}
+                {currentMatch.status !== "time_up" && (
+                  <button
+                    type="button"
+                    disabled={(!!lease && leaseLeft > 0) || busy !== null}
+                    onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
+                  >
+                    {lease && leaseLeft > 0 && !showSubstitutions
+                      ? leaseBusyButtonLabel(lease.holderName, leaseLeft)
+                      : "+ Goal"}
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ kind: "end" })}
+                  disabled={busy !== null}
+                  className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
+                >
+                  <Flag className="h-5 w-5" />
+                  End Match
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1763,6 +1811,7 @@ export function RefereePage() {
           currentTeamSize={meetupDetail.team_size}
           minPlayers={meetupDetail.min_players}
           maxPlayers={meetupDetail.max_players}
+          startTime={meetupDetail.start_time}
           hasStarted={Boolean(meetupDetail.has_started) || matches.some((m) => m.status !== "pending")}
           liveMatchNumber={
             matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
@@ -1786,6 +1835,8 @@ export function RefereePage() {
           onClose={() => setShowReshape(false)}
           onSaved={(result, teamCount, signupCapacity, teamSize) => {
             setTeamsData(result.teams);
+            setSelectedTeamA(0);
+            setSelectedTeamB(1);
             setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount, max_players: signupCapacity, team_size: teamSize });
             void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             void loadMatches();

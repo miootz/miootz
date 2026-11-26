@@ -343,414 +343,418 @@ export function ProfilePage() {
 
   return (
     <div className="bg-board text-ink">
-      <div className="max-w-lg mx-auto p-6 space-y-6">
-        {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
-        <section className="border border-line bg-panel p-5">
-          <div className="flex items-center gap-4">
-            <PlayerAvatarFace
-              name={displayName}
-              avatarUrl={avatarUrl}
-              size="md"
-            />
-            <h1 className="min-w-0 flex-1 text-balance text-xl font-bold text-ink [overflow-wrap:anywhere]">
-              {displayName}
-            </h1>
-          </div>
-
-          {(u.primary_specialty || u.secondary_specialty || me.is_admin) && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              {u.primary_specialty && (
-                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                  {SPECIALTY_LABEL[u.primary_specialty]}
-                </span>
-              )}
-              {u.secondary_specialty && (
-                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                  {SPECIALTY_LABEL[u.secondary_specialty]}
-                </span>
-              )}
-              {me.is_admin && (
-                <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
-                  Admin
-                </span>
-              )}
+      <div className="max-w-lg mx-auto p-6 space-y-6 tablet:max-w-3xl desktop:grid desktop:max-w-6xl desktop:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] desktop:items-start desktop:gap-6 desktop:space-y-0">
+        <div className="min-w-0 space-y-6">
+          {/* ── Zone 1: Identity Hero ─────────────────────────────── */}
+          <section className="border border-line bg-panel p-5">
+            <div className="flex items-center gap-4">
+              <PlayerAvatarFace
+                name={displayName}
+                avatarUrl={avatarUrl}
+                size="md"
+              />
+              <h1 className="min-w-0 flex-1 text-balance text-xl font-bold text-ink [overflow-wrap:anywhere]">
+                {displayName}
+              </h1>
             </div>
+
+            {(u.primary_specialty || u.secondary_specialty || me.is_admin) && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {u.primary_specialty && (
+                  <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                    {SPECIALTY_LABEL[u.primary_specialty]}
+                  </span>
+                )}
+                {u.secondary_specialty && (
+                  <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                    {SPECIALTY_LABEL[u.secondary_specialty]}
+                  </span>
+                )}
+                {me.is_admin && (
+                  <span className="inline-block px-2.5 py-1 text-xs font-medium bg-raised text-ink-dim">
+                    Admin
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Positions editor */}
+            <div className="mt-4 space-y-4 border-t border-line pt-4">
+              <h2 className="text-lg font-bold text-ink">
+                Edit profile
+              </h2>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label htmlFor="profile-primary-position" className="block text-xs text-ink-dim">
+                    Primary position
+                  </label>
+                  <select
+                    id="profile-primary-position"
+                    value={u.primary_specialty ?? ""}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void saveSpecialty(
+                        "primary_specialty",
+                        (e.target.value || null) as Specialty | null,
+                      );
+                    }}
+                    className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
+                  >
+                    <option value="">— Select —</option>
+                    {SPECIALTY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="profile-secondary-position" className="block text-xs text-ink-dim">
+                    Secondary position
+                  </label>
+                  <select
+                    id="profile-secondary-position"
+                    value={u.secondary_specialty ?? ""}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void saveSpecialty(
+                        "secondary_specialty",
+                        (e.target.value || null) as Specialty | null,
+                      );
+                    }}
+                    className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
+                  >
+                    <option value="">— Select —</option>
+                    {SPECIALTY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {error && <p className="text-sm text-danger" role="alert">{error}</p>}
+            </div>
+
+            <div className="mt-4 border-t border-line pt-2">
+              <a
+                href={pocketIdSettingsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
+                aria-label="Account settings in Pocket ID (opens in a new tab)"
+              >
+                <User className="h-4 w-4" aria-hidden />
+                Account settings
+                <ExternalLink className="ml-auto h-4 w-4" aria-hidden />
+              </a>
+            </div>
+          </section>
+
+          <section aria-label="Player ratings" className="grid grid-cols-2 divide-x divide-line border border-line bg-panel">
+            {([
+              { label: "Base Rating", value: stats?.base_rating, disabled: false },
+              { label: "Adjusted Rating", value: stats?.adjusted_rating === undefined ? u.calculated_skill : stats.adjusted_rating, disabled: stats?.computed_scores === false },
+            ]).map(({ label, value, disabled }) => (
+              <div key={label} className="min-w-0 p-5">
+                <h2 className="text-sm font-bold text-ink">{label}</h2>
+                <p className="mt-2 text-2xl text-ink"><SkillRating score={disabled ? null : value} /></p>
+                <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
+              </div>
+            ))}
+          </section>
+
+          {stats?.computed_scores !== false && (
+            <PlayerAttributesPanel
+              attributes={stats?.attributes}
+              error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
+            />
           )}
 
-          {/* Positions editor */}
-          <div className="mt-4 space-y-4 border-t border-line pt-4">
-            <h2 className="text-lg font-bold text-ink">
-              Edit profile
-            </h2>
+          <ProfileScoreboard stats={stats} error={statsError} />
+        </div>
+        <div className="min-w-0 space-y-6">
+          <ProfileProgress />
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor="profile-primary-position" className="block text-xs text-ink-dim">
-                  Primary position
-                </label>
-                <select
-                  id="profile-primary-position"
-                  value={u.primary_specialty ?? ""}
-                  disabled={saving}
-                  onChange={(e) => {
-                    void saveSpecialty(
-                      "primary_specialty",
-                      (e.target.value || null) as Specialty | null,
-                    );
-                  }}
-                  className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
-                >
-                  <option value="">— Select —</option>
-                  {SPECIALTY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+          <section className="border border-line bg-panel p-5">
+            {/* Attendance history (paginated) */}
+            <AttendanceHistory userId={u.id} />
+          </section>
+
+          {/* ── Zone 3: Preferences (collapsible) ─────────────────── */}
+
+          {pushEnabled && (
+            <CollapsibleSection title="Push notifications">
+              {/* Device list */}
+              <div className="space-y-3 mb-4">
+                <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+                  Registered devices
+                </span>
+                {devicesLoading ? (
+                  <p className="text-sm text-ink-dim">
+                    Loading…
+                  </p>
+                ) : pushStateError ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-danger" role="alert">{pushStateError}</p>
+                    <button
+                      type="button"
+                      className="min-h-11 text-sm font-medium text-ink underline underline-offset-2"
+                      onClick={() => setPushRefresh((value) => value + 1)}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : pushDevices.length === 0 ? (
+                  <p className="text-sm text-ink-dim">
+                    No devices registered yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {pushDevices.map((dev) => {
+                      const ep = dev.endpoint;
+                      const host = (() => {
+                        try {
+                          return new URL(ep).hostname;
+                        } catch {
+                          return ep.slice(0, 40) + "…";
+                        }
+                      })();
+                      const date = (() => {
+                        try {
+                          return new Date(dev.created_at).toLocaleDateString();
+                        } catch {
+                          return "";
+                        }
+                      })();
+                      return (
+                        <li
+                          key={dev.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm text-ink truncate">
+                              {host}
+                              {ep === pushEndpoint && <span className="text-ink-dim"> · This device</span>}
+                            </p>
+                            {date && (
+                              <p className="text-xs text-ink-dim">
+                                {date}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={deviceRemoveId === dev.id}
+                            onClick={() => {
+                              setDeviceRemoveId(dev.id);
+                              void deletePushSubscription(dev.id)
+                                .then(() => {
+                                  setPushDevices((prev) =>
+                                    prev.filter((d) => d.id !== dev.id),
+                                  );
+                                  showToast("Device removed.", "success");
+                                })
+                                .catch((e) => {
+                                  showToast(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "Could not remove device",
+                                    "error",
+                                  );
+                                })
+                                .finally(() => setDeviceRemoveId(null));
+                            }}
+                            className="shrink-0 text-xs text-danger hover:text-ink disabled:opacity-50"
+                          >
+                            {deviceRemoveId === dev.id ? "Removing…" : "Remove"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {!devicesLoading && !pushStateError && !pushOn && (
+                  <button
+                    type="button"
+                    disabled={pushBusy}
+                    onClick={() => {
+                      setPushBusy(true);
+                      setPushRegistrationError(null);
+                      void (async () => {
+                        try {
+                          const r = await subscribeToWebPush();
+                          if (r.ok) {
+                            showToast("Device registered.", "success");
+                          } else {
+                            setPushRegistrationError(r.reason ?? "Could not register device");
+                          }
+                        } catch (e) {
+                          setPushRegistrationError(e instanceof Error ? e.message : "Could not register device");
+                        } finally {
+                          setPushBusy(false);
+                        }
+                      })();
+                    }}
+                    className="bg-ink px-3 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50"
+                  >
+                    {pushBusy ? "Registering…" : pushEndpoint ? "Finish registering this device" : "Register this device"}
+                  </button>
+                )}
+                {pushRegistrationError && (
+                  <p role="alert" className="text-sm text-danger">{pushRegistrationError}</p>
+                )}
               </div>
+            </CollapsibleSection>
+          )}
 
-              <div className="space-y-1">
-                <label htmlFor="profile-secondary-position" className="block text-xs text-ink-dim">
-                  Secondary position
-                </label>
-                <select
-                  id="profile-secondary-position"
-                  value={u.secondary_specialty ?? ""}
-                  disabled={saving}
-                  onChange={(e) => {
-                    void saveSpecialty(
-                      "secondary_specialty",
-                      (e.target.value || null) as Specialty | null,
-                    );
-                  }}
-                  className="min-h-11 w-full border border-line bg-raised px-3 py-2 text-sm text-ink focus:outline-hidden focus:ring-2 focus:ring-live disabled:opacity-50"
-                >
-                  <option value="">— Select —</option>
-                  {SPECIALTY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {error && <p className="text-sm text-danger" role="alert">{error}</p>}
-          </div>
-
-          <div className="mt-4 border-t border-line pt-2">
-            <a
-              href={pocketIdSettingsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink-dim hover:text-ink transition-colors"
-              aria-label="Account settings in Pocket ID (opens in a new tab)"
-            >
-              <User className="h-4 w-4" aria-hidden />
-              Account settings
-              <ExternalLink className="ml-auto h-4 w-4" aria-hidden />
-            </a>
-          </div>
-        </section>
-
-        <section aria-label="Player ratings" className="grid grid-cols-2 divide-x divide-line border border-line bg-panel">
-          {([
-            { label: "Base Rating", value: stats?.base_rating, disabled: false },
-            { label: "Adjusted Rating", value: stats?.adjusted_rating === undefined ? u.calculated_skill : stats.adjusted_rating, disabled: stats?.computed_scores === false },
-          ]).map(({ label, value, disabled }) => (
-            <div key={label} className="min-w-0 p-5">
-              <h2 className="text-sm font-bold text-ink">{label}</h2>
-              <p className="mt-2 text-2xl text-ink"><SkillRating score={disabled ? null : value} /></p>
-              <p className="mt-1 text-xs text-ink-dim">{disabled ? "Disabled" : value == null ? "Unrated" : "out of 5"}</p>
-            </div>
-          ))}
-        </section>
-
-        {stats?.computed_scores !== false && (
-          <PlayerAttributesPanel
-            attributes={stats?.attributes}
-            error={statsError ?? (stats && !stats.attributes ? "Attributes are unavailable." : null)}
-          />
-        )}
-
-        <ProfileScoreboard stats={stats} error={statsError} />
-        <ProfileProgress />
-
-        <section className="border border-line bg-panel p-5">
-          {/* Attendance history (paginated) */}
-          <AttendanceHistory userId={u.id} />
-        </section>
-
-        {/* ── Zone 3: Preferences (collapsible) ─────────────────── */}
-
-        {pushEnabled && (
-          <CollapsibleSection title="Push notifications">
-            {/* Device list */}
-            <div className="space-y-3 mb-4">
+          <CollapsibleSection title="Notification preferences">
+            {/* Notification type toggles */}
+            <div className="space-y-2">
               <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-                Registered devices
+                Notification types
               </span>
-              {devicesLoading ? (
+              {notifPrefsLoading ? (
                 <p className="text-sm text-ink-dim">
                   Loading…
                 </p>
-              ) : pushStateError ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-danger" role="alert">{pushStateError}</p>
-                  <button
-                    type="button"
-                    className="min-h-11 text-sm font-medium text-ink underline underline-offset-2"
-                    onClick={() => setPushRefresh((value) => value + 1)}
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : pushDevices.length === 0 ? (
+              ) : notifPrefs.length === 0 ? (
                 <p className="text-sm text-ink-dim">
-                  No devices registered yet.
+                  Could not load preferences.
                 </p>
               ) : (
-                <ul className="space-y-1">
-                  {pushDevices.map((dev) => {
-                    const ep = dev.endpoint;
-                    const host = (() => {
-                      try {
-                        return new URL(ep).hostname;
-                      } catch {
-                        return ep.slice(0, 40) + "…";
-                      }
-                    })();
-                    const date = (() => {
-                      try {
-                        return new Date(dev.created_at).toLocaleDateString();
-                      } catch {
-                        return "";
-                      }
-                    })();
-                    return (
-                      <li
-                        key={dev.id}
-                        className="flex items-center justify-between gap-3 px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm text-ink truncate">
-                            {host}
-                            {ep === pushEndpoint && <span className="text-ink-dim"> · This device</span>}
-                          </p>
-                          {date && (
-                            <p className="text-xs text-ink-dim">
-                              {date}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          disabled={deviceRemoveId === dev.id}
-                          onClick={() => {
-                            setDeviceRemoveId(dev.id);
-                            void deletePushSubscription(dev.id)
-                              .then(() => {
-                                setPushDevices((prev) =>
-                                  prev.filter((d) => d.id !== dev.id),
-                                );
-                                showToast("Device removed.", "success");
-                              })
-                              .catch((e) => {
-                                showToast(
-                                  e instanceof Error
-                                    ? e.message
-                                    : "Could not remove device",
-                                  "error",
-                                );
-                              })
-                              .finally(() => setDeviceRemoveId(null));
-                          }}
-                          className="shrink-0 text-xs text-danger hover:text-ink disabled:opacity-50"
-                        >
-                          {deviceRemoveId === dev.id ? "Removing…" : "Remove"}
-                        </button>
-                      </li>
-                    );
-                  })}
+                <ul className="divide-y divide-line">
+                  {notifPrefs.map((row) => (
+                    <li
+                      key={row.category}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-sm text-ink">
+                          {NOTIF_CATEGORY_META[row.category].display_name}
+                        </span>
+                        <p className="text-xs text-ink-dim truncate">
+                          {NOTIF_CATEGORY_META[row.category].description}
+                        </p>
+                      </div>
+                      <ToggleSwitch
+                        enabled={row.enabled}
+                        disabled={notifToggleBusy === row.category}
+                        onChange={() => {
+                          const next = !row.enabled;
+                          setNotifToggleBusy(row.category);
+                          setNotifPrefs((prev) =>
+                            prev.map((p) =>
+                              p.category === row.category
+                                ? { ...p, enabled: next }
+                                : p,
+                            ),
+                          );
+                          void patchNotificationPreference(row.category, next)
+                            .catch(() => {
+                              setNotifPrefs((prev) =>
+                                prev.map((p) =>
+                                  p.category === row.category
+                                    ? { ...p, enabled: row.enabled }
+                                    : p,
+                                ),
+                              );
+                              showToast("Could not update preference.", "error");
+                            })
+                            .finally(() => setNotifToggleBusy(null));
+                        }}
+                      />
+                    </li>
+                  ))}
                 </ul>
-              )}
-              {!devicesLoading && !pushStateError && !pushOn && (
-                <button
-                  type="button"
-                  disabled={pushBusy}
-                  onClick={() => {
-                    setPushBusy(true);
-                    setPushRegistrationError(null);
-                    void (async () => {
-                      try {
-                        const r = await subscribeToWebPush();
-                        if (r.ok) {
-                          showToast("Device registered.", "success");
-                        } else {
-                          setPushRegistrationError(r.reason ?? "Could not register device");
-                        }
-                      } catch (e) {
-                        setPushRegistrationError(e instanceof Error ? e.message : "Could not register device");
-                      } finally {
-                        setPushBusy(false);
-                      }
-                    })();
-                  }}
-                  className="bg-ink px-3 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50"
-                >
-                  {pushBusy ? "Registering…" : pushEndpoint ? "Finish registering this device" : "Register this device"}
-                </button>
-              )}
-              {pushRegistrationError && (
-                <p role="alert" className="text-sm text-danger">{pushRegistrationError}</p>
               )}
             </div>
           </CollapsibleSection>
-        )}
 
-        <CollapsibleSection title="Notification preferences">
-          {/* Notification type toggles */}
-          <div className="space-y-2">
-            <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-              Notification types
-            </span>
-            {notifPrefsLoading ? (
+          {!pushEnabled && (
+            <p className="text-xs text-ink-dim">
+              This browser meetup cannot receive push notifications. Your
+              preferences still apply to registered devices.
+            </p>
+          )}
+
+          <CollapsibleSection title="Weekly meetups">
+            <p className="text-xs text-ink-dim mb-3">
+              Turning this off removes you from the invite list for that
+              recurring meetup.
+            </p>
+            {templateSubsLoading ? (
+              <p className="text-sm text-ink-dim">Loading…</p>
+            ) : templateSubs.length === 0 ? (
               <p className="text-sm text-ink-dim">
-                Loading…
-              </p>
-            ) : notifPrefs.length === 0 ? (
-              <p className="text-sm text-ink-dim">
-                Could not load preferences.
+                No active weekly templates yet.
               </p>
             ) : (
               <ul className="divide-y divide-line">
-                {notifPrefs.map((row) => (
+                {templateSubs.map((row) => (
                   <li
-                    key={row.category}
+                    key={row.game_template_id}
                     className="flex items-center justify-between gap-3 px-3 py-2.5"
                   >
-                    <div className="min-w-0">
-                      <span className="text-sm text-ink">
-                        {NOTIF_CATEGORY_META[row.category].display_name}
-                      </span>
-                      <p className="text-xs text-ink-dim truncate">
-                        {NOTIF_CATEGORY_META[row.category].description}
-                      </p>
-                    </div>
+                    <span className="text-sm text-ink min-w-0 truncate">
+                      {row.name}
+                    </span>
                     <ToggleSwitch
-                      enabled={row.enabled}
-                      disabled={notifToggleBusy === row.category}
+                      enabled={row.notifications_enabled}
+                      disabled={templateToggleBusy === row.game_template_id}
                       onChange={() => {
-                        const next = !row.enabled;
-                        setNotifToggleBusy(row.category);
-                        setNotifPrefs((prev) =>
+                        const next = !row.notifications_enabled;
+                        setTemplateToggleBusy(row.game_template_id);
+                        setTemplateSubs((prev) =>
                           prev.map((p) =>
-                            p.category === row.category
-                              ? { ...p, enabled: next }
+                            p.game_template_id === row.game_template_id
+                              ? { ...p, notifications_enabled: next }
                               : p,
                           ),
                         );
-                        void patchNotificationPreference(row.category, next)
+                        void patchGameTemplateSubscription(
+                          row.game_template_id,
+                          next,
+                        )
                           .catch(() => {
-                            setNotifPrefs((prev) =>
+                            setTemplateSubs((prev) =>
                               prev.map((p) =>
-                                p.category === row.category
-                                  ? { ...p, enabled: row.enabled }
+                                p.game_template_id === row.game_template_id
+                                  ? {
+                                      ...p,
+                                      notifications_enabled:
+                                        row.notifications_enabled,
+                                    }
                                   : p,
                               ),
                             );
                             showToast("Could not update preference.", "error");
                           })
-                          .finally(() => setNotifToggleBusy(null));
+                          .finally(() => setTemplateToggleBusy(null));
                       }}
                     />
                   </li>
                 ))}
               </ul>
             )}
+          </CollapsibleSection>
+
+          {/* ── Zone 4: Account footer ────────────────────────────── */}
+
+          <div className="pt-2 pb-6">
+            <button
+              type="button"
+              onClick={() => {
+                void logout();
+              }}
+              className="w-full flex items-center justify-center gap-2 border border-danger/40 px-4 py-3 text-danger font-medium hover:bg-danger/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Log out
+            </button>
           </div>
-        </CollapsibleSection>
-
-        {!pushEnabled && (
-          <p className="text-xs text-ink-dim">
-            This browser meetup cannot receive push notifications. Your
-            preferences still apply to registered devices.
-          </p>
-        )}
-
-        <CollapsibleSection title="Weekly meetups">
-          <p className="text-xs text-ink-dim mb-3">
-            Turning this off removes you from the invite list for that
-            recurring meetup.
-          </p>
-          {templateSubsLoading ? (
-            <p className="text-sm text-ink-dim">Loading…</p>
-          ) : templateSubs.length === 0 ? (
-            <p className="text-sm text-ink-dim">
-              No active weekly templates yet.
-            </p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {templateSubs.map((row) => (
-                <li
-                  key={row.game_template_id}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5"
-                >
-                  <span className="text-sm text-ink min-w-0 truncate">
-                    {row.name}
-                  </span>
-                  <ToggleSwitch
-                    enabled={row.notifications_enabled}
-                    disabled={templateToggleBusy === row.game_template_id}
-                    onChange={() => {
-                      const next = !row.notifications_enabled;
-                      setTemplateToggleBusy(row.game_template_id);
-                      setTemplateSubs((prev) =>
-                        prev.map((p) =>
-                          p.game_template_id === row.game_template_id
-                            ? { ...p, notifications_enabled: next }
-                            : p,
-                        ),
-                      );
-                      void patchGameTemplateSubscription(
-                        row.game_template_id,
-                        next,
-                      )
-                        .catch(() => {
-                          setTemplateSubs((prev) =>
-                            prev.map((p) =>
-                              p.game_template_id === row.game_template_id
-                                ? {
-                                    ...p,
-                                    notifications_enabled:
-                                      row.notifications_enabled,
-                                  }
-                                : p,
-                            ),
-                          );
-                          showToast("Could not update preference.", "error");
-                        })
-                        .finally(() => setTemplateToggleBusy(null));
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </CollapsibleSection>
-
-        {/* ── Zone 4: Account footer ────────────────────────────── */}
-
-        <div className="pt-2 pb-6">
-          <button
-            type="button"
-            onClick={() => {
-              void logout();
-            }}
-            className="w-full flex items-center justify-center gap-2 border border-danger/40 px-4 py-3 text-danger font-medium hover:bg-danger/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Log out
-          </button>
         </div>
       </div>
     </div>

@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, insert, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import cast
+from typing import Literal, cast
 
 from app.api.deps import (
     presence_for_meetup,
@@ -84,6 +84,10 @@ class PenaltyShotBody(BaseModel):
     scored: bool
     #: The taker — chosen per shot, order is decided on the pitch.
     scorer_id: int
+
+
+class TimerAdjustment(BaseModel):
+    delta_seconds: Literal[-15, 15]
 
 
 class MatchScoreDelta(BaseModel):
@@ -168,6 +172,8 @@ def _compute_timer_remaining(match: MeetupMatch, *, at: datetime | None = None) 
         return match.timer_total_seconds
     if match.status == "completed" and at is None:
         return 0
+    if at is None and _is_currently_paused(match) and match.timer_seconds_remaining is not None:
+        return match.timer_seconds_remaining
 
     started = match.timer_started_at.replace(tzinfo=UTC)
     now = at.replace(tzinfo=UTC) if at is not None else datetime.now(UTC)
@@ -181,11 +187,14 @@ def _compute_timer_remaining(match: MeetupMatch, *, at: datetime | None = None) 
         except json.JSONDecodeError, TypeError:
             pass
 
+    adjustment = 0
     for interval in pause_intervals:
         paused_at = interval.get("paused_at")
         resumed_at = interval.get("resumed_at")
         if paused_at:
             pa = datetime.fromisoformat(paused_at).replace(tzinfo=UTC)
+            if pa <= now:
+                adjustment += interval.get("adjustment_seconds", 0)
             if resumed_at:
                 ra = datetime.fromisoformat(resumed_at).replace(tzinfo=UTC)
                 elapsed -= (ra - pa).total_seconds()
@@ -194,7 +203,7 @@ def _compute_timer_remaining(match: MeetupMatch, *, at: datetime | None = None) 
                 elapsed -= (now - pa).total_seconds()
 
     try:
-        remaining = int(match.timer_total_seconds or 0) - int(elapsed)
+        remaining = int(match.timer_total_seconds or 0) + adjustment - int(elapsed)
     except TypeError, ValueError, OverflowError:
         return 0
     return max(remaining, 0)
@@ -223,6 +232,7 @@ def _timer_ends_at_iso(match: MeetupMatch) -> str | None:
         paused_at = interval.get("paused_at")
         resumed_at = interval.get("resumed_at")
         if paused_at and resumed_at:
+            ends += timedelta(seconds=interval.get("adjustment_seconds", 0))
             pa = datetime.fromisoformat(paused_at).replace(tzinfo=UTC)
             ra = datetime.fromisoformat(resumed_at).replace(tzinfo=UTC)
             # A pause pushes the end time LATER by its duration.
@@ -237,7 +247,7 @@ async def _check_timer_expiry(match: MeetupMatch, db: AsyncSession) -> bool:
     IMPORTANT: persists the transition with an explicit commit — the shared
     ``get_db`` dependency never commits, so a bare flush would roll back and
     the match would reappear as 'active' (timer reset) on the next poll."""
-    if match.status != "active":
+    if match.status != "active" or _is_currently_paused(match):
         return False
     remaining = _compute_timer_remaining(match)
     if remaining <= 0:
@@ -483,6 +493,8 @@ async def start_matches(
             status_code=400,
             detail="team_a_idx/team_b_idx must be distinct valid team indices.",
         )
+    if meetup.max_teams and meetup.team_size and (team_a_idx >= meetup.max_teams or team_b_idx >= meetup.max_teams):
+        raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
     if not teams_nested[team_a_idx] or not teams_nested[team_b_idx]:
         raise HTTPException(status_code=400, detail="Both teams must have players.")
 
@@ -653,6 +665,8 @@ async def create_new_pending_match(
             raise HTTPException(status_code=400, detail="Invalid team_b_idx.")
         if body.team_a_idx == body.team_b_idx:
             raise HTTPException(status_code=400, detail="Teams must be different.")
+        if meetup.max_teams and meetup.team_size and (body.team_a_idx >= meetup.max_teams or body.team_b_idx >= meetup.max_teams):
+            raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
         team_a = teams_nested[body.team_a_idx]
         team_b = teams_nested[body.team_b_idx]
         team_a_name = (
@@ -1661,6 +1675,43 @@ async def pause_timer(
     }
 
 
+@router.post("/{meetup_id}/matches/{match_id}/timer/adjust")
+async def adjust_timer(
+    meetup_id: int,
+    match_id: int,
+    body: TimerAdjustment,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin_or_present_member),
+):
+    """Adjust a paused timer without changing the match duration."""
+    await db.execute(text("BEGIN IMMEDIATE"))
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if match.status != "active" or match.timer_started_at is None or not _is_currently_paused(match):
+        raise HTTPException(status_code=409, detail="Timer must be paused.")
+    intervals = json.loads(match.timer_pause_intervals)
+    remaining = match.timer_seconds_remaining
+    if remaining is None:
+        remaining = _compute_timer_remaining(match)
+    adjusted = max(0, min(600, remaining + body.delta_seconds))
+    intervals[-1]["adjustment_seconds"] = intervals[-1].get("adjustment_seconds", 0) + adjusted - remaining
+    match.timer_pause_intervals = json.dumps(intervals)
+    match.timer_seconds_remaining = adjusted
+    await db.commit()
+    log_action(request, "referee", "referee.timer_adjusted",
+               f"Adjusted the clock for match #{match.match_number} to {adjusted} seconds",
+               meetup_id=meetup_id)
+    await _broadcast_match_event(meetup_id, {
+        "type": "match_timer_paused", "match_id": match.id,
+        "seconds_remaining": adjusted, "ends_at": None,
+    })
+    await bump_and_notify(db, meetup_id)
+    return {"status": "paused", "seconds_remaining": adjusted, "timer_paused": True,
+            "ends_at": None, "controlled_by": {"name": user.display_name}}
+
+
 @router.post("/{meetup_id}/matches/{match_id}/timer/resume")
 async def resume_timer(
     meetup_id: int,
@@ -1670,6 +1721,7 @@ async def resume_timer(
     user: User = Depends(require_admin_or_present_member),
 ):
     """Resume the match timer (any present member, idempotent)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")

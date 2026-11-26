@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   fetchMeetupMatches,
+  adjustTimer,
   endMatch,
   deleteMatch,
   createNewPendingMatch,
@@ -21,6 +22,7 @@ import {
 } from "../api/stewardApi";
 import { RefereePage } from "./RefereePage";
 import { AuthContext } from "../auth/auth-context";
+import { playHalfTimeWhistle, previewWhistle, unlockWhistles } from "../utils/whistle";
 
 const { feed, showToast } = vi.hoisted(() => ({
   feed: {
@@ -33,6 +35,7 @@ const { feed, showToast } = vi.hoisted(() => ({
 vi.mock("../api/matchesApi", async (original) => ({
   ...await original<typeof import("../api/matchesApi")>(),
   fetchMeetupMatches: vi.fn(),
+  adjustTimer: vi.fn(),
   endMatch: vi.fn(),
   deleteMatch: vi.fn(),
   createNewPendingMatch: vi.fn(),
@@ -52,6 +55,13 @@ vi.mock("../api/stewardApi", async (original) => ({
   acquireLease: vi.fn(),
   renewLease: vi.fn(),
   releaseLease: vi.fn(),
+}));
+vi.mock("../utils/whistle", () => ({
+  unlockWhistles: vi.fn(),
+  releaseWhistles: vi.fn(),
+  playHalfTimeWhistle: vi.fn(),
+  playFinalWhistle: vi.fn(),
+  previewWhistle: vi.fn(),
 }));
 vi.mock("../auth/useAuth", () => ({
   useAuth: () => ({ tokens: { accessToken: "token" } }),
@@ -276,6 +286,19 @@ it("updates match scores even when a team request is slow", async () => {
   await act(async () => finishTeams({ meetup_id: 1, content_revision: 0, teams: [] }));
 });
 
+it("unlocks on a referee tap and sounds half-time as the clock runs past halfway", async () => {
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_paused: false, timer_seconds_remaining: 460 }],
+  });
+  await openReferee();
+  fireEvent.click(screen.getByRole("button", { name: "Test whistle" }));
+  expect(unlockWhistles).toHaveBeenCalled();
+  expect(previewWhistle).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
+  expect(screen.getByText("07:29")).toBeInTheDocument();
+  expect(playHalfTimeWhistle).toHaveBeenCalledOnce();
+});
+
 it("shows the live bottom deck with the primary controls for a paused match", async () => {
   await openReferee();
   // Active + paused fixture: Resume, + Goal, End Match.
@@ -285,6 +308,38 @@ it("shows the live bottom deck with the primary controls for a paused match", as
   expect(screen.getByRole("button", { name: "End Match" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+});
+
+it("adjusts a paused timer from zero without ending the match", async () => {
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 0 }],
+  });
+  await openReferee();
+  expect(screen.getByText("00:00")).toBeInTheDocument();
+  expect(endMatch).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Subtract 15 seconds" })).toBeDisabled();
+  vi.mocked(adjustTimer).mockResolvedValue({ status: "paused", seconds_remaining: 15 });
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 15 }],
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Add 15 seconds" })));
+  expect(adjustTimer).toHaveBeenCalledWith(1, 10, 15);
+  expect(screen.getByText("00:15")).toBeInTheDocument();
+  expect(endMatch).not.toHaveBeenCalled();
+});
+
+it("limits paused adjustments and hides them while running", async () => {
+  await openReferee();
+  expect(screen.getByRole("button", { name: "Add 15 seconds" })).toBeDisabled();
+  vi.mocked(adjustTimer).mockResolvedValue({ status: "paused", seconds_remaining: 585 });
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 585 }],
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Subtract 15 seconds" })));
+  expect(adjustTimer).toHaveBeenCalledWith(1, 10, -15);
+  expect(screen.getByText("09:45")).toBeInTheDocument();
+  await act(async () => feed.message({ type: "match_timer_resumed", seconds_remaining: 585 }));
+  expect(screen.queryByRole("button", { name: "Add 15 seconds" })).not.toBeInTheDocument();
 });
 
 it("shows Start Timer in the deck for a pending match", async () => {
