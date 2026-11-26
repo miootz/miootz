@@ -634,3 +634,70 @@ async def test_goal_edit_updates_attribution_and_score():
         # P2 must be on the scoring team (A): valid, but no lease after r3
         # released it -> 409 again.
         assert r4.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_paused_timer_adjustments_are_atomic_clamped_and_resumable():
+    async with await client() as ac:
+        sid, mid, _ = await make_live_setup(ac, ["p1", "p2"])
+        base = f"/meetups/{sid}/matches/{mid}/timer"
+        running = await ac.post(f"{base}/adjust", json={"delta_seconds": 15}, headers=hdr("p1"))
+        assert running.status_code == 409
+        paused = await ac.post(f"{base}/pause", headers=hdr("p1"))
+        assert paused.status_code == 200
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.timer_seconds_remaining = 30
+            # Align this test's starting clock with the persisted value.
+            intervals = json.loads(match.timer_pause_intervals)
+            intervals[-1]["adjustment_seconds"] = 30 - paused.json()["seconds_remaining"]
+            match.timer_pause_intervals = json.dumps(intervals)
+            await db.commit()
+        responses = await asyncio.gather(*[
+            ac.post(f"{base}/adjust", json={"delta_seconds": -15}, headers=hdr("p1"))
+            for _ in range(3)
+        ])
+        assert all(r.status_code == 200 for r in responses)
+        match = (await ac.get(f"/meetups/{sid}/matches/{mid}", headers=hdr("p1"))).json()
+        assert match["timer_seconds_remaining"] == 0
+        assert match["timer_paused"] is True and match["status"] == "active"
+        restored = await ac.post(f"{base}/adjust", json={"delta_seconds": 15}, headers=hdr("p1"))
+        assert restored.json()["seconds_remaining"] == 15
+        resumed = await ac.post(f"{base}/resume", headers=hdr("p1"))
+        assert resumed.status_code == 200 and resumed.json()["seconds_remaining"] == 15
+        assert resumed.json()["ends_at"] is not None
+        await ac.post(f"{base}/pause", headers=hdr("p1"))
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.timer_seconds_remaining = 595
+            await db.commit()
+        capped = await ac.post(f"{base}/adjust", json={"delta_seconds": 15}, headers=hdr("p1"))
+        assert capped.json()["seconds_remaining"] == 600
+        invalid = await ac.post(f"{base}/adjust", json={"delta_seconds": 1}, headers=hdr("p1"))
+        assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_resume_timer_at_zero_expires_and_adjustment_can_exceed_duration():
+    async with await client() as ac:
+        sid, mid, _ = await make_live_setup(ac, ["p1", "p2"])
+        base = f"/meetups/{sid}/matches/{mid}/timer"
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            match.timer_total_seconds = 60
+            await db.commit()
+        paused = await ac.post(f"{base}/pause", headers=hdr("p1"))
+        before = paused.json()["seconds_remaining"]
+        added = await ac.post(f"{base}/adjust", json={"delta_seconds": 15}, headers=hdr("p1"))
+        assert added.json()["seconds_remaining"] == before + 15
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, mid)
+            intervals = json.loads(match.timer_pause_intervals)
+            intervals[-1]["adjustment_seconds"] -= match.timer_seconds_remaining
+            match.timer_pause_intervals = json.dumps(intervals)
+            match.timer_seconds_remaining = 0
+            await db.commit()
+        resumed = await ac.post(f"{base}/resume", headers=hdr("p1"))
+        assert resumed.status_code == 200 and resumed.json()["seconds_remaining"] == 0
+        detail = await ac.get(f"/meetups/{sid}/matches/{mid}", headers=hdr("p1"))
+        assert detail.json()["status"] == "time_up"

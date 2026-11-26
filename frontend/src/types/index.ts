@@ -38,6 +38,7 @@ export interface ChatMessage {
 export interface Team {
   id: string;
   name: string;
+  isBench?: boolean;
   players: User[];
 }
 

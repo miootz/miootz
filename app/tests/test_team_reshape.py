@@ -160,7 +160,6 @@ async def test_reshape_2x6_fresh_names_no_bench():
 async def test_reshape_2x5_bench_team_visible_and_swappable():
     async with await client() as ac:
         sid = await make_meetup_with_pending_match(ac)
-        await mark_started(sid)
         r = await ac.post(
             f"/meetups/{sid}/teams/reshape",
             json={"team_count": 2, "team_size": 5},
@@ -173,6 +172,8 @@ async def test_reshape_2x5_bench_team_visible_and_swappable():
         assert sorted(len(t["players"]) for t in teams) == [2, 5, 5]
         flat = [int(p["id"]) for t in teams for p in t["players"]]
         assert len(flat) == len(set(flat)) == 12
+        detail = (await ac.get(f"/meetups/{sid}", headers=hdr("admint"))).json()
+        assert all(a["status"] == "confirmed" for a in detail["attendees"])
 
         # GET /teams shows all three (the bench is a team, not a category).
         rt = await ac.get(f"/meetups/{sid}/teams", headers=hdr("admint"))
@@ -205,7 +206,12 @@ async def test_reshape_rejects_capacity_and_non_admin():
     async with await client() as ac:
         sid = await make_meetup_with_pending_match(ac)
 
-        # Before kickoff the signup limit cannot exceed 50 players.
+        async with AsyncSession(engine) as db:
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = utcnow() + timedelta(hours=1)
+            await db.commit()
+
+        # Outside the kickoff window the signup limit cannot exceed 50 players.
         r = await ac.post(
             f"/meetups/{sid}/teams/reshape",
             json={"team_count": 5, "team_size": 15},
@@ -234,11 +240,58 @@ async def test_reshape_rejects_capacity_and_non_admin():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("seconds_until_start", "confirmed"), [(900, 12), (901, 8)])
+async def test_reshape_preserves_confirmed_at_kickoff_window_boundary(
+    monkeypatch, seconds_until_start, confirmed
+):
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        now = utcnow()
+        async with AsyncSession(engine) as db:
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = now + timedelta(seconds=seconds_until_start)
+            await db.commit()
+        monkeypatch.setattr("app.api.meetups.utcnow", lambda: now)
+        response = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 2, "team_size": 4},
+            headers=hdr("admint"),
+        )
+        assert response.status_code == 200, response.text
+        detail = (await ac.get(f"/meetups/{sid}", headers=hdr("admint"))).json()
+        assert sum(a["status"] == "confirmed" for a in detail["attendees"]) == confirmed
+        assert sum(len(t["players"]) for t in response.json()["teams"]) == confirmed
+
+
+@pytest.mark.asyncio
+async def test_reshape_in_window_clamps_signup_capacity_to_minimum():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        async with AsyncSession(engine) as db:
+            meetup = await db.get(Meetup, sid)
+            meetup.min_players = 10
+            await db.commit()
+        response = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 2, "team_size": 4},
+            headers=hdr("admint"),
+        )
+        assert response.status_code == 200, response.text
+        assert [len(team["players"]) for team in response.json()["teams"]] == [4, 4, 4]
+        detail = (await ac.get(f"/meetups/{sid}", headers=hdr("admint"))).json()
+        assert detail["max_players"] == 10
+        assert all(a["status"] == "confirmed" for a in detail["attendees"])
+
+
+@pytest.mark.asyncio
 async def test_capacity_updates_waitlist_and_preserves_shape_after_join():
     async with await client() as ac:
         sid = await make_meetup_with_pending_match(ac)
         async with AsyncSession(engine) as db:
             await create_test_user(db, "Late", "user-uuid")
+            meetup = await db.get(Meetup, sid)
+            meetup.start_time = utcnow() + timedelta(hours=1)
+            await db.commit()
 
         async def reshape(count: int, size: int) -> dict:
             response = await ac.post(
@@ -397,3 +450,37 @@ async def test_capacity_can_be_set_without_registered_players():
         pm = await pending_match(ac, sid)
         assert len(pm["team_a"]["users"]) == len(pm["team_b"]["users"]) == 1
         assert (await ac.post(timer, headers=hdr("admint"))).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bench_cannot_be_selected_for_start_or_next_match():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        shaped = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 2, "team_size": 5}, headers=hdr("admint"),
+        )
+        assert [len(t["players"]) for t in shaped.json()["teams"]] == [5, 5, 2]
+        async with AsyncSession(engine) as db:
+            match = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == sid))
+            await db.delete(match)
+            await db.commit()
+        response = await ac.post(
+            f"/meetups/{sid}/matches/start", json={"team_a_idx": 0, "team_b_idx": 2},
+            headers=hdr("admint"),
+        )
+        assert response.status_code == 400 and "Bench" in response.json()["detail"]
+        started = await ac.post(
+            f"/meetups/{sid}/matches/start", json={"team_a_idx": 0, "team_b_idx": 1},
+            headers=hdr("admint"),
+        )
+        assert started.status_code == 201, started.text
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, started.json()["match"]["id"])
+            match.status = "completed"
+            await db.commit()
+        response = await ac.post(
+            f"/meetups/{sid}/matches/new", json={"team_a_idx": 2, "team_b_idx": 1},
+            headers=hdr("admint"),
+        )
+        assert response.status_code == 400 and "Bench" in response.json()["detail"]

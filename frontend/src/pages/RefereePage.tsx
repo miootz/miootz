@@ -10,6 +10,7 @@ import {
   createNewPendingMatch,
   startTimer,
   pauseTimer,
+  adjustTimer,
   resumeTimer,
   resetMatch,
   endMatch,
@@ -783,6 +784,14 @@ export function RefereePage() {
     });
   };
 
+  const handleAdjustTimer = async (delta: -15 | 15) => {
+    if (!currentMatch) return;
+    await run("Adjusting timer...", async () => {
+      const res = await adjustTimer(sid, currentMatch.id, delta);
+      setTimerSeconds(res.seconds_remaining);
+    });
+  };
+
   const handleResumeTimer = async () => {
     if (!currentMatch) return;
     unlockWhistles();
@@ -829,14 +838,14 @@ export function RefereePage() {
       finalFiredForRef.current = null;
       return;
     }
-    if (finalFiredForRef.current === currentMatch.id) return;
+    if (isPaused || finalFiredForRef.current === currentMatch.id) return;
     if (timerSeconds <= 0) {
       finalFiredForRef.current = currentMatch.id;
       playFinalWhistle();
       hapticFinal();
       handleEndMatch();
     }
-  }, [timerSeconds, currentMatch, handleEndMatch]);
+  }, [timerSeconds, currentMatch, isPaused, handleEndMatch]);
 
   const handleDeleteMatch = async (matchId: number) => {
     await run("Deleting...", async () => {
@@ -986,6 +995,8 @@ export function RefereePage() {
   const completedMatches = matches.filter((m) => m.status === "completed");
   const pendingMatches = matches.filter((m) => m.status === "pending");
 
+  const playingTeams = teamsData?.slice(0, meetupDetail?.max_teams ?? undefined);
+
   // Meetup teams not in the current match — the substitution bench pool.
   const extraTeams =
     currentMatch && teamsData
@@ -998,8 +1009,8 @@ export function RefereePage() {
             .filter((m) => m.id !== currentMatch.id && m.status !== "completed")
             .flatMap((m) => [...m.team_a.users, ...m.team_b.users].map((u) => u.id)));
           return teamsData
-            .map((t) => ({
-              name: t.name,
+            .map((t, index) => ({
+              name: meetupDetail?.max_teams != null && index >= meetupDetail.max_teams ? "Bench" : t.name,
               users: t.players.filter((p) => !inMatch.has(Number(p.id))).map((p) => ({
                 id: Number(p.id),
                 display_name: p.name,
@@ -1043,7 +1054,7 @@ export function RefereePage() {
     >
       {/* Header — painted scoreboard band */}
       <div className="shrink-0 border-b border-line bg-board">
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg mx-auto tablet:max-w-2xl">
           <div className="flex items-center gap-2 px-2 pt-2">
             <button
               type="button"
@@ -1089,7 +1100,7 @@ export function RefereePage() {
           {currentMatch && (
             <div className="mt-2">
               {/* Score above the teams — larger, centred */}
-              <p className="texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink">
+              <p className="texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
                 {currentMatch.score_a}
                 <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
                 {currentMatch.score_b}
@@ -1100,7 +1111,7 @@ export function RefereePage() {
                   onClick={() => setRostersOpen((o) => !o)}
                   aria-expanded={rostersOpen}
                   aria-controls="match-rosters"
-                  className="flex flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110"
+                  className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-a px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
                   <p className="max-w-full truncate text-sm font-extrabold uppercase tracking-wide text-white">
                     {currentMatch.team_a.name}
@@ -1117,7 +1128,7 @@ export function RefereePage() {
                   onClick={() => setRostersOpen((o) => !o)}
                   aria-expanded={rostersOpen}
                   aria-controls="match-rosters"
-                  className="flex flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110"
+                  className="flex min-w-0 flex-1 items-center justify-center gap-1 bg-team-b px-3 py-2 active:brightness-110 tablet:min-h-12"
                 >
                   <ChevronDown
                     className={`h-4 w-4 shrink-0 text-white/80 transition-transform ${
@@ -1183,7 +1194,8 @@ export function RefereePage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
+        <div className={`mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
+        <div className="space-y-6">
         {penaltyMatch && !isPastDeadline && (
           <PenaltyShootoutPanel
             meetupId={sid}
@@ -1277,7 +1289,7 @@ export function RefereePage() {
                     onChange={(e) => setSelectedTeamA(Number(e.target.value))}
                     className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                   >
-                    {teamsData?.map((t, i) => (
+                    {playingTeams?.map((t, i) => (
                       <option
                         key={t.id}
                         value={i}
@@ -1300,7 +1312,7 @@ export function RefereePage() {
                     onChange={(e) => setSelectedTeamB(Number(e.target.value))}
                     className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                   >
-                    {teamsData?.map((t, i) => (
+                    {playingTeams?.map((t, i) => (
                       <option
                         key={t.id}
                         value={i}
@@ -1374,7 +1386,7 @@ export function RefereePage() {
           <div className="text-center space-y-6 py-12">
             <Flag className="h-16 w-16 mx-auto text-ink-faint" />
             <h2 className="text-xl font-bold text-ink">Ready to start?</h2>
-            {teamsData && teamsData.length > 2 ? (
+            {playingTeams && playingTeams.length > 2 ? (
               <div className="space-y-4 max-w-sm mx-auto">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5 text-left">
@@ -1389,7 +1401,7 @@ export function RefereePage() {
                         }
                         className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                       >
-                        {teamsData.map((t, i) => (
+                        {playingTeams.map((t, i) => (
                           <option
                             key={t.id}
                             value={i}
@@ -1414,7 +1426,7 @@ export function RefereePage() {
                         }
                         className="w-full appearance-none border border-line bg-raised px-4 py-3 pr-8 text-sm font-medium text-ink focus:outline-hidden focus:ring-2 focus:ring-live"
                       >
-                        {teamsData.map((t, i) => (
+                        {playingTeams.map((t, i) => (
                           <option
                             key={t.id}
                             value={i}
@@ -1546,9 +1558,11 @@ export function RefereePage() {
           </>
         )}
 
+        </div>
+
         {/* Past matches */}
         {completedMatches.length > 0 && (
-          <div className="space-y-3">
+          <div className="mt-6 space-y-3 desktop:mt-0">
             <h3 className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
               Completed matches
             </h3>
@@ -1589,7 +1603,7 @@ export function RefereePage() {
                       setEditingMatch(m);
                       setShowManualForm(true);
                     }}
-                    className="p-1.5 hover:bg-raised shrink-0"
+                    className="p-1.5 hover:bg-raised shrink-0 tablet:grid tablet:min-h-11 tablet:min-w-11 tablet:place-items-center"
                     aria-label={`Edit match ${m.match_number}`}
                   >
                     <Edit className="h-4 w-4 text-ink-faint hover:text-ink" />
@@ -1605,15 +1619,29 @@ export function RefereePage() {
       {/* Countdown timer — pinned above the action deck */}
       {liveControls && (
         <div className="shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
-          <div className="mx-auto max-w-lg text-center">
-            <span
-              className={`text-3xl font-bold tabular-nums ${getTimerColor(
-                timerSeconds,
-                currentMatch.timer_total_seconds,
-              )}`}
-            >
-              {formatTimer(timerSeconds)}
-            </span>
+          <div className="mx-auto max-w-lg text-center tablet:max-w-2xl">
+            <div className="flex items-center justify-center gap-4">
+              {isPaused && currentMatch.status === "active" && (
+                <button type="button" onClick={() => void handleAdjustTimer(-15)}
+                  disabled={busy !== null || timerSeconds <= 0}
+                  className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                  aria-label="Subtract 15 seconds">−15s</button>
+              )}
+              <span
+                className={`text-3xl font-bold tabular-nums ${getTimerColor(
+                  timerSeconds,
+                  currentMatch.timer_total_seconds,
+                )}`}
+              >
+                {formatTimer(timerSeconds)}
+              </span>
+              {isPaused && currentMatch.status === "active" && (
+                <button type="button" onClick={() => void handleAdjustTimer(15)}
+                  disabled={busy !== null || timerSeconds >= 600}
+                  className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                  aria-label="Add 15 seconds">+15s</button>
+              )}
+            </div>
             {isPaused && currentMatch.status === "active" && (
               <p className="text-xs font-medium text-ink-dim">Paused</p>
             )}
@@ -1624,7 +1652,7 @@ export function RefereePage() {
       {/* Bottom action deck — live controls only */}
       {liveControls && (
         <div className="shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto max-w-lg space-y-2">
+          <div className="mx-auto max-w-lg space-y-2 tablet:max-w-2xl">
             {penaltyMatch && currentMatch.status === "pending" && (
               <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
             )}
@@ -1763,6 +1791,7 @@ export function RefereePage() {
           currentTeamSize={meetupDetail.team_size}
           minPlayers={meetupDetail.min_players}
           maxPlayers={meetupDetail.max_players}
+          startTime={meetupDetail.start_time}
           hasStarted={Boolean(meetupDetail.has_started) || matches.some((m) => m.status !== "pending")}
           liveMatchNumber={
             matches.find((m) => m.status === "active" || m.status === "time_up")?.match_number ?? null
@@ -1786,6 +1815,8 @@ export function RefereePage() {
           onClose={() => setShowReshape(false)}
           onSaved={(result, teamCount, signupCapacity, teamSize) => {
             setTeamsData(result.teams);
+            setSelectedTeamA(0);
+            setSelectedTeamB(1);
             setMeetupDetail((detail) => detail && { ...detail, max_teams: teamCount, max_players: signupCapacity, team_size: teamSize });
             void fetchMeetupDetail(sid).then(setMeetupDetail).catch(() => {});
             void loadMatches();

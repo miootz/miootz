@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   fetchMeetupMatches,
+  adjustTimer,
   endMatch,
   deleteMatch,
   createNewPendingMatch,
@@ -33,6 +34,7 @@ const { feed, showToast } = vi.hoisted(() => ({
 vi.mock("../api/matchesApi", async (original) => ({
   ...await original<typeof import("../api/matchesApi")>(),
   fetchMeetupMatches: vi.fn(),
+  adjustTimer: vi.fn(),
   endMatch: vi.fn(),
   deleteMatch: vi.fn(),
   createNewPendingMatch: vi.fn(),
@@ -285,6 +287,38 @@ it("shows the live bottom deck with the primary controls for a paused match", as
   expect(screen.getByRole("button", { name: "End Match" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+});
+
+it("adjusts a paused timer from zero without ending the match", async () => {
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 0 }],
+  });
+  await openReferee();
+  expect(screen.getByText("00:00")).toBeInTheDocument();
+  expect(endMatch).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Subtract 15 seconds" })).toBeDisabled();
+  vi.mocked(adjustTimer).mockResolvedValue({ status: "paused", seconds_remaining: 15 });
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 15 }],
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Add 15 seconds" })));
+  expect(adjustTimer).toHaveBeenCalledWith(1, 10, 15);
+  expect(screen.getByText("00:15")).toBeInTheDocument();
+  expect(endMatch).not.toHaveBeenCalled();
+});
+
+it("limits paused adjustments and hides them while running", async () => {
+  await openReferee();
+  expect(screen.getByRole("button", { name: "Add 15 seconds" })).toBeDisabled();
+  vi.mocked(adjustTimer).mockResolvedValue({ status: "paused", seconds_remaining: 585 });
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_seconds_remaining: 585 }],
+  });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Subtract 15 seconds" })));
+  expect(adjustTimer).toHaveBeenCalledWith(1, 10, -15);
+  expect(screen.getByText("09:45")).toBeInTheDocument();
+  await act(async () => feed.message({ type: "match_timer_resumed", seconds_remaining: 585 }));
+  expect(screen.queryByRole("button", { name: "Add 15 seconds" })).not.toBeInTheDocument();
 });
 
 it("shows Start Timer in the deck for a pending match", async () => {

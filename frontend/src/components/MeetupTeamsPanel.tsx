@@ -72,11 +72,15 @@ function buildTeamMeetup(
       pac: a.pac,
       dri: a.dri,
     }));
-  const teamList: Team[] = teams.teams.map((t) => ({
-    id: t.id,
-    name: t.name,
-    players: mapTeamPlayers(t),
-  }));
+  const teamList: Team[] = teams.teams.map((team, index) => {
+    const isBench = detail?.max_teams != null && index >= detail.max_teams;
+    return {
+      id: team.id,
+      name: isBench ? "Bench" : team.name,
+      isBench,
+      players: mapTeamPlayers(team),
+    };
+  });
   return {
     id: String(numericId),
     date: "",
@@ -328,6 +332,7 @@ export function MeetupTeamsPanel({
           currentTeamSize={detail.team_size}
           minPlayers={detail.min_players}
           maxPlayers={detail.max_players}
+          startTime={detail.start_time}
           hasStarted={Boolean(detail.has_started)}
           liveMatchNumber={
             detail.current_match && detail.current_match.status !== "pending"
@@ -335,9 +340,9 @@ export function MeetupTeamsPanel({
               : null
           }
           onClose={() => setShowReshape(false)}
-          onSaved={(result) => {
+          onSaved={(result, teamCount) => {
             setTeams(result);
-            setTeamMeetup(withLocalLocks(buildTeamMeetup(detail, result, meetupId)));
+            setTeamMeetup(withLocalLocks(buildTeamMeetup({ ...detail, max_teams: teamCount }, result, meetupId)));
             void onChanged();
           }}
         />

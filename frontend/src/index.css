@@ -8,6 +8,14 @@
 /* Class-based dark variant (v4 defaults to prefers-color-scheme). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Wider workspaces need vertical room too. A phone held sideways keeps its layout. */
+@custom-variant tablet {
+  @media (min-width: 48rem) and (min-height: 36rem), (min-width: 72rem) {
+    @slot;
+  }
+}
+@custom-variant desktop (@media (min-width: 72rem));
+
 /* Archivo — self-hosted variable face (latin, latin-ext, vietnamese). */
 @font-face {
   font-family: "Archivo";
