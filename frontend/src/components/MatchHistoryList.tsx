@@ -7,7 +7,7 @@ import {
   type MatchSummary,
   type MatchSubstitution,
 } from "../api/matchesApi";
-import { ChevronDown, Flag, Loader2, Pencil, Plus, Trophy } from "lucide-react";
+import { ChevronDown, Loader2, Pencil, Plus, Trophy } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
@@ -82,9 +82,6 @@ export function MatchHistoryList({
     );
   }
 
-  const finalMatch = matches[matches.length - 1];
-  const finalResultText = `${finalMatch.team_a.name} ${finalMatch.score_a} – ${finalMatch.score_b} ${finalMatch.team_b.name}`;
-
   return (
     <div className="space-y-3">
       {/* Add match button */}
@@ -106,13 +103,6 @@ export function MatchHistoryList({
         </div>
       ) : (
         <>
-      {matches.length > 1 && (
-        <div className="flex items-center gap-2 text-sm font-medium text-ink px-1">
-          <Flag className="h-4 w-4" aria-hidden />
-          <span className="tabular-nums">Final match: {finalResultText}</span>
-        </div>
-      )}
-
       <div className="space-y-2">
         {matches.map((m) => (
           <MatchResultRow

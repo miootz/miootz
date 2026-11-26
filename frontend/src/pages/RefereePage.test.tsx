@@ -1,7 +1,14 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { fetchMeetupMatches, type MatchSummary } from "../api/matchesApi";
+import {
+  fetchMeetupMatches,
+  endMatch,
+  deleteMatch,
+  createNewPendingMatch,
+  startMatches,
+  type MatchSummary,
+} from "../api/matchesApi";
 import { fetchMeetupDetail, fetchMeetupTeams } from "../api/meetupsApi";
 import { fetchGoals, fetchStewardState } from "../api/stewardApi";
 import { RefereePage } from "./RefereePage";
@@ -17,6 +24,10 @@ const { feed, showToast } = vi.hoisted(() => ({
 vi.mock("../api/matchesApi", async (original) => ({
   ...await original<typeof import("../api/matchesApi")>(),
   fetchMeetupMatches: vi.fn(),
+  endMatch: vi.fn(),
+  deleteMatch: vi.fn(),
+  createNewPendingMatch: vi.fn(),
+  startMatches: vi.fn(),
 }));
 vi.mock("../api/meetupsApi", async (original) => ({
   ...await original<typeof import("../api/meetupsApi")>(),
@@ -49,6 +60,9 @@ vi.mock("../components/GoalEntrySheet", () => ({
   ),
 }));
 
+HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+
 const match: MatchSummary = {
   id: 10,
   meetup_id: 1,
@@ -80,6 +94,22 @@ beforeEach(() => {
   });
   vi.mocked(fetchStewardState).mockResolvedValue({ can_control: true, reason: "ok", lease: null });
   vi.mocked(fetchGoals).mockResolvedValue([]);
+  vi.mocked(endMatch).mockResolvedValue({
+    status: "completed",
+    match: { ...match, status: "completed" },
+    winner_team: "a",
+    winner_name: "Blue",
+    all_matches_complete: true,
+  });
+  vi.mocked(deleteMatch).mockResolvedValue(undefined);
+  vi.mocked(createNewPendingMatch).mockResolvedValue({
+    status: "pending",
+    match: { ...match, status: "pending" },
+  });
+  vi.mocked(startMatches).mockResolvedValue({
+    status: "already_started",
+    match: { ...match, status: "pending" },
+  });
 });
 
 afterEach(() => {
@@ -210,12 +240,13 @@ it("updates match scores even when a team request is slow", async () => {
 
 it("shows the live bottom deck with the primary controls for a paused match", async () => {
   await openReferee();
-  // Active + paused fixture: Resume, + Goal, End Match, Reset and Delete.
+  // Active + paused fixture: Resume, + Goal, End Match.
+  // Reset and Delete live in the admin setup sheet (team reshape).
   expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "+ Goal" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "End Match" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
 });
 
 it("shows Start Timer in the deck for a pending match", async () => {
@@ -226,4 +257,126 @@ it("shows Start Timer in the deck for a pending match", async () => {
   await openReferee();
   expect(screen.getByRole("button", { name: "Start Timer" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "+ Goal" })).toBeInTheDocument();
+});
+
+
+it("ends a match via the button and offers Start new match instead of auto-starting", async () => {
+  await openReferee();
+  // After the end the server has no pending match — all matches completed.
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(),
+    matches: [{ ...match, status: "completed", score_a: 3, score_b: 1 }],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "End Match" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "End match" }));
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+
+  // The skip flag: the next match is NOT auto-queued.
+  expect(vi.mocked(endMatch)).toHaveBeenCalledWith(1, 10, undefined, true);
+  // The referee sees the Start new match flow, not the live deck.
+  expect(screen.getByRole("button", { name: "Start new match" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "End Match" })).not.toBeInTheDocument();
+});
+
+
+it("offers Start new match after the last match is deleted", async () => {
+  const completed: MatchSummary = {
+    ...match,
+    status: "completed",
+    score_a: 2,
+    score_b: 1,
+    team_a: { name: "Red", users: [] },
+    team_b: { name: "Green", users: [] },
+  };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [completed] });
+  await openReferee();
+
+  // Edit the completed match → delete button → confirm.
+  fireEvent.click(screen.getByRole("button", { name: "Edit match 1" }));
+  const form = screen.getByRole("heading", { name: "Edit match result" }).parentElement!;
+  fireEvent.click(within(form).getByRole("button", { name: "Delete match" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+  // The match list is now empty — the Start new match flow shows.
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+
+  expect(vi.mocked(deleteMatch)).toHaveBeenCalledWith(1, 10);
+  expect(screen.getByRole("button", { name: "Start new match" })).toBeInTheDocument();
+  expect(screen.getByText("0 matches recorded")).toBeInTheDocument();
+});
+
+
+it("starts a new match from the Start new match flow with picked teams", async () => {
+  vi.mocked(fetchMeetupTeams).mockResolvedValue({
+    meetup_id: 1,
+    content_revision: 0,
+    teams: [
+      { id: "a", name: "Blue", players: [] },
+      { id: "b", name: "Gold", players: [] },
+    ],
+  });
+  // All-complete from the start: the only match is completed.
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(),
+    matches: [{ ...match, status: "completed" }],
+  });
+  await openReferee();
+  fireEvent.click(screen.getByRole("button", { name: "Start new match" }));
+  // Default selection is team A = 0, team B = 1 — Start match is enabled.
+  fireEvent.click(screen.getByRole("button", { name: "Start match" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(vi.mocked(createNewPendingMatch)).toHaveBeenCalledWith(1, {
+    team_a_idx: 0,
+    team_b_idx: 1,
+  });
+});
+
+
+it("starts the schedule from scratch when adding the first match after a delete", async () => {
+  const completed: MatchSummary = {
+    ...match,
+    status: "completed",
+    score_a: 2,
+    score_b: 1,
+    team_a: { name: "Red", users: [] },
+    team_b: { name: "Green", users: [] },
+  };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [completed] });
+  await openReferee();
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit match 1" }));
+  const form = screen.getByRole("heading", { name: "Edit match result" }).parentElement!;
+  fireEvent.click(within(form).getByRole("button", { name: "Delete match" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+
+  // The referee opens Start new match → Start match.
+  fireEvent.click(screen.getByRole("button", { name: "Start new match" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start match" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+
+  // No completed match to build from — the default start flow is used.
+  expect(vi.mocked(startMatches)).toHaveBeenCalledWith(1, {
+    team_a_idx: 0,
+    team_b_idx: 1,
+  });
+  expect(vi.mocked(createNewPendingMatch)).not.toHaveBeenCalled();
 });

@@ -148,3 +148,46 @@ async def test_tie_ends_away_winning_and_records_draw_per_flag(allows_draws):
             ids["p4"],
             ids["p5"],
         }
+
+
+@pytest.mark.asyncio
+async def test_end_match_with_skip_next_match_does_not_queue_the_next_match():
+    """Ending a match via the referee's override must not auto-queue the next
+    match — the referee is choosing which teams play."""
+    async with await client() as ac:
+        sid, mid, ids = await make_tied_match(ac, allows_draws=False)
+
+        r = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/end",
+            json={"skip_next_match": True},
+            headers=hdr("admin"),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["winner_team"] == "b"
+        assert body.get("next_match") is None
+        assert body.get("all_matches_complete") is not True
+
+        # No pending match was created.
+        async with AsyncSession(engine) as db:
+            res = await db.execute(
+                select(MeetupMatch).where(MeetupMatch.meetup_id == sid)
+            )
+            matches = res.scalars().all()
+            assert len(matches) == 1
+            assert matches[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_end_match_without_skip_still_queues_the_next_match():
+    async with await client() as ac:
+        sid, mid, ids = await make_tied_match(ac, allows_draws=False)
+
+        r = await ac.post(
+            f"/meetups/{sid}/matches/{mid}/end",
+            json={},
+            headers=hdr("admin"),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("next_match") is not None

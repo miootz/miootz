@@ -74,6 +74,9 @@ class HistoricalLineupChange(BaseModel):
 class MatchEndBody(BaseModel):
     #: Required only when scores are tied. "a" or "b".
     winner_team: str | None = None
+    #: When set, do not auto-queue the next match — the referee is choosing
+    #: to override the team picking (e.g. when ending a match by hand).
+    skip_next_match: bool = False
 
 
 class PenaltyShotBody(BaseModel):
@@ -1994,7 +1997,7 @@ async def end_match(
             break
 
     next_match_data: dict | None = None
-    if next_team is not None and next_team_idx is not None:
+    if not body.skip_next_match and next_team is not None and next_team_idx is not None:
         used_team_indices.add(next_team_idx)
         next_team_name = (
             team_names[next_team_idx]
@@ -2033,6 +2036,8 @@ async def end_match(
         + (
             f"; next match queued vs {next_match_data['team_b']['name']}"
             if next_match_data
+            else "; no next match queued"
+            if body.skip_next_match
             else "; all matches complete"
         ),
         meetup_id=meetup_id,
@@ -2064,7 +2069,7 @@ async def end_match(
     }
     if next_match_data:
         result["next_match"] = next_match_data
-    else:
+    elif not body.skip_next_match:
         result["all_matches_complete"] = True
     return result
 

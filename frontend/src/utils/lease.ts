@@ -54,6 +54,15 @@ export function leaseBusyLabel(
   return `${holderName} is entering a goal… ${Math.max(0, Math.ceil(countdownSec))}s`;
 }
 
+/** Compact busy label for the + Goal button — stays on one line. */
+export function leaseBusyButtonLabel(
+  holderName: string,
+  countdownSec: number,
+): string {
+  const first = holderName.trim().split(/\s+/)[0] || holderName;
+  return `${first} · ${Math.max(0, Math.ceil(countdownSec))}s`;
+}
+
 /**
  * Default goal minute, derived from the server-authoritative clock
  * (1-based: a goal scored in the first running minute is "1'").

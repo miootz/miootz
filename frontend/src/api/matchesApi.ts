@@ -230,6 +230,8 @@ export async function endMatch(
   meetupId: number,
   matchId: number,
   winner_team?: "a" | "b",
+  /** When true, the next match is not auto-queued — the referee overrides the team picking. */
+  skip_next_match?: boolean,
 ): Promise<{
   status: string;
   match: MatchSummary;
@@ -242,6 +244,7 @@ export async function endMatch(
 }> {
   const body: Record<string, unknown> = {};
   if (winner_team) body.winner_team = winner_team;
+  if (skip_next_match) body.skip_next_match = true;
   const r = await apiFetch(`/meetups/${meetupId}/matches/${matchId}/end`, {
     method: "POST",
     body: JSON.stringify(body),
