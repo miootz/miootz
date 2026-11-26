@@ -111,7 +111,7 @@ export default function App() {
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route element={<RequireAuth />}>
               <Route path="/meetup-action" element={<MeetupActionPage />} />
-              <Route path="/meetup-matches/:meetupId" element={<RefereePage />} />
+              <Route path="/meetup-matches/:meetupId/:matchId?" element={<RefereePage />} />
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="meetups" element={<AdminMeetupsPage />} />

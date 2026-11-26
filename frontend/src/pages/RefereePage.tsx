@@ -341,8 +341,9 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
 // ── Main Page ────────────────────────────────────────────────────
 
 export function RefereePage() {
-  const { meetupId } = useParams<{ meetupId: string }>();
+  const { meetupId, matchId } = useParams<{ meetupId: string; matchId?: string }>();
   const navigate = useNavigate();
+  const routeMatchId = matchId ? Number.parseInt(matchId, 10) : null;
   const { tokens } = useAuth();
   const auth = useContext(AuthContext);
   const isAdmin = auth?.me?.is_admin ?? false;
@@ -486,25 +487,32 @@ export function RefereePage() {
             setEditingMatch((editing) =>
               editing ? res.matches.find((m) => m.id === editing.id) ?? editing : null,
             );
+            const routeMatch = routeMatchId != null
+              ? res.matches.find(
+                  (m) => m.id === routeMatchId && m.status !== "completed",
+                )
+              : undefined;
             const active = res.matches.find(
               (m) => m.status === "active" || m.status === "time_up",
             );
             const pending = res.matches.find((m) => m.status === "pending");
-            if (active) {
-              setCurrentMatch(active);
-              setTimerSeconds(active.timer_seconds_remaining);
-              setIsPaused(active.timer_paused);
-              setTimerEndsAt(
-                active.timer_ends_at ? Date.parse(active.timer_ends_at) : null,
+            const chosen = routeMatch ?? active ?? pending ?? null;
+            if (chosen) {
+              setCurrentMatch(chosen);
+              setTimerSeconds(
+                chosen.status === "pending"
+                  ? chosen.timer_total_seconds
+                  : chosen.timer_seconds_remaining,
               );
-            } else if (pending) {
-              setCurrentMatch(pending);
-              setTimerSeconds(pending.timer_total_seconds);
-              setIsPaused(false);
+              setIsPaused(chosen.timer_paused);
+              setTimerEndsAt(
+                chosen.timer_ends_at ? Date.parse(chosen.timer_ends_at) : null,
+              );
             } else {
               setCurrentMatch(null);
               setTimerSeconds(0);
               setIsPaused(false);
+              setTimerEndsAt(null);
             }
             // Resume an interrupted shootout with no locked winner.
             const shoot = res.matches.find(
@@ -532,7 +540,7 @@ export function RefereePage() {
       }
     })();
     return current.running;
-  }, [sid, showToast]);
+  }, [sid, routeMatchId, showToast]);
 
   const liveRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleLiveRefresh = useCallback(() => {
@@ -761,8 +769,9 @@ export function RefereePage() {
   }) => {
     await run("Starting...", async () => {
       const res = await startMatches(sid, body);
+      const both = res.matches?.length ?? 1;
       showToast(
-        `Matches started! ${res.match.team_a.name} vs ${res.match.team_b.name}`,
+        `Matches started! ${both === 2 ? "Both pitches" : "Match 1"}: ${res.match.team_a.name} vs ${res.match.team_b.name}`,
         "success",
       );
     });
@@ -995,7 +1004,6 @@ export function RefereePage() {
   }
 
   const completedMatches = matches.filter((m) => m.status === "completed");
-  const pendingMatches = matches.filter((m) => m.status === "pending");
 
   const playingTeams = teamsData?.slice(0, meetupDetail?.max_teams ?? undefined);
 
@@ -1512,35 +1520,6 @@ export function RefereePage() {
                   canEdit={canControl}
                   onEdit={(g) => setGoalSheet({ match: currentMatch, goal: g })}
                 />
-              </div>
-            )}
-
-            {/* Parallel pending matches (4+ teams) — pick which one to run. */}
-            {currentMatch.status === "pending" && pendingMatches.length > 1 && (
-              <div className="space-y-2">
-                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
-                  Pending matches
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {pendingMatches.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentMatch(m);
-                        setTimerSeconds(m.timer_total_seconds);
-                        setIsPaused(false);
-                      }}
-                      className={`py-3 text-sm font-semibold border active:scale-[0.98] transition-transform min-h-[48px] ${
-                        m.id === currentMatch.id
-                          ? "border-live text-live bg-live/10"
-                          : "border-line text-ink-dim hover:bg-raised hover:text-ink"
-                      }`}
-                    >
-                      Match {m.match_number}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 

@@ -214,9 +214,11 @@ async def test_finish_requires_clinch_and_sets_winner():
             ).scalar_one()
             assert m.penalty_winner == "a"
 
-        # The shootout winner stays on the pitch for the next match; the
-        # away team that end_match kept drops to team B.
-        nxt = r.json()["next_match"]
+        # The shootout winner stays on the pitch for the next match (manual
+        # creation); the away team drops to team B.
+        rs = await ac.post(f"/meetups/{sid}/matches/new", headers=hdr("admin"))
+        assert rs.status_code == 201, rs.text
+        nxt = rs.json()["match"]
         assert {u["id"] for u in nxt["team_a"]["users"]} == {ids["p1"]}
         assert {u["id"] for u in nxt["team_b"]["users"]} == {ids["p2"]}
 

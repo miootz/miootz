@@ -17,6 +17,8 @@ import { MatchHistoryList } from "../components/MatchHistoryList";
 import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
+import { PitchPicker } from "../components/PitchPicker";
+import { fetchMeetupMatches, type MatchSummary } from "../api/matchesApi";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
 import {
 	addPlusOne,
@@ -451,6 +453,32 @@ function MeetupAttendanceActions({
 	);
 }
 
+function LiveMatchBoard({ meetupId }: { meetupId: number }) {
+	const [matches, setMatches] = useState<MatchSummary[]>([]);
+	useEffect(() => {
+		let cancelled = false;
+		void fetchMeetupMatches(meetupId)
+			.then((res) => {
+				if (!cancelled) setMatches(res.matches);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [meetupId]);
+	const inProgress = matches.filter(
+		(m) => m.status !== "completed",
+	);
+	return (
+		<>
+			<PitchPicker meetupId={meetupId} />
+			{inProgress.map((m) => (
+				<LiveMatchBanner key={m.id} meetupId={meetupId} matchId={m.id} />
+			))}
+		</>
+	);
+}
+
 export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	meetup,
 	onRosterUpdated,
@@ -494,7 +522,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 								</Link>
 							)}
 						</h2>
-						<LiveMatchBanner meetupId={meetup.id} />
+						<LiveMatchBoard meetupId={meetupIdNum} />
 						<MatchHistoryList
 							meetupId={meetupIdNum}
 							editable

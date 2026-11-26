@@ -31,7 +31,13 @@ function getTimerColor(seconds: number, total: number): string {
   return "text-danger";
 }
 
-export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
+export function LiveMatchBanner({
+  meetupId,
+  matchId,
+}: {
+  meetupId: string | number;
+  matchId?: number;
+}) {
   const { tokens } = useAuth();
   const sid =
     typeof meetupId === "string" ? parseInt(meetupId, 10) : meetupId;
@@ -54,12 +60,14 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
   const loadMatch = useCallback(async () => {
     try {
       const res = await fetchMeetupMatches(sid);
-      const current = res.matches.find(
-        (m) =>
-          m.status === "active" ||
-          m.status === "time_up" ||
-          m.status === "pending",
-      );
+      const current = matchId != null
+        ? res.matches.find((m) => m.id === matchId)
+        : res.matches.find(
+            (m) =>
+              m.status === "active" ||
+              m.status === "time_up" ||
+              m.status === "pending",
+          );
       if (current) {
         setCurrentMatch(current);
         setTimerSeconds(
@@ -81,7 +89,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
     } catch {
       // silent
     }
-  }, [sid]);
+  }, [sid, matchId]);
 
   useEffect(() => {
     void (async () => {
@@ -259,7 +267,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         </div>
         {canControl && (
           <a
-            href={roomPath(`/meetup-matches/${sid}`)}
+            href={roomPath(`/meetup-matches/${sid}${currentMatch ? `/${currentMatch.id}` : ""}`)}
             className="text-xs font-medium text-ink-dim hover:text-ink"
           >
             Manage match →
