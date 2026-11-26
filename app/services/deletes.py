@@ -20,7 +20,7 @@ from app.models.game_template import GameTemplate  # noqa: F401  (FK target)
 from app.models.game_template_subscription import GameTemplateSubscription
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.invite import InviteToken
-from app.models.match import MatchPenalty, MeetupMatch, MatchSubstitution
+from app.models.match import MatchPenalty, MeetupMatch, MatchSubstitution, PenaltyMiss
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
@@ -92,6 +92,7 @@ async def delete_meetup_player_data(db: AsyncSession, meetup: Meetup, user_id: i
             or_(Rating.rater_id == user_id, Rating.ratee_id == user_id),
         ),
         delete(MatchPenalty).where(MatchPenalty.match_id.in_(match_ids), MatchPenalty.scorer_id == user_id),
+        delete(PenaltyMiss).where(PenaltyMiss.match_id.in_(match_ids), PenaltyMiss.scorer_id == user_id),
         delete(GuestPlusOne).where(
             GuestPlusOne.meetup_id == meetup.id,
             or_(GuestPlusOne.guest_user_id == user_id, GuestPlusOne.claimed_by_user_id == user_id),
@@ -124,6 +125,8 @@ async def delete_user_children(db: AsyncSession, user_id: int) -> None:
             )
         ),
         delete(MatchEditorLease).where(MatchEditorLease.holder_id == user_id),
+        delete(MatchPenalty).where(MatchPenalty.scorer_id == user_id),
+        delete(PenaltyMiss).where(PenaltyMiss.scorer_id == user_id),
         delete(GuestPlusOne).where(
             or_(
                 GuestPlusOne.inviter_id == user_id,
@@ -157,6 +160,9 @@ async def delete_meetup_children(db: AsyncSession, meetup_id: int) -> None:
         delete(ChatMessage).where(ChatMessage.meetup_id == meetup_id),
         delete(GuestPlusOne).where(GuestPlusOne.meetup_id == meetup_id),
         delete(MatchGoal).where(MatchGoal.match_id.in_(meetup_match_ids)),
+        delete(MatchPenalty).where(MatchPenalty.match_id.in_(meetup_match_ids)),
+        delete(PenaltyMiss).where(PenaltyMiss.match_id.in_(meetup_match_ids)),
+        delete(MatchSubstitution).where(MatchSubstitution.match_id.in_(meetup_match_ids)),
         delete(MatchEditorLease).where(MatchEditorLease.match_id.in_(meetup_match_ids)),
         delete(MeetupMatch).where(MeetupMatch.meetup_id == meetup_id),
     ):
@@ -168,6 +174,8 @@ async def delete_match_children(db: AsyncSession, match_id: int) -> None:
     """Remove goals, the editor lease and substitution history before the match row goes."""
     for stmt in (
         delete(MatchGoal).where(MatchGoal.match_id == match_id),
+        delete(MatchPenalty).where(MatchPenalty.match_id == match_id),
+        delete(PenaltyMiss).where(PenaltyMiss.match_id == match_id),
         delete(MatchEditorLease).where(MatchEditorLease.match_id == match_id),
         delete(MatchSubstitution).where(MatchSubstitution.match_id == match_id),
     ):

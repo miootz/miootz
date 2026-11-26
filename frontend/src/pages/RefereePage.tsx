@@ -317,7 +317,7 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
         {completed.map((m) => (
           <div
             key={m.id}
-            className="flex items-center justify-between border border-line bg-panel px-4 py-3"
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border border-line bg-panel px-4 py-3"
           >
             <span className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim tabular-nums">
               Match {m.match_number}
@@ -331,6 +331,12 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
                 {m.score_b} {m.team_b.name}
               </span>
             </div>
+            {m.penalty_winner && (
+              <p className="basis-full w-full text-xs text-ink-dim tabular-nums text-right">
+                Shootout: {m.penalty_score_a != null && m.penalty_score_b != null && <>{m.penalty_score_a} – {m.penalty_score_b} — </>}
+                {m.penalty_winner === "a" ? m.team_a.name : m.team_b.name} wins
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -355,7 +361,7 @@ export function RefereePage() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   // A tied first match goes to penalties — the panel shows automatically
-  // (also on reload mid-shootout; it clears once the winner is locked).
+  // (also on reload mid-shootout; keep a locked result visible until dismissed).
   const [penaltyMatch, setPenaltyMatch] = useState<MatchSummary | null>(null);
   const halfTimeTriggeredAt = useRef<number | null>(null);
   const prevRatioRef = useRef<number | null>(null);
@@ -400,7 +406,7 @@ export function RefereePage() {
   // Steward gate / lease chip / goal log — fed by the ONE shared
   // meetup-data feed (see the hub subscription below). Any present member
   // may use the controls when the backend gate opens, not only admins.
-  const { steward, lease, leaseLeft, goals, applyEvent, refreshGoals } =
+  const { steward, lease, leaseLeft, goals, misses, applyEvent, refreshGoals } =
     useStewardUi(sid, currentMatch?.id ?? null);
 
   // Goal log of the match being edited in the result form — fetched on
@@ -515,7 +521,9 @@ export function RefereePage() {
                 m.penalty_winner == null &&
                 !m.penalty_skipped,
             );
-            setPenaltyMatch(shoot ?? null);
+            setPenaltyMatch((open) => shoot ?? (open
+              ? res.matches.find((m) => m.id === open.id && m.penalty_winner != null) ?? null
+              : null));
           } catch (e) {
             if (matchLoadRef.current === current) {
               showToast(
@@ -580,7 +588,7 @@ export function RefereePage() {
       tokens?.accessToken,
       (data) => {
         if (stewardEvents.current.applyEvent(data)) {
-          if (data.type === "goal_added" || data.type === "goal_removed" || data.type === "goal_updated") {
+          if (data.type === "goal_added" || data.type === "goal_removed" || data.type === "goal_updated" || data.type === "penalty_missed" || data.type === "penalty_miss_removed") {
             scheduleLiveRefresh();
           }
           return;
@@ -1502,7 +1510,7 @@ export function RefereePage() {
           /* Active or pending match */
           <>
             <h2 className="referee-wide-only hidden text-base font-bold text-ink">Match activity</h2>
-            {goals.length === 0 && (
+            {goals.length === 0 && misses.length === 0 && (
               <p className="referee-wide-only hidden border-b border-line pb-4 text-sm text-ink-dim">No goals logged yet.</p>
             )}
             {goals.length > 0 && (
@@ -1513,6 +1521,15 @@ export function RefereePage() {
                   onEdit={(g) => setGoalSheet({ match: currentMatch, goal: g })}
                 />
               </div>
+            )}
+
+            {misses.length > 0 && (
+              <section className="border border-line bg-panel px-4 py-3">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-ink-dim">Penalty misses</h3>
+                <ul className="mt-2 space-y-1">
+                  {misses.map((miss) => <li key={miss.id} className="text-sm text-ink-dim"><span className="mr-2 tabular-nums">{miss.clock_minute}′</span>{miss.scorer.display_name}</li>)}
+                </ul>
+              </section>
             )}
 
             {/* Parallel pending matches (4+ teams) — pick which one to run. */}

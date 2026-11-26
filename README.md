@@ -238,9 +238,9 @@ awards. A blank cell means zero.
 Reruns add any increase in the recorded balance and preserve redeemed awards
 and awards granted in Miootz.
 Save the workbook with up-to-date calculated values before importing.
-Penalty stats include scored in-game penalties and recorded shootout kicks.
-The app has no event type for a missed in-game penalty, so the importer reports
-one if it appears in the workbook.
+The importer records scored and missed regulation penalties and recorded
+shootout kicks. Scored regulation penalties count toward the match score
+and the player's penalty totals.
 
 Before importing, create a template for the history in **Admin → Templates**,
 including when starting with a fresh database. Turn off **Schedule active** if

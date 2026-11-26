@@ -15,7 +15,7 @@ from app.core.database import Base
 from sqlalchemy import select
 
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import MatchSubstitution, MeetupMatch
+from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch, PenaltyMiss
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
 from app.schemas.rating import RatingCreate
@@ -203,7 +203,17 @@ async def test_claim_transfers_the_guest_in_substitution_snapshots(
         skill=3,
         claim_token="guest-claim",
     )
-    db.add_all([member, reservation])
+    db.add_all(
+        [
+            member, reservation,
+            MatchPenalty(match_id=sub.match_id, team="a", scorer_id=users[6].id, scored=True),
+            MatchPenalty(match_id=sub.match_id, team="a", scorer_id=users[0].id, scored=False),
+            PenaltyMiss(
+                match_id=sub.match_id, team="a", scorer_id=users[6].id,
+                clock_minute=4, intent_id="guest-miss",
+            ),
+        ]
+    )
     await db.commit()
     monkeypatch.setattr(guest_claims, "refresh_skills_after_meetup", AsyncMock())
     monkeypatch.setattr(guest_claims, "update_user_calculated_skill", AsyncMock())
@@ -211,5 +221,8 @@ async def test_claim_transfers_the_guest_in_substitution_snapshots(
     await guest_claims.claim_reservation(db, reservation, member)
     pairs = (await teammate_pairs(db, [meetup.id]))[meetup.id]
     assert json.loads(sub.old_team_a_users) == [1, 8]
+    kicks = await db.scalars(select(MatchPenalty).order_by(MatchPenalty.id))
+    assert [kick.scorer_id for kick in kicks] == [8, 1]
+    assert (await db.scalar(select(PenaltyMiss))).scorer_id == 8
     assert (1, 8) in pairs
     assert (1, 7) not in pairs

@@ -16,7 +16,7 @@ it("saves the selected rating and peer policies", async () => {
   fetchRatingSettings.mockResolvedValue({ computed_scores: true, peer_rating_mode: "everyone" });
   saveRatingSettings.mockImplementation(async (settings) => settings);
   render(<MemoryRouter><AdminToolsPage /></MemoryRouter>);
-  const adjusted = await screen.findByRole("checkbox", { name: "Use adjusted ratings" });
+  const adjusted = await screen.findByRole("switch", { name: "Use adjusted ratings" });
   fireEvent.click(adjusted);
   fireEvent.click(screen.getByRole("radio", { name: "Teammates only" }));
   fireEvent.click(screen.getByRole("button", { name: "Save rating settings" }));

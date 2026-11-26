@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deleteGoal,
   fetchGoals,
+  fetchPenaltyMisses,
   fetchStewardState,
   type GoalRow,
+  type PenaltyMissRow,
   type StewardState,
 } from "../api/stewardApi";
 import {
@@ -33,6 +35,8 @@ export function useStewardUi(sid: number, matchId: number | null) {
   const [lease, setLease] = useState<LeaseInfo | null>(null);
   const [leaseLeft, setLeaseLeft] = useState(0);
   const [goals, setGoals] = useState<GoalRow[]>([]);
+  const [misses, setMisses] = useState<PenaltyMissRow[]>([]);
+  const snapshotRequest = useRef(0);
 
   // Steward gate — fetched on mount and every 30 s: the control window opens
   // around kickoff, so a member already on the live page must see the
@@ -63,20 +67,24 @@ export function useStewardUi(sid: number, matchId: number | null) {
 
   // Goal snapshot for the current match: (re)fetch when the match changes.
   const refreshGoals = useCallback(async () => {
+    const request = ++snapshotRequest.current;
     if (matchId == null) {
       setGoals([]);
+      setMisses([]);
       return;
     }
-    try {
-      const rows = await fetchGoals(sid, matchId);
-      setGoals(rows);
-    } catch {
-      // Keep the previous snapshot; the next event/refresh will correct it.
-    }
+    const [goalsResult, missesResult] = await Promise.allSettled([
+      fetchGoals(sid, matchId),
+      fetchPenaltyMisses(sid, matchId),
+    ]);
+    if (request !== snapshotRequest.current) return;
+    if (goalsResult.status === "fulfilled") setGoals(goalsResult.value);
+    if (missesResult.status === "fulfilled") setMisses(missesResult.value);
   }, [sid, matchId]);
 
   useEffect(() => {
     void refreshGoals();
+    return () => { snapshotRequest.current += 1; };
   }, [refreshGoals]);
 
   // Lease chip: re-derive the countdown from the wall clock each second;
@@ -111,6 +119,8 @@ export function useStewardUi(sid: number, matchId: number | null) {
         case "goal_added":
         case "goal_removed":
         case "goal_updated":
+        case "penalty_missed":
+        case "penalty_miss_removed":
           void refreshGoals();
           return true;
         case "lease_acquired": {
@@ -149,5 +159,5 @@ export function useStewardUi(sid: number, matchId: number | null) {
     [sid, matchId, refreshGoals],
   );
 
-  return { steward, lease, leaseLeft, goals, applyEvent, removeGoal, refreshGoals };
+  return { steward, lease, leaseLeft, goals, misses, applyEvent, removeGoal, refreshGoals };
 }

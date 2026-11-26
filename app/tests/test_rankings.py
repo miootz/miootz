@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.main import app
 from app.core.database import Base, engine
 from app.core.timeutil import utcnow
-from app.models.match import MatchPenalty, MeetupMatch
+from app.models.match import MatchPenalty, MeetupMatch, PenaltyMiss
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.meetup_analytics import MeetupAnalytics, MeetupRatingSnapshot
@@ -286,26 +286,26 @@ async def test_losses_per_match_rates_and_penalties_are_scoped_and_sortable(monk
         assert rows["P1"]["wins"] == 2 and rows["P1"]["losses"] == 0
         assert rows["P1"]["penalties_taken"] == 0
         assert rows["P2"]["losses"] == 2
-        assert rows["P2"]["own_goals"] == 1 and rows["P2"]["goals_per_match"] == 0.5
+        assert rows["P2"]["own_goals"] == 1 and rows["P2"]["goals_per_match"] == 0
         assert rows["P2"]["penalties_taken"] == 3 and rows["P2"]["penalties_scored"] == 2
         assert rows["P2"]["penalty_conversion_rate"] == pytest.approx(2 / 3)
-        assert rows["P3"]["assists_per_match"] == rows["P3"]["goal_assists_per_match"] == 1
+        assert rows["P3"]["assists_per_match"] == rows["P3"]["goal_assists_per_match"] == 0
         assert rows["TP1"]["goals_per_match"] == rows["TP1"]["penalty_conversion_rate"] == 0
 
         response = await ac.get("/users/me/stats", headers=hdr("p2"))
         assert response.status_code == 200, response.text
         profile = response.json()
         assert profile["season_losses"] == 2
-        assert profile["season_goal_assists_per_match"] == 0.5
+        assert profile["season_goal_assists_per_match"] == 0
         assert profile["season_penalties_taken"] == 3
         assert profile["season_penalties_scored"] == 2
         assert profile["season_penalty_conversion_rate"] == pytest.approx(2 / 3)
-        assert profile["goals"] == 1 and profile["matches"] == 3
+        assert profile["goals"] == 0 and profile["matches"] == 3
 
         response = await ac.get("/users/me/stats", headers=hdr("p3"))
         assert response.status_code == 200, response.text
-        assert response.json()["season_assists"] == 1
-        assert response.json()["season_goal_assists_per_match"] == 1
+        assert response.json()["season_assists"] == 0
+        assert response.json()["season_goal_assists_per_match"] == 0
 
         response = await ac.get("/users/me/stats", headers=hdr("p1"))
         assert response.status_code == 200, response.text
@@ -642,3 +642,68 @@ async def test_profile_progress_returns_played_meetups_and_prospective_ratings()
             snapshot = await db.get(MeetupRatingSnapshot, 3)
             assert snapshot.ratings[str(ids["p1"])] == {"base": 3.5, "adjusted": 4}
             assert await db.get(MeetupRatingSnapshot, 2) is None
+
+
+async def test_penalty_misses_invalidate_cached_rankings_and_legacy_versions():
+    async with await client() as ac:
+        ids = await seed(ac)
+
+    async with AsyncSession(engine) as db:
+        await rankings_service.scoped_player_counts(db, None, False)
+        old = await db.get(MeetupAnalytics, 1)
+        old.version = 2
+        old.totals = {}
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        counts = await rankings_service.scoped_player_counts(db, None, False)
+        assert counts[ids["p1"]]["goals"] == 2
+        assert (await db.get(MeetupAnalytics, 1)).version == rankings_service.ANALYTICS_VERSION == 3
+        match1 = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == 1))
+        match2 = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == 2))
+        first_id, second_id = match1.id, match2.id
+        db.add(PenaltyMiss(match_id=first_id, team="a", scorer_id=ids["p1"], clock_minute=2, intent_id="cache-miss"))
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        assert await db.get(MeetupAnalytics, 1) is None
+        assert await db.get(MeetupAnalytics, 2) is not None
+        counts = await rankings_service.scoped_player_counts(db, None, False)
+        assert counts[ids["p1"]]["penalties_taken"] == 1
+        assert counts[ids["p1"]]["penalties_scored"] == 0
+        miss = await db.scalar(select(PenaltyMiss).where(PenaltyMiss.intent_id == "cache-miss"))
+        miss.match_id = second_id
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        assert await db.get(MeetupAnalytics, 1) is None
+        assert await db.get(MeetupAnalytics, 2) is None
+        counts = await rankings_service.scoped_player_counts(db, None, False)
+        assert counts[ids["p1"]]["penalties_taken"] == 1
+        miss = await db.scalar(select(PenaltyMiss).where(PenaltyMiss.intent_id == "cache-miss"))
+        await db.delete(miss)
+        await db.commit()
+
+    async with AsyncSession(engine) as db:
+        assert await db.get(MeetupAnalytics, 1) is not None
+        assert await db.get(MeetupAnalytics, 2) is None
+        counts = await rankings_service.scoped_player_counts(db, None, False)
+        assert counts[ids["p1"]]["penalties_taken"] == 0
+
+
+async def test_unknown_penalty_scorer_does_not_create_a_player_count():
+    async with await client() as ac:
+        ids = await seed(ac)
+
+    async with AsyncSession(engine) as db:
+        match = await db.scalar(select(MeetupMatch).where(MeetupMatch.meetup_id == 1))
+        db.add(MatchGoal(
+            match_id=match.id, team="a", scorer_id=None, goalkeeper_id=ids["p3"],
+            is_penalty=True, clock_secs=0, clock_minute=0, recorded_by=ids["p1"],
+            intent_id="unknown-penalty",
+        ))
+        await db.commit()
+        counts = await rankings_service.scoped_player_counts(db, None, True)
+        assert None not in counts
+        assert counts[ids["p3"]]["goals_conceded"] == 2
+        assert counts[ids["p1"]]["penalties_taken"] == 0

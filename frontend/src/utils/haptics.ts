@@ -31,9 +31,19 @@ export function hapticError(): void {
  * Workaround: fire a tiny silent WAV — the system clicks once per play.
  * "Longer" = more ticks, since each tick is a fixed system click.
  */
-const IS_IOS =
+export const IS_IOS =
   typeof navigator !== 'undefined' &&
   /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+export function hapticsEnabled(): boolean {
+  return !prefersReducedMotion();
+}
+
+/** Toggle-switch tap: short pulse (iOS ticks come from the native switch overlay). */
+export function hapticToggle(): void {
+  if (!hapticsEnabled()) return;
+  vibrate(10);
+}
 
 // ~2 ms of silence, 16-bit mono 44.1 kHz.
 const SILENT_TICK =

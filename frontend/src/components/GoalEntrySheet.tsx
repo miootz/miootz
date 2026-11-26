@@ -24,7 +24,7 @@ interface GoalEntrySheetProps {
   meetupId: number;
   match: MatchSummary;
   onClose: () => void;
-  onLogged: (goal: GoalRow) => void;
+  onLogged: (goal: GoalRow | null) => void;
   /** Present → edit mode: the sheet prefills from this goal and PATCHes it. */
   editGoal?: GoalRow | null;
   /** Only offered in edit mode — removes the goal row (light two-tap confirm). */
@@ -112,6 +112,7 @@ export function GoalEntrySheet({
             goalkeeper_id: input.goalkeeper_id,
             clock_minute: input.minute,
             is_own_goal: input.is_own_goal,
+            is_penalty: input.is_penalty,
           })
         : await createGoal(meetupId, match.id, {
             team: input.team,
@@ -122,8 +123,10 @@ export function GoalEntrySheet({
             intent_id: input.intent_id,
             force: input.force,
             is_own_goal: input.is_own_goal,
+            is_penalty: input.is_penalty,
+            missed: input.missed,
           });
-      if (!res.goal) throw new Error("Goal could not be saved.");
+      if (!res.goal && !res.miss) throw new Error("Goal could not be saved.");
       onLogged(res.goal);
       return res.goal;
     },

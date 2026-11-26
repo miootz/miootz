@@ -29,7 +29,7 @@ beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   vi.mocked(acquireLease).mockResolvedValue({ ok: true, lease: { lease_token: "test", expires_in: 45 } });
-  vi.mocked(createGoal).mockResolvedValue({ goal: null });
+  vi.mocked(createGoal).mockResolvedValue({ goal: null, miss: null });
 });
 
 it("shows both rosters first and saves the confirmed minute with the scorer's team", async () => {
@@ -57,7 +57,7 @@ it("shows both rosters first and saves the confirmed minute with the scorer's te
 
 it("credits the other team for an own goal and skips the assist step", async () => {
   render(<GoalEntrySheet meetupId={1} match={match} onClose={vi.fn()} onLogged={vi.fn()} />);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Own goal" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Own goal" }));
   fireEvent.click(screen.getByRole("button", { name: "Johan Cruyff" }));
   expect(screen.getByRole("heading", { name: "Choose goalkeeper" })).toHaveFocus();
   expect(screen.queryByRole("button", { name: "Johan Cruyff" })).not.toBeInTheDocument();
@@ -90,4 +90,48 @@ it("records a goal without a named scorer and shows save errors inside the sheet
   }));
   expect(onClose).not.toHaveBeenCalled();
   expect(toast).not.toHaveBeenCalled();
+});
+
+it("records a scored penalty without an assist and allows an unknown scorer", async () => {
+  const saved = {
+    id: 9, team: "a" as const, clock_minute: 4, scorer: null, assist: null,
+    goalkeeper: null, recorded_by: player(1, "Andrea Pirlo"), is_penalty: true,
+  };
+  vi.mocked(createGoal).mockResolvedValueOnce({ goal: saved, miss: null });
+  const onLogged = vi.fn();
+  render(<GoalEntrySheet meetupId={1} match={match} onClose={vi.fn()} onLogged={onLogged} />);
+  fireEvent.click(screen.getByRole("switch", { name: "Penalty" }));
+  fireEvent.click(screen.getByRole("button", { name: "Skip scorer, goal for Violet FC" }));
+  expect(screen.queryByRole("heading", { name: "Choose assist" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Skip goalkeeper" }));
+  const confirm = screen.getByRole("button", { name: "Confirm goal" });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
+  await waitFor(() => expect(createGoal).toHaveBeenCalledWith(1, 7, expect.objectContaining({
+    team: "a", scorer_id: null, assist_id: null, is_penalty: true, missed: false,
+  })));
+  await waitFor(() => expect(onLogged).toHaveBeenCalledWith(saved));
+});
+
+it("requires a taker and records the selected minute for a missed penalty", async () => {
+  vi.mocked(createGoal).mockResolvedValueOnce({
+    goal: null,
+    miss: { id: 10, team: "a", clock_minute: 5, scorer: player(1, "Andrea Pirlo") },
+  });
+  const onLogged = vi.fn();
+  render(<GoalEntrySheet meetupId={1} match={match} onClose={vi.fn()} onLogged={onLogged} />);
+  fireEvent.click(screen.getByRole("switch", { name: "Penalty" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Miss" }));
+  expect(screen.queryByRole("button", { name: /Skip scorer/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Andrea Pirlo" }));
+  expect(screen.getByText("Penalty miss for Violet FC")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Increase minute" }));
+  const confirm = screen.getByRole("button", { name: "Log penalty miss" });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
+  await waitFor(() => expect(createGoal).toHaveBeenCalledWith(1, 7, expect.objectContaining({
+    team: "a", scorer_id: 1, assist_id: null, goalkeeper_id: null,
+    is_penalty: true, missed: true, clock_minute: 5,
+  })));
+  await waitFor(() => expect(onLogged).toHaveBeenCalledWith(null));
 });

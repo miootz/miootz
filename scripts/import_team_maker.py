@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.core.database import Base
 from app.models.award import WeatherHeroAward
 from app.models.game_template import GameTemplate
-from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
+from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch, PenaltyMiss
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
 from app.models.user import User
@@ -76,6 +76,7 @@ class Match:
     previous_rosters: tuple[list[str], list[str]]
     goals: list[tuple[str, str, str | None, str]] = field(default_factory=list)
     kicks: list[tuple[str, str, bool]] = field(default_factory=list)
+    misses: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -305,9 +306,7 @@ def parse_workbook(workbook, date_corrections=None):
                 raise ValueError(f"{label}: unexpected shootout kick")
             match.kicks.append((side, scorer, kind == "shootout scored"))
         elif kind == "penalty missed":
-            warnings.append(
-                f"{label}: {scorer}'s missed in-game penalty has no Miootz event type"
-            )
+            match.misses.append((side, scorer))
         elif kind in ("goal", "own goal", "penalty"):
             side_index = "ab".index(side)
             if kind == "own goal":
@@ -503,6 +502,31 @@ async def upsert_match(db, meetup, number, source, ids, recorded_by):
         goal.deleted_at = None
     for goal in imported.values():
         await db.delete(goal)
+
+    # Misses: same upsert pattern as goals, keyed by intent id.
+    miss_prefix = f"{prefix}miss"
+    existing_misses = {
+        m.intent_id: m
+        for m in await db.scalars(
+            select(PenaltyMiss).where(PenaltyMiss.match_id == match.id)
+        )
+        if m.intent_id.startswith(miss_prefix)
+    }
+    for index, (side, scorer) in enumerate(source.misses, 1):
+        key = f"{miss_prefix}{index}"
+        miss = existing_misses.pop(key, None)
+        if miss is None:
+            miss = PenaltyMiss(
+                match_id=match.id,
+                clock_minute=0,
+                intent_id=key,
+                created_at=started,
+            )
+            db.add(miss)
+        miss.team = side
+        miss.scorer_id = ids[scorer]
+    for miss in existing_misses.values():
+        await db.delete(miss)
 
     # A historical match start or finish timestamp identifies the source's snapshots and kicks.
     subs = (
@@ -783,8 +807,9 @@ def main():
     matches = [match for night in nights.values() for match in night.matches.values()]
     print(
         f"Imported {len(ratings)} players, {len(nights)} meetups, {len(matches)} matches, "
-        f"{sum(len(match.goals) for match in matches)} goals and "
-        f"{sum(len(match.kicks) for match in matches)} shootout kicks."
+        f"{sum(len(match.goals) for match in matches)} goals, "
+        f"{sum(len(match.kicks) for match in matches)} shootout kicks and "
+        f"{sum(len(match.misses) for match in matches)} penalty misses."
     )
     for day, night in sorted(nights.items()):
         for note in night.notes:

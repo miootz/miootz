@@ -1,13 +1,21 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import {
   deleteMatch, fetchMatchSubstitutions, fetchMeetupMatches,
   recordHistoricalSubstitution, type MatchSummary,
 } from "../api/matchesApi";
-import { fetchHistoricalGoals, saveHistoricalGoal } from "../api/stewardApi";
+import { deletePenaltyMiss, fetchHistoricalGoals, fetchPenaltyMisses, fetchGoals, saveHistoricalGoal } from "../api/stewardApi";
 import { AuthContext } from "../auth/auth-context";
 import { MatchHistoryList } from "./MatchHistoryList";
 
+const feed = vi.hoisted(() => ({ message: (_: Record<string, unknown>) => {} }));
+vi.mock("../utils/meetupDataBus", () => ({
+  subscribeMeetupData: (_id: number, _token: string, message: typeof feed.message) => {
+    feed.message = message;
+    return () => {};
+  },
+}));
 vi.mock("../api/matchesApi");
 vi.mock("../api/stewardApi");
 vi.mock("../context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -25,19 +33,22 @@ const match: MatchSummary = {
   created_at: null, completed_at: null,
 };
 
-function renderHistory() {
+function historyTree(meetupId = 1, token = false) {
   const noop = async () => {};
-  render(
-    <AuthContext.Provider value={{
+  return (
+    <MemoryRouter><AuthContext.Provider value={{
       me: { is_admin: true, auth_groups: [], user: { id: 1, is_admin: true, pocket_id_sub: "test" } },
-      loading: false, error: null, tokens: null, login: noop, logout: noop,
+      loading: false, error: null, tokens: token ? { accessToken: "test" } as never : null, login: noop, logout: noop,
       refresh: noop, savePosition: noop,
     }}>
-      <MatchHistoryList meetupId={1} editable attendees={[alice, bob, cara].map((p) => ({
+      <MatchHistoryList meetupId={meetupId} editable attendees={[alice, bob, cara].map((p) => ({
         ...p, user_id: p.id, status: "confirmed", joined_at: null, skill: 3,
       }))} />
-    </AuthContext.Provider>,
+    </AuthContext.Provider></MemoryRouter>
   );
+}
+function renderHistory(meetupId = 1, token = false) {
+  return render(historyTree(meetupId, token));
 }
 
 beforeEach(() => {
@@ -46,6 +57,8 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   vi.mocked(fetchMeetupMatches).mockResolvedValue({ matches: [match], match_duration_minutes: 10 });
   vi.mocked(fetchMatchSubstitutions).mockResolvedValue({ substitutions: [] });
+  vi.mocked(fetchGoals).mockResolvedValue([]);
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([]);
   vi.mocked(fetchHistoricalGoals).mockResolvedValue({ goals: [], rosters: { a: [alice], b: [bob] } });
 });
 
@@ -100,4 +113,42 @@ it("locks the goal log after a shootout and keeps failed match deletion visible 
   fireEvent.click(editor.getByRole("button", { name: "Delete" }));
   fireEvent.click(editor.getByRole("button", { name: "Confirm delete" }));
   expect(await editor.findByText("The match could not be deleted.")).toBeVisible();
+});
+
+
+it("refreshes expanded penalty misses once per live event", async () => {
+  renderHistory(1, true);
+  fireEvent.click(await screen.findByRole("button", { name: /Match 1/ }));
+  await waitFor(() => expect(fetchPenaltyMisses).toHaveBeenCalledTimes(1));
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([{ id: 8, team: "a", clock_minute: 6, scorer: alice }]);
+  await act(async () => feed.message({ type: "penalty_missed", match_id: match.id }));
+  expect(await screen.findByText(/Alice \(miss\)/)).toBeVisible();
+  expect(fetchPenaltyMisses).toHaveBeenCalledTimes(2);
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([]);
+  await act(async () => feed.message({ type: "penalty_miss_removed", match_id: match.id }));
+  await waitFor(() => expect(screen.queryByText(/Alice \(miss\)/)).not.toBeInTheDocument());
+  expect(fetchPenaltyMisses).toHaveBeenCalledTimes(3);
+});
+
+it("does not show the previous meetup while a different meetup loads", async () => {
+  const { rerender } = renderHistory();
+  expect(await screen.findByRole("button", { name: /Match 1/ })).toBeVisible();
+  let resolveNext!: (value: Awaited<ReturnType<typeof fetchMeetupMatches>>) => void;
+  vi.mocked(fetchMeetupMatches).mockImplementationOnce(() => new Promise((resolve) => { resolveNext = resolve; }));
+  rerender(historyTree(2));
+  expect(screen.queryByRole("button", { name: /Match 1/ })).not.toBeInTheDocument();
+  expect(screen.getByText("Loading matches…")).toBeVisible();
+  await act(async () => resolveNext({ matches: [], match_duration_minutes: 10 }));
+  expect(screen.getByText("No match results recorded yet.")).toBeVisible();
+});
+
+
+it("lets an admin remove a penalty miss from match history", async () => {
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([{ id: 8, team: "a", clock_minute: 6, scorer: alice }]);
+  vi.mocked(deletePenaltyMiss).mockResolvedValue();
+  renderHistory();
+  fireEvent.click(await screen.findByRole("button", { name: /Match 1/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete penalty miss by Alice" }));
+  await waitFor(() => expect(deletePenaltyMiss).toHaveBeenCalledWith(1, match.id, 8));
+  await waitFor(() => expect(screen.queryByText(/Alice \(miss\)/)).not.toBeInTheDocument());
 });
