@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  fetchMeetupMatches,
-  type MatchSummary,
-} from "../api/matchesApi";
+import { fetchMatch, type MatchSummary } from "../api/matchesApi";
 import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useAuth } from "../auth/useAuth";
 import { useStewardUi } from "../hooks/useStewardUi";
@@ -31,10 +28,15 @@ function getTimerColor(seconds: number, total: number): string {
   return "text-danger";
 }
 
-export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
+export function LiveMatchBanner({
+  meetupId,
+  matchId,
+}: {
+  meetupId: number;
+  matchId: number;
+}) {
   const { tokens } = useAuth();
-  const sid =
-    typeof meetupId === "string" ? parseInt(meetupId, 10) : meetupId;
+  const sid = meetupId;
   const [currentMatch, setCurrentMatch] = useState<MatchSummary | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -53,14 +55,8 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
 
   const loadMatch = useCallback(async () => {
     try {
-      const res = await fetchMeetupMatches(sid);
-      const current = res.matches.find(
-        (m) =>
-          m.status === "active" ||
-          m.status === "time_up" ||
-          m.status === "pending",
-      );
-      if (current) {
+      const current = await fetchMatch(sid, matchId);
+      if (current.status !== "completed") {
         setCurrentMatch(current);
         setTimerSeconds(
           current.status === "pending"
@@ -81,7 +77,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
     } catch {
       // silent
     }
-  }, [sid]);
+  }, [sid, matchId]);
 
   useEffect(() => {
     void (async () => {
@@ -106,12 +102,14 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
       sid,
       tokens?.accessToken,
       (data) => {
+        if (typeof data.match_id === "number" && data.match_id !== matchId) return;
         if (applyEvent(data)) {
           // goal_added / goal_removed / lease events — pull the new score.
           void loadMatch();
           return;
         }
         if (data.type === "match_timer_started") {
+          void loadMatch();
           const secs =
             typeof data.seconds_remaining === "number"
               ? Math.max(0, data.seconds_remaining)
@@ -164,7 +162,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         wasLive = live;
       },
     );
-  }, [sid, loadMatch, applyEvent, refreshGoals, tokens?.accessToken]);
+  }, [sid, loadMatch, applyEvent, refreshGoals, tokens?.accessToken, matchId]);
 
   // Timer tick — server-authoritative: derive remaining from the shared
   // end timestamp the server stamps on start/resume.
@@ -259,7 +257,7 @@ export function LiveMatchBanner({ meetupId }: { meetupId: string | number }) {
         </div>
         {canControl && (
           <a
-            href={roomPath(`/meetup-matches/${sid}`)}
+            href={roomPath(`/meetup-matches/${sid}${currentMatch ? `/${currentMatch.id}` : ""}`)}
             className="text-xs font-medium text-ink-dim hover:text-ink"
           >
             Manage match →

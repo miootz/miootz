@@ -17,6 +17,9 @@ import { MatchHistoryList } from "../components/MatchHistoryList";
 import { MeetupChat } from "../components/MeetupChat";
 import { MeetupLocationSection } from "../components/MeetupLocationSection";
 import { LiveMatchBanner } from "../components/LiveMatchBanner";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
+import { PitchPicker } from "../components/PitchPicker";
+import { fetchMeetupMatches, type MatchSummary } from "../api/matchesApi";
 import { SuccessCheckLottie } from "../components/SuccessCheckLottie";
 import {
 	addPlusOne,
@@ -451,6 +454,47 @@ function MeetupAttendanceActions({
 	);
 }
 
+function LiveMatchBoard({ meetupId }: { meetupId: number }) {
+	const { tokens } = useAuth();
+	const [snapshot, setSnapshot] = useState<{ meetupId: number; matches: MatchSummary[]; twoPitch: boolean }>();
+	useEffect(() => {
+		let revision = 0;
+		const refresh = async () => {
+			const request = ++revision;
+			try {
+				const res = await fetchMeetupMatches(meetupId);
+				if (request === revision) {
+					setSnapshot({ meetupId, matches: res.matches, twoPitch: !!res.two_pitch });
+				}
+			} catch {
+				// Keep the last snapshot until the next live update.
+			}
+		};
+		const unsubscribe = subscribeMeetupData(meetupId, tokens?.accessToken, (event) => {
+			if (event.type === "meetup_updated" || event.type === "match_created" ||
+				event.type === "match_ended" || event.type === "match_penalty_finished") {
+				void refresh();
+			}
+		}, (live) => { if (live) void refresh(); });
+		void refresh();
+		return () => {
+			revision++;
+			unsubscribe();
+		};
+	}, [meetupId, tokens?.accessToken]);
+
+	if (snapshot?.meetupId !== meetupId) return null;
+	const inProgress = snapshot.matches.filter((m) => m.status !== "completed");
+	return (
+		<>
+			{snapshot.twoPitch && <PitchPicker meetupId={meetupId} matches={snapshot.matches} />}
+			{inProgress.map((m) => (
+				<LiveMatchBanner key={m.id} meetupId={meetupId} matchId={m.id} />
+			))}
+		</>
+	);
+}
+
 export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 	meetup,
 	onRosterUpdated,
@@ -494,7 +538,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 								</Link>
 							)}
 						</h2>
-						<LiveMatchBanner meetupId={meetup.id} />
+						<LiveMatchBoard meetupId={meetupIdNum} />
 						<MatchHistoryList
 							meetupId={meetupIdNum}
 							editable

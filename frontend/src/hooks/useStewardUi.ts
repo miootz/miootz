@@ -115,6 +115,7 @@ export function useStewardUi(sid: number, matchId: number | null) {
    */
   const applyEvent = useCallback(
     (data: Record<string, unknown>) => {
+      if (typeof data.match_id === "number" && data.match_id !== matchId) return false;
       switch (data.type) {
         case "goal_added":
         case "goal_removed":
@@ -143,7 +144,7 @@ export function useStewardUi(sid: number, matchId: number | null) {
           return false;
       }
     },
-    [refreshGoals],
+    [matchId, refreshGoals],
   );
 
   /** Delete a goal row (caller is gated by can_control); refreshes snapshot. */

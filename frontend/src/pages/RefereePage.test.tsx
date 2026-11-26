@@ -157,7 +157,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-async function openReferee(admin = false) {
+async function openReferee(admin = false, path = "/meetup-matches/1") {
   await act(async () => {
     render(
       <AuthContext.Provider
@@ -172,8 +172,8 @@ async function openReferee(admin = false) {
           logout: async () => {},
         } as unknown as React.ContextType<typeof AuthContext>}
       >
-        <MemoryRouter initialEntries={["/meetup-matches/1"]}>
-          <Routes><Route path="/meetup-matches/:meetupId" element={<RefereePage />} /></Routes>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes><Route path="/meetup-matches/:meetupId/:matchId?" element={<RefereePage />} /></Routes>
         </MemoryRouter>
       </AuthContext.Provider>,
     );
@@ -343,7 +343,7 @@ it("limits paused adjustments and hides them while running", async () => {
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Subtract 15 seconds" })));
   expect(adjustTimer).toHaveBeenCalledWith(1, 10, -15);
   expect(screen.getByText("09:45")).toBeInTheDocument();
-  await act(async () => feed.message({ type: "match_timer_resumed", seconds_remaining: 585 }));
+  await act(async () => feed.message({ type: "match_timer_resumed", match_id: 10, seconds_remaining: 585 }));
   expect(screen.queryByRole("button", { name: "Add 15 seconds" })).not.toBeInTheDocument();
 });
 
@@ -543,6 +543,49 @@ it("opens the substitutions sheet and closes it", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+it("keeps the selected pitch clock independent of the other pitch", async () => {
+  const otherPitch = { ...match, id: 11, match_number: 2, timer_seconds_remaining: 420 };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), two_pitch: true, matches: [match, otherPitch],
+  });
+  await openReferee(false, "/meetup-matches/1/11");
+  expect(screen.getByText("07:00")).toBeInTheDocument();
+
+  await act(async () => feed.message({
+    type: "match_timer_resumed", match_id: 10, seconds_remaining: 180,
+  }));
+  expect(screen.getByText("07:00")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Subtract 15 seconds" })).toBeInTheDocument();
+
+  await act(async () => feed.message({
+    type: "match_timer_resumed", match_id: 11, seconds_remaining: 420,
+  }));
+  expect(screen.queryByRole("button", { name: "Subtract 15 seconds" })).not.toBeInTheDocument();
+});
+
+it("can start the second pitch while the first pitch has a shootout", async () => {
+  const first: MatchSummary = { ...match, status: "completed", pitch: 1 };
+  const second: MatchSummary = {
+    ...match, id: 11, match_number: 2, pitch: 2, status: "pending", timer_paused: false,
+  };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), two_pitch: true, matches: [first, second],
+  });
+  await openReferee(false, "/meetup-matches/1/11");
+  expect(screen.getByRole("button", { name: "Start Timer" })).toBeEnabled();
+  expect(fetchPenalty).not.toHaveBeenCalled();
+});
+
+it("lets the server choose the two-pitch final", async () => {
+  const first: MatchSummary = { ...match, status: "completed", score_a: 1, pitch: 1 };
+  const second = { ...first, id: 11, match_number: 2, pitch: 2 };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), two_pitch: true, matches: [first, second],
+  });
+  await openReferee();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Set up final" })));
+  expect(createNewPendingMatch).toHaveBeenCalledWith(1, undefined);
+});
 
 it("keeps the shootout result visible and focuses Done after a server event", async () => {
   const opener: MatchSummary = { ...match, status: "completed" };

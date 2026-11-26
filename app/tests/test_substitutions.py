@@ -327,8 +327,8 @@ async def test_swap_from_non_playing_team_updates_bench():
 
 @pytest.mark.asyncio
 async def test_swap_out_returns_to_source_bench_team():
-    """4 teams / 2 pitches: a swapped-out player takes the incoming player's
-    former spot on the source bench team, not the first bench team."""
+    """A swapped-out player takes the incoming player's spot on the source
+    waiting team, not the first waiting team."""
     async with await client() as ac:
         async with AsyncSession(engine) as db:
             await create_test_user(db, "Admint", "admint-uuid", is_admin=True)
@@ -351,9 +351,7 @@ async def test_swap_out_returns_to_source_bench_team():
             headers=hdr("admint"),
         )
         sid = r.json()["id"]
-        # Four known teams (4/4/4/4): first two play, last two are the bench.
-        # manual_teams_json pins every resolver (start, /teams, swap) to the
-        # same partition — start_matches ignores max_teams.
+        # manual_teams_json pins every resolver to the same four teams.
         partition = [user_ids[0:4], user_ids[4:8], user_ids[8:12], user_ids[12:16]]
         async with AsyncSession(engine) as db:
             for uid in user_ids:
@@ -369,13 +367,16 @@ async def test_swap_out_returns_to_source_bench_team():
         a_ids, b_ids = roster_ids(m)
         assert sorted(int(u) for u in a_ids) == sorted(partition[0])
         assert sorted(int(u) for u in b_ids) == sorted(partition[1])
+        second_id = rs.json()["matches"][1]["id"]
+        deleted = await ac.delete(f"/meetups/{sid}/matches/{second_id}", headers=hdr("admint"))
+        assert deleted.status_code == 204
 
-        src = set(partition[3])      # 2nd bench team
-        other = set(partition[2])    # 1st bench team
+        src = set(partition[3])      # 2nd waiting team
+        other = set(partition[2])    # 1st waiting team
         src_player = min(src)
         released = a_ids[0]
 
-        # src_player (2nd bench team) swaps INTO team A for a_ids[0].
+        # src_player (2nd waiting team) swaps INTO team A for a_ids[0].
         await hold_lease(mid, await user_id_by_sub("admint-uuid"))
         r = await ac.patch(
             f"/meetups/{sid}/matches/{mid}/teams",
