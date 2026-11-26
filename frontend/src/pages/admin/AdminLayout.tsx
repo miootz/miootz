@@ -301,10 +301,11 @@ export function AdminLayout() {
         </div>
       )}
 
+      {/* Keep absolutely positioned labels inside the scroll area. */}
       <main
         id="admin-main-content"
         tabIndex={-1}
-        className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8 outline-hidden"
+        className="relative flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 lg:p-8 outline-hidden"
         style={{
           paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
         }}
