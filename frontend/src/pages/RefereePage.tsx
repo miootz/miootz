@@ -32,7 +32,7 @@ import { GoalEntrySheet } from "../components/GoalEntrySheet";
 import { MobileSheet } from "../components/MobileSheet";
 import { leaseBusyButtonLabel } from "../utils/lease";
 import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
-import { playFinalWhistle, playHalfTimeWhistle, unlockWhistles } from "../utils/whistle";
+import { playFinalWhistle, playHalfTimeWhistle, previewWhistle, releaseWhistles, unlockWhistles } from "../utils/whistle";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SubstitutionsPanel } from "../components/SubstitutionsPanel";
 import { PenaltyShootoutPanel } from "../components/PenaltyShootoutPanel";
@@ -53,6 +53,7 @@ import {
   Settings,
   Trash2,
   WifiOff,
+  Volume2,
 } from "lucide-react";
 
 function formatTimer(seconds: number): string {
@@ -643,6 +644,8 @@ export function RefereePage() {
     );
   }, [sid, loadMatches, scheduleLiveRefresh, tokens?.accessToken]);
 
+  useEffect(() => () => releaseWhistles(), []);
+
   // Timer tick
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -1045,17 +1048,20 @@ export function RefereePage() {
   return (
     <div
       ref={rootRef}
-      className="flex flex-1 min-h-0 flex-col bg-board"
+      className={`flex flex-1 min-h-0 flex-col bg-board ${liveControls ? "referee-workspace" : ""}`}
       onClickCapture={(e) => {
         // Web Vibration (Android/desktop) on any button press; the switch
         // overlay above covers iOS.
-        if ((e.target as HTMLElement).closest("button")) hapticLight();
+        if ((e.target as HTMLElement).closest("button")) {
+          unlockWhistles();
+          hapticLight();
+        }
       }}
     >
       {/* Header — painted scoreboard band */}
-      <div className="shrink-0 border-b border-line bg-board">
-        <div className="max-w-lg mx-auto tablet:max-w-2xl">
-          <div className="flex items-center gap-2 px-2 pt-2">
+      <div className="referee-header shrink-0 border-b border-line bg-board">
+        <div className="referee-header-inner max-w-lg mx-auto tablet:max-w-2xl">
+          <div className="referee-match-bar flex items-center gap-2 px-2 pt-2">
             <button
               type="button"
               onClick={() => navigate(-1)}
@@ -1084,6 +1090,17 @@ export function RefereePage() {
                     : "No active match"}
               </p>
             </div>
+            {liveControls && (
+              <button
+                type="button"
+                onClick={previewWhistle}
+                aria-label="Test whistle"
+                className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 text-sm font-medium text-ink-dim hover:bg-raised hover:text-ink tablet:px-3"
+              >
+                <Volume2 className="h-4 w-4" aria-hidden />
+                <span className="hidden tablet:inline">Test whistle</span>
+              </button>
+            )}
             {isAdmin && (
               <button
                 type="button"
@@ -1098,9 +1115,8 @@ export function RefereePage() {
             )}
           </div>
           {currentMatch && (
-            <div className="mt-2">
-              {/* Score above the teams — larger, centred */}
-              <p className="texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
+            <div className="referee-scoreboard mt-2">
+              <p className="referee-score texture-painted-steel py-1 text-center text-4xl font-extrabold leading-none tabular-nums text-ink tablet:py-3 tablet:text-5xl">
                 {currentMatch.score_a}
                 <span className="mx-2 text-xl font-bold text-ink-faint">—</span>
                 {currentMatch.score_b}
@@ -1146,7 +1162,7 @@ export function RefereePage() {
           {currentMatch && rostersOpen && (
             <div
               id="match-rosters"
-              className="mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
+              className="referee-rosters mt-2 flex items-start justify-between gap-3 border border-line bg-raised px-3 py-2"
             >
               <div className="min-w-0">
                 <p className="text-2xs font-bold uppercase tracking-[0.14em] text-team-a">
@@ -1193,8 +1209,8 @@ export function RefereePage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-        <div className={`mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
+      <div className="referee-activity relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <div className={`referee-activity-inner mx-auto max-w-lg px-4 py-4 tablet:max-w-2xl ${completedMatches.length > 0 ? "desktop:grid desktop:max-w-5xl desktop:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] desktop:items-start desktop:gap-8" : ""}`}>
         <div className="space-y-6">
         {penaltyMatch && !isPastDeadline && (
           <PenaltyShootoutPanel
@@ -1478,9 +1494,10 @@ export function RefereePage() {
         ) : (
           /* Active or pending match */
           <>
-            {/* TV-style goal list — directly below the score; hidden until a
-                goal is logged; tap a goal to open the sheet in edit mode
-                (delete lives inside the sheet). */}
+            <h2 className="referee-wide-only hidden text-base font-bold text-ink">Match activity</h2>
+            {goals.length === 0 && (
+              <p className="referee-wide-only hidden border-b border-line pb-4 text-sm text-ink-dim">No goals logged yet.</p>
+            )}
             {goals.length > 0 && (
               <div className="border border-line bg-panel px-4 py-2">
                 <GoalList
@@ -1616,103 +1633,102 @@ export function RefereePage() {
         </div>
       </div>
 
-      {/* Countdown timer — pinned above the action deck */}
       {liveControls && (
-        <div className="shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
-          <div className="mx-auto max-w-lg text-center tablet:max-w-2xl">
-            <div className="flex items-center justify-center gap-4">
+        <div className="referee-console contents">
+          <div className="referee-clock shrink-0 border-t border-line bg-board px-4 pt-1 pb-2">
+            <h2 className="referee-wide-only hidden text-center text-sm font-medium text-ink-dim">Match clock</h2>
+            <div className="mx-auto max-w-lg text-center tablet:max-w-2xl">
+              <div className="flex items-center justify-center gap-4">
+                {isPaused && currentMatch.status === "active" && (
+                  <button type="button" onClick={() => void handleAdjustTimer(-15)}
+                    disabled={busy !== null || timerSeconds <= 0}
+                    className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                    aria-label="Subtract 15 seconds">−15s</button>
+                )}
+                <span
+                  className={`text-3xl font-bold tabular-nums ${getTimerColor(
+                    timerSeconds,
+                    currentMatch.timer_total_seconds,
+                  )}`}
+                >
+                  {formatTimer(timerSeconds)}
+                </span>
+                {isPaused && currentMatch.status === "active" && (
+                  <button type="button" onClick={() => void handleAdjustTimer(15)}
+                    disabled={busy !== null || timerSeconds >= 600}
+                    className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
+                    aria-label="Add 15 seconds">+15s</button>
+                )}
+              </div>
               {isPaused && currentMatch.status === "active" && (
-                <button type="button" onClick={() => void handleAdjustTimer(-15)}
-                  disabled={busy !== null || timerSeconds <= 0}
-                  className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
-                  aria-label="Subtract 15 seconds">−15s</button>
-              )}
-              <span
-                className={`text-3xl font-bold tabular-nums ${getTimerColor(
-                  timerSeconds,
-                  currentMatch.timer_total_seconds,
-                )}`}
-              >
-                {formatTimer(timerSeconds)}
-              </span>
-              {isPaused && currentMatch.status === "active" && (
-                <button type="button" onClick={() => void handleAdjustTimer(15)}
-                  disabled={busy !== null || timerSeconds >= 600}
-                  className="min-h-11 min-w-14 border border-line px-3 text-sm font-bold text-ink hover:bg-raised disabled:opacity-50"
-                  aria-label="Add 15 seconds">+15s</button>
+                <p className="text-xs font-medium text-ink-dim">Paused</p>
               )}
             </div>
-            {isPaused && currentMatch.status === "active" && (
-              <p className="text-xs font-medium text-ink-dim">Paused</p>
-            )}
           </div>
-        </div>
-      )}
 
-      {/* Bottom action deck — live controls only */}
-      {liveControls && (
-        <div className="shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto max-w-lg space-y-2 tablet:max-w-2xl">
-            {penaltyMatch && currentMatch.status === "pending" && (
-              <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              {currentMatch.status === "pending" && (
-                <button
-                  type="button"
-                  onClick={() => void handleStartTimer()}
-                  disabled={busy !== null || penaltyMatch !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  <Play className="h-5 w-5" />
-                  Start Timer
-                </button>
+          <div className="referee-actions shrink-0 bg-board px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mx-auto max-w-lg space-y-2 tablet:max-w-2xl">
+              {penaltyMatch && currentMatch.status === "pending" && (
+                <p className="text-sm text-ink-dim">Finish or skip the shootout before starting the next match.</p>
               )}
-              {currentMatch.status === "active" && !isPaused && (
+              <div className="referee-primary-actions grid grid-cols-2 gap-2">
+                {currentMatch.status === "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleStartTimer()}
+                    disabled={busy !== null || penaltyMatch !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Play className="h-5 w-5" />
+                    Start Timer
+                  </button>
+                )}
+                {currentMatch.status === "active" && !isPaused && (
+                  <button
+                    type="button"
+                    onClick={() => void handlePauseTimer()}
+                    disabled={busy !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Pause className="h-5 w-5" />
+                    Pause
+                  </button>
+                )}
+                {currentMatch.status === "active" && isPaused && (
+                  <button
+                    type="button"
+                    onClick={() => void handleResumeTimer()}
+                    disabled={busy !== null}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  >
+                    <Play className="h-5 w-5" />
+                    Resume
+                  </button>
+                )}
+                {currentMatch.status !== "time_up" && (
+                  <button
+                    type="button"
+                    disabled={(!!lease && leaseLeft > 0) || busy !== null}
+                    onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
+                    className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
+                  >
+                    {lease && leaseLeft > 0 && !showSubstitutions
+                      ? leaseBusyButtonLabel(lease.holderName, leaseLeft)
+                      : "+ Goal"}
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => void handlePauseTimer()}
+                  onClick={() => setConfirmAction({ kind: "end" })}
                   disabled={busy !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
                 >
-                  <Pause className="h-5 w-5" />
-                  Pause
+                  <Flag className="h-5 w-5" />
+                  End Match
                 </button>
-              )}
-              {currentMatch.status === "active" && isPaused && (
-                <button
-                  type="button"
-                  onClick={() => void handleResumeTimer()}
-                  disabled={busy !== null}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-live py-4 text-lg font-bold text-board hover:bg-live/90 disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  <Play className="h-5 w-5" />
-                  Resume
-                </button>
-              )}
-              {currentMatch.status !== "time_up" && (
-                <button
-                  type="button"
-                  disabled={(!!lease && leaseLeft > 0) || busy !== null}
-                  onClick={() => setGoalSheet({ match: currentMatch, goal: null })}
-                  className="flex min-h-[56px] items-center justify-center gap-2 bg-ink py-4 text-lg font-bold text-board hover:bg-white/90 disabled:opacity-60 active:scale-[0.98] transition-transform"
-                >
-                  {lease && leaseLeft > 0 && !showSubstitutions
-                    ? leaseBusyButtonLabel(lease.holderName, leaseLeft)
-                    : "+ Goal"}
-                </button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmAction({ kind: "end" })}
-                disabled={busy !== null}
-                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 border-2 border-ink/30 py-3 text-base font-bold text-ink hover:bg-raised disabled:opacity-50 active:scale-[0.98] transition-transform"
-              >
-                <Flag className="h-5 w-5" />
-                End Match
-              </button>
+              </div>
             </div>
           </div>
         </div>

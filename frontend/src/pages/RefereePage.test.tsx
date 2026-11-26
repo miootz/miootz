@@ -22,6 +22,7 @@ import {
 } from "../api/stewardApi";
 import { RefereePage } from "./RefereePage";
 import { AuthContext } from "../auth/auth-context";
+import { playHalfTimeWhistle, previewWhistle, unlockWhistles } from "../utils/whistle";
 
 const { feed, showToast } = vi.hoisted(() => ({
   feed: {
@@ -54,6 +55,13 @@ vi.mock("../api/stewardApi", async (original) => ({
   acquireLease: vi.fn(),
   renewLease: vi.fn(),
   releaseLease: vi.fn(),
+}));
+vi.mock("../utils/whistle", () => ({
+  unlockWhistles: vi.fn(),
+  releaseWhistles: vi.fn(),
+  playHalfTimeWhistle: vi.fn(),
+  playFinalWhistle: vi.fn(),
+  previewWhistle: vi.fn(),
 }));
 vi.mock("../auth/useAuth", () => ({
   useAuth: () => ({ tokens: { accessToken: "token" } }),
@@ -276,6 +284,19 @@ it("updates match scores even when a team request is slow", async () => {
   expect(fetchMeetupMatches).toHaveBeenCalledTimes(2);
   expect(screen.getByText("—", { selector: "p > span" }).parentElement).toHaveTextContent("2—0");
   await act(async () => finishTeams({ meetup_id: 1, content_revision: 0, teams: [] }));
+});
+
+it("unlocks on a referee tap and sounds half-time as the clock runs past halfway", async () => {
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, timer_paused: false, timer_seconds_remaining: 460 }],
+  });
+  await openReferee();
+  fireEvent.click(screen.getByRole("button", { name: "Test whistle" }));
+  expect(unlockWhistles).toHaveBeenCalled();
+  expect(previewWhistle).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
+  expect(screen.getByText("07:29")).toBeInTheDocument();
+  expect(playHalfTimeWhistle).toHaveBeenCalledOnce();
 });
 
 it("shows the live bottom deck with the primary controls for a paused match", async () => {

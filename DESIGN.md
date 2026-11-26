@@ -335,8 +335,10 @@ at every size.
   side by side.
 - Desktop member and admin navigation stay in left rails. On Meetup, the
   roster or results stay beside chat and location. Profile keeps ratings and
-  stats beside progress and preferences. The referee keeps completed matches
-  in view beside the current match.
+  stats beside progress and preferences.
+- On the live referee screen, keep the scoreboard and clock controls visible
+  together. Tablet pairs the score and lineups with controls and activity.
+  Desktop gives match activity its own column beside the lineups and controls.
 - Keep one primary scroll area in each app shell. Keep action labels visible
   and allow the content column and its tables to shrink independently.
 
