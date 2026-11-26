@@ -7,29 +7,36 @@ import {
   type MatchSummary,
   type MatchSubstitution,
 } from "../api/matchesApi";
-import { ChevronDown, Loader2, Pencil, Plus, Trophy } from "lucide-react";
+import { ChevronDown, Loader2, Pencil, Plus, Trash2, Trophy } from "lucide-react";
 import type { MeetupDetail } from "../api/meetupsApi";
 import { AuthContext } from "../auth/auth-context";
 import { useToast } from "../context/ToastContext";
-import { fetchGoals, type GoalRow } from "../api/stewardApi";
+import { deletePenaltyMiss, fetchGoals, fetchPenaltyMisses, type GoalRow, type PenaltyMissRow } from "../api/stewardApi";
+import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { GoalList } from "./GoalList";
 import { PlayerEditLink } from "./PlayerEditLink";
 import { MatchDialog } from "./MatchDialog";
 
-export function MatchHistoryList({
-  meetupId,
-  editable = false,
-  allowCreate = true,
-  refreshKey,
-  attendees,
-}: {
+interface MatchHistoryListProps {
   meetupId: number;
   /** When true, admins can edit scores and match details. */
   editable?: boolean;
   allowCreate?: boolean;
   refreshKey?: number;
   attendees?: MeetupDetail["attendees"];
-}) {
+}
+
+export function MatchHistoryList(props: MatchHistoryListProps) {
+  return <MatchHistoryContent key={props.meetupId} {...props} />;
+}
+
+function MatchHistoryContent({
+  meetupId,
+  editable = false,
+  allowCreate = true,
+  refreshKey,
+  attendees,
+}: MatchHistoryListProps) {
   const { showToast } = useToast();
   const auth = useContext(AuthContext);
   const isAdmin = auth?.me?.is_admin ?? false;
@@ -37,6 +44,8 @@ export function MatchHistoryList({
 
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [liveRevision, setLiveRevision] = useState(0);
+  const [rowRevision, setRowRevision] = useState(0);
   const [dialog, setDialog] = useState<
     { mode: "add" } | { mode: "edit"; matchId: number } | null
   >(null);
@@ -54,7 +63,16 @@ export function MatchHistoryList({
       if (current) setLoading(false);
     });
     return () => { current = false; };
-  }, [meetupId, refreshKey]);
+  }, [meetupId, refreshKey, liveRevision]);
+
+  useEffect(() => {
+    if (!auth?.tokens?.accessToken) return;
+    return subscribeMeetupData(meetupId, auth.tokens.accessToken, (event) => {
+      if (["goal_added", "goal_updated", "goal_removed", "penalty_missed", "penalty_miss_removed", "match_ended", "match_penalty_finished"].includes(String(event.type))) {
+        setLiveRevision((revision) => revision + 1);
+      }
+    });
+  }, [meetupId, auth?.tokens?.accessToken]);
 
   const handleCreated = (match: MatchSummary) => {
     setMatches((prev) => [...prev, match]);
@@ -105,6 +123,8 @@ export function MatchHistoryList({
             key={m.id}
             meetupId={meetupId}
             match={m}
+            liveRevision={liveRevision + rowRevision}
+            refreshKey={refreshKey}
             canEdit={canEdit}
             attendees={attendees}
             onEdit={() => setDialog({ mode: "edit", matchId: m.id })}
@@ -127,6 +147,7 @@ export function MatchHistoryList({
             setMatches((previous) =>
               previous.map((row) => (row.id === matchId ? { ...row, ...updated } : row)),
             );
+            setRowRevision((revision) => revision + 1);
           }}
           onDelete={handleDeleteMatch}
         />
@@ -142,18 +163,25 @@ function MatchResultRow({
   match,
   canEdit,
   attendees,
+  liveRevision,
+  refreshKey,
   onEdit,
 }: {
   meetupId: number;
   match: MatchSummary;
   canEdit: boolean;
   attendees?: MeetupDetail["attendees"];
+  liveRevision: number;
+  refreshKey?: number;
   onEdit: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // null = not fetched yet; lazy-load on first expand
   const [subs, setSubs] = useState<MatchSubstitution[] | null>(null);
   const [goals, setGoals] = useState<GoalRow[] | null>(null);
+  const [misses, setMisses] = useState<PenaltyMissRow[] | null>(null);
+  const [missLoadError, setMissLoadError] = useState(false);
+  const { showToast } = useToast();
   const [subLoadError, setSubLoadError] = useState(false);
 
   useEffect(() => {
@@ -169,8 +197,21 @@ function MatchResultRow({
     fetchGoals(meetupId, match.id)
       .then((result) => { if (current) setGoals(result); })
       .catch(() => { if (current) setGoals([]); });
+    fetchPenaltyMisses(meetupId, match.id)
+      .then((result) => { if (current) { setMisses(result); setMissLoadError(false); } })
+      .catch(() => { if (current) setMissLoadError(true); });
     return () => { current = false; };
-  }, [expanded, meetupId, match]);
+  }, [expanded, meetupId, match.id, liveRevision, refreshKey]);
+
+  const handleDeleteMiss = async (miss: PenaltyMissRow) => {
+    try {
+      await deletePenaltyMiss(meetupId, match.id, miss.id);
+      setMisses((rows) => (rows ?? []).filter((row) => row.id !== miss.id));
+      showToast("Penalty miss removed", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not delete penalty miss", "error");
+    }
+  };
 
   const nameById = useMemo(() => {
     const m = new Map(attendees?.map((attendee) => [attendee.user_id, attendee.display_name]));
@@ -283,6 +324,12 @@ function MatchResultRow({
         {/* Expanded: scorers, final rosters + substitution log */}
         {expanded && (
           <div className="border-t border-line pt-3 space-y-3">
+            {match.penalty_winner && (
+              <p className="text-xs text-ink-dim tabular-nums">
+                Shootout: {match.penalty_score_a != null && match.penalty_score_b != null && <>{match.penalty_score_a} – {match.penalty_score_b} — </>}
+                {match.penalty_winner === "a" ? match.team_a.name : match.team_b.name} wins
+              </p>
+            )}
             {goals && goals.length > 0 && (
               <div className="bg-raised px-3 py-1">
                 <GoalList
@@ -291,6 +338,22 @@ function MatchResultRow({
                   onEdit={() => {}}
                   emptyLabel=""
                 />
+              </div>
+            )}
+            {missLoadError && <p role="alert" className="text-sm text-danger">Couldn’t load penalty misses.</p>}
+            {misses && misses.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">Penalty misses</p>
+                <ul className="divide-y divide-line">
+                  {misses.map((miss) => (
+                    <li key={miss.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="text-sm text-ink-dim"><span className="mr-2 tabular-nums text-ink-faint">{miss.clock_minute}′</span>{miss.scorer.display_name} (miss)</span>
+                      {canEdit && <button type="button" onClick={() => void handleDeleteMiss(miss)}
+                        className="grid h-11 w-11 place-items-center text-ink-faint hover:text-danger"
+                        aria-label={`Delete penalty miss by ${miss.scorer.display_name}`}><Trash2 className="h-4 w-4" aria-hidden /></button>}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

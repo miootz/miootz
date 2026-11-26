@@ -1,3 +1,4 @@
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 import { useEffect, useState } from "react";
 import { Bell, Download, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
@@ -123,19 +124,14 @@ export function AdminToolsPage() {
         <h2 className="text-lg font-bold text-ink">Player ratings</h2>
         {ratingSettings && (
           <form id="rating-settings-form" onSubmit={(event) => void saveRatings(event)} className="mt-4 space-y-5">
-            <label className="flex min-h-11 items-center gap-3 text-sm text-ink">
-              <input
-                type="checkbox"
-                disabled={savingRatings}
-                className="h-5 w-5 accent-live"
-                checked={ratingSettings.computed_scores}
-                onChange={(event) => {
+            <div className="flex min-h-11 items-center gap-3 text-sm text-ink">
+              <ToggleSwitch enabled={ratingSettings.computed_scores} disabled={savingRatings}
+                ariaLabel="Use adjusted ratings" onChange={() => {
                   setRatingSaved(false);
-                  setRatingSettings({ ...ratingSettings, computed_scores: event.target.checked });
-                }}
-              />
-              Use adjusted ratings
-            </label>
+                  setRatingSettings({ ...ratingSettings, computed_scores: !ratingSettings.computed_scores });
+                }} />
+              <span>Use adjusted ratings</span>
+            </div>
             <p className="text-sm text-ink-dim">Turn off to use base ratings for rankings and team balancing.</p>
             <fieldset disabled={savingRatings}>
               <legend className="font-semibold text-ink">Peer ratings</legend>

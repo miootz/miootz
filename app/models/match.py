@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -96,7 +104,9 @@ class MatchSubstitution(Base):
     #: Match-clock seconds when a mid-match (timer-paused) swap happened;
     #: NULL for pre-start swaps. Drives ≥50%-played credit in rankings.
     clock_secs: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    is_sideline_addition: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    is_sideline_addition: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -114,4 +124,20 @@ class MatchPenalty(Base):
     team: Mapped[str] = mapped_column(String)  # 'a' | 'b'
     scored: Mapped[bool] = mapped_column(Boolean)
     scorer_id: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PenaltyMiss(Base):
+    """A regulation-time penalty that was missed — not a goal, but a shot
+    that counts toward the player's penalty stats (same as a shootout miss)."""
+
+    __tablename__ = "penalty_misses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("meetup_matches.id"), index=True)
+    team: Mapped[str] = mapped_column(String(1))  # 'a' | 'b'
+    scorer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    clock_minute: Mapped[int] = mapped_column(Integer)
+    #: Client-minted idempotency key — a retry replays the miss.
+    intent_id: Mapped[str] = mapped_column(String, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

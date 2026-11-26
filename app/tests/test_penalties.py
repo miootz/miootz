@@ -205,6 +205,7 @@ async def test_finish_requires_clinch_and_sets_winner():
         )
         assert r.status_code == 200, r.text
         assert r.json()["winner"] == "a"
+        assert (r.json()["match"]["penalty_score_a"], r.json()["match"]["penalty_score_b"]) == (5, 4)
         # No game template attached → no draw recorded; winner credit
         # flips to team A via penalty_winner.
         assert r.json()["match"]["was_draw"] is False
@@ -213,6 +214,7 @@ async def test_finish_requires_clinch_and_sets_winner():
                 await db.execute(select(MeetupMatch).where(MeetupMatch.id == mid))
             ).scalar_one()
             assert m.penalty_winner == "a"
+            assert (m.penalty_score_a, m.penalty_score_b) == (5, 4)
 
         # The shootout winner stays on the pitch for the next match; the
         # away team that end_match kept drops to team B.

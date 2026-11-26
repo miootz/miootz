@@ -74,6 +74,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
                 (day, 1, "Alex Example", "Shootout missed", None),
                 (day, 1, "Casey Sample", "Shootout scored", None),
                 (day, 2, "Casey Sample", "Penalty", None),
+                (day, 2, "Casey Sample", "Penalty missed", None),
                 (day, 2, "Casey Sample", "Goal", None),
             ]
         ),
@@ -81,7 +82,7 @@ async def test_team_maker_import_is_idempotent(tmp_path):
             [
                 ("Player", *STAT_COLUMNS),
                 ("Alex Example", 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0),
-                ("Casey Sample", 1, 2, 2, 0, 1, 3, 0, 0, 1.5, 0, 1.5, 2, 2, 1),
+                ("Casey Sample", 1, 2, 2, 0, 1, 2, 0, 0, 1.0, 0, 1.0, 3, 2, 2 / 3),
                 ("Jordan Fixture", 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 ("Taylor Mock", 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0),
             ]
@@ -208,8 +209,10 @@ async def test_team_maker_import_is_idempotent(tmp_path):
         assert db.execute(
             "SELECT historical_roster_name, pac FROM users ORDER BY historical_roster_name"
         ).fetchall() == [
-            ("Alex Example", 4.2), ("Casey Sample", None),
-            ("Jordan Fixture", 4.2), ("Taylor Mock", None),
+            ("Alex Example", 4.2),
+            ("Casey Sample", None),
+            ("Jordan Fixture", 4.2),
+            ("Taylor Mock", None),
         ]
         assert db.execute(
             "SELECT score_a, score_b, penalty_score_a, penalty_score_b, penalty_winner "
@@ -261,6 +264,20 @@ async def test_team_maker_import_is_idempotent(tmp_path):
     assert await run_import({}) == []
     with sqlite3.connect(database) as db:
         assert list(db.iterdump()) == before
+
+    # A removed workbook miss is deleted on re-import, without leaving a
+    # stale attempt in the reconciled statistics.
+    nights[corrected].matches[2].misses.clear()
+    casey_stats = list(expected["Casey Sample"])
+    casey_stats[STAT_COLUMNS.index("Pens taken")] = 2
+    casey_stats[STAT_COLUMNS.index("Pen %")] = 1
+    expected["Casey Sample"] = tuple(casey_stats)
+    assert await run_import({}) == []
+    with sqlite3.connect(database) as db:
+        assert db.execute("SELECT COUNT(*) FROM penalty_misses").fetchone()[0] == 0
+        before = list(db.iterdump())
+
+    assert await run_import({}) == []
     with pytest.raises(ValueError, match="existing Pocket ID link"):
         await run_import({"Alex Example": str(UUID(int=2))})
     with sqlite3.connect(database) as db:

@@ -66,7 +66,7 @@ export function GoalList({
                       }`}
                     >
                       {scorerName}
-                      {g.is_own_goal ? " (OG)" : ""}
+                      {g.is_own_goal ? " (OG)" : g.is_penalty ? " (P)" : ""}
                     </span>
                   </>
                 ) : (
@@ -79,7 +79,7 @@ export function GoalList({
                       }`}
                     >
                       {scorerName}
-                      {g.is_own_goal ? " (OG)" : ""}
+                      {g.is_own_goal ? " (OG)" : g.is_penalty ? " (P)" : ""}
                     </span>
                     {minuteLabel}
                     <Volleyball className="h-3.5 w-3.5 shrink-0 self-center text-ink-faint" aria-hidden />

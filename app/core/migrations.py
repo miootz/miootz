@@ -789,6 +789,57 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
             )
         )
 
+    if not await has_table("penalty_misses"):
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS penalty_misses (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    match_id INTEGER NOT NULL REFERENCES meetup_matches(id),
+                    team VARCHAR NOT NULL,
+                    scorer_id INTEGER NOT NULL REFERENCES users(id),
+                    clock_minute INTEGER NOT NULL,
+                    intent_id VARCHAR NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_penalty_misses_match_id "
+                "ON penalty_misses (match_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_penalty_misses_intent_id "
+                "ON penalty_misses (intent_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_penalty_misses_scorer_id "
+                "ON penalty_misses (scorer_id)"
+            )
+        )
+
+    # Existing databases already have meetup_analytics, so its after_create
+    # hooks do not run again when a new source table is added.
+    if await has_table("meetup_analytics"):
+        for operation, rows in {
+            "insert": ("NEW",), "update": ("OLD", "NEW"), "delete": ("OLD",),
+        }.items():
+            keys = ", ".join(
+                f"(SELECT meetup_id FROM meetup_matches WHERE id = {row}.match_id)"
+                for row in rows
+            )
+            await conn.exec_driver_sql(
+                f"CREATE TRIGGER IF NOT EXISTS invalidate_meetup_analytics_penalty_misses_{operation} "
+                f"AFTER {operation.upper()} ON penalty_misses BEGIN "
+                f"DELETE FROM meetup_analytics WHERE meetup_id IN ({keys}); END"
+            )
+
     # ── Mid-match (timer-paused) substitutions carry the match clock ──
     if not await has_column("match_substitutions", "clock_secs"):
         await conn.execute(

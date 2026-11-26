@@ -4,6 +4,7 @@ import { useToast } from "../context/ToastContext";
 import type { MatchSummary } from "../api/matchesApi";
 import type { GoalPerson, GoalRow } from "../api/stewardApi";
 import { PlayerSelect, type SelectablePlayer } from "./PlayerSelect";
+import { ToggleSwitch } from "./ToggleSwitch";
 import {
   defaultGoalMinute,
   isAfterWhistle,
@@ -51,6 +52,8 @@ export interface GoalSubmitInput {
   assist_id: number | null;
   goalkeeper_id: number | null;
   is_own_goal: boolean;
+  is_penalty: boolean;
+  missed: boolean;
   minute: number;
   intent_id: string;
   force: boolean;
@@ -75,17 +78,20 @@ export function GoalEntryFlow({
   onClose,
   onDeleteGoal,
   showMinute = true,
+  allowMiss = true,
 }: {
   match: MatchSummary;
   editGoal?: GoalRow | null;
   fixedScoringSide?: Side;
   rosters?: Record<Side, GoalPerson[]>;
   canSubmit: boolean;
-  onSubmit: (input: GoalSubmitInput) => Promise<GoalRow>;
+  onSubmit: (input: GoalSubmitInput) => Promise<GoalRow | null>;
   onClose: () => void;
   onDeleteGoal?: (goal: GoalRow) => Promise<void>;
   /** Hide the minute field for flows that derive the minute server-side (e.g. admin history). */
   showMinute?: boolean;
+  /** Missed penalties are recorded in the live flow, not as historical goals. */
+  allowMiss?: boolean;
 }) {
   const { showToast } = useToast();
   const isEdit = !!editGoal;
@@ -93,6 +99,8 @@ export function GoalEntryFlow({
 
   const [step, setStep] = useState<GoalStep>(isEdit ? "review" : "scorer");
   const [isOwnGoal, setIsOwnGoal] = useState(editGoal?.is_own_goal ?? false);
+  const [isPenalty, setIsPenalty] = useState(editGoal?.is_penalty ?? false);
+  const [missed, setMissed] = useState(false);
   const [scorer, setScorer] = useState<SelectablePlayer | null>(
     editGoal?.scorer ? toPlayer(editGoal.scorer) : null,
   );
@@ -115,7 +123,8 @@ export function GoalEntryFlow({
   const teams = { a: match.team_a, b: match.team_b };
   const scorerSides = lockedTeam ? [isOwnGoal ? otherSide(lockedTeam) : lockedTeam] : (["a", "b"] as const);
   const detailSide = step === "assist" ? scoringSide : concedingSide;
-  const steps: GoalStep[] = isOwnGoal ? ["scorer", "keeper", "review"] : ["scorer", "assist", "keeper", "review"];
+  const steps: GoalStep[] = missed ? ["scorer", "review"] : isOwnGoal || isPenalty
+    ? ["scorer", "keeper", "review"] : ["scorer", "assist", "keeper", "review"];
   const stepIndex = steps.indexOf(step);
   const previous = steps[stepIndex - 1];
   const maxMinute = Math.min(600, Math.ceil(match.timer_total_seconds / 60) + 10);
@@ -132,7 +141,7 @@ export function GoalEntryFlow({
     if (scoringSide !== team || goalkeeper?.id === player?.id) setGoalkeeper(null);
     setSelectedTeam(team);
     setScorer(player);
-    goTo(isOwnGoal ? "keeper" : "assist");
+    goTo(missed ? "review" : isOwnGoal || isPenalty ? "keeper" : "assist");
   }
 
   const afterWhistle = showMinute && isAfterWhistle(minute, match.timer_total_seconds);
@@ -146,16 +155,19 @@ export function GoalEntryFlow({
       const saved = await onSubmit({
         team: scoringSide,
         scorer_id: scorer?.id ?? null,
-        assist_id: assist?.id ?? null,
-        goalkeeper_id: goalkeeper?.id ?? null,
+        assist_id: isOwnGoal || isPenalty ? null : assist?.id ?? null,
+        goalkeeper_id: missed ? null : goalkeeper?.id ?? null,
         is_own_goal: isOwnGoal,
+        is_penalty: isPenalty,
+        missed,
         minute,
         intent_id: intentIdRef.current,
         force: force || afterWhistle,
       });
       showToast(
-        isEdit
-          ? `Goal updated — ${g2score(match, saved)}`
+        saved == null
+          ? "Penalty miss logged — not in the match score"
+          : isEdit ? `Goal updated — ${g2score(match, saved)}`
           : `Goal logged — ${g2score(match, saved)}`,
         "success",
       );
@@ -195,7 +207,7 @@ export function GoalEntryFlow({
     }
   }
 
-  const canSubmitNow = canSubmit && !submitting && !!scoringSide;
+  const canSubmitNow = canSubmit && !submitting && !!scoringSide && (!missed || !!scorer);
 
   const backButton = previous && (
     <button type="button" disabled={submitting} onClick={() => goTo(previous)}
@@ -209,7 +221,7 @@ export function GoalEntryFlow({
     <button type="button" onClick={() => void postGoal(confirmDuplicate)} disabled={!canSubmitNow}
       className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 bg-ink px-4 py-2 text-sm font-bold text-board hover:bg-white/90 disabled:opacity-50">
       {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <Plus className="h-5 w-5" aria-hidden />}
-      {submitting ? "Saving…" : confirmDuplicate ? "Confirm second goal" : isEdit ? "Save changes" : "Confirm goal"}
+      {submitting ? "Saving…" : missed ? "Log penalty miss" : confirmDuplicate ? "Confirm second goal" : isEdit ? "Save changes" : "Confirm goal"}
     </button>
   );
 
@@ -225,15 +237,41 @@ export function GoalEntryFlow({
 
         {step === "scorer" && (
           <>
-            <label className="flex min-h-12 items-center gap-2 text-sm text-ink">
-              <input type="checkbox" checked={isOwnGoal} onChange={(event) => {
-                setIsOwnGoal(event.target.checked);
-                setScorer(null);
-                setAssist(null);
-                setGoalkeeper(null);
-              }} />
-              Own goal
-            </label>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <div className="flex min-h-12 items-center gap-2 text-sm text-ink">
+                <ToggleSwitch enabled={isOwnGoal} ariaLabel="Own goal" onChange={() => {
+                  setIsOwnGoal(!isOwnGoal);
+                  setIsPenalty(false);
+                  setMissed(false);
+                  setScorer(null);
+                  setAssist(null);
+                  setGoalkeeper(null);
+                }} />
+                <span>Own goal</span>
+              </div>
+              <div className="flex min-h-12 items-center gap-2 text-sm text-ink">
+                <ToggleSwitch enabled={isPenalty} ariaLabel="Penalty" onChange={() => {
+                  setIsPenalty(!isPenalty);
+                  setIsOwnGoal(false);
+                  setMissed(false);
+                  setScorer(null);
+                  setAssist(null);
+                  setGoalkeeper(null);
+                }} />
+                <span>Penalty</span>
+              </div>
+              {isPenalty && allowMiss && !isEdit && (
+                <div className="flex min-h-12 items-center gap-2 text-sm text-ink">
+                  <ToggleSwitch enabled={missed} ariaLabel="Miss" onChange={() => {
+                    setMissed(!missed);
+                    setAssist(null);
+                    setGoalkeeper(null);
+                  }} />
+                  <span>Miss</span>
+                </div>
+              )}
+            </div>
+            {missed && <p className="text-sm text-ink-dim">A miss counts toward penalty statistics, but not the match score. Select the taker.</p>}
             <div className={lockedTeam ? "" : "grid grid-cols-2 items-start gap-2"}>
               {scorerSides.map((side) => {
                 const goalTeam = isOwnGoal ? otherSide(side) : side;
@@ -242,11 +280,11 @@ export function GoalEntryFlow({
                     <PlayerSelect label={teams[side].name} side={side}
                       players={(rosters?.[side] ?? teams[side].users).map(toPlayer)} selected={scorer}
                       onSelect={(player) => chooseScorer(player, goalTeam)} />
-                    <button type="button" onClick={() => chooseScorer(null, goalTeam)}
+                    {!missed && <button type="button" onClick={() => chooseScorer(null, goalTeam)}
                       aria-label={`Skip scorer, goal for ${teams[goalTeam].name}`}
                       className="min-h-12 w-full border border-line px-2 text-sm font-medium text-ink hover:bg-raised">
                       {isOwnGoal && !lockedTeam ? `Skip scorer · Goal for ${teams[goalTeam].name}` : "Skip scorer"}
-                    </button>
+                    </button>}
                   </div>
                 );
               })}
@@ -285,13 +323,13 @@ export function GoalEntryFlow({
         {step === "review" && scoringSide && (
           <section aria-label="Goal review" className="space-y-4">
             <div className="border border-line bg-raised px-3 py-2 font-semibold text-ink">
-              Goal for {teams[scoringSide].name}
+              {missed ? "Penalty miss" : isPenalty ? "Penalty goal" : "Goal"} for {teams[scoringSide].name}
             </div>
             <div className="divide-y divide-line border border-line">
               {([
                 ["scorer", isOwnGoal ? "Own goal" : "Scorer", scorer],
-                ...(!isOwnGoal ? [["assist", "Assist", assist] as const] : []),
-                ["keeper", "Goalkeeper", goalkeeper],
+                ...(!isOwnGoal && !isPenalty ? [["assist", "Assist", assist] as const] : []),
+                ...(!missed ? [["keeper", "Goalkeeper", goalkeeper] as const] : []),
               ] as const).map(([target, label, player]) => (
                 <button key={target} type="button" disabled={submitting} onClick={() => goTo(target as GoalStep)}
                   aria-label={`Change ${label.toLowerCase()}: ${player?.name ?? "Skipped"}`}
@@ -303,7 +341,7 @@ export function GoalEntryFlow({
             </div>
             {showMinute && (
               <div>
-                <p id={minuteLabelId} className="mb-1 text-sm font-medium text-ink">Goal minute</p>
+                <p id={minuteLabelId} className="mb-1 text-sm font-medium text-ink">{missed ? "Penalty minute" : "Goal minute"}</p>
                 <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby={minuteLabelId}>
                   <button type="button" disabled={submitting || minute <= 1}
                     onClick={() => { setMinute((m) => Math.max(1, m - 1)); setConfirmDuplicate(false); }}

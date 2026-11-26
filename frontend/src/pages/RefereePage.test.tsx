@@ -8,6 +8,7 @@ import {
   deleteMatch,
   createNewPendingMatch,
   fetchPenalty,
+  finishPenaltyShootout,
   skipPenaltyShootout,
   startMatches,
   type MatchSummary,
@@ -15,6 +16,7 @@ import {
 import { fetchMeetupDetail, fetchMeetupTeams } from "../api/meetupsApi";
 import {
   fetchGoals,
+  fetchPenaltyMisses,
   fetchStewardState,
   acquireLease,
   renewLease,
@@ -40,6 +42,7 @@ vi.mock("../api/matchesApi", async (original) => ({
   deleteMatch: vi.fn(),
   createNewPendingMatch: vi.fn(),
   fetchPenalty: vi.fn(),
+  finishPenaltyShootout: vi.fn(),
   skipPenaltyShootout: vi.fn(),
   startMatches: vi.fn(),
 }));
@@ -51,6 +54,7 @@ vi.mock("../api/meetupsApi", async (original) => ({
 vi.mock("../api/stewardApi", async (original) => ({
   ...await original<typeof import("../api/stewardApi")>(),
   fetchGoals: vi.fn(),
+  fetchPenaltyMisses: vi.fn(),
   fetchStewardState: vi.fn(),
   acquireLease: vi.fn(),
   renewLease: vi.fn(),
@@ -120,6 +124,7 @@ beforeEach(() => {
   });
   vi.mocked(fetchStewardState).mockResolvedValue({ can_control: true, reason: "ok", lease: null });
   vi.mocked(fetchGoals).mockResolvedValue([]);
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([]);
   vi.mocked(acquireLease).mockResolvedValue({
     ok: true,
     lease: { lease_token: "t", expires_in: 45 },
@@ -580,4 +585,51 @@ it("lets the server choose the two-pitch final", async () => {
   await openReferee();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Set up final" })));
   expect(createNewPendingMatch).toHaveBeenCalledWith(1, undefined);
+});
+
+it("keeps the shootout result visible and focuses Done after a server event", async () => {
+  const opener: MatchSummary = { ...match, status: "completed" };
+  const pending: MatchSummary = { ...match, id: 11, match_number: 2, status: "pending" };
+  const shots = [
+    { id: 1, team: "a" as const, scored: true, scorer: { id: 1, display_name: "A" } },
+    { id: 2, team: "b" as const, scored: false, scorer: { id: 2, display_name: "B" } },
+  ];
+  const shootout = { available: true, winner: null, shots, counts: { a: 1, b: 1 }, decided: true };
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [opener, pending] });
+  vi.mocked(fetchPenalty).mockResolvedValue(shootout);
+  vi.mocked(finishPenaltyShootout).mockImplementation(async () => {
+    const finished = { ...opener, penalty_winner: "a" as const };
+    vi.mocked(fetchMeetupMatches).mockResolvedValue({ ...response(), matches: [finished, pending] });
+    vi.mocked(fetchPenalty).mockResolvedValue({ ...shootout, winner: "a" });
+    feed.message({ type: "match_penalty_finished", match_id: opener.id });
+    return { winner: "a", match: finished };
+  });
+  await openReferee();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Confirm winner" }));
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(screen.getByText("Blue wins the shootout")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Done" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "Start Timer" })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Done" })); });
+  expect(screen.getByRole("button", { name: "Start Timer" })).toBeEnabled();
+});
+
+it("refreshes live penalty misses when another device records or removes one", async () => {
+  await openReferee();
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([
+    { id: 1, team: "a", clock_minute: 3, scorer: { id: 1, display_name: "Alice" } },
+  ]);
+  await act(async () => {
+    feed.message({ type: "penalty_missed", match_id: 10 });
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(screen.getByText("Alice")).toBeVisible();
+  vi.mocked(fetchPenaltyMisses).mockResolvedValue([]);
+  await act(async () => {
+    feed.message({ type: "penalty_miss_removed", match_id: 10 });
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(screen.queryByText("Alice")).not.toBeInTheDocument();
 });

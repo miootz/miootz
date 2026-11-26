@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addPenaltyShot,
   finishPenaltyShootout,
@@ -30,11 +30,12 @@ export function PenaltyShootoutPanel({
   const [state, setState] = useState<PenaltyState | null>(null);
   const [scorerId, setScorerId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const doneRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     try {
       const s = await fetchPenalty(meetupId, match.id);
-      setState(s);
+      setState((previous) => previous?.winner && !s.winner ? previous : s);
       // Default the taker picker to the first roster player of the team
       // on turn — one less tap in the rain.
       const counts = s.counts;
@@ -54,6 +55,10 @@ export function PenaltyShootoutPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (state?.winner) doneRef.current?.focus();
+  }, [state?.winner]);
 
   if (!state) {
     return (
@@ -107,7 +112,9 @@ export function PenaltyShootoutPanel({
     try {
       const res = await finishPenaltyShootout(meetupId, match.id);
       showToast(`${teamName(res.winner)} wins the shootout`, "success");
-      onFinished();
+      // Keep the result on screen — the winner line and shots stay visible
+      // until the user taps Done (which closes the panel).
+      setState((s) => (s ? { ...s, winner: res.winner } : s));
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Could not finish", "error");
       void load();
@@ -138,7 +145,7 @@ export function PenaltyShootoutPanel({
           Penalty shootout
         </h3>
         <span className="text-lg font-bold tabular-nums">
-          {state.counts.a} – {state.counts.b}
+          {state.shots.filter((shot) => shot.team === "a" && shot.scored).length} – {state.shots.filter((shot) => shot.team === "b" && shot.scored).length}
         </span>
       </div>
 
@@ -181,9 +188,19 @@ export function PenaltyShootoutPanel({
       )}
 
       {state.winner ? (
-        <p className="border border-live/40 bg-live/10 px-3 py-2 text-sm font-bold text-live">
-          {teamName(state.winner)} wins the shootout
-        </p>
+        <div className="space-y-2">
+          <p className="border border-live/40 bg-live/10 px-3 py-2 text-sm font-bold text-live">
+            {teamName(state.winner)} wins the shootout
+          </p>
+          <button
+            ref={doneRef}
+            type="button"
+            onClick={() => onFinished()}
+            className="min-h-[44px] w-full bg-ink text-board px-3 py-2 text-sm font-bold hover:bg-white/90 active:scale-[0.98] transition-transform"
+          >
+            Done
+          </button>
+        </div>
       ) : (
         <>
           <div className="space-y-2">

@@ -29,6 +29,7 @@ import { StarRating } from "../../components/StarRating";
 import { useToast } from "../../context/ToastContext";
 import { shareLink } from "../../utils/share";
 import { ATTRIBUTE_COLOR, ATTRIBUTE_MAX, ATTRIBUTE_MIN, fromAttributeScale, toAttributeScale } from "../../utils/attributeScale";
+import { ToggleSwitch } from "../../components/ToggleSwitch";
 
 const HISTORY_PAGE_SIZE = 25;
 
@@ -429,15 +430,14 @@ export function AdminPlayerDetailPage() {
 				</div>
 
 				<div className="flex items-center justify-between gap-3 flex-wrap">
-					<label className="inline-flex items-center gap-2 cursor-pointer">
-						<input
-							type="checkbox"
-							checked={editIsAdmin}
-							onChange={(e) => setEditIsAdmin(e.target.checked)}
-							className="border-line text-team-a focus:ring-2 focus:ring-live"
+					<div className="inline-flex items-center gap-2">
+						<ToggleSwitch
+							enabled={editIsAdmin}
+							onChange={() => setEditIsAdmin(!editIsAdmin)}
+							ariaLabel="Admin"
 						/>
 						<span className="text-sm text-ink">Admin</span>
-					</label>
+					</div>
 					<button
 						type="submit"
 						disabled={saving}

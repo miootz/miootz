@@ -77,12 +77,14 @@ export function GoalsSection({
         editGoal={picker.editing}
         canSubmit
         showMinute={false}
+        allowMiss={false}
         onSubmit={async (input) => {
           const saved = await saveHistoricalGoal(meetupId, match.id, {
             goal_id: picker.editing?.id,
             intent_id: input.intent_id,
             team: input.team,
             is_own_goal: input.is_own_goal,
+            is_penalty: input.is_penalty,
             add_to_score: picker.addToScore && !picker.editing,
             scorer_id: input.scorer_id,
             assist_id: input.assist_id,

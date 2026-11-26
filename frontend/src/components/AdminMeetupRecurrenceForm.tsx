@@ -3,6 +3,7 @@ import {
   inferRecurrenceWallTime,
   WEEKDAY_LABELS,
 } from '../utils/recurrence';
+import { ToggleSwitch } from "./ToggleSwitch";
 
 type Props = {
   startLocal: string;
@@ -80,17 +81,16 @@ export function AdminMeetupRecurrenceForm({
   return (
     <div className="border border-line bg-panel p-4 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => onEnabledChange(e.target.checked)}
-            className="accent-live"
+        <div className="inline-flex items-center gap-2">
+          <ToggleSwitch
+            enabled={enabled}
+            onChange={() => onEnabledChange(!enabled)}
+            ariaLabel={scheduleToggleLabel}
           />
           <span className="text-sm font-medium text-ink">
             {scheduleToggleLabel}
           </span>
-        </label>
+        </div>
       </div>
 
       {enabled ? (

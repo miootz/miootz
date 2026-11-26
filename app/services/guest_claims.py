@@ -9,7 +9,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.guest_plus_one import GuestPlusOne
-from app.models.match import MatchSubstitution, MeetupMatch
+from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch, PenaltyMiss
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, Meetup, MatchScore
@@ -151,6 +151,12 @@ async def claim_reservation(
             update(MatchGoal)
             .where(MatchGoal.match_id.in_(match_ids), role == guest_id)
             .values({role: member.id})
+        )
+    for model in (MatchPenalty, PenaltyMiss):
+        await db.execute(
+            update(model)
+            .where(model.match_id.in_(match_ids), model.scorer_id == guest_id)
+            .values(scorer_id=member.id)
         )
     await db.execute(
         update(MatchScore)

@@ -26,7 +26,7 @@ from app.core.database import get_db
 from app.core.json_column import loads_int_list as _loads_int_list
 from app.core.meetup_data_manager import meetup_data_manager
 from app.core.timeutil import utcnow
-from app.models.match import MeetupMatch, MatchPenalty, MatchSubstitution
+from app.models.match import MeetupMatch, MatchPenalty, MatchSubstitution, PenaltyMiss
 from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.meetup import Attendance, Meetup
@@ -135,6 +135,12 @@ class GoalCreate(BaseModel):
     #: Own goal: the scorer is on the conceding team (still counts toward
     #: ``team``'s score).
     is_own_goal: bool = False
+    #: Penalty: a regulation-time penalty. The goal still counts toward the
+    #: score but not the player's goals ranking; penalties are ranked separately.
+    is_penalty: bool = False
+    #: A missed penalty — not a goal at all (nothing in the match log), but
+    #: the miss counts toward the player's penalty stats.
+    missed: bool = False
     #: Client-minted idempotency key (UUID hex) — a retry replays the goal.
     intent_id: str = Field(min_length=1, max_length=64)
     #: Explicit user confirmation that a duplicated/after-whistle entry stands.
@@ -150,6 +156,7 @@ class GoalUpdate(BaseModel):
     goalkeeper_id: int | None = None
     clock_minute: int = Field(ge=1, le=600)
     is_own_goal: bool = False
+    is_penalty: bool = False
 
 
 class HistoricalGoalAttribution(BaseModel):
@@ -160,6 +167,7 @@ class HistoricalGoalAttribution(BaseModel):
     assist_id: int | None = None
     goalkeeper_id: int | None = None
     is_own_goal: bool = False
+    is_penalty: bool = False
     add_to_score: bool = False
 
 
@@ -1414,7 +1422,7 @@ async def add_penalty_shot(
     await db.commit()
     shots.append(shot)
     users_by_id = await _load_users_for_meetup(db, meetup_id)
-    scorer = users_by_id.get(shot.scorer_id, {}).get("name", str(shot.scorer_id))
+    scorer = users_by_id.get(shot.scorer_id, {}).get("display_name", str(shot.scorer_id))
     log_action(
         request,
         "referee",
@@ -1482,6 +1490,8 @@ async def finish_penalty_shootout(
     if winner is None:
         raise HTTPException(status_code=400, detail="The shootout is not decided yet.")
     match.penalty_winner = winner
+    match.penalty_score_a = sum(shot.scored for shot in shots if shot.team == "a")
+    match.penalty_score_b = sum(shot.scored for shot in shots if shot.team == "b")
 
     # end_match auto-created the next match with the default tie winner
     # (away team) on pitch — put the shootout winner there instead.
@@ -1896,6 +1906,7 @@ async def reset_timer(
         )
         .values(deleted_at=utcnow())
     )
+    await db.execute(delete(PenaltyMiss).where(PenaltyMiss.match_id == match.id))
     match.timer_started_at = None
     match.timer_seconds_remaining = None
     match.timer_pause_intervals = None
@@ -2503,6 +2514,123 @@ def _goal_json(goal: MatchGoal, users_by_id: dict[int, dict]) -> dict:
         "recorded_by": person(goal.recorded_by),
         "after_whistle": bool(goal.after_whistle),
         "is_own_goal": bool(goal.is_own_goal),
+        "is_penalty": bool(goal.is_penalty),
+    }
+
+
+def _penalty_miss_json(miss: PenaltyMiss, users_by_id: dict[int, dict]) -> dict:
+    """One miss row for the log (display names resolved, never bare ids)."""
+
+    def person(uid: int | None) -> dict | None:
+        if uid is None:
+            return None
+        entry = users_by_id.get(uid)
+        name = entry["display_name"] if entry else f"User {uid}"
+        return {
+            "id": uid,
+            "display_name": name,
+            "avatar_url": (entry or {}).get("avatar_url"),
+        }
+
+    return {
+        "id": miss.id,
+        "team": miss.team,
+        "clock_minute": miss.clock_minute,
+        "scorer": person(miss.scorer_id),
+        "created_at": miss.created_at.isoformat() if miss.created_at else None,
+    }
+
+
+async def _record_penalty_miss(
+    meetup_id: int,
+    match: MeetupMatch,
+    body: GoalCreate,
+    users_by_id: dict[int, dict],
+    request: Request,
+    db: AsyncSession,
+    user: User,
+):
+    """Record a missed regulation penalty — no goal, no score change, but a
+    stats record that counts toward the player's penalty stats."""
+    # Network retry with the same intent replays the miss already stored.
+    res = await db.execute(
+        select(PenaltyMiss).where(PenaltyMiss.intent_id == body.intent_id)
+    )
+    replayed = res.scalar_one_or_none()
+    if replayed is not None:
+        if replayed.match_id != match.id:
+            raise HTTPException(status_code=409, detail="This entry belongs to another match")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "miss": _penalty_miss_json(replayed, users_by_id),
+                "replayed": True,
+                "score_a": match.score_a,
+                "score_b": match.score_b,
+            },
+        )
+
+    # Lease gate: whose turn it is, named (never silent).
+    lease = await db.get(MatchEditorLease, match.id)
+    now = utcnow()
+    if lease is None or lease.holder_id is None or lease.expires_at <= now:
+        return await _lease_busy_response(db, match.id, now)
+    if lease.holder_id != user.id:
+        return await _lease_busy_response(db, match.id, now)
+
+    # Honour the minute confirmed in the form, falling back to the live clock.
+    remaining = _compute_timer_remaining(match)
+    elapsed = max((match.timer_total_seconds or 0) - remaining, 0)
+    clock_minute = body.clock_minute if body.clock_minute is not None else elapsed // 60 + 1
+
+    miss = PenaltyMiss(
+        match_id=match.id,
+        team=body.team,
+        scorer_id=body.scorer_id,
+        clock_minute=clock_minute,
+        intent_id=body.intent_id,
+    )
+    db.add(miss)
+    await db.flush()
+    # Our turn ends with the miss recorded: release the lease in the same tx.
+    lease.holder_id = None
+    lease.expires_at = utcnow()
+    lease.release_token = ""
+    if match.status == "completed":
+        await refresh_skills_after_meetup(db, meetup_id)
+    await db.commit()
+    scorer_name = users_by_id.get(body.scorer_id, {}).get(
+        "display_name", str(body.scorer_id)
+    )
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_missed",
+        f"Penalty miss in match #{match.match_number}: {scorer_name} "
+        f"({match.team_a_name if body.team == 'a' else match.team_b_name}) "
+        f"at {clock_minute}'",
+        meetup_id=meetup_id,
+    )
+
+    await _broadcast_match_event(
+        meetup_id,
+        {
+            "type": "penalty_missed",
+            "match_id": match.id,
+            "miss": _penalty_miss_json(miss, users_by_id),
+        },
+    )
+    # The turn ended: clear lease chips on every client immediately.
+    await _broadcast_match_event(
+        meetup_id, {"type": "lease_released", "match_id": match.id}
+    )
+    await bump_and_notify(db, meetup_id)
+
+    return {
+        "miss": _penalty_miss_json(miss, users_by_id),
+        "replayed": False,
+        "score_a": match.score_a,
+        "score_b": match.score_b,
     }
 
 
@@ -2554,6 +2682,14 @@ async def _update_completed_draw(db: AsyncSession, match: MeetupMatch) -> None:
 
 def _validate_goal_fields(body, match: MeetupMatch, users_by_id: dict[int, dict]) -> None:
     """Team/own-goal/keeper team-membership rules for one goal entry."""
+    if getattr(body, "missed", False) or getattr(body, "is_penalty", False):
+        body.assist_id = None
+    if getattr(body, "missed", False):
+        body.goalkeeper_id = None
+        if body.scorer_id is None:
+            raise HTTPException(status_code=400, detail="A missed penalty needs a player")
+    if (getattr(body, "missed", False) or getattr(body, "is_penalty", False)) and body.is_own_goal:
+        raise HTTPException(status_code=400, detail="A penalty cannot be an own goal")
     if body.scorer_id is not None and body.scorer_id not in users_by_id:
         raise HTTPException(status_code=400, detail="Scorer is not in this meetup")
     scoring = _loads_int_list(
@@ -2629,12 +2765,25 @@ async def create_goal(
     users_by_id = await _load_users_for_meetup(db, meetup_id)
     _validate_goal_fields(body, match, users_by_id)
 
+    # A missed penalty is a stats record, not a goal — handled separately.
+    if body.missed:
+        if await db.scalar(select(MatchGoal.id).where(MatchGoal.intent_id == body.intent_id)):
+            raise HTTPException(status_code=409, detail="This entry was already recorded as a goal")
+        return await _record_penalty_miss(
+            meetup_id, match, body, users_by_id, request, db, user
+        )
+
+    if await db.scalar(select(PenaltyMiss.id).where(PenaltyMiss.intent_id == body.intent_id)):
+        raise HTTPException(status_code=409, detail="This entry was already recorded as a missed penalty")
+
     # Network retry with the same intent replays the row already stored.
     res = await db.execute(
         select(MatchGoal).where(MatchGoal.intent_id == body.intent_id)
     )
     replayed = res.scalar_one_or_none()
     if replayed is not None:
+        if replayed.match_id != match_id or replayed.deleted_at is not None:
+            raise HTTPException(status_code=409, detail="This goal entry is no longer available")
         score_a, score_b = await _recompute_scores(db, match)
         await db.commit()
         # Idempotent replay: 200 (not 201) — nothing new was created.
@@ -2720,6 +2869,7 @@ async def create_goal(
         clock_minute=clock_minute,
         after_whistle=after_whistle,
         is_own_goal=body.is_own_goal,
+        is_penalty=body.is_penalty,
         recorded_by=user.id,
         intent_id=body.intent_id,
     )
@@ -2884,6 +3034,10 @@ async def save_historical_goal(
         raise HTTPException(status_code=409, detail="A referee is editing goals for this match. Try again shortly.")
 
     rosters = await _historical_goal_rosters(db, match, users_by_id)
+    if body.is_penalty and body.is_own_goal:
+        raise HTTPException(status_code=400, detail="A penalty cannot be an own goal")
+    if body.is_penalty:
+        body.assist_id = None
     scoring = {p["id"] for p in rosters[body.team]}
     conceding = {p["id"] for p in rosters["b" if body.team == "a" else "a"]}
     scorer_team = conceding if body.is_own_goal else scoring
@@ -2935,6 +3089,7 @@ async def save_historical_goal(
     goal.assist_id = body.assist_id
     goal.goalkeeper_id = body.goalkeeper_id
     goal.is_own_goal = body.is_own_goal
+    goal.is_penalty = body.is_penalty
     await refresh_skills_after_meetup(db, meetup_id)
     revision = await bump_meetup_revision(db, meetup_id)
     await db.commit()
@@ -2952,6 +3107,85 @@ async def save_historical_goal(
         "goal": _goal_json(goal, users_by_id),
         "score_a": match.score_a, "score_b": match.score_b, "was_draw": match.was_draw,
     }
+
+
+@router.get("/{meetup_id}/matches/{match_id}/penalty-misses")
+async def list_penalty_misses(
+    meetup_id: int,
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Missed regulation penalties for one match (authenticated)."""
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    res = await db.execute(
+        select(PenaltyMiss)
+        .where(PenaltyMiss.match_id == match_id)
+        .order_by(PenaltyMiss.clock_minute, PenaltyMiss.id)
+    )
+    misses = list(res.scalars().all())
+    users_by_id = await _load_users_for_meetup(db, meetup_id)
+    return {"misses": [_penalty_miss_json(m, users_by_id) for m in misses]}
+
+
+@router.delete(
+    "/{meetup_id}/matches/{match_id}/penalty-misses/{miss_id}", status_code=204
+)
+async def remove_penalty_miss(
+    meetup_id: int,
+    match_id: int,
+    miss_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_admin_or_present_member),
+):
+    """Delete a missed regulation penalty (stats record; no score impact)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
+    res = await db.execute(
+        select(PenaltyMiss).where(
+            PenaltyMiss.id == miss_id,
+            PenaltyMiss.match_id == match_id,
+        )
+    )
+    miss = res.scalar_one_or_none()
+    if miss is None:
+        raise HTTPException(status_code=404, detail="Miss not found")
+    match = await db.get(MeetupMatch, match_id)
+    if not match or match.meetup_id != meetup_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    scorer_id = miss.scorer_id
+    clock_minute = miss.clock_minute
+    match_number = match.match_number
+    await db.delete(miss)
+    await db.flush()
+    if match.status == "completed":
+        await refresh_skills_after_meetup(db, meetup_id)
+    await db.commit()
+    scorer_name = (
+        (await _load_users_for_meetup(db, meetup_id))
+        .get(scorer_id, {})
+        .get("display_name", str(scorer_id))
+    )
+    log_action(
+        request,
+        "referee",
+        "referee.penalty_miss_removed",
+        f"Removed penalty miss in match #{match_number} ({scorer_name} "
+        f"at {clock_minute}')",
+        meetup_id=meetup_id,
+    )
+    await _broadcast_match_event(
+        meetup_id,
+        {
+            "type": "penalty_miss_removed",
+            "match_id": match_id,
+            "miss_id": miss_id,
+        },
+    )
+    await bump_and_notify(db, meetup_id)
+    return None
 
 
 @router.patch("/{meetup_id}/matches/{match_id}/goals/{goal_id}")
@@ -2997,6 +3231,7 @@ async def update_goal(
     goal.assist_id = body.assist_id
     goal.goalkeeper_id = body.goalkeeper_id
     goal.is_own_goal = body.is_own_goal
+    goal.is_penalty = body.is_penalty
     goal.clock_minute = body.clock_minute
     goal.clock_secs = max(
         (match.timer_total_seconds or 0) - (body.clock_minute - 1) * 60, 0
