@@ -28,6 +28,7 @@ import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
 import { GoalEntrySheet } from "../components/GoalEntrySheet";
+import { MobileSheet } from "../components/MobileSheet";
 import { leaseBusyButtonLabel } from "../utils/lease";
 import { hapticFinal, hapticHalfTime, hapticLight } from "../utils/haptics";
 import { playFinalWhistle, playHalfTimeWhistle, unlockWhistles } from "../utils/whistle";
@@ -51,7 +52,6 @@ import {
   Settings,
   Trash2,
   WifiOff,
-  X,
 } from "lucide-react";
 
 function formatTimer(seconds: number): string {
@@ -1505,34 +1505,19 @@ export function RefereePage() {
             )}
 
             {/* Substitutions — admin only: pre-start, or mid-match while the
-                timer is paused. Same button + panel in both. */}
+                timer is paused. Opens the fullscreen sheet. */}
             {(currentMatch.status === "pending" ||
               (currentMatch.status === "active" && isPaused)) &&
             isAdmin && (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setShowSubstitutions((v) => !v)}
-                  className="w-full py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[48px]"
-                  aria-expanded={showSubstitutions}
-                >
-                  {showSubstitutions ? (
-                    <X className="h-4 w-4" aria-hidden />
-                  ) : (
-                    <ArrowRightLeft className="h-4 w-4" aria-hidden />
-                  )}
-                  Substitutions
-                </button>
-                {showSubstitutions && (
-                  <SubstitutionsPanel
-                    key={currentMatch.id}
-                    meetupId={sid}
-                    match={currentMatch}
-                    extraTeams={extraTeams}
-                    onSaved={loadMatches}
-                  />
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowSubstitutions(true)}
+                className="w-full py-3 border border-line text-ink-dim font-semibold hover:bg-raised hover:text-ink active:scale-[0.98] transition-transform flex items-center justify-center gap-2 min-h-[48px]"
+                aria-haspopup="dialog"
+              >
+                <ArrowRightLeft className="h-4 w-4" aria-hidden />
+                Substitutions
+              </button>
             )}
 
             {/* Half-time flash — scrolls with the content; the timer below
@@ -1741,6 +1726,22 @@ export function RefereePage() {
             goalSheet.goal ? (g) => void handleGoalDeleted(g) : undefined
           }
         />
+      )}
+
+      {/* Substitutions — fullscreen sheet, admin only */}
+      {showSubstitutions && currentMatch && (
+        <MobileSheet
+          title="Substitutions"
+          onClose={() => setShowSubstitutions(false)}
+        >
+          <SubstitutionsPanel
+            key={currentMatch.id}
+            meetupId={sid}
+            match={currentMatch}
+            extraTeams={extraTeams}
+            onSaved={loadMatches}
+          />
+        </MobileSheet>
       )}
 
       {/* Mid-meetup team reshape — admin only, from the header gear */}

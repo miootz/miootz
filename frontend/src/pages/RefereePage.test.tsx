@@ -10,8 +10,15 @@ import {
   type MatchSummary,
 } from "../api/matchesApi";
 import { fetchMeetupDetail, fetchMeetupTeams } from "../api/meetupsApi";
-import { fetchGoals, fetchStewardState } from "../api/stewardApi";
+import {
+  fetchGoals,
+  fetchStewardState,
+  acquireLease,
+  renewLease,
+  releaseLease,
+} from "../api/stewardApi";
 import { RefereePage } from "./RefereePage";
+import { AuthContext } from "../auth/auth-context";
 
 const { feed, showToast } = vi.hoisted(() => ({
   feed: {
@@ -38,8 +45,13 @@ vi.mock("../api/stewardApi", async (original) => ({
   ...await original<typeof import("../api/stewardApi")>(),
   fetchGoals: vi.fn(),
   fetchStewardState: vi.fn(),
+  acquireLease: vi.fn(),
+  renewLease: vi.fn(),
+  releaseLease: vi.fn(),
 }));
-vi.mock("../auth/useAuth", () => ({ useAuth: () => ({ tokens: { accessToken: "token" } }) }));
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ tokens: { accessToken: "token" } }),
+}));
 vi.mock("../context/ToastContext", () => ({ useToast: () => ({ showToast }) }));
 vi.mock("../utils/meetupDataBus", () => ({
   subscribeMeetupData: (
@@ -94,6 +106,15 @@ beforeEach(() => {
   });
   vi.mocked(fetchStewardState).mockResolvedValue({ can_control: true, reason: "ok", lease: null });
   vi.mocked(fetchGoals).mockResolvedValue([]);
+  vi.mocked(acquireLease).mockResolvedValue({
+    ok: true,
+    lease: { lease_token: "t", expires_in: 45 },
+  });
+  vi.mocked(renewLease).mockResolvedValue({
+    ok: true,
+    lease: { lease_token: "t", expires_in: 45 },
+  });
+  vi.mocked(releaseLease).mockResolvedValue(undefined);
   vi.mocked(endMatch).mockResolvedValue({
     status: "completed",
     match: { ...match, status: "completed" },
@@ -117,12 +138,25 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-async function openReferee() {
+async function openReferee(admin = false) {
   await act(async () => {
     render(
-      <MemoryRouter initialEntries={["/meetup-matches/1"]}>
-        <Routes><Route path="/meetup-matches/:meetupId" element={<RefereePage />} /></Routes>
-      </MemoryRouter>,
+      <AuthContext.Provider
+        value={{
+          me: { user: { display_name: "Alex" }, is_admin: admin, auth_groups: [] },
+          loading: false,
+          error: null,
+          tokens: { accessToken: "token" },
+          refresh: async () => {},
+          savePosition: async () => {},
+          login: async () => {},
+          logout: async () => {},
+        } as unknown as React.ContextType<typeof AuthContext>}
+      >
+        <MemoryRouter initialEntries={["/meetup-matches/1"]}>
+          <Routes><Route path="/meetup-matches/:meetupId" element={<RefereePage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
     );
   });
   expect(screen.getByText("Match Control")).toBeInTheDocument();
@@ -379,4 +413,25 @@ it("starts the schedule from scratch when adding the first match after a delete"
     team_b_idx: 1,
   });
   expect(vi.mocked(createNewPendingMatch)).not.toHaveBeenCalled();
+});
+
+
+it("opens the substitutions sheet and closes it", async () => {
+  await openReferee(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Substitutions" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByRole("heading", { name: "Substitutions" })).toBeInTheDocument();
+  // The rosters render inside the sheet.
+  expect(within(dialog).getByText("Blue")).toBeInTheDocument();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
