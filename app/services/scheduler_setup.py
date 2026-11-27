@@ -28,7 +28,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
     )
     scheduler.add_job(
         run_job_queue_poll,
-        IntervalTrigger(seconds=30),
+        IntervalTrigger(seconds=5),
         id="job_queue_poll",
         replace_existing=True,
     )
@@ -50,7 +50,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
         replace_existing=True,
     )
     logger.info(
-        "Scheduler started (%s); kickoff 1h reminders every 1m; durable job queue polled every 30s; audit log pruned hourly; game templates register weekly jobs; rating reminders queued per-meetup",
+        "Scheduler started (%s); kickoff 1h reminders every 1m; durable job queue polled every 5s; audit log pruned hourly; game templates register weekly jobs; rating reminders queued per-meetup",
         settings.SCHEDULER_TIMEZONE,
     )
     return scheduler

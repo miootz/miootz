@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { fetchPlayerProgress } from "../api/meApi";
+import { fetchNotificationPreferences, fetchPlayerProgress, patchNotificationPreference } from "../api/meApi";
 import { ProfilePage } from "./ProfilePage";
 import { PUSH_REGISTRATION_CHANGED } from "../utils/pushSubscription";
 
@@ -188,4 +188,19 @@ it("switches progress metrics and shows exact meetup values", async () => {
 
   fireEvent.change(within(progress).getByRole("combobox", { name: "Progress range" }), { target: { value: "season" } });
   await waitFor(() => expect(fetchPlayerProgress).toHaveBeenLastCalledWith(new Date().getUTCFullYear(), expect.any(AbortSignal)));
+});
+
+
+it("lets members mute meetup chat notifications", async () => {
+  getRegistration.mockResolvedValue(undefined);
+  fetchPushSubscriptions.mockResolvedValue([]);
+  vi.mocked(fetchNotificationPreferences).mockResolvedValueOnce({ items: [{ category: "chat", enabled: true }] });
+  vi.mocked(patchNotificationPreference).mockResolvedValueOnce(undefined);
+  render(<MemoryRouter><ProfilePage /></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Notification preferences" }));
+  const toggle = await screen.findByRole("switch", { name: "Meetup chat notifications" });
+  expect(toggle).toBeChecked();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).not.toBeChecked());
+  expect(patchNotificationPreference).toHaveBeenCalledWith("chat", false);
 });

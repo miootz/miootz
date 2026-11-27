@@ -12,7 +12,8 @@ from starlette.requests import ClientDisconnect
 from app.api import data_export
 from app.api.main import app
 from app.core.database import Base, async_session, engine
-from app.models.chat import ChatMessage
+from app.models.chat import ChatMessage, ChatReceipt
+from app.models.job_queue import JobQueue
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.invite import InviteToken
 from app.models.match import MatchPenalty, MatchSubstitution, MeetupMatch
@@ -151,6 +152,13 @@ async def test_export_requires_admin():
 
 @pytest.mark.asyncio
 async def test_export_preserves_dataset_and_omits_capabilities():
+    async with async_session() as db:
+        db.add(ChatReceipt(meetup_id=201, user_id=102, delivered_id=1, read_id=1))
+        db.add(JobQueue(
+            job_type="chat_notification", ref_id=1,
+            run_at=datetime(2026, 1, 1), created_at=datetime(2026, 1, 1),
+        ))
+        await db.commit()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -167,7 +175,7 @@ async def test_export_preserves_dataset_and_omits_capabilities():
 
     with ZipFile(io.BytesIO(response.content)) as archive:
         expected_tables = set(Base.metadata.tables) - {
-            "chat_messages", "meetup_analytics", "meetup_rating_snapshots",
+            "chat_messages", "chat_receipts", "meetup_analytics", "meetup_rating_snapshots",
         }
         assert set(archive.namelist()) == {
             f"{table}.csv" for table in expected_tables
@@ -247,6 +255,7 @@ async def test_export_preserves_dataset_and_omits_capabilities():
             assert omitted.isdisjoint(rows[0])
 
         contents = b"\n".join(archive.read(name) for name in archive.namelist())
+        assert b"chat_notification" not in contents
         for secret in (
             b"secret-invite-xyz",
             b"secret-claim-xyz",

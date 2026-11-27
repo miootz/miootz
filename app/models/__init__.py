@@ -2,7 +2,7 @@
 
 from app.models.user import User  # noqa: F401
 from app.models.meetup import Meetup, Attendance, MatchScore  # noqa: F401
-from app.models.chat import ChatMessage  # noqa: F401
+from app.models.chat import ChatMessage, ChatReceipt  # noqa: F401
 from app.models.invite import InviteToken  # noqa: F401
 from app.models.game_template import GameTemplate  # noqa: F401
 from app.models.game_template_subscription import GameTemplateSubscription  # noqa: F401

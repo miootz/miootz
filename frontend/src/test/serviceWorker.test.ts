@@ -95,3 +95,28 @@ describe('service worker API requests', () => {
     expect(openWindow).toHaveBeenCalledWith('/meetup-reservation#hold=abc');
   });
 });
+
+it('groups meetup chat pushes and opens the exact chat from the alert', async () => {
+  const listeners: Record<string, (event: unknown) => void> = {};
+  const showNotification = vi.fn();
+  const openWindow = vi.fn();
+  runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+    URL,
+    self: {
+      location: { origin: 'https://miootz.test' },
+      registration: { showNotification },
+      clients: { matchAll: async () => [], openWindow },
+      addEventListener: (name: string, listener: (event: unknown) => void) => { listeners[name] = listener; },
+    },
+  });
+  const waitUntil = vi.fn();
+  listeners.push({
+    waitUntil,
+    data: { json: () => ({ title: 'Meetup chat', tag: 'meetup-chat-42', message_id: 81, url: '/meetups/42/chat' }) },
+  });
+  const options = showNotification.mock.calls[0][1];
+  expect(options).toMatchObject({ tag: 'meetup-chat-42', data: { messageId: 81 } });
+  listeners.notificationclick({ waitUntil, notification: { close: vi.fn(), data: options.data } });
+  await waitUntil.mock.calls[1][0];
+  expect(openWindow).toHaveBeenCalledWith('/meetups/42/chat');
+});

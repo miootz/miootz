@@ -66,7 +66,7 @@ async def run_kickoff_reminder_job() -> None:
 
 
 async def run_job_queue_poll() -> None:
-    """Every 30s: run due one-shot jobs from the durable job_queue table."""
+    """Run due one-shot jobs from the durable job_queue table."""
     from app.services.job_queue import run_due_jobs
 
     n = await run_due_jobs()

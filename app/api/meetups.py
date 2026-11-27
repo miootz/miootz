@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi.responses import StreamingResponse
@@ -33,7 +34,7 @@ from app.models.meetup import Meetup, Attendance, MatchScore
 from app.models.match import MeetupMatch
 from app.models.award import WeatherHeroAward
 from app.models.user import User
-from app.models.chat import ChatMessage
+from app.models.chat import ChatMessage, ChatReceipt
 from app.models.guest_plus_one import GuestPlusOne
 from app.models.rating import Rating
 from app.core.chat_manager import chat_manager
@@ -77,7 +78,6 @@ from app.services.team_names import generate_team_names
 from app.services.web_push import (
     notify_new_meetup_invites,
     notify_meetup_cancelled_recipients,
-    notify_meetup_chat_recipients,
     notify_demoted_to_waitlist,
 )
 from app.services.recurring_meetups import (
@@ -189,6 +189,11 @@ class ChatMessageCreate(BaseModel):
 
 class ChatTypingBody(BaseModel):
     typing: bool = True
+
+
+class ChatReceiptUpdate(BaseModel):
+    delivered_id: int = Field(ge=1)
+    read_id: int | None = Field(default=None, ge=1)
 
 
 class PlusOneCreate(BaseModel):
@@ -1955,6 +1960,82 @@ async def chat_typing_indicator(
     return {"status": "ok"}
 
 
+@router.post("/{meetup_id}/chat/receipt")
+async def update_chat_receipt(
+    meetup_id: int,
+    body: ChatReceiptUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Acknowledge messages received by this client and, if visible, read."""
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if body.read_id is not None and body.read_id > body.delivered_id:
+        raise HTTPException(status_code=400, detail="Read message must be delivered")
+
+    await db.execute(text("BEGIN IMMEDIATE"))
+    message_ids = {body.delivered_id}
+    if body.read_id is not None:
+        message_ids.add(body.read_id)
+    matching = set(await db.scalars(
+        select(ChatMessage.id).where(
+            ChatMessage.meetup_id == meetup_id, ChatMessage.id.in_(message_ids),
+        )
+    ))
+    if matching != message_ids:
+        raise HTTPException(status_code=404, detail="Chat message not found")
+
+    insert = sqlite_insert(ChatReceipt).values(
+        meetup_id=meetup_id,
+        user_id=request.state.user.id,
+        delivered_id=body.delivered_id,
+        read_id=body.read_id or 0,
+    )
+    statement = insert.on_conflict_do_update(
+        index_elements=[ChatReceipt.meetup_id, ChatReceipt.user_id],
+        set_={
+            "delivered_id": func.max(ChatReceipt.delivered_id, insert.excluded.delivered_id),
+            "read_id": func.max(ChatReceipt.read_id, insert.excluded.read_id),
+        },
+        where=(ChatReceipt.delivered_id < insert.excluded.delivered_id)
+        | (ChatReceipt.read_id < insert.excluded.read_id),
+    ).returning(ChatReceipt.delivered_id, ChatReceipt.read_id)
+    changed = (await db.execute(statement)).one_or_none()
+    await db.commit()
+    if changed is not None:
+        await chat_manager.broadcast(meetup_id, {"type": "receipt"})
+    return {"status": "ok"}
+
+
+@router.get("/{meetup_id}/chat/receipts")
+async def get_chat_receipts(
+    meetup_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return aggregate acknowledgements for the caller's messages."""
+    if not request.state.user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = request.state.user.id
+    messages = list(await db.scalars(
+        select(ChatMessage.id).where(
+            ChatMessage.meetup_id == meetup_id, ChatMessage.user_id == user_id,
+        )
+    ))
+    receipts = list(await db.scalars(
+        select(ChatReceipt).where(
+            ChatReceipt.meetup_id == meetup_id, ChatReceipt.user_id != user_id,
+        )
+    ))
+    return {
+        str(message_id): {
+            "delivered": sum(receipt.delivered_id >= message_id for receipt in receipts),
+            "read": sum(receipt.read_id >= message_id for receipt in receipts),
+        }
+        for message_id in messages
+    }
+
+
 @router.post("/{meetup_id}/chat")
 async def send_message(
     meetup_id: int,
@@ -1975,6 +2056,10 @@ async def send_message(
         meetup_id=meetup_id, user_id=request.state.user.id, message=msg_data.message
     )
     db.add(new_msg)
+    await db.flush()
+    from app.services.job_queue import upsert_job
+
+    await upsert_job(db, "chat_notification", new_msg.id, utcnow() + timedelta(seconds=3))
     await db.commit()
     await db.refresh(new_msg)
 
@@ -1995,14 +2080,6 @@ async def send_message(
         "username_color": _name_color(_display_name),
     }
     await chat_manager.broadcast(meetup_id, broadcast_data)
-
-    await notify_meetup_chat_recipients(
-        db,
-        meetup_id,
-        request.state.user.id,
-        _display_name,
-        new_msg.message,
-    )
 
     return {"status": "sent", "message_id": new_msg.id}
 

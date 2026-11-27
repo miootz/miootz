@@ -16,7 +16,7 @@ from app.core.database import Base, engine
 
 router = APIRouter()
 
-_EXCLUDED_TABLES = {"chat_messages", "meetup_analytics", "meetup_rating_snapshots"}
+_EXCLUDED_TABLES = {"chat_messages", "chat_receipts", "meetup_analytics", "meetup_rating_snapshots"}
 _EXCLUDED_COLUMNS = {
     "users": {"calculated_skill"},
     "invite_tokens": {"token"},
@@ -79,9 +79,10 @@ async def _write_table(archive, connection, table):
         if column.name not in _EXCLUDED_COLUMNS.get(table.name, set())
     ]
     # Keep SQLite's stored JSON text, timestamps and boolean integers unchanged.
-    statement = select(*(type_coerce(column, Text) for column in columns)).order_by(
-        *table.primary_key.columns
-    )
+    statement = select(*(type_coerce(column, Text) for column in columns))
+    if table.name == "job_queue":
+        statement = statement.where(table.c.job_type != "chat_notification")
+    statement = statement.order_by(*table.primary_key.columns)
     result = await connection.stream(statement)
     try:
         with archive.open(f"{table.name}.csv", "w") as entry:

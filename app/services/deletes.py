@@ -25,7 +25,8 @@ from app.models.match_editor_lease import MatchEditorLease
 from app.models.match_goal import MatchGoal
 from app.models.rating import Rating
 from app.models.meetup import Attendance, MatchScore, Meetup
-from app.models.chat import ChatMessage
+from app.models.chat import ChatMessage, ChatReceipt
+from app.models.job_queue import JobQueue
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
 
@@ -111,6 +112,11 @@ async def delete_meetup_player_data(db: AsyncSession, meetup: Meetup, user_id: i
 async def delete_user_children(db: AsyncSession, user_id: int) -> None:
     """Remove every row that references the user before the user row goes."""
     for stmt in (
+        delete(JobQueue).where(
+            JobQueue.job_type == "chat_notification",
+            JobQueue.ref_id.in_(select(ChatMessage.id).where(ChatMessage.user_id == user_id)),
+        ),
+        delete(ChatReceipt).where(ChatReceipt.user_id == user_id),
         delete(Attendance).where(Attendance.user_id == user_id),
         delete(MatchScore).where(MatchScore.player_id == user_id),
         delete(Rating).where(
@@ -154,6 +160,11 @@ async def delete_meetup_children(db: AsyncSession, meetup_id: int) -> None:
         MeetupMatch.meetup_id == meetup_id
     )
     for stmt in (
+        delete(JobQueue).where(
+            JobQueue.job_type == "chat_notification",
+            JobQueue.ref_id.in_(select(ChatMessage.id).where(ChatMessage.meetup_id == meetup_id)),
+        ),
+        delete(ChatReceipt).where(ChatReceipt.meetup_id == meetup_id),
         delete(Attendance).where(Attendance.meetup_id == meetup_id),
         delete(MatchScore).where(MatchScore.meetup_id == meetup_id),
         delete(Rating).where(Rating.meetup_id == meetup_id),

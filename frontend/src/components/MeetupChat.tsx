@@ -35,6 +35,8 @@ import {
 import {
   ArrowDown,
   ChevronDown,
+  Check,
+  CheckCheck,
   Send,
   Smile,
   X,
@@ -43,7 +45,7 @@ import { hapticLight } from "../utils/haptics";
 import { roomStorageKey } from "../utils/demoRoom";
 
 const chatLastReadKey = (meetupId: string) =>
-  roomStorageKey(`miootz:chat:lastRead:${meetupId}`);
+  roomStorageKey(`miootz:chat:lastRead:v2:${meetupId}`);
 const CHAT_PREVIEW_LIMIT = 4;
 const CHAT_PREVIEW_FADE =
   "linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)";
@@ -72,6 +74,7 @@ interface MeetupChatProps {
   meetupId: string;
   /** Member view collapses by default; management surfaces pass true. */
   defaultExpanded?: boolean;
+  standalone?: boolean;
   /** Fill the parent column's height on desktop/tablet (admin Overview). */
   fillHeight?: boolean;
 }
@@ -150,7 +153,22 @@ function ChatSkeleton() {
 }
 
 /** ─── Message group ─────────────────────────────────────────────── */
-function MessageGroup({ group }: { group: ChatMessageGroup }) {
+type ChatReceipts = Record<number, { delivered: number; read: number }>;
+
+function MessageReceipt({ receipt }: { receipt?: ChatReceipts[number] }) {
+  const delivered = receipt?.delivered ?? 0;
+  const read = receipt?.read ?? 0;
+  const label = delivered ? `Delivered to ${delivered} · Read by ${read}` : "Sent";
+  const Icon = delivered ? CheckCheck : Check;
+  return (
+    <span role="img" aria-label={label} title={label}
+      className={`ml-1.5 inline-flex align-middle ${read ? "text-team-a/75" : "text-ink-faint"}`}>
+      <Icon className="size-3" strokeWidth={1.5} aria-hidden />
+    </span>
+  );
+}
+
+function MessageGroup({ group, receipts }: { group: ChatMessageGroup; receipts: ChatReceipts }) {
   const isFirst = group.showHeader;
   const mine = group.isMine;
 
@@ -196,6 +214,7 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
               }`}
             >
               {group.messages[0].text}
+              {mine && <MessageReceipt receipt={receipts[group.messages[0].id]} />}
             </div>
           </div>
         ) : (
@@ -208,6 +227,7 @@ function MessageGroup({ group }: { group: ChatMessageGroup }) {
                 }`}
               >
                 {m.text}
+                {mine && <MessageReceipt receipt={receipts[m.id]} />}
               </div>
             ))}
           </div>
@@ -245,15 +265,21 @@ function ScrollToBottomFab({ onClick }: { onClick: () => void }) {
 }
 
 /** ─── Main component ────────────────────────────────────────────── */
-export const MeetupChat: React.FC<MeetupChatProps> = ({
+const MeetupChatView: React.FC<MeetupChatProps> = ({
   meetupId,
   defaultExpanded = false,
+  standalone = false,
   fillHeight = false,
 }) => {
   const { showToast } = useToast();
   const { me, tokens } = useAuth();
   const myUserId = me?.user.id ?? null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [receipts, setReceipts] = useState<ChatReceipts>({});
+  const [readThrough, setReadThrough] = useState(0);
+  const [verifiedThrough, setVerifiedThrough] = useState(0);
+  const acknowledged = useRef({ delivered: 0, read: 0 });
+  const latestId = messages.reduce((latest, message) => Math.max(latest, message.id), 0);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   // Mobile renders the expanded chat as a full-screen overlay; start
@@ -381,7 +407,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   // Auto-scroll on new messages
   useEffect(() => {
     if (!isLoading) scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+  }, [messages, isExpanded, isLoading, scrollToBottom]);
 
   useEffect(() => {
     if (!emojiOpen) return;
@@ -408,7 +434,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   // Mobile expanded chat is a full-screen overlay: lock page scroll behind
   // it (same pattern as the admin drawer) so gestures stay in the chat.
   useEffect(() => {
-    if (!isExpanded || !window.matchMedia("(max-width: 767px)").matches) {
+    if (standalone || !isExpanded || !window.matchMedia("(max-width: 767px)").matches) {
       return;
     }
     const prev = document.body.style.overflow;
@@ -416,12 +442,71 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [isExpanded]);
+  }, [isExpanded, standalone]);
+
+  // The end marker must be on-screen, including within the chat's scroller.
+  // A hidden tab or a collapsed mobile preview cannot mark the chat read.
+  useEffect(() => {
+    const marker = messagesEndRef.current;
+    if (!marker || typeof IntersectionObserver === "undefined") return;
+    let visible = false;
+    const update = () => {
+      if (visible && latestId === verifiedThrough && document.visibilityState === "visible" && document.hasFocus()) {
+        setReadThrough((previous) => Math.max(previous, latestId));
+      }
+    };
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      update();
+    });
+    observer.observe(marker);
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+    };
+  }, [latestId, verifiedThrough]);
+
+  useEffect(() => {
+    if (!verifiedThrough || !myUserId || !tokens?.accessToken) return;
+    const read = Math.min(readThrough, verifiedThrough);
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout>;
+    async function acknowledge() {
+      if (verifiedThrough <= acknowledged.current.delivered && read <= acknowledged.current.read) return;
+      try {
+        const response = await apiFetch(`/meetups/${meetupId}/chat/receipt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ delivered_id: verifiedThrough, ...(read ? { read_id: read } : {}) }),
+        });
+        if (cancelled) return;
+        if (!response.ok) {
+          if (response.status >= 500 || response.status === 429) retry = setTimeout(acknowledge, 5000);
+          return;
+        }
+        acknowledged.current.delivered = Math.max(verifiedThrough, acknowledged.current.delivered);
+        acknowledged.current.read = Math.max(read, acknowledged.current.read);
+        if (read && "serviceWorker" in navigator && navigator.serviceWorker.getRegistration) {
+          const registration = await navigator.serviceWorker.getRegistration();
+          const notifications = await registration?.getNotifications?.({ tag: `meetup-chat-${meetupId}` });
+          notifications?.forEach((notification) => {
+            if (notification.data?.messageId <= read) notification.close();
+          });
+        }
+      } catch {
+        if (!cancelled) retry = setTimeout(acknowledge, 5000);
+      }
+    }
+    void acknowledge();
+    return () => { cancelled = true; clearTimeout(retry); };
+  }, [verifiedThrough, readThrough, meetupId, myUserId, tokens?.accessToken]);
 
   // Unread indicator for bottom nav (Details tab dot)
   useEffect(() => {
-    if (messages.length === 0) return;
-    const latestId = Math.max(...messages.map((m) => m.id));
+    if (!latestId) return;
     const key = chatLastReadKey(meetupId);
     const raw = localStorage.getItem(key);
     if (raw === null) {
@@ -433,7 +518,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
       );
       return;
     }
-    if (isExpanded) {
+    if (readThrough >= latestId) {
       localStorage.setItem(key, String(latestId));
       window.dispatchEvent(
         new CustomEvent("miootz-chat-unread", {
@@ -449,7 +534,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
         detail: { meetupId, unread },
       }),
     );
-  }, [messages, meetupId, isExpanded]);
+  }, [latestId, meetupId, readThrough]);
 
   // Reset state when meetupId changes (hydrate from IndexedDB)
   useEffect(() => {
@@ -457,8 +542,10 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
     void (async () => {
       const fromStore = await getCachedChatMessages(meetupId);
       if (cancelled) return;
-      setMessages(fromStore ?? []);
-      setIsLoading(fromStore === undefined);
+      if (fromStore !== undefined) {
+        setMessages((current) => current.length ? current : fromStore);
+        setIsLoading(false);
+      }
       setShowScrollFab(false);
       setSendError(null);
       hasUserScrolledRef.current = false;
@@ -475,6 +562,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
       meetupChatEventsUrl(meetupId, tokens?.accessToken),
     );
 
+    let receivedDuringRefresh: Map<number, ChatMessage> | undefined;
     eventSource.onmessage = (event) => {
       let raw: {
         type?: string;
@@ -489,6 +577,10 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
         console.error("SSE: ignoring malformed message");
         return;
       }
+      if (raw.type === "receipt") {
+        scheduleReceiptRefresh();
+        return;
+      }
       if (raw.type === "typing") {
         if (raw.user_id != null && raw.username != null) {
           handleTypingEvent({
@@ -501,47 +593,67 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
       }
       const msg = raw as ChatMessage;
       if (msg.id == null) return;
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        void appendCachedChatMessage(meetupId, msg);
-        return [...prev, msg];
-      });
+      receivedDuringRefresh?.set(msg.id, msg);
+      setVerifiedThrough((current) => Math.max(current, msg.id));
+      void appendCachedChatMessage(meetupId, msg).catch(() => {});
+      setMessages((prev) => prev.some((m) => m.id === msg.id)
+        ? prev
+        : [...prev, msg].sort((a, b) => a.id - b.id));
     };
 
-    eventSource.onerror = (error) => {
-      console.error("SSE Error:", error);
-      eventSource.close();
-    };
+    let receiptRefresh: ReturnType<typeof setTimeout>;
+    let receiptRequest = 0;
+    function scheduleReceiptRefresh() {
+      clearTimeout(receiptRefresh);
+      receiptRefresh = setTimeout(async () => {
+        const request = ++receiptRequest;
+        try {
+          const response = await apiFetch(`/meetups/${meetupId}/chat/receipts`);
+          if (!response.ok) return;
+          const snapshot = await response.json() as ChatReceipts;
+          if (!cancelled && request === receiptRequest) setReceipts(snapshot);
+        } catch {
+          // The next event or reconnect refreshes the receipt snapshot.
+        }
+      }, 150);
+    }
 
-    (async () => {
-      const cached = await getCachedChatMessages(meetupId);
-      if (cached !== undefined) {
-        if (!cancelled) setIsLoading(false);
-        return;
-      }
+    let historyRequest = 0;
+    async function refreshHistory() {
+      const request = ++historyRequest;
+      const live = new Map<number, ChatMessage>();
+      receivedDuringRefresh = live;
       try {
         const response = await apiFetch(`/meetups/${meetupId}/chat`);
-        if (cancelled) return;
-        if (response.ok) {
-          const data = (await response.json()) as ChatMessage[];
-          setMessages(data);
-          await setCachedChatMessages(meetupId, data);
-        } else {
-          await setCachedChatMessages(meetupId, []);
-        }
-      } catch (error) {
-        console.error("Failed to fetch initial messages:", error);
-        const fallback = await getCachedChatMessages(meetupId);
-        if (!cancelled && fallback !== undefined) {
-          setMessages(fallback);
-        }
+        if (!response.ok) return;
+        const history = await response.json() as ChatMessage[];
+        if (cancelled || request !== historyRequest) return;
+        const byId = new Map(history.map((message) => [message.id, message]));
+        for (const [id, message] of live) byId.set(id, message);
+        const merged = [...byId.values()].sort((a, b) => a.id - b.id);
+        setMessages(merged);
+        setVerifiedThrough(merged.at(-1)?.id ?? 0);
+        await setCachedChatMessages(meetupId, merged);
+      } catch {
+        // Keep offline messages visible until the stream reconnects.
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (request === historyRequest) {
+          receivedDuringRefresh = undefined;
+          if (!cancelled) setIsLoading(false);
+        }
       }
-    })();
+    }
+
+    eventSource.onopen = () => {
+      void refreshHistory();
+      scheduleReceiptRefresh();
+    };
+    void refreshHistory();
+    scheduleReceiptRefresh();
 
     return () => {
       cancelled = true;
+      clearTimeout(receiptRefresh);
       eventSource.close();
     };
   }, [meetupId, handleTypingEvent, tokens?.accessToken]);
@@ -653,7 +765,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
       lastDateStr = dateStr;
     }
     rendered.push(
-      <MessageGroup key={`group-${group.messages[0].id}`} group={group} />,
+      <MessageGroup key={`group-${group.messages[0].id}`} group={group} receipts={receipts} />,
     );
   }
 
@@ -668,7 +780,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
   // the live chat is always shown inline and the preview is hidden.
   return (
     <>
-      <section
+      {!standalone && <section
         aria-label="Chat preview"
         className={`max-w-2xl mx-auto w-full md:hidden ${isExpanded ? "hidden" : ""}`}
       >
@@ -706,15 +818,15 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
         >
           Open chat
         </button>
-      </section>
+      </section>}
 
       {/* Expanded view: inline on md+, full-screen overlay on mobile. */}
       <section
         aria-label="Chat"
         className={`max-w-2xl mx-auto w-full ${
           fillHeight ? "h-full" : ""
-        } ${isExpanded ? "max-md:block" : "hidden"} md:block ${
-          isExpanded
+        } ${standalone || isExpanded ? "max-md:block" : "hidden"} md:block ${
+          isExpanded && !standalone
             ? "max-md:fixed max-md:inset-0 max-md:z-[45] max-md:max-w-none max-md:p-2 max-md:bg-board/60"
             : ""
         }`}
@@ -724,7 +836,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           fillHeight ? "md:h-full" : "h-[min(75vh,600px)]"
         } ${isExpanded ? "max-md:h-[calc(100dvh-1rem)]" : ""}`}
       >
-        <div className="flex shrink-0 justify-end border-b border-line px-2 md:hidden">
+        <div className={`shrink-0 justify-end border-b border-line px-2 md:hidden ${standalone ? "hidden" : "flex"}`}>
           <button
             type="button"
             onClick={() => {
@@ -752,7 +864,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
           ) : (
             rendered
           )}
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-px" aria-hidden />
         </div>
 
         {/* Scroll-to-bottom FAB */}
@@ -864,3 +976,7 @@ export const MeetupChat: React.FC<MeetupChatProps> = ({
     </>
   );
 };
+
+export function MeetupChat(props: MeetupChatProps) {
+  return <MeetupChatView key={props.meetupId} {...props} />;
+}
