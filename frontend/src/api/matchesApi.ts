@@ -78,7 +78,7 @@ export async function fetchMatch(
 
 export async function startMatches(
   meetupId: number,
-  body?: { team_a_idx?: number; team_b_idx?: number },
+  body?: { team_a_idx?: number; team_b_idx?: number; pitch?: 1 | 2 },
 ): Promise<{ status: string; match: MatchSummary; matches?: MatchSummary[] }> {
   const r = await apiFetch(`/meetups/${meetupId}/matches/start`, {
     method: "POST",

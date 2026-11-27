@@ -383,3 +383,61 @@ async def test_prestart_swap_cannot_put_a_player_on_both_pitches():
         )
         assert changed.status_code == 409
         assert "another match" in changed.json()["detail"]
+
+
+async def test_selected_pitch_can_be_created_first_and_recreated():
+    async with await client() as ac:
+        sid, _ = await make_meetup_with_teams(ac, 4)
+        started = await ac.post(
+            f"/meetups/{sid}/matches/start",
+            json={"pitch": 2, "team_a_idx": 0, "team_b_idx": 1}, headers=hdr("admint"),
+        )
+        assert started.status_code == 201, started.text
+        body = started.json()
+        assert body["match"]["pitch"] == 2
+        first, second = body["matches"]
+        assert [first["pitch"], second["pitch"]] == [1, 2]
+        first_users = {u["id"] for side in ("team_a", "team_b") for u in first[side]["users"]}
+        second_users = {u["id"] for side in ("team_a", "team_b") for u in second[side]["users"]}
+        assert not first_users & second_users
+
+        again = await ac.post(
+            f"/meetups/{sid}/matches/start", json={"pitch": 2}, headers=hdr("admint"),
+        )
+        assert again.status_code == 201 and again.json()["match"]["id"] == second["id"]
+
+        for missing in (2, 1):
+            current = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+            victim = next(m for m in current if m["pitch"] == missing)
+            assert (await ac.delete(f"/meetups/{sid}/matches/{victim['id']}", headers=hdr("admint"))).status_code == 204
+            created = await ac.post(
+                f"/meetups/{sid}/matches/start", json={"pitch": missing}, headers=hdr("admint"),
+            )
+            assert created.status_code == 201, created.text
+            assert created.json()["match"]["pitch"] == missing
+            repeated = await ac.post(
+                f"/meetups/{sid}/matches/start", json={"pitch": missing}, headers=hdr("admint"),
+            )
+            assert repeated.status_code == 201
+            assert repeated.json()["match"]["id"] == created.json()["match"]["id"]
+            all_matches = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+            assert len(all_matches) == 2
+            assert not (
+                {u["id"] for side in ("team_a", "team_b") for u in all_matches[0][side]["users"]}
+                & {u["id"] for side in ("team_a", "team_b") for u in all_matches[1][side]["users"]}
+            )
+
+
+async def test_restoring_pitch_rejects_players_already_assigned():
+    async with await client() as ac:
+        sid, _ = await make_meetup_with_teams(ac, 4)
+        started = await ac.post(f"/meetups/{sid}/matches/start", headers=hdr("admint"))
+        first, second = started.json()["matches"]
+        assert (await ac.delete(f"/meetups/{sid}/matches/{second['id']}", headers=hdr("admint"))).status_code == 204
+        conflict = await ac.post(
+            f"/meetups/{sid}/matches/start",
+            json={"pitch": 2, "team_a_idx": 0, "team_b_idx": 1}, headers=hdr("admint"),
+        )
+        assert conflict.status_code == 409
+        matches = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        assert len(matches) == 1 and matches[0]["id"] == first["id"]

@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../auth/useAuth";
 import { matchControlWindow } from "../utils/datetime";
@@ -25,7 +25,6 @@ import {
   type MeetupDetail,
   type TeamsResponse,
 } from "../api/meetupsApi";
-import { roomPath } from "../utils/demoRoom";
 import { subscribeMeetupData } from "../utils/meetupDataBus";
 import { useStewardUi } from "../hooks/useStewardUi";
 import { GoalList } from "../components/GoalList";
@@ -350,6 +349,9 @@ function FinalStandings({ matches }: { matches: MatchSummary[] }) {
 export function RefereePage() {
   const { meetupId, matchId } = useParams<{ meetupId: string; matchId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pitchParam = searchParams.get("pitch");
+  const selectedPitch = pitchParam === "1" ? 1 : pitchParam === "2" ? 2 : null;
   const routeMatchId = matchId ? Number.parseInt(matchId, 10) : null;
   const { tokens } = useAuth();
   const auth = useContext(AuthContext);
@@ -505,7 +507,9 @@ export function RefereePage() {
               (m) => m.status === "active" || m.status === "time_up",
             );
             const pending = res.matches.find((m) => m.status === "pending");
-            const chosen = !res.two_pitch || routeMatchId == null ? active ?? pending ?? null : routeMatch ?? null;
+            const chosen = selectedPitch !== null
+              ? res.matches.find((m) => (m.pitch ?? 1) === selectedPitch && m.status !== "completed") ?? null
+              : !res.two_pitch || routeMatchId == null ? active ?? pending ?? null : routeMatch ?? null;
             if (chosen) {
               setCurrentMatch(chosen);
               setTimerSeconds(
@@ -527,7 +531,9 @@ export function RefereePage() {
             const shoot = res.matches.find(
               (m) =>
                 m.status === "completed" &&
-                (!res.two_pitch || routeMatchId == null || m.id === routeMatchId) &&
+                (selectedPitch !== null
+                  ? (m.pitch ?? 1) === selectedPitch
+                  : !res.two_pitch || routeMatchId == null || m.id === routeMatchId) &&
                 m.match_number === 1 &&
                 m.score_a === m.score_b &&
                 m.penalty_winner == null &&
@@ -552,7 +558,7 @@ export function RefereePage() {
       }
     })();
     return current.running;
-  }, [sid, routeMatchId, showToast]);
+  }, [sid, routeMatchId, selectedPitch, showToast]);
 
   const liveRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleLiveRefresh = useCallback(() => {
@@ -782,10 +788,10 @@ export function RefereePage() {
     team_b_idx?: number;
   }) => {
     await run("Starting...", async () => {
-      const res = await startMatches(sid, body);
+      const res = await startMatches(sid, selectedPitch === null ? body : { ...body, pitch: selectedPitch });
       const both = res.matches?.length ?? 1;
       showToast(
-        `Matches started! ${both === 2 ? "Both pitches" : "Match 1"}: ${res.match.team_a.name} vs ${res.match.team_b.name}`,
+        `${selectedPitch !== null ? `Pitch ${selectedPitch} ready` : both === 2 ? "Both pitches ready" : "Match ready"}: ${res.match.team_a.name} vs ${res.match.team_b.name}`,
         "success",
       );
     });
@@ -953,7 +959,7 @@ export function RefereePage() {
           team_a_idx: selectedTeamA,
           team_b_idx: selectedTeamB,
         });
-        if (twoPitch && routeMatchId != null) navigate(roomPath(`/meetup-matches/${sid}/${match.id}`));
+        if (twoPitch && (routeMatchId != null || selectedPitch !== null)) navigate(`/meetup-matches/${sid}/${match.id}`);
         showToast("New match ready — start the timer!", "success");
       }
       setSelectingTeams(false);
@@ -1053,8 +1059,12 @@ export function RefereePage() {
     !currentMatch;
   // After a delete, the referee gets the same "Start new match" entry point
   // the all-complete state offers — even with an empty match list.
+  const canPrepareSelectedPitch = selectedPitch !== null
+    && (playingTeams?.filter((team) => team.players.length > 0).length ?? 0) >= 4
+    && !matches.some((m) => (m.pitch ?? 1) === selectedPitch)
+    && matches.every((m) => m.match_number <= 2);
   const showStartNewMatch =
-    allComplete || (matchDeleted && matches.length === 0);
+    !canPrepareSelectedPitch && (allComplete || (matchDeleted && matches.length === 0));
   const firstShootoutPending = matches.some((m) =>
     m.match_number === 1 && m.status === "completed" &&
     m.score_a === m.score_b && !m.penalty_winner && !m.penalty_skipped
@@ -1101,7 +1111,7 @@ export function RefereePage() {
             </button>
             <div className="flex-1 min-w-0">
               <h1 className="flex items-center gap-2 text-sm font-bold text-ink leading-tight">
-                Match Control
+                {selectedPitch === null ? "Match Control" : `Pitch ${selectedPitch} · Match Control`}
                 {sseLive ? (
                   <span className="relative inline-block h-2 w-2" aria-hidden>
                     <span className="absolute inset-0 motion-safe:animate-ping motion-reduce:animate-none bg-live opacity-75" />
@@ -1440,6 +1450,14 @@ export function RefereePage() {
                 Add match result
               </button>
             </div>
+          </div>
+        ) : !currentMatch && canPrepareSelectedPitch ? (
+          <div className="py-8 text-center">
+            <button type="button" disabled={busy !== null}
+              className="min-h-12 bg-live px-6 py-3 font-bold text-board disabled:opacity-50"
+              onClick={() => void handleStartAll()}>
+              Create match
+            </button>
           </div>
         ) : !currentMatch && matches.length > 0 ? (
           <p className="text-sm text-ink-dim">Waiting for the other match to finish.</p>

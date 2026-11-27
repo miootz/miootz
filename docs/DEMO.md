@@ -10,6 +10,15 @@ Both rooms run at the same time and keep separate game data.
 | **Squad setup** | One spot left at a future meetup | Join as Newcomer to fill the meetup, then join as Second newcomer to enter the waitlist. Use Admin to manage teams or change the waitlist policy. |
 | **Matchday** | The first match is ready for kickoff | As Admin, open **Start matches** and start the timer. As Member, keep the meetup open to follow the score and clock live. |
 
+To try two pitches in **Matchday**, use **Team settings** to set four teams
+with players on each side. The prepared first match stays in place and a second
+fixture appears automatically. Open **Member view → Meetup → Matches** and
+choose a pitch in each browser tab. The selector is available once four playing
+teams are present. Each pitch has its own referee view and **Start Timer**.
+If its fixture is missing, choose **Create match**.
+Reducing capacity to three teams removes an untouched Pitch 2 fixture. A match
+that has started keeps its timer, lineup, and recorded events.
+
 Share the room's account chooser link with someone who wants to test alongside
 you. Use separate browser profiles or devices to sign in as two roles in the
 same room. Use **All scenarios** to switch rooms. You can keep different rooms

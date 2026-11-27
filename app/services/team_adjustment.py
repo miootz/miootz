@@ -95,12 +95,38 @@ async def fill_empty_pending_matches(db: AsyncSession, meetup: Meetup) -> None:
         meetup.manual_teams_json, meetup.team_assignment_mode, players,
         max_teams=meetup.max_teams, team_size=meetup.team_size,
     )
-    nonempty = [(i, team) for i, team in enumerate(teams) if team]
-    if len(nonempty) < 2:
-        return
     names = get_team_names(meetup) or []
-    (a_idx, a), (b_idx, b) = nonempty[:2]
+    open_matches = matches
+    if meetup.two_pitch:
+        open_matches = list(await db.scalars(
+            select(MeetupMatch).where(
+                MeetupMatch.meetup_id == meetup.id,
+                MeetupMatch.status.in_(("pending", "active", "time_up")),
+            )
+        ))
     for match in empty:
+        occupied = {
+            uid
+            for other in open_matches if other.id != match.id
+            for uid in loads_int_list(other.team_a_users) + loads_int_list(other.team_b_users)
+        } if meetup.two_pitch else set()
+        available = [
+            (idx, [player for player in team if player["user_id"] not in occupied])
+            for idx, team in enumerate(teams)
+            if not meetup.max_teams or idx < meetup.max_teams
+        ]
+        available = [(idx, team) for idx, team in available if team]
+        if len(available) < 2:
+            continue
+        # Reuse this match's team names when those sides are still available.
+        preferred = {
+            names[idx] if idx < len(names) else _team_name(idx + 1): (idx, team)
+            for idx, team in available
+        }
+        sides = [preferred.get(match.team_a_name), preferred.get(match.team_b_name)]
+        if None in sides or sides[0][0] == sides[1][0]:
+            sides = available[:2]
+        (a_idx, a), (b_idx, b) = sides
         match.team_a_users = json.dumps([p["user_id"] for p in a])
         match.team_b_users = json.dumps([p["user_id"] for p in b])
         match.team_a_name = names[a_idx] if a_idx < len(names) else _team_name(a_idx + 1)

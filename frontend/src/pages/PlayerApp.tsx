@@ -91,8 +91,9 @@ export function PlayerApp() {
       fetchMeetupDetail(meetupId),
       fetchMeetupTeams(meetupId),
     ]);
-    const t = teamsRes.teams.map((x) => ({
+    const t = teamsRes.teams.map((x, index) => ({
       id: x.id,
+      isBench: detail.max_teams != null && index >= detail.max_teams,
       name: x.name ?? `Team ${x.id.replace("t", "")}`,
       players: x.players.map((p) => ({
         id: p.id,
