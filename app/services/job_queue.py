@@ -39,10 +39,17 @@ def _signup_hold_handler() -> JobHandler:
     return expire_signup_hold
 
 
+def _chat_notification_handler() -> JobHandler:
+    from app.services.web_push import send_queued_chat_notification
+
+    return send_queued_chat_notification
+
+
 # job_type -> lazy handler factory
 _HANDLERS: dict[str, Callable[[], JobHandler]] = {
     "rating_reminder": _rating_reminder_handler,
     "signup_hold_expiry": _signup_hold_handler,
+    "chat_notification": _chat_notification_handler,
 }
 
 

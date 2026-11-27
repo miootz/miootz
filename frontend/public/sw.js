@@ -107,7 +107,8 @@ self.addEventListener('push', (event) => {
       icon: '/favicon.svg',
       badge: '/favicon.svg',
       actions: notifActions,
-      data: { url, actionMap },
+      ...(data.tag ? { tag: data.tag } : {}),
+      data: { url, actionMap, messageId: data.message_id },
     })
   );
 });

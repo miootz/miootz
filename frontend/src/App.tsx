@@ -52,6 +52,7 @@ const MeetupReservationPage = lazy(() =>
 const PlusOneClaimPage = lazy(() =>
   import('./pages/PlusOneClaimPage').then(({ PlusOneClaimPage }) => ({ default: PlusOneClaimPage })),
 );
+const MeetupChatPage = lazy(() => import("./pages/MeetupChatPage"));
 const ProfilePage = lazy(() =>
   import('./pages/ProfilePage').then(({ ProfilePage }) => ({ default: ProfilePage })),
 );
@@ -126,6 +127,7 @@ export default function App() {
               </Route>
               <Route path="/" element={<MemberLayout />}>
                 <Route index element={<PlayerHome />} />
+                <Route path="meetups/:meetupId/chat" element={<MeetupChatPage />} />
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="history" element={<HistoryPage />} />
                 <Route path="history/:meetupId" element={<HistoryMeetupPage />} />

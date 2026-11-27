@@ -5,11 +5,13 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.meetup import Attendance, Meetup
+from app.models.chat import ChatMessage, ChatReceipt
 from app.models.user import User
 from app.models.user_notification_preference import UserNotificationPreference
 from app.models.web_push_subscription import WebPushSubscription
@@ -33,6 +35,9 @@ def _payload(
     body: str,
     url: str | None = None,
     actions: list[dict] | None = None,
+    *,
+    tag: str | None = None,
+    message_id: int | None = None,
 ) -> str:
     """Build a JSON push payload the service worker can parse.
 
@@ -47,6 +52,8 @@ def _payload(
             "body": body,
             "url": url,
             "actions": actions or [],
+            **({"tag": tag} if tag else {}),
+            **({"message_id": message_id} if message_id is not None else {}),
         }
     )
 
@@ -263,19 +270,26 @@ async def notify_demoted_to_waitlist(
 
 async def notify_meetup_chat_recipients(
     db: AsyncSession,
-    meetup_id: int,
-    sender_user_id: int,
-    sender_username: str,
-    message_preview: str,
+    message: ChatMessage,
 ) -> None:
     if not (settings.VAPID_PRIVATE_KEY and settings.VAPID_PUBLIC_KEY):
         return
 
     r = await db.execute(
-        select(Attendance.user_id).where(
-            Attendance.meetup_id == meetup_id,
-            Attendance.user_id != sender_user_id,
-            Attendance.status != "cancelled",
+        select(Attendance.user_id)
+        .outerjoin(
+            ChatReceipt,
+            and_(
+                ChatReceipt.meetup_id == Attendance.meetup_id,
+                ChatReceipt.user_id == Attendance.user_id,
+            ),
+        )
+        .where(
+            Attendance.meetup_id == message.meetup_id,
+            Attendance.user_id != message.user_id,
+            Attendance.status.in_(("confirmed", "waitlisted", "cancelled")),
+            Attendance.joined_at <= message.created_at,
+            or_(ChatReceipt.read_id.is_(None), ChatReceipt.read_id < message.id),
         )
     )
     user_ids = {row[0] for row in r.all()}
@@ -283,9 +297,30 @@ async def notify_meetup_chat_recipients(
         return
 
     title = "Miootz chat"
-    body = f"{sender_username}: {message_preview[:200]}"
-    data = _payload(title, body, f"/meetups/{meetup_id}")
+    sender_name = message.user.display_name if message.user else "Unknown"
+    body = f"{sender_name}: {message.message[:200]}"
+    data = _payload(
+        title,
+        body,
+        f"/meetups/{message.meetup_id}/chat",
+        tag=f"meetup-chat-{message.meetup_id}",
+        message_id=message.id,
+    )
     await _send_push_to_users(db, user_ids, data, category="chat")
+
+
+async def send_queued_chat_notification(message_id: int) -> None:
+    """Send after the read grace period, using a fresh database session."""
+    from app.core.database import async_session
+
+    async with async_session() as db:
+        message = await db.scalar(
+            select(ChatMessage)
+            .where(ChatMessage.id == message_id)
+            .options(selectinload(ChatMessage.user))
+        )
+        if message is not None:
+            await notify_meetup_chat_recipients(db, message)
 
 
 async def notify_meetup_cancelled_recipients(

@@ -23,6 +23,50 @@ async def run_sqlite_migrations(conn: AsyncConnection) -> None:
         )
         return r.scalar_one_or_none() is not None
 
+    # Receipt cursors rely on message IDs never being reused after deletion.
+    # Keep the existing rows, indexes and triggers while enabling SQLite's
+    # persistent AUTOINCREMENT high-water mark.
+    if await has_table("chat_messages"):
+        objects = (await conn.exec_driver_sql(
+            "SELECT type, sql FROM sqlite_master WHERE tbl_name='chat_messages' "
+            "AND sql IS NOT NULL ORDER BY type"
+        )).fetchall()
+        table_sql = next(sql for kind, sql in objects if kind == "table")
+        if "AUTOINCREMENT" not in table_sql.upper():
+            await conn.exec_driver_sql("""
+                CREATE TABLE chat_messages_new (
+                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    meetup_id INTEGER NOT NULL REFERENCES meetups(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    message VARCHAR NOT NULL,
+                    created_at DATETIME NOT NULL
+                )
+            """)
+            await conn.exec_driver_sql(
+                "INSERT INTO chat_messages_new (id, meetup_id, user_id, message, created_at) "
+                "SELECT id, meetup_id, user_id, message, created_at FROM chat_messages"
+            )
+            await conn.exec_driver_sql("DROP TABLE chat_messages")
+            await conn.exec_driver_sql("ALTER TABLE chat_messages_new RENAME TO chat_messages")
+            for kind, sql in objects:
+                if kind != "table":
+                    await conn.exec_driver_sql(sql)
+            if await has_table("chat_receipts"):
+                cursor = (await conn.exec_driver_sql(
+                    "SELECT max(max(delivered_id, read_id)) FROM chat_receipts"
+                )).scalar_one_or_none() or 0
+                sequence = (await conn.exec_driver_sql(
+                    "SELECT seq FROM sqlite_sequence WHERE name = 'chat_messages'"
+                )).scalar_one_or_none()
+                if sequence is None:
+                    await conn.execute(text(
+                        "INSERT INTO sqlite_sequence (name, seq) VALUES ('chat_messages', :cursor)"
+                    ), {"cursor": cursor})
+                elif cursor > sequence:
+                    await conn.execute(text(
+                        "UPDATE sqlite_sequence SET seq = :cursor WHERE name = 'chat_messages'"
+                    ), {"cursor": cursor})
+
     if await has_table("job_queue") and not await has_column("job_queue", "claimed_until"):
         await conn.exec_driver_sql("ALTER TABLE job_queue ADD COLUMN claimed_until DATETIME")
 

@@ -19,6 +19,16 @@ and run live matches with timer, score, and post-match peer ratings. Notificatio
 Stack: FastAPI backend (`app/`), React + Vite frontend (`frontend/`), Docker Compose
 with Traefik + Pocket ID.
 
+## Meetup chat notifications
+
+Miootz gives a visible meetup chat a few seconds to mark new messages as read
+before sending web push. Unread chat alerts are grouped by meetup and open that
+chat directly. Alerts go to confirmed, waitlisted, and cancelled attendees. All
+members can open the chat. Mute alerts under **Profile → Notification preferences
+→ Meetup chat**.
+Delivery means a browser loaded the message. The read receipt advances when the newest message
+is visible in the focused chat. Only the sender sees the receipt counts.
+
 ## Meetup signups
 
 An open Overview updates when the next meetup is created. Players can join as

@@ -44,10 +44,10 @@ function SeasonHighlights({
       <h2 id="rankings-highlights" className="texture-painted-steel border-b border-line px-4 py-3 text-lg font-bold text-ink">
         {allTime ? "All-time highlights" : "Season highlights"}
       </h2>
-      <div className="grid gap-px bg-line @min-[18rem]:grid-cols-2 @min-[45rem]:grid-cols-4">
+      <div className="grid gap-2 bg-board p-2 @min-[18rem]:grid-cols-2 @min-[45rem]:grid-cols-4">
         {entries.map(([key, list]) => (
-          <div key={key} className="flex min-w-0 flex-col bg-panel">
-            <h3 className="flex min-h-12 items-end px-3 py-2 text-2xs font-bold uppercase tracking-[0.14em] text-ink-dim">
+          <div key={key} className="flex min-w-0 flex-col border border-line bg-panel">
+            <h3 className="flex min-h-14 items-center px-3 py-3 text-sm font-bold leading-tight text-ink">
               {HIGHLIGHT_LABELS[key] ?? key}
             </h3>
             <ol className="divide-y divide-line border-t border-line">

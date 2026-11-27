@@ -60,8 +60,8 @@ const NOTIF_CATEGORY_META: Record<
     description: "When a spot opens or you are promoted from the waitlist",
   },
   chat: {
-    display_name: "Chat messages",
-    description: "New messages in meetups you attend",
+    display_name: "Meetup chat",
+    description: "New messages in meetups you joined, waitlisted for, or cancelled",
   },
   meetup_cancelled: {
     display_name: "Meetup cancelled",
