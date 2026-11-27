@@ -454,7 +454,7 @@ function MeetupAttendanceActions({
 	);
 }
 
-function LiveMatchBoard({ meetupId }: { meetupId: number }) {
+function LiveMatchBoard({ meetupId, hasPitchCapacity, isAdmin }: { meetupId: number; hasPitchCapacity: boolean; isAdmin: boolean }) {
 	const { tokens } = useAuth();
 	const [snapshot, setSnapshot] = useState<{ meetupId: number; matches: MatchSummary[]; twoPitch: boolean }>();
 	useEffect(() => {
@@ -483,13 +483,24 @@ function LiveMatchBoard({ meetupId }: { meetupId: number }) {
 		};
 	}, [meetupId, tokens?.accessToken]);
 
-	if (snapshot?.meetupId !== meetupId) return null;
-	const inProgress = snapshot.matches.filter((m) => m.status !== "completed");
+	const matches = snapshot?.meetupId === meetupId ? snapshot.matches : [];
+	const showPitches = hasPitchCapacity || (snapshot?.meetupId === meetupId && snapshot.twoPitch);
 	return (
 		<>
-			{snapshot.twoPitch && <PitchPicker meetupId={meetupId} matches={snapshot.matches} />}
-			{inProgress.map((m) => (
-				<LiveMatchBanner key={m.id} meetupId={meetupId} matchId={m.id} />
+			<h2 className="text-lg font-bold text-ink flex items-center gap-2">
+				<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
+				Matches
+				{isAdmin && !showPitches && (
+					<Link to={`/meetup-matches/${meetupId}`}
+						className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink">
+						<Shield size={13} />
+						Referee
+					</Link>
+				)}
+			</h2>
+			{showPitches && <PitchPicker meetupId={meetupId} matches={matches} />}
+			{matches.filter((match) => match.status !== "completed").map((match) => (
+				<LiveMatchBanner key={match.id} meetupId={meetupId} matchId={match.id} />
 			))}
 		</>
 	);
@@ -502,6 +513,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 }) => {
 	const { me } = useAuth();
 	const meetupIdNum = Number.parseInt(meetup.id, 10);
+	const hasPitchCapacity = meetup.teams.filter((team) => !team.isBench && team.players.length > 0).length >= 4;
 
 	// Slow tick — only the T-15 min boundary flip depends on it.
 	const [now, setNow] = useState(() => Date.now());
@@ -525,20 +537,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 				{/* 1. Match results — from T-15 min, in place of attendance */}
 				{resultsMode && !isNaN(meetupIdNum) && (
 					<section className="space-y-3">
-						<h2 className="text-lg font-bold text-ink flex items-center gap-2">
-							<Trophy className="h-5 w-5 text-ink-dim" aria-hidden />
-							Matches
-							{me?.is_admin && (
-								<Link
-									to={`/meetup-matches/${meetupIdNum}`}
-									className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-ink-dim hover:bg-raised hover:text-ink"
-								>
-									<Shield size={13} />
-									Referee
-								</Link>
-							)}
-						</h2>
-						<LiveMatchBoard meetupId={meetupIdNum} />
+						<LiveMatchBoard meetupId={meetupIdNum} hasPitchCapacity={hasPitchCapacity} isAdmin={me?.is_admin === true} />
 						<MatchHistoryList
 							meetupId={meetupIdNum}
 							editable
@@ -574,6 +573,7 @@ export const MeetupDetails: React.FC<MeetupDetailsProps> = ({
 							<Users className="h-5 w-5 text-ink-dim" aria-hidden />
 							Teams
 						</h2>
+						{hasPitchCapacity && <PitchPicker meetupId={meetupIdNum} matches={[]} />}
 						<TeamLineups
 							meetup={meetup}
 							linkToPlayers={me?.is_admin === true}

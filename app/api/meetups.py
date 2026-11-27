@@ -1084,24 +1084,165 @@ async def reshape_meetup_teams(
     meetup.team_size = body.team_size
     meetup.max_players = signup_capacity
 
-    # Pending matches take the new partition's first two teams; a live or
-    # completed match is untouched.
-    matches = (
-        await db.execute(
-            select(MeetupMatch).where(
-                MeetupMatch.meetup_id == meetup_id,
-                MeetupMatch.status == "pending",
+    # Only the opening round has automatic parallel pitches. Later matches
+    # keep their own history and are never repurposed as a second pitch.
+    matches = list(await db.scalars(
+        select(MeetupMatch)
+        .where(MeetupMatch.meetup_id == meetup_id)
+        .order_by(MeetupMatch.match_number)
+    ))
+    first = next((m for m in matches if m.match_number == 1), None)
+    second = next((m for m in matches if m.pitch == 2), None)
+    if first and second is None and len(matches) == 2:
+        legacy = matches[1]
+        # Older demo fixtures did not mark the simultaneous opening pair.
+        if (first.status == "pending" and legacy.match_number == 2
+                and legacy.status == "pending" and legacy.pitch is None
+                and not legacy.auto_queued):
+            second = legacy
+
+    opening_only = bool(
+        first and all(m.id == first.id or (second and m.id == second.id) for m in matches)
+    )
+    opening_matches = [m for m in (first, second) if m is not None] if opening_only else []
+    playing_teams = [team for team in partition[:body.team_count] if team]
+    has_second_pitch = body.team_count >= 4 and len(playing_teams) >= 4
+
+    async def has_recorded_events(match: MeetupMatch) -> bool:
+        from app.models.match import MatchPenalty, MatchSubstitution, PenaltyMiss
+        from app.models.match_goal import MatchGoal
+
+        if (match.score_a or match.score_b or match.score_offset_a or match.score_offset_b
+                or match.timer_started_at is not None):
+            return True
+        for model in (MatchGoal, MatchPenalty, PenaltyMiss, MatchSubstitution):
+            if await db.scalar(select(model.id).where(model.match_id == match.id).limit(1)):
+                return True
+        return False
+
+    # Never discard a running, completed, or already recorded match.
+    if second and opening_only and body.team_count < 4 and second.status == "pending":
+        if not await has_recorded_events(second):
+            from app.services.deletes import delete_match_children
+
+            await delete_match_children(db, second.id)
+            await db.delete(second)
+            await db.flush()
+            matches.remove(second)
+            opening_matches.remove(second)
+            second = None
+            meetup.two_pitch = False
+            first.pitch = None
+
+    if first and opening_only and second is None and body.team_count < 4:
+        # The other pitch may have been deleted manually before reshaping.
+        meetup.two_pitch = False
+        first.pitch = None
+
+    # Reshape the playing sides. On a live pitch keep that match's lineup
+    # intact and fill the other pitch using confirmed players not on it.
+    live = next((m for m in opening_matches if m.status in ("active", "time_up")), None)
+    if first and first.status == "pending" and await has_recorded_events(first) and live is None:
+        live = first
+    completed_opening = any(m.status == "completed" for m in opening_matches)
+    protected_second = bool(second and second.status == "pending" and await has_recorded_events(second))
+    free_sides: list[list[int]] = []
+    if (live is not None and live is first and not completed_opening and has_second_pitch
+            and (second is None or (
+                second.status == "pending" and not await has_recorded_events(second)
+            ))):
+        confirmed_ids = {p["user_id"] for p in players}
+        live_a = [uid for uid in loads_int_list(live.team_a_users) if uid in confirmed_ids]
+        live_b = [uid for uid in loads_int_list(live.team_b_users) if uid in confirmed_ids]
+        occupied = set(loads_int_list(live.team_a_users) + loads_int_list(live.team_b_users))
+        available = [p for p in players if p["user_id"] not in occupied]
+        if len(available) >= 2:
+            # Retain the live sides as teams 1 and 2; draft the remaining
+            # confirmed players into the other playing teams and one bench.
+            free_count = body.team_count - 2
+            free_playing = min(len(available), free_count * body.team_size)
+            per_free_team, free_extra = divmod(free_playing, free_count)
+            free_chunks: list[list[int]] = []
+            offset = 0
+            ordered_free = sorted(available, key=lambda p: float(p["skill"]), reverse=True)
+            for i in range(free_count):
+                count = per_free_team + (i < free_extra)
+                free_chunks.append([p["user_id"] for p in ordered_free[offset:offset + count]])
+                offset += count
+            if offset < len(ordered_free):
+                free_chunks.append([p["user_id"] for p in ordered_free[offset:]])
+            free_teams = [
+                [p["user_id"] for p in team]
+                for team in rebalance_around_locked(
+                    available, free_chunks, locked=set(), max_teams=free_count,
+                    randomize=(mode == "random"), optimize=mode == "auto-balanced",
+                    shuffle_equal=mode != "auto-balanced",
+                )
+            ]
+            free_sides = free_teams[:2]
+            partition = [live_a, live_b, *free_teams]
+            reserved_names = {live.team_a_name, live.team_b_name}
+            other_names = [
+                name for name in generate_team_names(len(partition) + 2)
+                if name not in reserved_names
+            ]
+            team_names = [live.team_a_name, live.team_b_name, *other_names[:len(partition) - 2]]
+            meetup.manual_teams_json = json.dumps(partition)
+            meetup.team_names_json = json.dumps(team_names)
+            leftover = partition[body.team_count] if len(partition) > body.team_count else []
+
+    if (first and opening_only and second is None and has_second_pitch
+            and first.status in ("pending", "active", "time_up")):
+        second_teams = free_sides if live else playing_teams[2:4]
+        if len(second_teams) == 2 and all(second_teams):
+            first.pitch = 1
+            second = MeetupMatch(
+                meetup_id=meetup_id, match_number=2, pitch=2,
+                team_a_users=json.dumps(second_teams[0]),
+                team_b_users=json.dumps(second_teams[1]),
+                team_a_name=team_names[2], team_b_name=team_names[3],
+                score_a=0, score_b=0, status="pending",
+                timer_total_seconds=(meetup.match_duration_minutes or 10) * 60,
             )
-        )
-    ).scalars().all()
+            db.add(second)
+            opening_matches.append(second)
+            meetup.two_pitch = True
+
+    if second and opening_only:
+        first.pitch = 1
+        second.pitch = 2
+        meetup.two_pitch = True
+
+    for m in matches:
+        if m.status != "pending" or await has_recorded_events(m):
+            continue
+        if opening_only and second and (completed_opening or protected_second or not has_second_pitch):
+            continue
+        if opening_only and live:
+            # The other opening pitch must never include a player already
+            # playing. If there aren't two free sides, leave it unchanged.
+            if m in opening_matches and len(free_sides) == 2 and all(free_sides):
+                a, b = free_sides
+                name_offset = 2 if m is second else 0
+            else:
+                continue
+        elif m is second and opening_only and has_second_pitch:
+            a, b = playing_teams[2:4]
+            name_offset = 2
+        elif m is second and opening_only:
+            continue
+        else:
+            a = partition[0] if partition else []
+            b = partition[1] if len(partition) > 1 else []
+            name_offset = 0
+        m.team_a_users = json.dumps(a)
+        m.team_b_users = json.dumps(b)
+        m.team_a_name = team_names[name_offset]
+        m.team_b_name = team_names[name_offset + 1]
+
     if mode == "auto-balanced" and not started and not matches:
         # The shape is saved separately so later signups can be redrafted.
         meetup.manual_teams_json = None
-    for m in matches:
-        m.team_a_users = json.dumps(partition[0] if partition else [])
-        m.team_b_users = json.dumps(partition[1] if len(partition) > 1 else [])
-        m.team_a_name = team_names[0]
-        m.team_b_name = team_names[1]
 
     rev = await bump_meetup_revision(db, meetup_id)
     await db.commit()

@@ -178,7 +178,7 @@ async function openReferee(admin = false, path = "/meetup-matches/1") {
       </AuthContext.Provider>,
     );
   });
-  expect(screen.getByText("Match Control")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Match Control/ })).toBeInTheDocument();
   vi.mocked(fetchMeetupMatches).mockClear();
   vi.mocked(fetchMeetupTeams).mockClear();
   vi.mocked(fetchGoals).mockClear();
@@ -632,4 +632,22 @@ it("refreshes live penalty misses when another device records or removes one", a
     await vi.advanceTimersByTimeAsync(100);
   });
   expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+});
+
+it("opens a free pitch without showing the other pitch's timer and prepares it on request", async () => {
+  vi.mocked(fetchMeetupMatches).mockResolvedValue({
+    ...response(), matches: [{ ...match, pitch: 1 }],
+  });
+  vi.mocked(fetchMeetupTeams).mockResolvedValue({
+    meetup_id: 1, content_revision: 0,
+    teams: [1, 2, 3, 4].map((id) => ({
+      id: String(id), name: `Team ${id}`,
+      players: [{ id: String(id), name: `Player ${id}`, skillScore: 3, isLocked: false }],
+    })),
+  });
+  await openReferee(false, "/meetup-matches/1?pitch=2");
+  expect(screen.getByRole("heading", { name: /Pitch 2/ })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Start Timer" })).not.toBeInTheDocument();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create match" })));
+  expect(startMatches).toHaveBeenCalledWith(1, { pitch: 2 });
 });

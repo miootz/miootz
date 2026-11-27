@@ -484,3 +484,276 @@ async def test_bench_cannot_be_selected_for_start_or_next_match():
             headers=hdr("admint"),
         )
         assert response.status_code == 400 and "Bench" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_capacity_creates_and_removes_disjoint_opening_pitches():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        async with AsyncSession(engine) as db:
+            await create_test_user(db, "Late", "user-uuid")
+
+        shaped = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 4}, headers=hdr("admint"),
+        )
+        assert shaped.status_code == 200, shaped.text
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert result["two_pitch"] is True
+        first, second = result["matches"]
+        assert (first["pitch"], second["pitch"]) == (1, 2)
+        assert (first["team_a"]["name"], first["team_b"]["name"]) == (
+            shaped.json()["teams"][0]["name"], shaped.json()["teams"][1]["name"],
+        )
+        assert (second["team_a"]["name"], second["team_b"]["name"]) == (
+            shaped.json()["teams"][2]["name"], shaped.json()["teams"][3]["name"],
+        )
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in first[side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in second[side]["users"]}
+        assert not first_ids & second_ids and len(first_ids | second_ids) == 12
+
+        # Auto-balancing a later signup must keep the two fixtures disjoint.
+        assert (await ac.post(f"/meetups/{sid}/join", headers=hdr("user"))).status_code == 200
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        first, second = result["matches"]
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in first[side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in second[side]["users"]}
+        assert not first_ids & second_ids and len(first_ids | second_ids) == 13
+
+        reduced = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )
+        assert reduced.status_code == 200, reduced.text
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert len(result["matches"]) == 1
+        assert result["matches"][0]["id"] == first["id"]
+        assert result["matches"][0]["pitch"] is None and result["two_pitch"] is False
+
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 4}, headers=hdr("admint"),
+        )).status_code == 200
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert len(result["matches"]) == 2 and result["two_pitch"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["active", "time_up", "completed"])
+async def test_capacity_keeps_started_second_pitch_and_its_opponent_separate(state):
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )).status_code == 200
+        before = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        second = before[1]
+        async with AsyncSession(engine) as db:
+            match = await db.get(MeetupMatch, second["id"])
+            match.status = state
+            match.timer_started_at = utcnow()
+            await db.commit()
+
+        response = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 3}, headers=hdr("admint"),
+        )
+        assert response.status_code == 200, response.text
+        matches = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        assert len(matches) == 2
+        assert matches[1]["id"] == second["id"] and matches[1]["status"] == state
+        assert matches[1]["team_a"] == second["team_a"]
+        assert matches[1]["team_b"] == second["team_b"]
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in matches[0][side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in matches[1][side]["users"]}
+        assert not first_ids & second_ids
+
+
+@pytest.mark.asyncio
+async def test_expanding_while_pitch_one_runs_uses_only_available_players():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )).status_code == 200
+        first = await pending_match(ac, sid)
+        assert (await ac.post(
+            f"/meetups/{sid}/matches/{first['id']}/timer/start", headers=hdr("admint"),
+        )).status_code == 200
+        expanded = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )
+        assert expanded.status_code == 200, expanded.text
+        teams = expanded.json()["teams"]
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert result["two_pitch"] is True
+        first, second = result["matches"]
+        for index, (match, side) in enumerate((
+            (first, "team_a"), (first, "team_b"),
+            (second, "team_a"), (second, "team_b"),
+        )):
+            assert match[side]["name"] == teams[index]["name"]
+            assert {p["id"] for p in match[side]["users"]} == {
+                int(p["id"]) for p in teams[index]["players"]
+            }
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in first[side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in second[side]["users"]}
+        assert not first_ids & second_ids and len(first_ids | second_ids) == 12
+
+
+@pytest.mark.asyncio
+async def test_reshape_keeps_a_completed_opening_opponents_roster():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )).status_code == 200
+        before = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        async with AsyncSession(engine) as db:
+            first = await db.get(MeetupMatch, before[0]["id"])
+            first.status = "completed"
+            await db.commit()
+        result = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )
+        assert result.status_code == 200
+        after = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        assert after[1]["team_a"] == before[1]["team_a"]
+        assert after[1]["team_b"] == before[1]["team_b"]
+
+
+@pytest.mark.asyncio
+async def test_reshape_keeps_pending_pitch_with_recorded_goal():
+    from app.models.match_goal import MatchGoal
+
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )).status_code == 200
+        before = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        second = before[1]
+        async with AsyncSession(engine) as db:
+            db.add(MatchGoal(
+                match_id=second["id"], team="a", clock_secs=600, clock_minute=1,
+                recorded_by=await user_id_by_sub("admint-uuid"), intent_id="pending-goal",
+            ))
+            await db.commit()
+        result = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )
+        assert result.status_code == 200
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert result["two_pitch"] is True and len(result["matches"]) == 2
+        assert result["matches"][1]["team_a"] == second["team_a"]
+        async with AsyncSession(engine) as db:
+            assert await db.scalar(select(MatchGoal).where(MatchGoal.match_id == second["id"]))
+
+
+@pytest.mark.asyncio
+async def test_reshape_four_teams_without_matches_does_not_create_a_fixture():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        first = await pending_match(ac, sid)
+        assert (await ac.delete(
+            f"/meetups/{sid}/matches/{first['id']}", headers=hdr("admint"),
+        )).status_code == 204
+        result = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )
+        assert result.status_code == 200, result.text
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert result["matches"] == [] and result["two_pitch"] is False
+
+
+@pytest.mark.asyncio
+async def test_reshape_clears_marker_when_second_pitch_was_manually_removed():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )).status_code == 200
+        before = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        assert (await ac.delete(
+            f"/meetups/{sid}/matches/{before[1]['id']}", headers=hdr("admint"),
+        )).status_code == 204
+        result = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )
+        assert result.status_code == 200
+        result = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()
+        assert not result["two_pitch"] and result["matches"][0]["pitch"] is None
+
+
+@pytest.mark.asyncio
+async def test_pitch_expansion_reserves_pending_first_match_with_recorded_events():
+    from app.models.match_goal import MatchGoal
+
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )).status_code == 200
+        first = await pending_match(ac, sid)
+        async with AsyncSession(engine) as db:
+            db.add(MatchGoal(
+                match_id=first["id"], team="a", clock_secs=600, clock_minute=1,
+                recorded_by=await user_id_by_sub("admint-uuid"), intent_id="pending-first-goal",
+            ))
+            await db.commit()
+        result = await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 3}, headers=hdr("admint"),
+        )
+        assert result.status_code == 200, result.text
+        matches = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        assert len(matches) == 2
+        assert matches[0]["team_a"] == first["team_a"]
+        assert matches[0]["team_b"] == first["team_b"]
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in matches[0][side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in matches[1][side]["users"]}
+        assert not first_ids & second_ids
+
+
+@pytest.mark.asyncio
+async def test_join_fills_empty_second_pitch_without_reusing_running_players():
+    async with await client() as ac:
+        sid = await make_meetup_with_pending_match(ac)
+        async with AsyncSession(engine) as db:
+            await create_test_user(db, "Late", "user-uuid")
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 3, "team_size": 4}, headers=hdr("admint"),
+        )).status_code == 200
+        first = await pending_match(ac, sid)
+        assert (await ac.post(
+            f"/meetups/{sid}/matches/{first['id']}/timer/start", headers=hdr("admint"),
+        )).status_code == 200
+        assert (await ac.post(
+            f"/meetups/{sid}/teams/reshape",
+            json={"team_count": 4, "team_size": 4}, headers=hdr("admint"),
+        )).status_code == 200
+        before = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        async with AsyncSession(engine) as db:
+            second = await db.get(MeetupMatch, before[1]["id"])
+            second.team_a_users = "[]"
+            second.team_b_users = "[]"
+            await db.commit()
+        joined = await ac.post(f"/meetups/{sid}/join", headers=hdr("user"))
+        assert joined.status_code == 200 and joined.json()["status"] == "confirmed"
+        first, second = (await ac.get(f"/meetups/{sid}/matches", headers=hdr("admint"))).json()["matches"]
+        first_ids = {p["id"] for side in ("team_a", "team_b") for p in first[side]["users"]}
+        second_ids = {p["id"] for side in ("team_a", "team_b") for p in second[side]["users"]}
+        assert first_ids and second_ids and not first_ids & second_ids
+        assert second["team_a"]["users"] and second["team_b"]["users"]

@@ -103,6 +103,7 @@ class CreatePendingMatchBody(BaseModel):
 class StartMatchesBody(BaseModel):
     team_a_idx: int | None = None
     team_b_idx: int | None = None
+    pitch: int | None = Field(default=None, ge=1, le=2)
 
 
 class MatchCreateBody(BaseModel):
@@ -428,18 +429,25 @@ async def start_matches(
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
 
-    # Check if matches already exist
-    existing = await db.execute(
+    matches = list(await db.scalars(
         select(MeetupMatch)
         .where(MeetupMatch.meetup_id == meetup_id)
-        .order_by(MeetupMatch.match_number.asc())
-        .limit(1)
-    )
-    first = existing.scalar_one_or_none()
-    if first:
-        # Return existing first match (idempotent)
-        users_by_id = await _load_users_for_meetup(db, meetup_id)
-        return {"status": "already_started", "match": _match_json(first, users_by_id)}
+        .order_by(MeetupMatch.match_number)
+    ))
+    selected_pitch = body.pitch if body else None
+    if matches:
+        if selected_pitch is None:
+            users_by_id = await _load_users_for_meetup(db, meetup_id)
+            return {"status": "already_started", "match": _match_json(matches[0], users_by_id)}
+        selected = next((m for m in matches if m.pitch == selected_pitch), None)
+        if selected is None and selected_pitch == 1:
+            selected = next((m for m in matches if m.match_number == 1 and m.pitch is None), None)
+        if selected is not None:
+            users_by_id = await _load_users_for_meetup(db, meetup_id)
+            return {"status": "already_started", "match": _match_json(selected, users_by_id)}
+        if (len(matches) != 1 or matches[0].match_number != 3 - selected_pitch
+                or matches[0].pitch not in (None, 3 - selected_pitch)):
+            raise HTTPException(status_code=409, detail="The opening round cannot be recreated.")
 
     # Load confirmed players
     result = await db.execute(
@@ -497,87 +505,87 @@ async def start_matches(
     team_names = ensure_team_names(meetup, len(teams_nested))
     await db.flush()
 
-    team_a_idx = body.team_a_idx if body and body.team_a_idx is not None else playing_indices[0]
-    team_b_idx = body.team_b_idx if body and body.team_b_idx is not None else playing_indices[1]
-    if (
-        not 0 <= team_a_idx < len(teams_nested)
-        or not 0 <= team_b_idx < len(teams_nested)
-        or team_a_idx == team_b_idx
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="team_a_idx/team_b_idx must be distinct valid team indices.",
-        )
-    if meetup.max_teams and (team_a_idx >= meetup.max_teams or team_b_idx >= meetup.max_teams):
-        raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
-    if not teams_nested[team_a_idx] or not teams_nested[team_b_idx]:
-        raise HTTPException(status_code=400, detail="Both teams must have players.")
+    if body and (body.team_a_idx is None) != (body.team_b_idx is None):
+        raise HTTPException(status_code=400, detail="Provide both teams or neither.")
+
+    # Reserve the other pitch's players, including a completed opening match.
+    occupied = set()
+    if matches:
+        other = matches[0]
+        occupied = set(_loads_int_list(other.team_a_users) + _loads_int_list(other.team_b_users))
+    available = [
+        idx for idx in playing_indices
+        if not occupied.intersection(p["user_id"] for p in teams_nested[idx])
+    ]
+    if body and body.team_a_idx is not None and body.team_b_idx is not None:
+        team_a_idx, team_b_idx = body.team_a_idx, body.team_b_idx
+        if (team_a_idx < 0 or team_a_idx >= len(teams_nested)
+                or team_b_idx < 0 or team_b_idx >= len(teams_nested)
+                or team_a_idx == team_b_idx):
+            raise HTTPException(status_code=400, detail="Choose two distinct playing teams.")
+        if meetup.max_teams and (team_a_idx >= meetup.max_teams or team_b_idx >= meetup.max_teams):
+            raise HTTPException(status_code=400, detail="Bench cannot play as a team.")
+        if not teams_nested[team_a_idx] or not teams_nested[team_b_idx]:
+            raise HTTPException(status_code=400, detail="Both teams must have players.")
+        if team_a_idx not in available or team_b_idx not in available:
+            raise HTTPException(status_code=409, detail="A player is already on the other pitch.")
+    else:
+        if len(available) < 2:
+            raise HTTPException(status_code=409, detail="Two available teams are needed for this pitch.")
+        team_a_idx, team_b_idx = available[:2]
 
     team_a = teams_nested[team_a_idx]
     team_b = teams_nested[team_b_idx]
     if {p["user_id"] for p in team_a} & {p["user_id"] for p in team_b}:
         raise HTTPException(status_code=400, detail="A player cannot play on both teams.")
 
-    match_duration = meetup.match_duration_minutes or 10
+    remaining = [idx for idx in available if idx not in (team_a_idx, team_b_idx)]
+    if selected_pitch == 2 and not matches and len(remaining) < 2:
+        raise HTTPException(status_code=409, detail="Four playing teams are needed for two pitches.")
 
-    match = MeetupMatch(
-        meetup_id=meetup_id,
-        match_number=1,
-        team_a_users=json.dumps([p["user_id"] for p in team_a]),
-        team_b_users=json.dumps([p["user_id"] for p in team_b]),
-        team_a_name=team_names[team_a_idx] if team_names else _team_name(1),
-        team_b_name=(
-            team_names[team_b_idx]
-            if team_names and len(team_names) > team_b_idx
-            else _team_name(2)
-        ),
-        score_a=0,
-        score_b=0,
-        status="pending",
-        timer_total_seconds=match_duration * 60,
-        timer_seconds_remaining=None,
-    )
-    db.add(match)
-    pitch_matches = [match]
-
-    # Only a real second pair enables the two-pitch round.
-    remaining = [
-        i for i in playing_indices if i != team_a_idx and i != team_b_idx
-    ]
-    meetup.two_pitch = len(remaining) >= 2
-    if meetup.two_pitch:
-        match.pitch = 1
-        a_idx, b_idx = remaining[:2]
-        team_a_p = teams_nested[a_idx]
-        team_b_p = teams_nested[b_idx]
-        opening_users = [p["user_id"] for team in (team_a, team_b, team_a_p, team_b_p) for p in team]
-        if len(opening_users) != len(set(opening_users)):
-            raise HTTPException(status_code=400, detail="A player cannot play on both pitches.")
-        second = MeetupMatch(
-            meetup_id=meetup_id,
-            match_number=2,
-            pitch=2,
-            team_a_users=json.dumps([p["user_id"] for p in team_a_p]),
-            team_b_users=json.dumps([p["user_id"] for p in team_b_p]),
-            team_a_name=(
-                team_names[a_idx] if a_idx < len(team_names) else f"Team {a_idx + 1}"
-            ),
-            team_b_name=(
-                team_names[b_idx] if b_idx < len(team_names) else f"Team {b_idx + 1}"
-            ),
-            score_a=0,
-            score_b=0,
-            status="pending",
-            timer_total_seconds=match_duration * 60,
+    def make_pitch_match(number: int, pitch: int | None, a_idx: int, b_idx: int) -> MeetupMatch:
+        return MeetupMatch(
+            meetup_id=meetup_id, match_number=number, pitch=pitch,
+            team_a_users=json.dumps([p["user_id"] for p in teams_nested[a_idx]]),
+            team_b_users=json.dumps([p["user_id"] for p in teams_nested[b_idx]]),
+            team_a_name=team_names[a_idx], team_b_name=team_names[b_idx],
+            score_a=0, score_b=0, status="pending",
+            timer_total_seconds=(meetup.match_duration_minutes or 10) * 60,
             timer_seconds_remaining=None,
         )
-        db.add(second)
-        pitch_matches.append(second)
 
+    pitch_matches: list[MeetupMatch] = []
+    if matches:
+        # Recreate only the selected missing pitch. The other match and its
+        # recorded data stay untouched.
+        other = matches[0]
+        other.pitch = 3 - selected_pitch
+        match = make_pitch_match(selected_pitch, selected_pitch, team_a_idx, team_b_idx)
+        pitch_matches.append(match)
+        meetup.two_pitch = True
+    elif len(remaining) >= 2:
+        assigned = [team_a_idx, team_b_idx, *remaining[:2]]
+        opening_users = [p["user_id"] for idx in assigned for p in teams_nested[idx]]
+        if len(opening_users) != len(set(opening_users)):
+            raise HTTPException(status_code=400, detail="A player cannot play on both pitches.")
+        if selected_pitch == 2:
+            first = make_pitch_match(1, 1, remaining[0], remaining[1])
+            match = make_pitch_match(2, 2, team_a_idx, team_b_idx)
+        else:
+            first = make_pitch_match(1, 1, team_a_idx, team_b_idx)
+            second = make_pitch_match(2, 2, remaining[0], remaining[1])
+            match = first
+        pitch_matches.extend((first, match if selected_pitch == 2 else second))
+        meetup.two_pitch = True
+    else:
+        match = make_pitch_match(1, None, team_a_idx, team_b_idx)
+        pitch_matches.append(match)
+        meetup.two_pitch = False
+
+    db.add_all(pitch_matches)
     await db.commit()
-    await db.refresh(match)
-    for m in pitch_matches[1:]:
-        await db.refresh(m)
+    for created in pitch_matches:
+        await db.refresh(created)
 
     log_action(
         request,
@@ -1578,6 +1586,7 @@ async def start_timer(
     user: User = Depends(require_admin_or_present_member),
 ):
     """Start the match timer (any present member, idempotent)."""
+    await db.execute(text("BEGIN IMMEDIATE"))
     match = await db.get(MeetupMatch, match_id)
     if not match or match.meetup_id != meetup_id:
         raise HTTPException(status_code=404, detail="Match not found")
